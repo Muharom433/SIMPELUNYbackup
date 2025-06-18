@@ -87,60 +87,67 @@ const ExcelUploadModal: React.FC<ExcelUploadModalProps> = ({ isOpen, onClose, on
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: 'array' });
       const allTransformedData: TransformedSchedule[] = [];
-      const allErrors: string[] = [];
+      
       for (const sheetName of workbook.SheetNames) {
           const worksheet = workbook.Sheets[sheetName];
           const jsonData: ExcelRow[] = XLSX.utils.sheet_to_json(worksheet);
           if (jsonData.length === 0) continue;
-          for (const [index, row] of jsonData.entries()) {
-              try {
-                  if (!row[' Kode / Nama']) continue;
-                  const { course_code, course_name } = parseKodeNama(row[' Kode / Nama']);
-                  const { day, start_time, end_time } = parseTimeSchedule(row[' Jadwal hari']);
-                  let academicsYear: number | null = null;
-                  if (row[' TA']) {
-                    const yearString = String(row[' TA']).split('/')[0];
-                    const parsedYear = parseInt(yearString, 10);
-                    if (!isNaN(parsedYear)) academicsYear = parsedYear;
-                  }
-                  const transformedRow: TransformedSchedule = {
-                      subject_study: cleanProdi(row[' Prodi']),
-                      course_code,
-                      course_name,
-                      semester: row[' Semester MK'] || null,
-                      kurikulum: row[' Kurikulum'] || null,
-                      academics_year: academicsYear,
-                      type: (row[' Jenis'] || '').toLowerCase().includes('prak') ? 'practical' : 'theory',
-                      class: row[' Rombel'] || null,
-                      lecturer: row[' Pengampu'] || null,
-                      day, start_time, end_time,
-                      room: cleanRuang(row[' Ruang']),
-                      amount: row[' Jml MHS'] || 0,
-                  };
-                  if (!day || !start_time || !end_time) {
-                      allErrors.push(`Sheet '${sheetName}', Baris ${index + 2}: Format 'Jadwal hari' tidak valid.`);
-                  }
-                  allTransformedData.push(transformedRow);
-              } catch (error: any) {
-                  allErrors.push(`Sheet '${sheetName}', Baris ${index + 2}: Error - ${error.message}`);
+          
+          for (const row of jsonData) {
+              if (!row[' Kode / Nama']) continue;
+
+              const { course_code, course_name } = parseKodeNama(row[' Kode / Nama']);
+              const { day, start_time, end_time } = parseTimeSchedule(row[' Jadwal hari']);
+              
+              let academicsYear: number | null = null;
+              if (row[' TA']) {
+                const yearString = String(row[' TA']).split('/')[0];
+                const parsedYear = parseInt(yearString, 10);
+                if (!isNaN(parsedYear)) academicsYear = parsedYear;
               }
+
+              const transformedRow: TransformedSchedule = {
+                  subject_study: cleanProdi(row[' Prodi']),
+                  course_code,
+                  course_name,
+                  semester: row[' Semester MK'] || null,
+                  kurikulum: row[' Kurikulum'] || null,
+                  academics_year: academicsYear,
+                  type: (row[' Jenis'] || '').toLowerCase().includes('prak') ? 'practical' : 'theory',
+                  class: row[' Rombel'] || null,
+                  lecturer: row[' Pengampu'] || null,
+                  day,
+                  start_time,
+                  end_time,
+                  room: cleanRuang(row[' Ruang']),
+                  amount: row[' Jml MHS'] || 0,
+              };
+              
+              allTransformedData.push(transformedRow);
           }
       }
-      setValidationErrors(allErrors);
+
       setPreview(allTransformedData);
       setShowPreview(true);
       setCurrentPage(1);
-      if (allErrors.length > 0) { toast.error(`Ditemukan ${allErrors.length} error validasi.`);
-      } else if (allTransformedData.length > 0) { toast.success(`Berhasil memproses ${allTransformedData.length} jadwal dari semua sheet.`);
-      } else { toast.error("Tidak ada data yang dapat dibaca. Pastikan header kolom sudah benar di semua sheet."); }
-    } catch (error) { console.error('Error processing Excel file:', error); toast.error('Gagal memproses file Excel.');
-    } finally { setUploading(false); }
+
+      if (allTransformedData.length > 0) {
+        toast.success(`Berhasil memproses ${allTransformedData.length} jadwal dari semua sheet.`);
+      } else {
+        toast.error("Tidak ada data yang dapat dibaca. Pastikan header kolom sudah benar di semua sheet.");
+      }
+
+    } catch (error) {
+      console.error('Error processing Excel file:', error);
+      toast.error('Gagal memproses file Excel.');
+    } finally {
+      setUploading(false);
+    }
   };
 
-  // --- UPDATED: Added logic to delete old data before uploading new data ---
   const handleUpload = async () => {
-    if (!preview.length || validationErrors.length > 0) {
-      toast.error('Tidak ada data valid untuk diunggah.');
+    if (!preview.length) {
+      toast.error('Tidak ada data untuk diunggah.');
       return;
     }
     
@@ -148,19 +155,15 @@ const ExcelUploadModal: React.FC<ExcelUploadModalProps> = ({ isOpen, onClose, on
     const loadingToast = toast.loading('Menghapus jadwal lama dan mengunggah yang baru...');
 
     try {
-      // Step 1: Delete all existing schedules from the table
       console.log('Menghapus jadwal kuliah lama...');
       const { error: deleteError } = await supabase
         .from('lecture_schedules')
         .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000'); // Target semua baris untuk dihapus
+        .neq('id', '00000000-0000-0000-0000-000000000000');
 
-      if (deleteError) {
-        throw deleteError;
-      }
+      if (deleteError) throw deleteError;
       console.log('Jadwal lama berhasil dihapus.');
 
-      // Step 2: Prepare and insert new schedule data in batches
       const scheduleData = preview.map(schedule => ({
         subject_study: schedule.subject_study, course_code: schedule.course_code, course_name: schedule.course_name,
         semester: schedule.semester, kurikulum: schedule.kurikulum, academics_year: schedule.academics_year,
@@ -176,9 +179,7 @@ const ExcelUploadModal: React.FC<ExcelUploadModalProps> = ({ isOpen, onClose, on
         
         const { error: insertError } = await supabase.from('lecture_schedules').insert(batch);
         
-        if (insertError) {
-          throw insertError;
-        }
+        if (insertError) throw insertError;
       }
 
       toast.dismiss(loadingToast);
@@ -209,7 +210,7 @@ const ExcelUploadModal: React.FC<ExcelUploadModalProps> = ({ isOpen, onClose, on
         <div className="p-6 border-b border-gray-200"> <div className="flex items-center justify-between"> <h3 className="text-xl font-semibold text-gray-900">Unggah Jadwal Kuliah</h3> <button onClick={onClose} className="text-gray-400 hover:text-gray-600"> <X className="h-6 w-6" /> </button> </div> </div>
         <div className="p-6 flex-1 overflow-y-auto">
           {!showPreview ? ( <div className="space-y-6"> <div {...getRootProps()} className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${ isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400' }`} > <input {...getInputProps()} /> <FileSpreadsheet className="h-12 w-12 text-gray-400 mx-auto mb-4" /> <p className="text-lg font-medium text-gray-700 mb-1"> {isDragActive ? 'Letakkan file di sini' : 'Seret & letakkan file Excel di sini'} </p> <p className="text-sm text-gray-500 mb-4"> atau klik untuk memilih file </p> <p className="text-xs text-gray-400"> Format yang didukung: .xlsx, .xls </p> </div> <div className="bg-blue-50 border border-blue-200 rounded-lg p-4"> <div className="flex items-start space-x-3"> <AlertCircle className="h-5 w-5 text-blue-500 mt-0.5" /> <div> <h4 className="text-sm font-medium text-blue-800 mb-1">Persyaratan Format Excel</h4> <p className="text-xs text-blue-700 mb-2"> Pastikan header kolom di file Excel Anda sama persis (termasuk spasi) dengan template. </p> <ul className="text-xs text-blue-700 grid grid-cols-2 gap-x-4"> <li>No.</li> <li> Prodi</li> <li> Kode / Nama</li> <li> Semester MK</li> <li> Kurikulum</li> <li> TA</li> <li> Semester</li> <li> Jenis</li> <li> Rombel</li> <li> Sks Rombel</li> <li> Pengampu</li> <li> Jadwal hari</li> <li> Ruang</li> <li> Jml MHS</li> </ul> <div className="mt-3"> <button onClick={(e) => { e.stopPropagation(); downloadSampleTemplate(); }} className="flex items-center space-x-1 text-xs font-medium text-blue-600 hover:text-blue-800" > <Download className="h-3 w-3" /> <span>Unduh Template Contoh</span> </button> </div> </div> </div> </div> </div> )
-          : ( <div className="space-y-4 flex-1 flex flex-col h-full"> <div className="flex items-center justify-between"> <h4 className="text-lg font-medium text-gray-900"> Preview ({preview.length} jadwal) </h4> <button onClick={() => { setShowPreview(false); setFile(null); setPreview([]); setValidationErrors([]); setCurrentPage(1); }} className="text-sm text-blue-600 hover:text-blue-800 font-medium" > Unggah file lain </button> </div> {validationErrors.length > 0 && ( <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4"> <div className="flex items-start space-x-3"> <AlertCircle className="h-5 w-5 text-red-500 mt-0.5" /> <div> <h4 className="text-sm font-medium text-red-800 mb-1">Error Validasi</h4> <div className="max-h-40 overflow-y-auto"> <ul className="text-xs text-red-700 list-disc list-inside space-y-1"> {validationErrors.slice(0, 10).map((error, index) => ( <li key={index}>{error}</li> ))} {validationErrors.length > 10 && ( <li>...dan {validationErrors.length - 10} error lainnya</li> )} </ul> </div> </div> </div> </div> )}
+          : ( <div className="space-y-4 flex-1 flex flex-col h-full"> <div className="flex items-center justify-between"> <h4 className="text-lg font-medium text-gray-900"> Preview ({preview.length} jadwal) </h4> <button onClick={() => { setShowPreview(false); setFile(null); setPreview([]); setValidationErrors([]); setCurrentPage(1); }} className="text-sm text-blue-600 hover:text-blue-800 font-medium" > Unggah file lain </button> </div> {validationErrors.length > 0 && ( <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4"> <div className="flex items-start space-x-3"> <AlertCircle className="h-5 w-5 text-yellow-500 mt-0.5" /> <div> <h4 className="text-sm font-medium text-yellow-800 mb-1">Peringatan Pemrosesan</h4> <p className="text-xs text-yellow-700">{validationErrors.length} baris memiliki format 'Jadwal hari' yang tidak valid dan akan diimpor tanpa jadwal.</p> </div> </div> </div> )}
               <div className="border border-gray-200 rounded-lg overflow-hidden flex-1 flex flex-col">
                 <div className="overflow-auto flex-grow">
                   <table className="w-full text-sm">
@@ -236,7 +237,7 @@ const ExcelUploadModal: React.FC<ExcelUploadModalProps> = ({ isOpen, onClose, on
         
         <div className="flex justify-end space-x-3 p-6 border-t border-gray-200">
           <button onClick={onClose} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"> Batal </button>
-          {showPreview && ( <button onClick={handleUpload} disabled={uploading || validationErrors.length > 0} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50" > {uploading ? ( <> <Loader2 className="h-4 w-4 animate-spin" /> <span>Mengunggah...</span> </> ) : ( <> <CheckCircle className="h-4 w-4" /> <span>Unggah Jadwal</span> </> )} </button> )}
+          {showPreview && ( <button onClick={handleUpload} disabled={uploading} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50" > {uploading ? ( <> <Loader2 className="h-4 w-4 animate-spin" /> <span>Mengunggah...</span> </> ) : ( <> <CheckCircle className="h-4 w-4" /> <span>Unggah Jadwal</span> </> )} </button> )}
         </div>
       </div>
     </div>
