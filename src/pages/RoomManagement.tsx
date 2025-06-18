@@ -45,7 +45,7 @@ const RoomManagement: React.FC = () => {
   const normalizeRoomName = (name: string): string => {
     if (!name) return '';
     // Mengubah ke huruf kecil, menghapus spasi, titik, & dan karakter non-alfanumerik lainnya
-    return name.toLowerCase().replace(/[\s.&-]/g, '');
+    return name.toLowerCase().replace(/[\s.-]/g, '');
   };
 
   const updateRoomStatuses = useCallback(async () => {
