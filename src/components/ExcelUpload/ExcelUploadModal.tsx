@@ -25,9 +25,9 @@ import {
   ChevronRight,
 } from 'lucide-react';
 // --- UPDATED: Corrected the import path ---
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../hooks/useAuth';
-import { Room, User as UserType, Department, StudyProgram } from '../types';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../hooks/useAuth';
+import { Room, User as UserType, Department, StudyProgram } from '../../types';
 import toast from 'react-hot-toast';
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval } from 'date-fns';
 import ExcelUploadModal from '../components/ExcelUpload/ExcelUploadModal';
@@ -263,7 +263,7 @@ const LectureSchedules: React.FC = () => {
             </div>
         ) : (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-6"> <h3 className="text-lg font-semibold text-gray-900"> Week of {format(startOfWeek(currentWeek, { weekStartsOn: 1 }), 'MMM d,<x_bin_342>')} </h3> <div className="flex items-center space-x-2"> <button onClick={() => setCurrentWeek(addDays(currentWeek, -7))} className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"> ← </button> <button onClick={() => setCurrentWeek(new Date())} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"> Today </button> <button onClick={() => setCurrentWeek(addDays(currentWeek, 7))} className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"> → </button> </div> </div>
+                <div className="flex items-center justify-between mb-6"> <h3 className="text-lg font-semibold text-gray-900"> Week of {format(startOfWeek(currentWeek, { weekStartsOn: 1 }), 'MMM d, yyyy')} </h3> <div className="flex items-center space-x-2"> <button onClick={() => setCurrentWeek(addDays(currentWeek, -7))} className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"> ← </button> <button onClick={() => setCurrentWeek(new Date())} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"> Today </button> <button onClick={() => setCurrentWeek(addDays(currentWeek, 7))} className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"> → </button> </div> </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
                     {getWeekDays().map((day, index) => (
                     <div key={index} className="min-h-[200px] bg-gray-50 p-2 rounded-lg">
