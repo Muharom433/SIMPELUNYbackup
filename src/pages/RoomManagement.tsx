@@ -73,7 +73,7 @@ const RoomManagement: React.FC = () => {
         let status: RoomWithDetails['status'] = 'Available';
 
         if (roomSchedules.length > 0) {
-          const isCurrentlyInUse = roomSchedules.some(schedule => {
+          const isCurrentlyScheduled = roomSchedules.some(schedule => {
             if (!schedule.start_time || !schedule.end_time) return false;
             try {
               const startTime = parse(schedule.start_time, 'HH:mm:ss', new Date());
@@ -81,7 +81,7 @@ const RoomManagement: React.FC = () => {
               return now >= startTime && now <= endTime;
             } catch (e) { return false; }
           });
-          status = isCurrentlyInUse ? 'Scheduled' : 'Scheduled';
+          status = isCurrentlyScheduled ? 'Scheduled' : 'Scheduled';
         }
         return { ...room, department: room.department, status };
       });
