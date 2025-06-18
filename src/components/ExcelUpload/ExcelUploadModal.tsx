@@ -30,7 +30,6 @@ import { useAuth } from '../../hooks/useAuth';
 import { Room, User as UserType, Department, StudyProgram } from '../../types';
 import toast from 'react-hot-toast';
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval } from 'date-fns';
-import ExcelUploadModal from '../components/ExcelUpload/ExcelUploadModal';
 import * as XLSX from 'xlsx';
 
 const scheduleSchema = z.object({
@@ -289,7 +288,42 @@ const LectureSchedules: React.FC = () => {
       
       {showModal && ( <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"> <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"> <div className="p-6"> <div className="flex items-center justify-between mb-6"> <h3 className="text-lg font-semibold text-gray-900"> {editingSchedule ? 'Edit Schedule' : 'Add New Schedule'} </h3> <button onClick={() => { setShowModal(false); setEditingSchedule(null); form.reset(); }} className="text-gray-400 hover:text-gray-600" > <X className="h-6 w-6" /> </button> </div> <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4"> <div className="grid grid-cols-2 gap-4"> <div><label className="block text-sm font-medium text-gray-700 mb-1">Course Name *</label><input {...form.register('course_name')} type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Course Code *</label><input {...form.register('course_code')} type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> </div> <div className="grid grid-cols-2 gap-4"> <div><label className="block text-sm font-medium text-gray-700 mb-1">Lecturer *</label><input {...form.register('lecturer')} type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Room *</label><input {...form.register('room')} type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> </div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Study Program *</label><input {...form.register('subject_study')} type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> <div className="grid grid-cols-3 gap-4"> <div><label className="block text-sm font-medium text-gray-700 mb-1">Day *</label><input {...form.register('day')} type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Start Time *</label><input {...form.register('start_time')} type="time" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">End Time *</label><input {...form.register('end_time')} type="time" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> </div> <div className="grid grid-cols-3 gap-4"> <div><label className="block text-sm font-medium text-gray-700 mb-1">Semester *</label><input {...form.register('semester', { valueAsNumber: true })} type="number" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Academic Year *</label><input {...form.register('academics_year', { valueAsNumber: true })} type="number" placeholder="2024" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Amount *</label><input {...form.register('amount', { valueAsNumber: true })} type="number" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> </div> <div className="grid grid-cols-2 gap-4"> <div><label className="block text-sm font-medium text-gray-700 mb-1">Class Type *</label><select {...form.register('type')} className="w-full px-3 py-2 border border-gray-300 rounded-lg"><option value="theory">Theory</option><option value="practical">Practical</option></select></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Kurikulum</label><input {...form.register('kurikulum')} type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> </div> <div className="flex space-x-3 pt-4"><button type="button" onClick={() => { setShowModal(false); setEditingSchedule(null); form.reset(); }} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button><button type="submit" disabled={loading} className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50">{loading ? 'Saving...' : editingSchedule ? 'Update' : 'Create'}</button></div> </form> </div> </div> </div> )}
       {showDeleteConfirm && ( <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"> <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6"> <div className="flex items-center mb-4"> <div className="flex-shrink-0"> <AlertCircle className="h-6 w-6 text-red-600" /> </div> <div className="ml-3"> <h3 className="text-lg font-medium text-gray-900">Delete Schedule</h3> </div> </div> <p className="text-sm text-gray-500 mb-6"> Are you sure you want to delete this lecture schedule? This action cannot be undone. </p> <div className="flex space-x-3"> <button onClick={() => setShowDeleteConfirm(null)} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50" > Cancel </button> <button onClick={() => handleDelete(showDeleteConfirm as string)} disabled={loading} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50" > {loading ? 'Deleting...' : 'Delete'} </button> </div> </div> </div> )}
-      <ExcelUploadModal isOpen={showUploadModal} onClose={() => setShowUploadModal(false)} onSuccess={() => { fetchSchedules(); toast.success('Schedules imported successfully'); }}/>
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Import Excel</h3>
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Upload an Excel file to import lecture schedules. The file should contain the required columns.
+            </p>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowUploadModal(false);
+                  fetchSchedules();
+                  toast.success('Schedules imported successfully');
+                }}
+                className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
+              >
+                Import
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
