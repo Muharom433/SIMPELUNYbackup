@@ -48,24 +48,18 @@ const RoomManagement: React.FC = () => {
     return name.toLowerCase().replace(/[\s.-]/g, '');
   };
 
-  const updateRoomStatuses = useCallback(async () => {
+    const updateRoomStatuses = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      const { data: roomsData, error: roomsError } = await supabase
-        .from('rooms')
-        .select(`*, department:departments(*)`);
+      const { data: roomsData, error: roomsError } = await supabase.from('rooms').select(`*, department:departments(*)`);
       if (roomsError) throw roomsError;
 
       const now = new Date();
       const todayDayName = format(now, 'EEEE', { locale: localeID });
 
-      const { data: schedulesData, error: schedulesError } = await supabase
-        .from('lecture_schedules')
-        .select('room, start_time, end_time, day')
-        .eq('day', todayDayName);
+      const { data: schedulesData, error: schedulesError } = await supabase.from('lecture_schedules').select('room, start_time, end_time, day').eq('day', todayDayName);
       if (schedulesError) throw schedulesError;
 
-      // --- UPDATED: Menggunakan nama ruangan yang dinormalisasi sebagai kunci ---
       const scheduleMap = new Map<string, LectureSchedule[]>();
       schedulesData.forEach(schedule => {
         if (schedule.room) {
@@ -78,10 +72,8 @@ const RoomManagement: React.FC = () => {
       });
       
       const roomsWithStatus = roomsData.map(room => {
-        // --- UPDATED: Mencari jadwal menggunakan nama ruangan yang dinormalisasi ---
         const normalizedRoomName = normalizeRoomName(room.name);
         const roomSchedules = scheduleMap.get(normalizedRoomName) || [];
-        
         let status: RoomWithDetails['status'] = 'Available';
 
         if (roomSchedules.length > 0) {
@@ -97,8 +89,8 @@ const RoomManagement: React.FC = () => {
         }
         return { ...room, department: room.department, status };
       });
-
       setRooms(roomsWithStatus as RoomWithDetails[]);
+      setLastRefresh(new Date()); // Catat waktu refresh
     } catch (error) {
       console.error('Error updating room statuses:', error);
       toast.error('Failed to refresh room statuses.');
@@ -106,7 +98,7 @@ const RoomManagement: React.FC = () => {
       setIsRefreshing(false);
       setLoading(false);
     }
-  }, [profile, departments]); // dependensi diperbarui
+  }, [profile]);
 
   
   useEffect(() => {
