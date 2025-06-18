@@ -30,7 +30,7 @@ interface RoomWithDetails extends Room {
 const RoomManagement: React.FC = () => {
   const { profile } = useAuth();
   const [rooms, setRooms] = useState<RoomWithDetails[]>([]);
-   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
