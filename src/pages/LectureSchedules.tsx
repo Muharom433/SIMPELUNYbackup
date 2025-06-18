@@ -85,7 +85,6 @@ const LectureSchedules: React.FC = () => {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   
-  // --- ADDED: State for Sorting and Pagination ---
   const [sortConfig, setSortConfig] = useState<{ key: keyof LectureSchedule; direction: 'ascending' | 'descending' } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
@@ -99,11 +98,11 @@ const LectureSchedules: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  const fetchSchedules = async () => { /* ... (fungsi tetap sama) ... */ try { setLoading(true); const { data, error } = await supabase.from('lecture_schedules').select(`*`).order('day', { ascending: true }).order('start_time', { ascending: true }); if (error) throw error; setSchedules(data || []); } catch (error: any) { console.error('Error fetching schedules:', error); toast.error(error.message || 'Failed to load lecture schedules'); } finally { setLoading(false); } };
-  const handleSubmit = async (data: ScheduleForm) => { /* ... (fungsi tetap sama) ... */ try { setLoading(true); const scheduleData = { course_name: data.course_name, course_code: data.course_code, lecturer: data.lecturer, room: data.room, subject_study: data.subject_study, day: data.day, start_time: data.start_time, end_time: data.end_time, semester: data.semester, academics_year: data.academics_year, type: data.type, class: data.class, amount: data.amount, kurikulum: data.kurikulum, }; if (editingSchedule) { const { error } = await supabase.from('lecture_schedules').update(scheduleData).eq('id', editingSchedule.id); if (error) throw error; toast.success('Schedule updated successfully'); } else { const { error } = await supabase.from('lecture_schedules').insert(scheduleData); if (error) throw error; toast.success('Schedule created successfully'); } setShowModal(false); setEditingSchedule(null); form.reset(); fetchSchedules(); } catch (error: any) { console.error('Error saving schedule:', error); toast.error(error.message || 'Failed to save schedule'); } finally { setLoading(false); } };
-  const handleEdit = (schedule: LectureSchedule) => { /* ... (fungsi tetap sama) ... */ setEditingSchedule(schedule); form.reset({ course_name: schedule.course_name, course_code: schedule.course_code, lecturer: schedule.lecturer, room: schedule.room, subject_study: schedule.subject_study, day: schedule.day, start_time: schedule.start_time, end_time: schedule.end_time, semester: schedule.semester, academics_year: schedule.academics_year, type: schedule.type, class: schedule.class, amount: schedule.amount, kurikulum: schedule.kurikulum, }); setShowModal(true); };
-  const handleDelete = async (scheduleId: string) => { /* ... (fungsi tetap sama) ... */ try { setLoading(true); const { error } = await supabase.from('lecture_schedules').delete().eq('id', scheduleId); if (error) throw error; toast.success('Schedule deleted successfully'); setShowDeleteConfirm(null); fetchSchedules(); } catch (error: any) { console.error('Error deleting schedule:', error); toast.error(error.message || 'Failed to delete schedule'); } finally { setLoading(false); } };
-  const handleExportExcel = () => { /* ... (fungsi tetap sama) ... */ try { const exportData = filteredSchedules.map(schedule => ({ 'Subject Code': schedule.course_code, 'Subject Name': schedule.course_name, 'Day': schedule.day, 'Start Time': schedule.start_time, 'End Time': schedule.end_time, 'Room': schedule.room, 'Lecturer': schedule.lecturer, 'Study Program': schedule.subject_study, 'Semester': schedule.semester, 'Academic Year': schedule.academics_year, 'Class Type': schedule.type, 'Class': schedule.class, 'Amount': schedule.amount, })); const worksheet = XLSX.utils.json_to_sheet(exportData); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, 'Schedules'); XLSX.writeFile(workbook, 'lecture_schedules.xlsx'); toast.success('Schedules exported successfully'); } catch (error) { console.error('Error exporting schedules:', error); toast.error('Failed to export schedules'); } };
+  const fetchSchedules = async () => { try { setLoading(true); const { data, error } = await supabase.from('lecture_schedules').select(`*`).order('day', { ascending: true }).order('start_time', { ascending: true }); if (error) throw error; setSchedules(data || []); } catch (error: any) { console.error('Error fetching schedules:', error); toast.error(error.message || 'Failed to load lecture schedules'); } finally { setLoading(false); } };
+  const handleSubmit = async (data: ScheduleForm) => { try { setLoading(true); const scheduleData = { course_name: data.course_name, course_code: data.course_code, lecturer: data.lecturer, room: data.room, subject_study: data.subject_study, day: data.day, start_time: data.start_time, end_time: data.end_time, semester: data.semester, academics_year: data.academics_year, type: data.type, class: data.class, amount: data.amount, kurikulum: data.kurikulum, }; if (editingSchedule) { const { error } = await supabase.from('lecture_schedules').update(scheduleData).eq('id', editingSchedule.id); if (error) throw error; toast.success('Schedule updated successfully'); } else { const { error } = await supabase.from('lecture_schedules').insert(scheduleData); if (error) throw error; toast.success('Schedule created successfully'); } setShowModal(false); setEditingSchedule(null); form.reset(); fetchSchedules(); } catch (error: any) { console.error('Error saving schedule:', error); toast.error(error.message || 'Failed to save schedule'); } finally { setLoading(false); } };
+  const handleEdit = (schedule: LectureSchedule) => { setEditingSchedule(schedule); form.reset({ course_name: schedule.course_name, course_code: schedule.course_code, lecturer: schedule.lecturer, room: schedule.room, subject_study: schedule.subject_study, day: schedule.day, start_time: schedule.start_time, end_time: schedule.end_time, semester: schedule.semester, academics_year: schedule.academics_year, type: schedule.type, class: schedule.class, amount: schedule.amount, kurikulum: schedule.kurikulum, }); setShowModal(true); };
+  const handleDelete = async (scheduleId: string) => { try { setLoading(true); const { error } = await supabase.from('lecture_schedules').delete().eq('id', scheduleId); if (error) throw error; toast.success('Schedule deleted successfully'); setShowDeleteConfirm(null); fetchSchedules(); } catch (error: any) { console.error('Error deleting schedule:', error); toast.error(error.message || 'Failed to delete schedule'); } finally { setLoading(false); } };
+  const handleExportExcel = () => { try { const exportData = filteredSchedules.map(schedule => ({ 'Subject Code': schedule.course_code, 'Subject Name': schedule.course_name, 'Day': schedule.day, 'Start Time': schedule.start_time, 'End Time': schedule.end_time, 'Room': schedule.room, 'Lecturer': schedule.lecturer, 'Study Program': schedule.subject_study, 'Semester': schedule.semester, 'Academic Year': schedule.academics_year, 'Class Type': schedule.type, 'Class': schedule.class, 'Amount': schedule.amount, })); const worksheet = XLSX.utils.json_to_sheet(exportData); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, 'Schedules'); XLSX.writeFile(workbook, 'lecture_schedules.xlsx'); toast.success('Schedules exported successfully'); } catch (error) { console.error('Error exporting schedules:', error); toast.error('Failed to export schedules'); } };
   
   const filteredSchedules = useMemo(() => {
     return schedules.filter(schedule => {
@@ -120,7 +119,6 @@ const LectureSchedules: React.FC = () => {
     });
   }, [schedules, searchTerm, semesterFilter, dayFilter]);
   
-  // --- ADDED: Sorting Logic ---
   const sortedSchedules = useMemo(() => {
     let sortableItems = [...filteredSchedules];
     if (sortConfig !== null) {
@@ -143,16 +141,33 @@ const LectureSchedules: React.FC = () => {
       direction = 'descending';
     }
     setSortConfig({ key, direction });
+    setCurrentPage(1); // Reset to first page on sort
   };
 
-  // --- ADDED: Pagination Logic ---
+  // --- UPDATED: All pagination logic is now self-contained ---
   const totalPages = Math.ceil(sortedSchedules.length / rowsPerPage);
   const startIndex = (currentPage - 1) * rowsPerPage;
-  const currentTableData = sortedSchedules.slice(startIndex, startIndex + rowsPerPage);
+  const endIndex = startIndex + rowsPerPage;
+  const currentTableData = sortedSchedules.slice(startIndex, endIndex);
 
-  const getWeekDays = () => { /* ... (fungsi tetap sama) ... */ const start = startOfWeek(currentWeek, { weekStartsOn: 1 }); const end = endOfWeek(currentWeek, { weekStartsOn: 1 }); return eachDayOfInterval({ start, end }); };
+  const getWeekDays = () => { const start = startOfWeek(currentWeek, { weekStartsOn: 1 }); const end = endOfWeek(currentWeek, { weekStartsOn: 1 }); return eachDayOfInterval({ start, end }); };
   const getSchedulesForDay = (day: Date) => { const dayName = format(day, 'EEEE'); return filteredSchedules.filter(schedule => schedule.day.toLowerCase() === dayName.toLowerCase()); };
-  const isScheduleActive = (schedule: LectureSchedule) => { const currentDayName = format(currentTime, 'EEEE'); if (schedule.day.toLowerCase() !== currentDayName.toLowerCase()) { return false; } try { const now = currentTime; const [startHour, startMinute] = schedule.start_time.split(':').map(Number); const [endHour, endMinute] = schedule.end_time.split(':').map(Number); const startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), startHour, startMinute); const endTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), endHour, endMinute); return now >= startTime && now <= endTime; } catch (e) { return false; } };
+  const isScheduleActive = (schedule: LectureSchedule) => {
+    const currentDayName = format(currentTime, 'EEEE');
+    if (schedule.day?.toLowerCase() !== currentDayName.toLowerCase() || !schedule.start_time || !schedule.end_time) {
+        return false;
+    }
+    try {
+        const now = currentTime;
+        const [startHour, startMinute] = schedule.start_time.split(':').map(Number);
+        const [endHour, endMinute] = schedule.end_time.split(':').map(Number);
+        const startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), startHour, startMinute);
+        const endTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), endHour, endMinute);
+        return now >= startTime && now <= endTime;
+    } catch (e) {
+        return false;
+    }
+  };
 
   if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
     return ( <div className="flex items-center justify-center h-64"> <div className="text-center"> <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" /> <h3 className="text-lg font-medium text-gray-900 mb-2">Access Denied</h3> <p className="text-gray-600">You don't have permission to access lecture schedules.</p> </div> </div> );
@@ -167,31 +182,20 @@ const LectureSchedules: React.FC = () => {
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full">
-                        {/* --- UPDATED: Table Headers are now clickable for sorting --- */}
                         <thead className="bg-gray-50 border-b border-gray-200">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    <button onClick={() => requestSort('course_name')} className="flex items-center space-x-1"><span>Subject</span><ArrowUpDown size={14}/></button>
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    <button onClick={() => requestSort('lecturer')} className="flex items-center space-x-1"><span>Lecturer</span><ArrowUpDown size={14}/></button>
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    <button onClick={() => requestSort('room')} className="flex items-center space-x-1"><span>Room</span><ArrowUpDown size={14}/></button>
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    <button onClick={() => requestSort('day')} className="flex items-center space-x-1"><span>Schedule</span><ArrowUpDown size={14}/></button>
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    <button onClick={() => requestSort('semester')} className="flex items-center space-x-1"><span>Details</span><ArrowUpDown size={14}/></button>
-                                </th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"><button onClick={() => requestSort('course_name')} className="flex items-center space-x-1"><span>Subject</span><ArrowUpDown size={14}/></button></th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"><button onClick={() => requestSort('lecturer')} className="flex items-center space-x-1"><span>Lecturer</span><ArrowUpDown size={14}/></button></th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"><button onClick={() => requestSort('room')} className="flex items-center space-x-1"><span>Room</span><ArrowUpDown size={14}/></button></th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"><button onClick={() => requestSort('day')} className="flex items-center space-x-1"><span>Schedule</span><ArrowUpDown size={14}/></button></th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"><button onClick={() => requestSort('semester')} className="flex items-center space-x-1"><span>Details</span><ArrowUpDown size={14}/></button></th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                             {loading ? ( <tr> <td colSpan={6} className="px-6 py-12 text-center"> <div className="flex items-center justify-center"> <RefreshCw className="h-6 w-6 animate-spin text-teal-600 mr-2" /> <span className="text-gray-600">Loading schedules...</span> </div> </td> </tr> )
                             : currentTableData.length === 0 ? ( <tr> <td colSpan={6} className="px-6 py-12 text-center"> <div className="text-gray-500"> <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" /> <p className="text-lg font-medium mb-2">No schedules found</p> <p>Try adjusting your search or create a new schedule</p> </div> </td> </tr> )
-                            : ( currentTableData.map((schedule) => { const isActive = isScheduleActive(schedule); return ( <tr key={schedule.id} className={`hover:bg-gray-50 ${isActive ? 'bg-green-100 ring-2 ring-green-300' : ''}`}>
+                            : ( currentTableData.map((schedule) => { const isActive = isScheduleActive(schedule); return ( <tr key={schedule.id} className={`hover:bg-gray-50 ${isActive ? 'bg-green-100' : ''}`}>
                                 <td className="px-6 py-4 whitespace-nowrap"><div className="text-sm font-medium text-gray-900">{schedule.course_name}</div><div className="text-sm text-gray-500">{schedule.course_code}</div></td>
                                 <td className="px-6 py-4 whitespace-nowrap"><div className="text-sm font-medium text-gray-900">{schedule.lecturer}</div></td>
                                 <td className="px-6 py-4 whitespace-nowrap"><div className="text-sm font-medium text-gray-900">{schedule.room}</div></td>
@@ -202,7 +206,6 @@ const LectureSchedules: React.FC = () => {
                         </tbody>
                     </table>
                 </div>
-                {/* --- ADDED: Pagination Controls --- */}
                 <div className="flex justify-between items-center px-4 py-2 bg-gray-50 border-t border-gray-200">
                   <span className="text-sm text-gray-600">
                     Showing {sortedSchedules.length > 0 ? startIndex + 1 : 0} to {Math.min(endIndex, sortedSchedules.length)} of {sortedSchedules.length} entries
