@@ -41,6 +41,13 @@ const RoomManagement: React.FC = () => {
 
   const form = useForm<RoomForm>({ resolver: zodResolver(roomSchema) });
 
+    // Letakkan fungsi helper ini di dalam komponen RoomManagement, di atas fungsi updateRoomStatuses
+  const normalizeRoomName = (name: string): string => {
+    if (!name) return '';
+    // Mengubah ke huruf kecil, menghapus spasi, titik, & dan karakter non-alfanumerik lainnya
+    return name.toLowerCase().replace(/[\s.&-]/g, '');
+  };
+
   const updateRoomStatuses = useCallback(async () => {
     setIsRefreshing(true);
     try {
@@ -58,22 +65,27 @@ const RoomManagement: React.FC = () => {
         .eq('day', todayDayName);
       if (schedulesError) throw schedulesError;
 
+      // --- UPDATED: Menggunakan nama ruangan yang dinormalisasi sebagai kunci ---
       const scheduleMap = new Map<string, LectureSchedule[]>();
       schedulesData.forEach(schedule => {
         if (schedule.room) {
-          if (!scheduleMap.has(schedule.room)) {
-            scheduleMap.set(schedule.room, []);
+          const normalizedName = normalizeRoomName(schedule.room);
+          if (!scheduleMap.has(normalizedName)) {
+            scheduleMap.set(normalizedName, []);
           }
-          scheduleMap.get(schedule.room)?.push(schedule);
+          scheduleMap.get(normalizedName)?.push(schedule);
         }
       });
       
       const roomsWithStatus = roomsData.map(room => {
-        const roomSchedules = scheduleMap.get(room.name) || [];
+        // --- UPDATED: Mencari jadwal menggunakan nama ruangan yang dinormalisasi ---
+        const normalizedRoomName = normalizeRoomName(room.name);
+        const roomSchedules = scheduleMap.get(normalizedRoomName) || [];
+        
         let status: RoomWithDetails['status'] = 'Available';
 
         if (roomSchedules.length > 0) {
-          const isCurrentlyScheduled = roomSchedules.some(schedule => {
+          const isCurrentlyInUse = roomSchedules.some(schedule => {
             if (!schedule.start_time || !schedule.end_time) return false;
             try {
               const startTime = parse(schedule.start_time, 'HH:mm:ss', new Date());
@@ -81,11 +93,13 @@ const RoomManagement: React.FC = () => {
               return now >= startTime && now <= endTime;
             } catch (e) { return false; }
           });
-          status = isCurrentlyScheduled ? 'Scheduled' : 'In Use';
+          status = isCurrentlyInUse ? 'In Use' : 'Scheduled';
         }
         return { ...room, department: room.department, status };
       });
+
       setRooms(roomsWithStatus as RoomWithDetails[]);
+      toast.success('Room statuses updated!');
     } catch (error) {
       console.error('Error updating room statuses:', error);
       toast.error('Failed to refresh room statuses.');
@@ -93,7 +107,8 @@ const RoomManagement: React.FC = () => {
       setIsRefreshing(false);
       setLoading(false);
     }
-  }, [profile]);
+  }, [profile, departments]); // dependensi diperbarui
+
   
   useEffect(() => {
     if (profile) {
