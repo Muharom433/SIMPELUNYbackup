@@ -24,7 +24,6 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
-// --- UPDATED: Corrected the import path ---
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { Room, User as UserType, Department, StudyProgram } from '../types';
@@ -54,21 +53,22 @@ type ScheduleForm = z.infer<typeof scheduleSchema>;
 
 interface LectureSchedule {
   id: string;
-  course_name: string;
-  course_code: string;
-  lecturer: string;
-  room: string;
-  subject_study: string;
-  day: string;
-  start_time: string;
-  end_time: string;
-  semester: number;
-  academics_year: number;
+  subject_study: string | null;
+  course_code: string | null;
+  course_name: string | null;
+  semester: number | null;
+  kurikulum: string | null;
+  academics_year: number | null;
   type: 'theory' | 'practical';
-  class: string;
-  amount: number;
-  kurikulum?: string;
+  class: string | null;
+  lecturer: string | null;
+  day: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  room: string | null;
+  amount: number | null;
   created_at: string;
+  updated_at: string;
 }
 
 const LectureSchedules: React.FC = () => {
@@ -117,11 +117,20 @@ const LectureSchedules: React.FC = () => {
     try {
       setLoading(true);
       const scheduleData = {
-        course_name: data.course_name, course_code: data.course_code, lecturer: data.lecturer,
-        room: data.room, subject_study: data.subject_study, day: data.day,
-        start_time: data.start_time, end_time: data.end_time, semester: data.semester,
-        academics_year: data.academics_year, type: data.type, class: data.class,
-        amount: data.amount, kurikulum: data.kurikulum,
+        course_name: data.course_name, 
+        course_code: data.course_code, 
+        lecturer: data.lecturer,
+        room: data.room, 
+        subject_study: data.subject_study, 
+        day: data.day,
+        start_time: data.start_time, 
+        end_time: data.end_time, 
+        semester: data.semester,
+        academics_year: data.academics_year, 
+        type: data.type, 
+        class: data.class,
+        amount: data.amount, 
+        kurikulum: data.kurikulum,
       };
       if (editingSchedule) {
         const { error } = await supabase.from('lecture_schedules').update(scheduleData).eq('id', editingSchedule.id);
@@ -147,17 +156,67 @@ const LectureSchedules: React.FC = () => {
   const handleEdit = (schedule: LectureSchedule) => {
     setEditingSchedule(schedule);
     form.reset({
-        course_name: schedule.course_name, course_code: schedule.course_code, lecturer: schedule.lecturer,
-        room: schedule.room, subject_study: schedule.subject_study, day: schedule.day,
-        start_time: schedule.start_time, end_time: schedule.end_time, semester: schedule.semester,
-        academics_year: schedule.academics_year, type: schedule.type, class: schedule.class,
-        amount: schedule.amount, kurikulum: schedule.kurikulum,
+        course_name: schedule.course_name || '',
+        course_code: schedule.course_code || '',
+        lecturer: schedule.lecturer || '',
+        room: schedule.room || '',
+        subject_study: schedule.subject_study || '',
+        day: schedule.day || '',
+        start_time: schedule.start_time || '',
+        end_time: schedule.end_time || '',
+        semester: schedule.semester || 1,
+        academics_year: schedule.academics_year || new Date().getFullYear(),
+        type: schedule.type || 'theory',
+        class: schedule.class || '',
+        amount: schedule.amount || 0,
+        kurikulum: schedule.kurikulum || '',
     });
     setShowModal(true);
   };
   
-  const handleDelete = async (scheduleId: string) => { try { setLoading(true); const { error } = await supabase.from('lecture_schedules').delete().eq('id', scheduleId); if (error) throw error; toast.success('Schedule deleted successfully'); setShowDeleteConfirm(null); fetchSchedules(); } catch (error: any) { console.error('Error deleting schedule:', error); toast.error(error.message || 'Failed to delete schedule'); } finally { setLoading(false); } };
-  const handleExportExcel = () => { try { const exportData = filteredSchedules.map(schedule => ({ 'Subject Code': schedule.course_code, 'Subject Name': schedule.course_name, 'Day': schedule.day, 'Start Time': schedule.start_time, 'End Time': schedule.end_time, 'Room': schedule.room, 'Lecturer': schedule.lecturer, 'Study Program': schedule.subject_study, 'Semester': schedule.semester, 'Academic Year': schedule.academics_year, 'Class Type': schedule.type, 'Class': schedule.class, 'Amount': schedule.amount, })); const worksheet = XLSX.utils.json_to_sheet(exportData); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, 'Schedules'); XLSX.writeFile(workbook, 'lecture_schedules.xlsx'); toast.success('Schedules exported successfully'); } catch (error) { console.error('Error exporting schedules:', error); toast.error('Failed to export schedules'); } };
+  const handleDelete = async (scheduleId: string) => { 
+    try { 
+      setLoading(true); 
+      const { error } = await supabase.from('lecture_schedules').delete().eq('id', scheduleId); 
+      if (error) throw error; 
+      toast.success('Schedule deleted successfully'); 
+      setShowDeleteConfirm(null); 
+      fetchSchedules(); 
+    } catch (error: any) { 
+      console.error('Error deleting schedule:', error); 
+      toast.error(error.message || 'Failed to delete schedule'); 
+    } finally { 
+      setLoading(false); 
+    } 
+  };
+  
+  const handleExportExcel = () => { 
+    try { 
+      const exportData = filteredSchedules.map(schedule => ({ 
+        'Subject Code': schedule.course_code, 
+        'Subject Name': schedule.course_name, 
+        'Day': schedule.day, 
+        'Start Time': schedule.start_time, 
+        'End Time': schedule.end_time, 
+        'Room': schedule.room, 
+        'Lecturer': schedule.lecturer, 
+        'Study Program': schedule.subject_study, 
+        'Semester': schedule.semester, 
+        'Academic Year': schedule.academics_year, 
+        'Class Type': schedule.type, 
+        'Class': schedule.class, 
+        'Amount': schedule.amount, 
+      })); 
+      const worksheet = XLSX.utils.json_to_sheet(exportData); 
+      const workbook = XLSX.utils.book_new(); 
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Schedules'); 
+      XLSX.writeFile(workbook, 'lecture_schedules.xlsx'); 
+      toast.success('Schedules exported successfully'); 
+    } catch (error) { 
+      console.error('Error exporting schedules:', error); 
+      toast.error('Failed to export schedules'); 
+    } 
+  };
   
   const filteredSchedules = useMemo(() => {
     return schedules.filter(schedule => {
@@ -205,8 +264,17 @@ const LectureSchedules: React.FC = () => {
   const startIndex = (currentPage - 1) * rowsPerPage;
   const currentTableData = sortedSchedules.slice(startIndex, startIndex + rowsPerPage);
 
-  const getWeekDays = () => { const start = startOfWeek(currentWeek, { weekStartsOn: 1 }); const end = endOfWeek(currentWeek, { weekStartsOn: 1 }); return eachDayOfInterval({ start, end }); };
-  const getSchedulesForDay = (day: Date) => { const dayName = format(day, 'EEEE'); return filteredSchedules.filter(schedule => schedule.day?.toLowerCase() === dayName.toLowerCase()); };
+  const getWeekDays = () => { 
+    const start = startOfWeek(currentWeek, { weekStartsOn: 1 }); 
+    const end = endOfWeek(currentWeek, { weekStartsOn: 1 }); 
+    return eachDayOfInterval({ start, end }); 
+  };
+  
+  const getSchedulesForDay = (day: Date) => { 
+    const dayName = format(day, 'EEEE'); 
+    return filteredSchedules.filter(schedule => schedule.day?.toLowerCase() === dayName.toLowerCase()); 
+  };
+  
   const isScheduleActive = (schedule: LectureSchedule) => {
     const currentDayName = format(currentTime, 'EEEE');
     if (schedule.day?.toLowerCase() !== currentDayName.toLowerCase() || !schedule.start_time || !schedule.end_time) {
@@ -263,7 +331,7 @@ const LectureSchedules: React.FC = () => {
             </div>
         ) : (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-6"> <h3 className="text-lg font-semibold text-gray-900"> Week of {format(startOfWeek(currentWeek, { weekStartsOn: 1 }), 'MMM d,<x_bin_342>')} </h3> <div className="flex items-center space-x-2"> <button onClick={() => setCurrentWeek(addDays(currentWeek, -7))} className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"> ← </button> <button onClick={() => setCurrentWeek(new Date())} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"> Today </button> <button onClick={() => setCurrentWeek(addDays(currentWeek, 7))} className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"> → </button> </div> </div>
+                <div className="flex items-center justify-between mb-6"> <h3 className="text-lg font-semibold text-gray-900"> Week of {format(startOfWeek(currentWeek, { weekStartsOn: 1 }), 'MMM d, yyyy')} </h3> <div className="flex items-center space-x-2"> <button onClick={() => setCurrentWeek(addDays(currentWeek, -7))} className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"> ← </button> <button onClick={() => setCurrentWeek(new Date())} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"> Today </button> <button onClick={() => setCurrentWeek(addDays(currentWeek, 7))} className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"> → </button> </div> </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
                     {getWeekDays().map((day, index) => (
                     <div key={index} className="min-h-[200px] bg-gray-50 p-2 rounded-lg">
@@ -289,7 +357,7 @@ const LectureSchedules: React.FC = () => {
       
       {showModal && ( <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"> <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"> <div className="p-6"> <div className="flex items-center justify-between mb-6"> <h3 className="text-lg font-semibold text-gray-900"> {editingSchedule ? 'Edit Schedule' : 'Add New Schedule'} </h3> <button onClick={() => { setShowModal(false); setEditingSchedule(null); form.reset(); }} className="text-gray-400 hover:text-gray-600" > <X className="h-6 w-6" /> </button> </div> <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4"> <div className="grid grid-cols-2 gap-4"> <div><label className="block text-sm font-medium text-gray-700 mb-1">Course Name *</label><input {...form.register('course_name')} type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Course Code *</label><input {...form.register('course_code')} type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> </div> <div className="grid grid-cols-2 gap-4"> <div><label className="block text-sm font-medium text-gray-700 mb-1">Lecturer *</label><input {...form.register('lecturer')} type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Room *</label><input {...form.register('room')} type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> </div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Study Program *</label><input {...form.register('subject_study')} type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> <div className="grid grid-cols-3 gap-4"> <div><label className="block text-sm font-medium text-gray-700 mb-1">Day *</label><input {...form.register('day')} type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Start Time *</label><input {...form.register('start_time')} type="time" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">End Time *</label><input {...form.register('end_time')} type="time" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> </div> <div className="grid grid-cols-3 gap-4"> <div><label className="block text-sm font-medium text-gray-700 mb-1">Semester *</label><input {...form.register('semester', { valueAsNumber: true })} type="number" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Academic Year *</label><input {...form.register('academics_year', { valueAsNumber: true })} type="number" placeholder="2024" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Amount *</label><input {...form.register('amount', { valueAsNumber: true })} type="number" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> </div> <div className="grid grid-cols-2 gap-4"> <div><label className="block text-sm font-medium text-gray-700 mb-1">Class Type *</label><select {...form.register('type')} className="w-full px-3 py-2 border border-gray-300 rounded-lg"><option value="theory">Theory</option><option value="practical">Practical</option></select></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Kurikulum</label><input {...form.register('kurikulum')} type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div> </div> <div className="flex space-x-3 pt-4"><button type="button" onClick={() => { setShowModal(false); setEditingSchedule(null); form.reset(); }} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button><button type="submit" disabled={loading} className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50">{loading ? 'Saving...' : editingSchedule ? 'Update' : 'Create'}</button></div> </form> </div> </div> </div> )}
       {showDeleteConfirm && ( <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"> <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6"> <div className="flex items-center mb-4"> <div className="flex-shrink-0"> <AlertCircle className="h-6 w-6 text-red-600" /> </div> <div className="ml-3"> <h3 className="text-lg font-medium text-gray-900">Delete Schedule</h3> </div> </div> <p className="text-sm text-gray-500 mb-6"> Are you sure you want to delete this lecture schedule? This action cannot be undone. </p> <div className="flex space-x-3"> <button onClick={() => setShowDeleteConfirm(null)} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50" > Cancel </button> <button onClick={() => handleDelete(showDeleteConfirm as string)} disabled={loading} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50" > {loading ? 'Deleting...' : 'Delete'} </button> </div> </div> </div> )}
-      <ExcelUploadModal isOpen={showUploadModal} onClose={() => setShowUploadModal(false)} onSuccess={() => { fetchSchedules(); toast.success('Schedules imported successfully'); }}/>
+      <ExcelUploadModal isOpen={showUploadModal} onClose={() => setShowUploadModal(false)} onSuccess={() => { fetchSchedules(); }}/>
     </div>
   );
 };
