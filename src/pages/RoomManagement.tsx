@@ -99,7 +99,6 @@ const RoomManagement: React.FC = () => {
       });
 
       setRooms(roomsWithStatus as RoomWithDetails[]);
-      toast.success('Room statuses updated!');
     } catch (error) {
       console.error('Error updating room statuses:', error);
       toast.error('Failed to refresh room statuses.');
