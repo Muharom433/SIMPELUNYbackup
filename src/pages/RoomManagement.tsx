@@ -30,7 +30,6 @@ interface RoomWithDetails extends Room {
 const RoomManagement: React.FC = () => {
   const { profile } = useAuth();
   const [rooms, setRooms] = useState<RoomWithDetails[]>([]);
-  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -42,43 +41,39 @@ const RoomManagement: React.FC = () => {
 
   const form = useForm<RoomForm>({ resolver: zodResolver(roomSchema) });
 
-    // Letakkan fungsi helper ini di dalam komponen RoomManagement, di atas fungsi updateRoomStatuses
-  const normalizeRoomName = (name: string): string => {
-    if (!name) return '';
-    // Mengubah ke huruf kecil, menghapus spasi, titik, & dan karakter non-alfanumerik lainnya
-    return name.toLowerCase().replace(/[\s.-]/g, '');
-  };
-
-    const updateRoomStatuses = useCallback(async () => {
+  const updateRoomStatuses = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      const { data: roomsData, error: roomsError } = await supabase.from('rooms').select(`*, department:departments(*)`);
+      const { data: roomsData, error: roomsError } = await supabase
+        .from('rooms')
+        .select(`*, department:departments(*)`);
       if (roomsError) throw roomsError;
 
       const now = new Date();
       const todayDayName = format(now, 'EEEE', { locale: localeID });
 
-      const { data: schedulesData, error: schedulesError } = await supabase.from('lecture_schedules').select('room, start_time, end_time, day').eq('day', todayDayName);
+      const { data: schedulesData, error: schedulesError } = await supabase
+        .from('lecture_schedules')
+        .select('room, start_time, end_time, day')
+        .eq('day', todayDayName);
       if (schedulesError) throw schedulesError;
 
       const scheduleMap = new Map<string, LectureSchedule[]>();
       schedulesData.forEach(schedule => {
         if (schedule.room) {
-          const normalizedName = normalizeRoomName(schedule.room);
-          if (!scheduleMap.has(normalizedName)) {
-            scheduleMap.set(normalizedName, []);
+          if (!scheduleMap.has(schedule.room)) {
+            scheduleMap.set(schedule.room, []);
           }
-          scheduleMap.get(normalizedName)?.push(schedule);
+          scheduleMap.get(schedule.room)?.push(schedule);
         }
       });
       
       const roomsWithStatus = roomsData.map(room => {
-        const normalizedRoomName = normalizeRoomName(room.name);
-        const roomSchedules = scheduleMap.get(normalizedRoomName) || [];
+        const roomSchedules = scheduleMap.get(room.name) || [];
         let status: RoomWithDetails['status'] = 'Available';
 
         if (roomSchedules.length > 0) {
-          const isScheduled = roomSchedules.some(schedule => {
+          const isCurrentlyInUse = roomSchedules.some(schedule => {
             if (!schedule.start_time || !schedule.end_time) return false;
             try {
               const startTime = parse(schedule.start_time, 'HH:mm:ss', new Date());
@@ -86,12 +81,11 @@ const RoomManagement: React.FC = () => {
               return now >= startTime && now <= endTime;
             } catch (e) { return false; }
           });
-          status = isScheduled ? 'Scheduled' : 'In Use';
+          status = isCurrentlyInUse ? 'In Use' : 'Scheduled';
         }
         return { ...room, department: room.department, status };
       });
       setRooms(roomsWithStatus as RoomWithDetails[]);
-      setLastRefresh(new Date()); // Catat waktu refresh
     } catch (error) {
       console.error('Error updating room statuses:', error);
       toast.error('Failed to refresh room statuses.');
@@ -100,7 +94,6 @@ const RoomManagement: React.FC = () => {
       setLoading(false);
     }
   }, [profile]);
-
   
   useEffect(() => {
     if (profile) {
