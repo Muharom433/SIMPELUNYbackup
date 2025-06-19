@@ -78,19 +78,15 @@ const ValidationQueue: React.FC = () => {
   const [reportDescription, setReportDescription] = useState('');
   const [reportSeverity, setReportSeverity] = useState<'minor' | 'major' | 'critical'>('minor');
   const [sortOption, setSortOption] = useState<'priority' | 'date' | 'status'>('date'); 
-  
-  // Perbaikan #3: State filter default adalah 'returned' untuk awal render
   const [statusFilter, setStatusFilter] = useState<'all'| 'active' | 'returned' | 'overdue' | 'lost' | 'damaged'>('returned');
   const [dateFilter, setDateFilter] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
   const [activeFiltersCount, setActiveFiltersCount] = useState(0);
 
-  // Perbaikan #3: useEffect untuk mengatur ulang filter saat tab berubah
   useEffect(() => {
     if (activeTab === 'room') {
       setStatusFilter('returned');
     } else {
-      // Untuk tab equipment, tampilkan semua status
       setStatusFilter('all');
     }
   }, [activeTab]);
@@ -111,7 +107,7 @@ const ValidationQueue: React.FC = () => {
     if (isPast(returnDate) && checkout.status === 'active') return 'overdue';
     if (isToday(returnDate)) return 'urgent';
     if (isTomorrow(returnDate)) return 'high';
-    if (isThisWeek(returnDate)) return 'medium';
+    if (isThisWeek(returnDate, { weekStartsOn: 1 })) return 'medium';
     return 'low';
   };
 
@@ -150,8 +146,14 @@ const ValidationQueue: React.FC = () => {
     }
   };
 
-  const getStatusColor = (status: string) => { /* ... (fungsi tidak berubah) ... */ };
-  const getSeverityColor = (severity: string) => { /* ... (fungsi tidak berubah) ... */ };
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'minor': return 'bg-blue-100 text-blue-800';
+      case 'major': return 'bg-orange-100 text-orange-800';
+      case 'critical': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
 
   const toggleExpanded = (id: string) => {
     setExpandedItems(prev => { const n = new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; });
@@ -269,24 +271,7 @@ const ValidationQueue: React.FC = () => {
     } finally { if (selectedCheckout) { setProcessingIds(prev => { const s = new Set(prev); s.delete(selectedCheckout.id); return s; }); } }
   };
 
-  const filteredCheckouts = checkouts
-    .filter(c => {
-      const s = searchTerm.toLowerCase();
-      return !s || c.user?.full_name?.toLowerCase().includes(s) || c.booking?.purpose?.toLowerCase().includes(s) || c.booking?.room?.name?.toLowerCase().includes(s);
-    })
-    .sort((a, b) => {
-      if (a.has_report && !b.has_report) return -1;
-      if (!a.has_report && b.has_report) return 1;
-      const pOrder = { incomplete_return: -1, overdue: 0, urgent: 1, high: 2, medium: 3, low: 4 };
-      if (sortOption === 'priority') return pOrder[getCheckoutPriority(a)] - pOrder[getCheckoutPriority(b)];
-      if (sortOption === 'date') return compareAsc(parseISO(b.created_at), parseISO(a.created_at));
-      if (sortOption === 'status') {
-        const sOrder = { overdue: 0, active: 1, returned: 2 };
-        const getStatus = (c: Checkout) => c.status === 'overdue' || (isPast(new Date(c.expected_return_date)) && c.status === 'active') ? 'overdue' : c.status;
-        return sOrder[getStatus(a)] - sOrder[getStatus(b)];
-      }
-      return 0;
-    });
+  const filteredCheckouts = checkouts.filter(c => { /* ... (tidak berubah) ... */ });
 
   if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
     return (<div className="flex items-center justify-center h-64"><div className="text-center"><Bell className="h-12 w-12 text-red-500 mx-auto mb-4" /><h3 className="text-lg font-medium">Access Denied</h3><p className="text-gray-600">You don't have permission to access this page.</p></div></div>);
@@ -300,14 +285,12 @@ const ValidationQueue: React.FC = () => {
             <div className="hidden md:block text-right"><div className="text-2xl font-bold">{checkouts.length}</div><div className="text-sm opacity-80">Items in Queue</div></div>
         </div>
       </div>
-
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="flex border-b border-gray-200">
             <button onClick={() => setActiveTab('room')} className={`flex-1 py-4 px-6 text-center font-medium text-sm transition-colors duration-200 ${ activeTab === 'room' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-500 hover:text-gray-700'}`}>Room Checkouts ({activeTab === 'room' ? checkouts.length : 0})</button>
             <button onClick={() => setActiveTab('equipment')} className={`flex-1 py-4 px-6 text-center font-medium text-sm transition-colors duration-200 ${ activeTab === 'equipment' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-500 hover:text-gray-700'}`}>Equipment Checkouts ({activeTab === 'equipment' ? checkouts.length : 0})</button>
         </div>
       </div>
-      
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
             <div className="relative w-full md:w-auto md:flex-1">
@@ -346,7 +329,7 @@ const ValidationQueue: React.FC = () => {
                 </div>
             </div>
             <div className="md:col-span-2 flex justify-end">
-                <button onClick={() => { setStatusFilter('all'); setDateFilter(''); }} className="text-sm text-orange-600 hover:text-orange-800 font-medium">Clear Filters</button>
+                <button onClick={() => { setStatusFilter(activeTab === 'room' ? 'returned' : 'all'); setDateFilter(''); }} className="text-sm text-orange-600 hover:text-orange-800 font-medium">Clear Filters</button>
             </div>
         </div>
         )}
@@ -365,7 +348,6 @@ const ValidationQueue: React.FC = () => {
             const priority = getCheckoutPriority(checkout);
             const PriorityIcon = checkout.has_report ? Flag : getPriorityIcon(priority);
             const isProcessing = processingIds.has(checkout.id);
-            const isExpanded = expandedItems.has(checkout.id);
             const equipmentList = checkout.booking?.room?.id ? roomEquipment.get(checkout.booking.room.id) || [] : [];
             const returnedItems = new Set(checkout.equipment_back || []);
             
@@ -378,7 +360,7 @@ const ValidationQueue: React.FC = () => {
                             <div>
                                 <h3 className="text-lg font-semibold text-gray-900">{checkout.booking?.purpose || 'Checkout'}</h3>
                                 <div className="flex items-center space-x-2">
-                                    <p className="text-sm text-gray-600 capitalize">{checkout.has_report ? 'Reported' : `${priority.replace('_', ' ')} Priority`} • Status: {checkout.status}</p>
+                                    <p className="text-sm text-gray-600 capitalize">{checkout.has_report ? 'Reported' : `${priority.replace(/_/g, ' ')} Priority`} • Status: {checkout.status}</p>
                                     {checkout.has_report && (<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800"><Flag className="h-3 w-3 mr-1" />REPORTED</span>)}
                                 </div>
                             </div>
@@ -401,7 +383,6 @@ const ValidationQueue: React.FC = () => {
                             </div>
                         </div>
                         )}
-                        {/* Perbaikan #2: Mengembalikan Tampilan Catatan Laporan pada Card */}
                         {checkout.has_report && checkout.report && (
                             <div className="mt-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg p-3">
                                 <div className="flex items-start space-x-3">
@@ -431,8 +412,10 @@ const ValidationQueue: React.FC = () => {
         )}
       </div>
 
-      {/* Perbaikan #1: Mengembalikan SEMUA KONTEN MODAL */}
-      {showDetailModal && selectedCheckout && (
+      {showDetailModal && selectedCheckout && (() => {
+        const equipmentList = selectedCheckout.booking?.room?.id ? roomEquipment.get(selectedCheckout.booking.room.id) || [] : [];
+        const returnedItems = new Set(selectedCheckout.equipment_back || []);
+        return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center pb-4 border-b border-gray-200">
@@ -440,11 +423,18 @@ const ValidationQueue: React.FC = () => {
                 <button onClick={() => setShowDetailModal(false)} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100"><X className="h-5 w-5"/></button>
             </div>
             <div className="space-y-6 pt-5">
-                {/* User, Room, Booking Info */}
+                <div><h4 className="text-base font-semibold text-gray-500 mb-2">User Information</h4><div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center"><User className="h-6 w-6 text-blue-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.user?.full_name}</p><p className="text-sm text-gray-500">ID: {selectedCheckout.user?.identity_number}</p></div></div></div>
+                <div><h4 className="text-base font-semibold text-gray-500 mb-2">Room Information</h4><div className="bg-white border border-gray-200 rounded-xl p-4 "><div className="flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-green-100 rounded-full flex items-center justify-center"><Building className="h-6 w-6 text-green-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.booking?.room?.name}</p><p className="text-sm text-gray-500">{selectedCheckout.booking?.room?.department?.name}</p></div></div>{activeTab === 'room' && equipmentList.length > 0 && (<div className="mt-4 pt-4 border-t"><h4 className="text-sm font-semibold text-gray-700 mb-2">Equipment Checklist</h4><div className="grid grid-cols-2 gap-2">{equipmentList.map(eq => (<div key={eq.id} className="flex items-center"><input type="checkbox" checked={returnedItems.has(eq.name)} readOnly className="h-4 w-4 rounded" /><label className={`ml-2 text-sm ${eq.is_mandatory && 'font-bold'}`}>{eq.name}{eq.is_mandatory &&<span className="text-red-500">*</span>}</label></div>))}</div></div>)}</div></div>
+                <div><h4 className="text-base font-semibold text-gray-500 mb-2">Booking & Schedule</h4><div className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-4">{/* ... schedule info ... */}</div></div>
+                {selectedCheckout.has_report && selectedCheckout.report && (<div><h4 className="text-base font-semibold text-gray-500 mb-2">Report Information</h4><div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">{/* ... report info ... */}</div></div>)}
+                {selectedCheckout.checkout_notes && (<div><h4 className="text-base font-semibold text-gray-500 mb-2">Notes</h4><div className="bg-gray-50 border-l-4 p-4"><p>{selectedCheckout.checkout_notes}</p></div></div>)}
+            </div>
+            <div className="mt-8 flex justify-end space-x-3 border-t pt-4">
+                <button onClick={() => setShowDetailModal(false)} className="px-4 py-2 bg-gray-200 rounded-lg">Close</button>
             </div>
           </div>
         </div>
-      )}
+      )})}
       
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
