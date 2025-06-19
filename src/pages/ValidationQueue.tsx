@@ -83,7 +83,7 @@ const ValidationQueue: React.FC = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [activeFiltersCount, setActiveFiltersCount] = useState(0);
 
-  // Helper asli untuk prioritas, tanpa logika custom 'incomplete_return'
+  // Helper asli untuk prioritas
   const getCheckoutPriority = (checkout: Checkout): string => {
     if (checkout.status === 'overdue') return 'overdue';
     const returnDate = new Date(checkout.expected_return_date);
@@ -392,7 +392,7 @@ const ValidationQueue: React.FC = () => {
             const isExpanded = expandedItems.has(checkout.id);
             return (
             <div key={checkout.id} className={`bg-white rounded-xl shadow-sm border p-4 md:p-6 hover:shadow-lg transition-all duration-200 ${getPriorityColor(priority, checkout.has_report)}`}>
-                <div className="flex items-start justify-between">
+                <div className="hidden md:flex items-start justify-between">
                     <div className="flex-1">
                         <div className="flex items-center space-x-4 mb-4">
                             <div className={`flex-shrink-0 h-12 w-12 rounded-lg flex items-center justify-center ${getPriorityIconBgColor(priority, checkout.has_report)}`}><PriorityIcon className="h-6 w-6 text-white" /></div>
@@ -409,17 +409,6 @@ const ValidationQueue: React.FC = () => {
                             <div className="flex items-center space-x-3"><Building className="h-4 w-4 text-gray-400 flex-shrink-0" /><div><p className="font-medium text-gray-800">{checkout.booking?.room?.name}</p><p className="text-xs text-gray-500">{checkout.booking?.room?.department?.name}</p></div></div>
                             <div className="flex items-center space-x-3"><Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" /><div><p className="font-medium text-gray-800">{format(new Date(checkout.checkout_date), 'MMM d, yy')}</p><p className="text-xs text-gray-500">Return by: {format(new Date(checkout.expected_return_date), 'MMM d, yy')}</p></div></div>
                         </div>
-                        {checkout.has_report && checkout.report && (
-                            <div className="mt-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg p-3">
-                                <div className="flex items-start space-x-3">
-                                    <Flag className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                        <p className="font-medium text-yellow-800">{checkout.report.title}</p>
-                                        <p className="text-sm text-yellow-700 mt-1">{checkout.report.description}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
                     </div>
                     <div className="flex items-center space-x-2 ml-4">
                         <button onClick={() => { if(checkout.id) { setSelectedCheckoutId(checkout.id); setShowDetailModal(true); }}} className="p-2 text-gray-500 hover:bg-gray-100 rounded-md"><Eye className="h-4 w-4" /></button>
