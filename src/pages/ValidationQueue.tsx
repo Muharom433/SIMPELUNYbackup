@@ -15,7 +15,8 @@ interface Equipment {
   id: string;
   name: string;
   is_mandatory: boolean;
-  room_id: string;
+  // Pastikan nama kolom di bawah ini sesuai dengan skema database Anda
+  room_id: string; 
 }
 
 // Tipe data untuk join yang kompleks
@@ -76,13 +77,11 @@ const ValidationQueue: React.FC = () => {
   const [reportSeverity, setReportSeverity] = useState<'minor' | 'major' | 'critical'>('minor');
   const [sortOption, setSortOption] = useState<'priority' | 'date' | 'status'>('date'); 
   
-  // Filter status default adalah 'returned'
   const [statusFilter, setStatusFilter] = useState<'all'| 'active' | 'returned' | 'overdue' | 'lost' | 'damaged'>('returned');
   const [dateFilter, setDateFilter] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
   const [activeFiltersCount, setActiveFiltersCount] = useState(0);
 
-  // useEffect untuk mengatur filter default berdasarkan tab
   useEffect(() => {
     if (activeTab === 'room') {
       setStatusFilter('returned');
@@ -91,7 +90,6 @@ const ValidationQueue: React.FC = () => {
     }
   }, [activeTab]);
 
-  // Helper function untuk memeriksa kelengkapan pengembalian
   const isReturnIncomplete = (checkout: Checkout): boolean => {
     if (checkout.type !== 'room' || !checkout.booking?.room_id) {
       return false;
@@ -111,7 +109,6 @@ const ValidationQueue: React.FC = () => {
     return !allMandatoryReturned;
   };
 
-  // -- Kumpulan Fungsi Helper --
   const getCheckoutPriority = (checkout: Checkout): string => {
     if (checkout.status === 'active' && isReturnIncomplete(checkout)) {
         return 'incomplete_return';
@@ -192,7 +189,6 @@ const ValidationQueue: React.FC = () => {
     });
   };
 
-  // Update active filters count
   useEffect(() => {
     let count = 0;
     if (statusFilter !== 'all') count++;
@@ -200,12 +196,10 @@ const ValidationQueue: React.FC = () => {
     setActiveFiltersCount(count);
   }, [statusFilter, dateFilter]);
 
-  // -- Fungsi Fetch Data --
   const fetchPendingCheckouts = async () => {
     try {
       setLoading(true);
       
-      // Base query
       let query = supabase
         .from('checkouts')
         .select(`
@@ -220,7 +214,6 @@ const ValidationQueue: React.FC = () => {
         `)
         .eq('type', activeTab)
       
-      // Apply date filter if set
       if (dateFilter) {
         const filterDate = new Date(dateFilter);
         const startDate = startOfDay(filterDate).toISOString();
@@ -230,12 +223,10 @@ const ValidationQueue: React.FC = () => {
                      .lte('checkout_date', endDate);
       }
       
-      // Apply status filter if not 'all'
       if (statusFilter !== 'all') {
         query = query.eq('status', statusFilter);
       }
       
-      // Execute query
       const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -247,19 +238,26 @@ const ValidationQueue: React.FC = () => {
         );
       }
 
-      // Ambil data equipment untuk semua ruangan yang relevan
       if (activeTab === 'room' && filteredData.length > 0) {
         const roomIds = [...new Set(filteredData.map(c => c.booking?.room_id).filter(Boolean))];
         if (roomIds.length > 0) {
+          
+          // --- PERBAIKAN KRUSIAL DI SINI ---
+          // Pastikan 'room_id' adalah nama kolom yang benar di tabel 'equipment' Anda.
+          // Jika nama kolom di database Anda berbeda (misalnya: 'id_ruang'),
+          // GANTI string 'room_id' di bawah ini dengan nama yang benar.
           const { data: equipmentData, error: equipmentError } = await supabase
             .from('equipment')
             .select('*')
             .in('room_id', roomIds as string[]);
 
-          if (equipmentError) throw equipmentError;
+          if (equipmentError) {
+            throw equipmentError;
+          }
 
           const equipmentMap: RoomEquipmentMap = new Map();
           equipmentData.forEach(eq => {
+            // Pastikan juga nama kolom di sini (eq.room_id) sudah benar
             const list = equipmentMap.get(eq.room_id) || [];
             list.push(eq);
             equipmentMap.set(eq.room_id, list);
@@ -268,7 +266,6 @@ const ValidationQueue: React.FC = () => {
         }
       }
 
-      // Fetch reports for each checkout
       const checkoutsWithReports = await Promise.all(
         filteredData.map(async (checkout) => {
           const { data: reports, error: reportsError } = await supabase
@@ -307,27 +304,23 @@ const ValidationQueue: React.FC = () => {
       setCheckouts(checkoutsWithReports);
     } catch (err: any) {
       console.error('Error fetching pending checkouts:', err);
-      toast.error(`Failed to load ${activeTab} checkouts.`);
+      toast.error(`Failed to load data: ${err.message}`);
     } finally {
       setLoading(false);
     }
   };
   
-  // Fetch data when filters change
   useEffect(() => {
     setLoading(true);
     fetchPendingCheckouts();
   }, [profile, activeTab, statusFilter, dateFilter]);
 
-  // Set up auto-refresh interval
   useEffect(() => {
     const interval = setInterval(fetchPendingCheckouts, 30000);
     return () => clearInterval(interval);
   }, [profile, activeTab, statusFilter, dateFilter]);
 
-  // -- Fungsi Handler untuk Tombol --
   const handleApproval = async (checkoutId: string) => {
-    // Fungsi ini sekarang berarti "Menyelesaikan Pengembalian"
     setProcessingIds(prev => new Set(prev).add(checkoutId));
     try {
       const checkout = checkouts.find(c => c.id === checkoutId);
@@ -335,7 +328,6 @@ const ValidationQueue: React.FC = () => {
         throw new Error('Checkout, booking, or room information not found');
       }
       
-      // Update room availability to true (make it available again)
       const { error: roomError } = await supabase
         .from('rooms')
         .update({ 
@@ -362,10 +354,8 @@ const ValidationQueue: React.FC = () => {
   };
 
   const handleReject = async (checkoutId: string) => {
-    // Fungsi ini sekarang berarti "Menolak Pengembalian"
     setProcessingIds(prev => new Set(prev).add(checkoutId));
     try {
-      // Update status checkout dari 'returned' kembali ke 'active'
       const { error } = await supabase
         .from('checkouts')
         .update({ 
@@ -439,10 +429,8 @@ const ValidationQueue: React.FC = () => {
     }
   };
 
-  // -- Logika Render --
   const filteredCheckouts = checkouts
     .filter(checkout => {
-      // Text search filter
       const s = searchTerm.toLowerCase();
       const textMatch = !s || 
         checkout.user?.full_name?.toLowerCase().includes(s) ||
@@ -452,19 +440,15 @@ const ValidationQueue: React.FC = () => {
       return textMatch;
     })
     .sort((a, b) => {
-      // First sort by has_report (reported items first)
       if (a.has_report && !b.has_report) return -1;
       if (!a.has_report && b.has_report) return 1;
       
       if (sortOption === 'priority') {
-        // Sort by priority
         const priorityOrder = { incomplete_return: -1, overdue: 0, urgent: 1, high: 2, medium: 3, low: 4 };
         return priorityOrder[getCheckoutPriority(a)] - priorityOrder[getCheckoutPriority(b)];
       } else if (sortOption === 'date') {
-        // Sort by date (most recent first)
         return compareAsc(parseISO(b.checkout_date), parseISO(a.checkout_date));
       } else if (sortOption === 'status') {
-        // Sort by status (overdue first, then active)
         const statusOrder = { overdue: 0, active: 1, returned: 2 };
         const aStatus = a.status === 'overdue' || (isPast(new Date(a.expected_return_date)) && a.status === 'active') 
           ? 'overdue' : a.status;
@@ -489,8 +473,8 @@ const ValidationQueue: React.FC = () => {
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-orange-600 to-red-600 rounded-xl p-6 text-white">
         <div className="flex items-center justify-between">
-            <div><h1 className="text-3xl font-bold flex items-center space-x-3"><Bell className="h-8 w-8" /><span>Validation Queue</span></h1><p className="mt-2 opacity-90">Review and approve pending checkouts</p></div>
-            <div className="hidden md:block text-right"><div className="text-2xl font-bold">{checkouts.length}</div><div className="text-sm opacity-80">Pending Items</div></div>
+            <div><h1 className="text-3xl font-bold flex items-center space-x-3"><Bell className="h-8 w-8" /><span>Validation Queue</span></h1><p className="mt-2 opacity-90">Review and approve checkout returns</p></div>
+            <div className="hidden md:block text-right"><div className="text-2xl font-bold">{checkouts.length}</div><div className="text-sm opacity-80">Items in Queue</div></div>
         </div>
       </div>
 
@@ -540,7 +524,6 @@ const ValidationQueue: React.FC = () => {
           </div>
         </div>
         
-        {/* Expanded Filters */}
         {showFilters && (
           <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -634,7 +617,7 @@ const ValidationQueue: React.FC = () => {
                     <div>
                       <h3 className="text-base font-semibold text-gray-900 line-clamp-1">{checkout.booking?.purpose || 'Checkout'}</h3>
                       <p className="text-xs text-gray-600 capitalize">
-                        {checkout.has_report ? 'Reported' : `${priority} Priority`}
+                        {checkout.has_report ? 'Reported' : `${priority.replace('_', ' ')} Priority`}
                       </p>
                       <p className="text-xs text-gray-600">{checkout.user?.full_name || 'Unknown User'}</p>
                     </div>
@@ -668,12 +651,11 @@ const ValidationQueue: React.FC = () => {
                       <div className="flex items-center space-x-3">
                         <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
                         <div>
-                          <p className="font-medium text-gray-800">{format(new Date(checkout.checkout_date), 'MMM d, yyyy')}</p>
-                          <p className="text-xs text-gray-500">Return by: {format(new Date(checkout.expected_return_date), 'MMM d, yyyy')}</p>
+                          <p className="font-medium text-gray-800">{format(new Date(checkout.checkout_date), 'MMM d, yy')}</p>
+                          <p className="text-xs text-gray-500">Return by: {format(new Date(checkout.expected_return_date), 'MMM d, yy')}</p>
                         </div>
                       </div>
                       
-                      {/* Report information (if exists) */}
                       {checkout.has_report && checkout.report && (
                         <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3">
                           <div className="flex items-start space-x-2">
@@ -778,13 +760,12 @@ const ValidationQueue: React.FC = () => {
                       <div className="flex items-center space-x-3">
                         <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
                         <div>
-                          <p className="font-medium text-gray-800">{format(new Date(checkout.checkout_date), 'MMM d, yyyy')}</p>
-                          <p className="text-xs text-gray-500">Return by: {format(new Date(checkout.expected_return_date), 'MMM d, yyyy')}</p>
+                          <p className="font-medium text-gray-800">{format(new Date(checkout.checkout_date), 'MMM d, yy')}</p>
+                          <p className="text-xs text-gray-500">Return by: {format(new Date(checkout.expected_return_date), 'MMM d, yy')}</p>
                         </div>
                       </div>
                     </div>
                     
-                    {/* Checklist Equipment */}
                     {activeTab === 'room' && equipmentList.length > 0 && (
                       <div className="mt-4 pt-4 border-t border-gray-200">
                         <h4 className="text-sm font-semibold text-gray-700 mb-2">Equipment Return Checklist</h4>
@@ -807,7 +788,6 @@ const ValidationQueue: React.FC = () => {
                       </div>
                     )}
                     
-                    {/* Report information (if exists) */}
                     {checkout.has_report && checkout.report && (
                       <div className="mt-4 bg-yellow-50 border border-yellow-300 rounded-lg p-3">
                         <div className="flex items-start space-x-2">
@@ -820,7 +800,7 @@ const ValidationQueue: React.FC = () => {
                                 {checkout.report.severity.toUpperCase()}
                               </span>
                               <span className="text-xs text-yellow-600 ml-2">
-                                Reported on {format(new Date(checkout.report.created_at), 'MMM d, yyyy')}
+                                Reported on {format(new Date(checkout.report.created_at), 'MMM d, yy')}
                               </span>
                             </div>
                           </div>
@@ -896,9 +876,8 @@ const ValidationQueue: React.FC = () => {
               <div className="space-y-6 pt-5">
                 <div><h4 className="text-base font-semibold text-gray-500 mb-2">User Information</h4><div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center"><User className="h-6 w-6 text-blue-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.user?.full_name || 'Unknown User'}</p><p className="text-sm text-gray-500">ID: {selectedCheckout.user?.identity_number || 'N/A'}</p></div></div></div>
                 <div><h4 className="text-base font-semibold text-gray-500 mb-2">Room Information</h4><div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-green-100 rounded-full flex items-center justify-center"><Building className="h-6 w-6 text-green-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.booking?.room?.name || 'Unknown Room'}</p><p className="text-sm text-gray-500">{selectedCheckout.booking?.room?.department?.name || 'No Department'}</p><p className="text-xs text-gray-500 mt-1">Capacity: {selectedCheckout.booking?.room?.capacity} seats</p></div></div></div>
-                <div><h4 className="text-base font-semibold text-gray-500 mb-2">Booking & Schedule</h4><div className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-4"><div className="flex items-center space-x-3"><FileText className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Purpose</p><p className="font-semibold text-gray-800">{selectedCheckout.booking?.purpose}</p></div></div><div className="flex items-center space-x-3"><Calendar className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Checkout Date</p><p className="font-semibold text-gray-800">{format(new Date(selectedCheckout.checkout_date), 'E, d MMM yyyy')}</p></div></div><div className="flex items-center space-x-3"><Package className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Total Items</p><p className="font-semibold text-gray-800">{selectedCheckout.total_items}</p></div></div><div className="flex items-center space-x-3"><Timer className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Return by</p><p className="font-semibold text-gray-800">{format(new Date(selectedCheckout.expected_return_date), 'E, d MMM yyyy')}</p></div></div></div></div>
+                <div><h4 className="text-base font-semibold text-gray-500 mb-2">Booking & Schedule</h4><div className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-4"><div className="flex items-center space-x-3"><FileText className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Purpose</p><p className="font-semibold text-gray-800">{selectedCheckout.booking?.purpose}</p></div></div><div className="flex items-center space-x-3"><Calendar className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Checkout Date</p><p className="font-semibold text-gray-800">{format(new Date(selectedCheckout.checkout_date), 'E, d MMM yy')}</p></div></div><div className="flex items-center space-x-3"><Package className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Total Items</p><p className="font-semibold text-gray-800">{selectedCheckout.total_items}</p></div></div><div className="flex items-center space-x-3"><Timer className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Return by</p><p className="font-semibold text-gray-800">{format(new Date(selectedCheckout.expected_return_date), 'E, d MMM yy')}</p></div></div></div></div>
                 
-                {/* Report information (if exists) */}
                 {selectedCheckout.has_report && selectedCheckout.report && (
                   <div>
                     <h4 className="text-base font-semibold text-gray-500 mb-2">Report Information</h4>
@@ -913,7 +892,7 @@ const ValidationQueue: React.FC = () => {
                               {selectedCheckout.report.severity.toUpperCase()}
                             </span>
                             <span className="text-xs text-yellow-600">
-                              Reported on {format(new Date(selectedCheckout.report.created_at), 'MMM d, yyyy')}
+                              Reported on {format(new Date(selectedCheckout.report.created_at), 'MMM d, yy')}
                             </span>
                           </div>
                         </div>
@@ -972,7 +951,6 @@ const ValidationQueue: React.FC = () => {
         );
       })()}
       
-      {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-6 max-w-sm w-full">
@@ -998,7 +976,6 @@ const ValidationQueue: React.FC = () => {
         </div>
       )}
       
-      {/* Report Modal */}
       {showReportModal && selectedCheckout && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
