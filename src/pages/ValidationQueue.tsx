@@ -207,7 +207,7 @@ const ValidationQueue: React.FC = () => {
       
       toast.success('Checkout approved successfully and room marked as available!');
       fetchPendingCheckouts();
-      if (selectedCheckoutId === checkoutId) setShowDetailModal(false);
+      if (selectedCheckoutId === checkoutId) setShowDetailModal(true);
     } catch (error: any) {
       toast.error(error.message || 'Failed to approve checkout');
     } finally {
