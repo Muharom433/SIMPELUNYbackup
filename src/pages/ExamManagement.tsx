@@ -200,8 +200,6 @@ const ExamManagement = () => {
         // Reduced the initial gap by changing + 27 to + 22
         const nameY = signatureY + 30; 
 
-        const nameLines = doc.splitTextToSize(departmentHead.full_name, signatureMaxWidth);
-        
         doc.setFont('helvetica', 'bold');
         doc.text(nameLines, signatureX, nameY);
 
