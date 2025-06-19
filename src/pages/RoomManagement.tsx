@@ -84,7 +84,7 @@ const RoomManagement: React.FC = () => {
               return now >= startTime && now <= endTime;
             } catch (e) { return false; }
           });
-          status = isScheduled ? 'Scheduled' : 'In Use';
+          status = isScheduled ? 'Scheduled' : 'Available';
         }
         return { ...room, department: room.department, status };
       });
