@@ -198,14 +198,28 @@ const ExamManagement = () => {
 
         // --- Logic for Name Wrapping ---
         // Reduced the initial gap by changing + 27 to + 22
-        const nameY = signatureY + 30; 
+        const nameY = signatureY + 27; 
 
         const nameLines = doc.splitTextToSize(departmentHead.full_name, signatureMaxWidth);
         
         doc.setFont('helvetica', 'bold');
+        doc.text(nameLines, signatureX, nameY);
+
+        // --- Logic for Dynamic Underline and NIP position ---
+
+        // Get the height of the name block
         const nameBlockHeight = (nameLines.length * doc.getLineHeight()) / doc.internal.scaleFactor;
         
-        const nipY = nameY + 4;
+        // Position the underline just below the name block
+        // The '+ 1' adds a small, clean gap.
+        const underlineY = nameY + nameBlockHeight + 1; 
+
+        doc.setLineWidth(0.2);
+        doc.line(signatureX, underlineY, signatureX + signatureMaxWidth, underlineY);
+
+        // Position the NIP just below the underline
+        // Reduced the gap from 5 to 4 for a tighter look.
+        const nipY = underlineY + 4;
         doc.setFont('helvetica', 'normal');
         doc.text(`NIP. ${departmentHead.identity_number}`, signatureX, nipY);
         
