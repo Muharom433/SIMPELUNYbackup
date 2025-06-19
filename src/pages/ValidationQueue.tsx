@@ -352,7 +352,19 @@ const ValidationQueue: React.FC = () => {
                         </div>
                     </div>
                     <div className="flex items-center space-x-2 ml-4">
-                        <button onClick={() => { setSelectedCheckoutId(checkout.id); setShowDetailModal(true); }} className="p-2 rounded-md"><Eye className="h-4 w-4" /></button>
+                        <button onClick={() => {
+  console.log('--- Tombol Detail Diklik ---');
+  console.log('Mencoba memilih checkout dengan ID:', checkout.id);
+
+  if (checkout.id) {
+    setSelectedCheckoutId(checkout.id);
+    setShowDetailModal(true);
+    console.log('State berhasil diatur. Menunggu render ulang...');
+  } else {
+    console.error('KESALAHAN FATAL: checkout.id tidak ada nilainya!');
+    toast.error('Gagal memilih item: ID tidak ditemukan.');
+  }
+}} className="p-2 rounded-md"><Eye className="h-4 w-4" /></button>
                         <button onClick={() => { setSelectedCheckoutId(checkout.id); setShowReportModal(true); }} className="flex items-center space-x-2 px-4 py-2 bg-yellow-100 rounded-lg"><Flag className="h-4 w-4" /><span>{checkout.has_report ? 'Update' : 'Report'}</span></button>
                         <button onClick={() => handleApproval(checkout.id)} disabled={isProcessing} className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg"><Check className="h-4 w-4" /><span>Approve</span></button>
                         <button onClick={() => setShowDeleteConfirm(checkout.id)} disabled={isProcessing} className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg"><X className="h-4 w-4" /><span>Reject</span></button>
