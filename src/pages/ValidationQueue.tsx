@@ -217,7 +217,7 @@ const ValidationQueue: React.FC = () => {
   useEffect(() => { fetchPendingCheckouts(); }, [profile, activeTab, statusFilter, dateFilter]);
   useEffect(() => { const i = setInterval(() => { if (document.visibilityState === 'visible') fetchPendingCheckouts(); }, 30000); return () => clearInterval(i); }, [profile, activeTab, statusFilter, dateFilter]);
 
-  const handleApproval = async (checkoutId: string) => {
+ const handleApproval = async (checkoutId: string) => {
     setProcessingIds(prev => new Set(prev).add(checkoutId));
     try {
       const checkout = checkouts.find(c => c.id === checkoutId);
@@ -225,16 +225,23 @@ const ValidationQueue: React.FC = () => {
         throw new Error('Checkout, booking, or room information not found');
       }
       
+      const { error: checkoutError } = await supabase
+        .from('checkouts')
+        .update({ approved_by: profile?.id, status: 'active', updated_at: new Date().toISOString() })
+        .eq('id', checkoutId);
+      if (checkoutError) throw checkoutError;
+      
       const { error: roomError } = await supabase
         .from('rooms')
         .update({ is_available: true, updated_at: new Date().toISOString() })
         .eq('id', checkout.booking.room_id);
-      if (roomError) throw roomError;
+      if (roomError) console.error('Error updating room availability:', roomError);
       
-      toast.success('Return approved! Room is now available.');
+      toast.success('Checkout approved successfully!');
       fetchPendingCheckouts();
+      if (selectedCheckoutId === checkoutId) setShowDetailModal(false);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to approve return');
+      toast.error(error.message || 'Failed to approve checkout');
     } finally {
       setProcessingIds(prev => { const s = new Set(prev); s.delete(checkoutId); return s; });
     }
@@ -243,17 +250,28 @@ const ValidationQueue: React.FC = () => {
   const handleReject = async (checkoutId: string) => {
     setProcessingIds(prev => new Set(prev).add(checkoutId));
     try {
-      const { error } = await supabase
-        .from('checkouts')
-        .update({ status: 'active', updated_at: new Date().toISOString() })
-        .eq('id', checkoutId);
-      if (error) throw error;
+      const checkout = checkouts.find(c => c.id === checkoutId);
+      const bookingId = checkout?.booking_id;
+      if (!bookingId) throw new Error('Booking ID not found for this checkout');
+
+      const { error: bookingError } = await supabase
+        .from('bookings')
+        .update({ status: 'approved', updated_at: new Date().toISOString() })
+        .eq('id', bookingId);
+      if (bookingError) throw bookingError;
       
-      toast.success('Return rejected. Status has been set back to "active".');
+      const { error: checkoutError } = await supabase
+        .from('checkouts')
+        .delete()
+        .eq('id', checkoutId);
+      if (checkoutError) throw checkoutError;
+      
+      toast.success('Checkout rejected and booking status restored.');
       fetchPendingCheckouts();
+      if (selectedCheckoutId === checkoutId) setShowDetailModal(false);
       setShowDeleteConfirm(null);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to reject return');
+      toast.error(error.message || 'Failed to reject checkout');
     } finally {
       setProcessingIds(prev => { const s = new Set(prev); s.delete(checkoutId); return s; });
     }
@@ -277,6 +295,7 @@ const ValidationQueue: React.FC = () => {
     } catch (error: any) { toast.error(error.message || 'Failed to add report');
     } finally { if (selectedCheckout) { setProcessingIds(prev => { const s = new Set(prev); s.delete(selectedCheckout.id); return s; }); } }
   };
+
 
   const filteredCheckouts = checkouts.filter(c => {
     const s = searchTerm.toLowerCase();
