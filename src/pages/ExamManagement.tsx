@@ -90,7 +90,7 @@ const ExamManagement = () => {
     const [lecturers, setLecturers] = useState<any[]>([]);
     const [studyPrograms, setStudyPrograms] = useState<any[]>([]);
     const [departments, setDepartments] = useState<any[]>([]);
-    const [departmentHeads, setDepartmentHeads] = useState<any[]>([]);
+    const [signingLecturers, setSigningLecturers] = useState<any[]>([]);
     const [bookedRooms, setBookedRooms] = useState<any>({});
     const [filteredLecturers, setFilteredLecturers] = useState<any[]>([]);
     const [examModeEnabled, setExamModeEnabled] = useState(false);
