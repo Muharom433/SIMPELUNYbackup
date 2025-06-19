@@ -197,27 +197,28 @@ const ExamManagement = () => {
         doc.text("Ketua Jurusan,", signatureX, signatureY + 7);
 
         // --- Logic for Name Wrapping ---
-        const nameY = signatureY + 27;
+       const nameY = signatureY + 22; 
 
-        // 1. Split the potentially long name into an array of lines
         const nameLines = doc.splitTextToSize(departmentHead.full_name, signatureMaxWidth);
         
-        // 2. Draw the name. jspdf handles drawing the array of lines one below the other.
         doc.setFont('helvetica', 'bold');
         doc.text(nameLines, signatureX, nameY);
 
         // --- Logic for Dynamic Underline and NIP position ---
 
-        // 3. Calculate the Y position for the underline based on how many lines the name took up
-        const lineHeight = doc.getLineHeight() / doc.internal.scaleFactor;
-        const underlineY = nameY + (nameLines.length * lineHeight);
+        // Get the height of the name block
+        const nameBlockHeight = (nameLines.length * doc.getLineHeight()) / doc.internal.scaleFactor;
+        
+        // Position the underline just below the name block
+        // The '+ 1' adds a small, clean gap.
+        const underlineY = nameY + nameBlockHeight + 1; 
 
-        // 4. Draw a fixed-width underline below the name
         doc.setLineWidth(0.2);
         doc.line(signatureX, underlineY, signatureX + signatureMaxWidth, underlineY);
 
-        // 5. Draw the NIP below the underline
-        const nipY = underlineY + 5;
+        // Position the NIP just below the underline
+        // Reduced the gap from 5 to 4 for a tighter look.
+        const nipY = underlineY + 4;
         doc.setFont('helvetica', 'normal');
         doc.text(`NIP. ${departmentHead.identity_number}`, signatureX, nipY);
         
