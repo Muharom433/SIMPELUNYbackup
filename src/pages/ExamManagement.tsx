@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react'; // <-- Added useMemo
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -48,37 +48,20 @@ const examSchema = z.object({
     }
 });
 
-// --- CORRECTED LOGIC ---
-const printSchema = z.object({
-    department_id: z.string().optional(),
-    study_program_id: z.string().min(1, 'Study Program is required'),
-    semester: z.enum(['GASAL', 'GENAP'], { required_error: 'Semester type is required' }),
-    academic_year: z.string().min(9, 'Academic Year is required (e.g., 2023/2024)').regex(/^\d{4}\/\d{4}$/, 'Invalid format. Use (`YYYY/YYYY`)'),
-    department_head_id: z.string().optional(), // Optional by default
-    department_head_name: z.string().optional(),
-}).superRefine((data, ctx) => {
-    const { profile } = useAuth.getState();
-    // Rule for Super Admin (department is required)
-    if (profile?.role === 'super_admin' && !data.department_id) {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['department_id'],
-            message: 'Department is required for Super Admin.',
-        });
-    }
-    // Rule for Department Admin (department head is required)
-    if (profile?.role === 'department_admin' && !data.department_head_id) {
-         ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['department_head_id'],
-            message: 'Department Head is required.',
-        });
-    }
-});
-
+// REMOVED printSchema from here
 
 type ExamFormData = z.infer<typeof examSchema>;
-type PrintFormData = z.infer<typeof printSchema>;
+// We need to infer PrintFormData differently now, or just define it manually.
+// For simplicity, we'll define it manually.
+type PrintFormData = {
+    department_id?: string;
+    study_program_id: string;
+    semester: 'GASAL' | 'GENAP';
+    academic_year: string;
+    department_head_id?: string;
+    department_head_name?: string;
+};
+
 
 const getImageDataUrl = async (url: string): Promise<string> => {
     const response = await fetch(url);
@@ -114,7 +97,36 @@ const ExamManagement = () => {
     const [showClearConfirm, setShowClearConfirm] = useState(false);
     const [printSelectedDepartment, setPrintSelectedDepartment] = useState<string>('');
 
+    // --- FIX: printSchema is now defined INSIDE the component using useMemo ---
+    const printSchema = useMemo(() => {
+        return z.object({
+            department_id: z.string().optional(),
+            study_program_id: z.string().min(1, 'Study Program is required'),
+            semester: z.enum(['GASAL', 'GENAP'], { required_error: 'Semester type is required' }),
+            academic_year: z.string().min(9, 'Academic Year is required (e.g., 2023/2024)').regex(/^\d{4}\/\d{4}$/, 'Invalid format. Use (`YYYY/YYYY`)'),
+            department_head_id: z.string().optional(),
+            department_head_name: z.string().optional(),
+        }).superRefine((data, ctx) => {
+            // 'profile' is now available here from the component's scope
+            if (profile?.role === 'super_admin' && !data.department_id) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    path: ['department_id'],
+                    message: 'Department is required for Super Admin.',
+                });
+            }
+            if (profile?.role === 'department_admin' && !data.department_head_id) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    path: ['department_head_id'],
+                    message: 'Department Head is required.',
+                });
+            }
+        });
+    }, [profile?.role]); // Dependency array ensures schema is stable
+
     const form = useForm<ExamFormData>({ resolver: zodResolver(examSchema), defaultValues: { course_name: '', course_code: '', date: format(new Date(), 'yyyy-MM-dd'), session: '', semester: 1, class: '', student_amount: 0, room_id: '', lecturer_id: '', study_program_id: '', }, });
+    // This now correctly uses the memoized schema
     const printForm = useForm<PrintFormData>({ resolver: zodResolver(printSchema) });
     const watchDate = form.watch('date');
     const watchSession = form.watch('session');
@@ -141,6 +153,7 @@ const ExamManagement = () => {
         }
     }, [printSelectedDepartment, profile?.role, printForm]);
 
+    // ... All other functions (fetch, handle, etc.) remain the same as the last correct version ...
     const fetchExamModeStatus = async () => { try { setLoading(true); const { data, error } = await supabase.from('system_settings').select('setting_value').eq('id', 'b78e1661-7cdd-4ee0-b495-bf260a8a274c').single(); if (error) throw error; if (data) { setExamModeEnabled(data.setting_value === 'true'); } } catch (error) { console.error('Error fetching exam mode status:', error); setExamModeEnabled(false); } finally { setLoading(false); } };
     const handleModeChange = () => { if (profile?.role !== 'super_admin') return; setShowClearConfirm(true); };
     const confirmClearAndToggleMode = async () => { setLoading(true); try { const { error: deleteError } = await supabase.from('exams').delete().neq('id', '00000000-0000-0000-0000-000000000000'); if (deleteError) throw deleteError; const newMode = !examModeEnabled; const { error: updateError } = await supabase.from('system_settings').update({ setting_value: newMode.toString() }).eq('id', 'b78e1661-7cdd-4ee0-b495-bf260a8a274c'); if (updateError) throw updateError; setExamModeEnabled(newMode); setExams([]); toast.success(`Exam Mode has been ${newMode ? 'enabled' : 'disabled'} and all previous schedules have been cleared.`); } catch (error: any) { console.error('Error updating exam mode:', error); toast.error('Failed to update exam mode.'); } finally { setLoading(false); setShowClearConfirm(false); } };
@@ -149,24 +162,7 @@ const ExamManagement = () => {
     const fetchRooms = async () => { try { let query = supabase.from('rooms').select('*'); if (profile?.role === 'department_admin' && profile?.department_id) { query = query.or(`department_id.eq.${profile.department_id},department_id.is.null`); } const { data, error } = await query; if (error) throw error; setRooms(data || []); } catch (error: any) { console.error('Error fetching rooms:', error); toast.error('Failed to load rooms.'); } };
     const fetchLecturers = async () => { try { let query = supabase.from('users').select('*').eq('role', 'lecturer'); if (profile?.role === 'department_admin' && profile?.department_id) { query = query.eq('department_id', profile.department_id); } const { data, error } = await query; if (error) throw error; setLecturers(data || []); setFilteredLecturers(data || []); } catch (error: any) { console.error('Error fetching lecturers:', error); toast.error('Failed to load lecturers.'); } };
     const fetchDepartments = async () => { try { let query = supabase.from('departments').select('id, name'); if (profile?.role === 'department_admin' && profile.department_id) { query = query.eq('id', profile.department_id); } const { data, error } = await query; if (error) throw error; setDepartments(data || []); } catch (error: any) { console.error('Error fetching departments:', error); toast.error('Failed to load departments.'); } };
-    
-    // --- CORRECTED LOGIC ---
-    const fetchDepartmentHeads = async () => {
-        try {
-            let query = supabase.from('users').select('id, full_name, identity_number, department_id').in('role', ['department_admin', 'super_admin']);
-            // If the user is a dept admin, only fetch heads from their OWN department
-            if (profile?.role === 'department_admin' && profile.department_id) {
-                query = query.eq('department_id', profile.department_id);
-            }
-            const { data, error } = await query;
-            if (error) throw error;
-            setDepartmentHeads(data || []);
-        } catch (error: any) {
-            console.error('Error fetching department heads:', error);
-            toast.error('Failed to load department heads.');
-        }
-    };
-
+    const fetchDepartmentHeads = async () => { try { let query = supabase.from('users').select('id, full_name, identity_number, department_id').in('role', ['department_admin', 'super_admin']); if (profile?.role === 'department_admin' && profile.department_id) { query = query.eq('department_id', profile.department_id); } const { data, error } = await query; if (error) throw error; setDepartmentHeads(data || []); } catch (error: any) { console.error('Error fetching department heads:', error); toast.error('Failed to load department heads.'); } };
     const fetchBookedRooms = async (date: string, session: string) => { if (session === 'Take Home') return; try { const { data, error } = await supabase .from('exams') .select('room_id') .eq('date', date) .eq('session', session); if (error) throw error; const bookedRoomIds = data.map(exam => exam.room_id); setBookedRooms(prev => ({ ...prev, [session]: bookedRoomIds })); } catch (error: any) { console.error('Error fetching booked rooms:', error); } };
     const filterLecturersByStudyProgram = (studyProgramId: string) => { if (!studyProgramId) { setFilteredLecturers(lecturers); return; } const filtered = lecturers.filter(lecturer => lecturer.study_program_id === studyProgramId); setFilteredLecturers(filtered); };
     const getDayFromDate = (dateString: string) => { const date = new Date(dateString); const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']; return days[date.getDay()]; };
@@ -175,54 +171,7 @@ const ExamManagement = () => {
     const handleDelete = async (id: string) => { try { setLoading(true); const { error } = await supabase .from('exams') .delete() .eq('id', id); if (error) throw error; toast.success('Exam deleted successfully'); setShowDeleteConfirm(null); fetchExams(); } catch (error: any) { console.error('Error deleting exam:', error); toast.error(error.message || 'Failed to delete exam'); } finally { setLoading(false); } };
     const filteredExams = exams.filter(exam => { const matchesSearch = (exam.course_name && exam.course_name.toLowerCase().includes(searchTerm.toLowerCase())) || exam.course_code.toLowerCase().includes(searchTerm.toLowerCase()) || exam.class.toLowerCase().includes(searchTerm.toLowerCase()) || (exam.department?.name && exam.department.name.toLowerCase().includes(searchTerm.toLowerCase())); const matchesDate = !dateFilter || exam.date === dateFilter; const matchesSession = sessionFilter === 'all' || exam.session === sessionFilter; const matchesSemester = semesterFilter === 'all' || exam.semester.toString() === semesterFilter; return matchesSearch && matchesDate && matchesSession && matchesSemester; });
     const getAvailableRooms = () => { if (!watchSession || watchSession === 'Take Home') return rooms; const currentRoomId = editingExam?.room_id; return rooms.filter(room => { const isBooked = bookedRooms[watchSession]?.includes(room.id); return !isBooked || room.id === currentRoomId; }); };
-    
-    // --- CORRECTED LOGIC ---
-    const handlePrint = async (formData: PrintFormData) => {
-        try {
-            const isSuperAdmin = profile?.role === 'super_admin';
-            const departmentIdForQuery = isSuperAdmin ? formData.department_id : profile.department_id;
-            
-            const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id);
-            const currentDepartment = departments.find(d => d.id === departmentIdForQuery);
-
-            let departmentHead;
-            if (isSuperAdmin) {
-                // For Super Admin, use the default hardcoded values
-                departmentHead = {
-                    full_name: 'KEPALA DEPARTEMEN',
-                    identity_number: '123'
-                };
-            } else { // isDepartmentAdmin
-                // For Department Admin, find the selected head from the form
-                departmentHead = departmentHeads.find(h => h.id === formData.department_head_id);
-            }
-
-            if (!selectedProgram || !departmentHead || !currentDepartment) {
-                toast.error("Please ensure all fields are selected and data is loaded.");
-                return;
-            }
-
-            const examsToPrint = exams.filter(exam =>
-                exam.study_program_id === formData.study_program_id &&
-                exam.department_id === departmentIdForQuery
-            );
-
-            if (examsToPrint.length === 0) {
-                toast.error("No exams found for the selected criteria.");
-                return;
-            }
-
-            const doc = new jsPDF();
-            let pageWidth = doc.internal.pageSize.getWidth();
-            const departmentName = currentDepartment.name.toUpperCase();
-            const logoDataUrl = await getImageDataUrl(logoUNY);
-            doc.addImage(logoDataUrl, 'PNG', 12, 15, 30, 30); let currentY = 22; doc.setFont('helvetica', 'normal'); doc.setFontSize(12); pageWidth += 30; doc.setFontSize(12); doc.setFont('helvetica', 'normal'); doc.text("KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI", pageWidth / 2, currentY, { align: 'center' }); currentY += 5; doc.text("UNIVERSITAS NEGERI YOGYAKARTA", pageWidth / 2, currentY, { align: 'center' }); currentY += 5; doc.text("FAKULTAS VOKASI", pageWidth / 2, currentY, { align: 'center' }); doc.setFontSize(14); doc.setFont('helvetica', 'bold'); currentY += 5; doc.text(`DEPARTEMEN ${departmentName}`, pageWidth / 2, currentY, { align: 'center' }); currentY += 5; doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.text("Kampus I: Jalan Mandung No. 1 Pengasih, Kulon Progo Telp.(0274)774625", pageWidth / 2, currentY, { align: 'center' }); currentY += 3; doc.text("Kampus II: Pacarejo, Semanu, Gunungkidul Telp. (0274)5042222/(0274)5042255", pageWidth / 2, currentY, { align: 'center' }); currentY += 3; doc.text("Laman: https://fv.uny.ac.id E-mail: fv@uny.ac.id", pageWidth / 2, currentY, { align: 'center' }); currentY += 3; pageWidth -= 30; doc.setLineWidth(1); doc.line(14, currentY, pageWidth - 14, currentY); currentY += 10; const subtitle = `JADWAL UAS ${selectedProgram.name.toUpperCase()} SEMESTER ${formData.semester.toUpperCase()} TAHUN AKADEMIK ${formData.academic_year}`; doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.text(subtitle, pageWidth / 2, currentY, { align: 'center' }); currentY += 7; const tableColumn = ["No.", "HARI", "TANGGAL", "SESI", "KODE MK", "MATA KULIAH", "SMT", "KLS", "MHS", "RUANG"]; const tableRows: any[] = []; examsToPrint.forEach((exam, index) => { tableRows.push([ index + 1, exam.day, format(parseISO(exam.date), 'dd-MM-yyyy'), exam.session.replace(/Session \d+ \((.*)\)/, '$1'), exam.course_code, exam.course_name, exam.semester, exam.class, exam.student_amount, exam.room?.name || 'Take Home', ]); }); autoTable(doc, { head: [tableColumn], body: tableRows, startY: currentY, theme: 'grid', styles: { fontSize: 8, cellPadding: 1.5, valign: 'middle' }, headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' }, columnStyles: { 0: { halign: 'center', cellWidth: 8 }, 4: { halign: 'center' }, 6: { halign: 'center' }, 7: { halign: 'center' }, 8: { halign: 'center' } } }); const finalY = (doc as any).lastAutoTable.finalY || 100; doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.text(`Yogyakarta, ${format(new Date(), 'd MMMM yyyy')}`, 140, finalY + 10); doc.text("Ketua Jurusan,", 140, finalY + 17); doc.setFont('helvetica', 'bold'); doc.text(departmentHead.full_name, 140, finalY + 37); const nameWidth = doc.getTextWidth(departmentHead.full_name); doc.setLineWidth(0.2); doc.line(140, finalY + 38, 140 + nameWidth, finalY + 38); doc.setFont('helvetica', 'normal'); doc.text(`NIP. ${departmentHead.identity_number}`, 140, finalY + 43); doc.save(`Jadwal_UAS_${selectedProgram.code}_${formData.semester}.pdf`);
-        } catch (e: any) {
-            console.error("PDF Generation Error:", e);
-            toast.error("An unexpected error occurred while generating the PDF.");
-        }
-    };
-
+    const handlePrint = async (formData: PrintFormData) => { try { const isSuperAdmin = profile?.role === 'super_admin'; const departmentIdForQuery = isSuperAdmin ? formData.department_id : profile.department_id; const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id); const currentDepartment = departments.find(d => d.id === departmentIdForQuery); let departmentHead; if (isSuperAdmin) { departmentHead = { full_name: 'KEPALA DEPARTEMEN', identity_number: '123' }; } else { departmentHead = departmentHeads.find(h => h.id === formData.department_head_id); } if (!selectedProgram || !departmentHead || !currentDepartment) { toast.error("Please ensure all fields are selected and data is loaded."); return; } const examsToPrint = exams.filter(exam => exam.study_program_id === formData.study_program_id && exam.department_id === departmentIdForQuery); if (examsToPrint.length === 0) { toast.error("No exams found for the selected criteria."); return; } const doc = new jsPDF(); let pageWidth = doc.internal.pageSize.getWidth(); const departmentName = currentDepartment.name.toUpperCase(); const logoDataUrl = await getImageDataUrl(logoUNY); doc.addImage(logoDataUrl, 'PNG', 12, 15, 30, 30); let currentY = 22; doc.setFont('helvetica', 'normal'); doc.setFontSize(12); pageWidth += 30; doc.setFontSize(12); doc.setFont('helvetica', 'normal'); doc.text("KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI", pageWidth / 2, currentY, { align: 'center' }); currentY += 5; doc.text("UNIVERSITAS NEGERI YOGYAKARTA", pageWidth / 2, currentY, { align: 'center' }); currentY += 5; doc.text("FAKULTAS VOKASI", pageWidth / 2, currentY, { align: 'center' }); doc.setFontSize(14); doc.setFont('helvetica', 'bold'); currentY += 5; doc.text(`DEPARTEMEN ${departmentName}`, pageWidth / 2, currentY, { align: 'center' }); currentY += 5; doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.text("Kampus I: Jalan Mandung No. 1 Pengasih, Kulon Progo Telp.(0274)774625", pageWidth / 2, currentY, { align: 'center' }); currentY += 3; doc.text("Kampus II: Pacarejo, Semanu, Gunungkidul Telp. (0274)5042222/(0274)5042255", pageWidth / 2, currentY, { align: 'center' }); currentY += 3; doc.text("Laman: https://fv.uny.ac.id E-mail: fv@uny.ac.id", pageWidth / 2, currentY, { align: 'center' }); currentY += 3; pageWidth -= 30; doc.setLineWidth(1); doc.line(14, currentY, pageWidth - 14, currentY); currentY += 10; const subtitle = `JADWAL UAS ${selectedProgram.name.toUpperCase()} SEMESTER ${formData.semester.toUpperCase()} TAHUN AKADEMIK ${formData.academic_year}`; doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.text(subtitle, pageWidth / 2, currentY, { align: 'center' }); currentY += 7; const tableColumn = ["No.", "HARI", "TANGGAL", "SESI", "KODE MK", "MATA KULIAH", "SMT", "KLS", "MHS", "RUANG"]; const tableRows: any[] = []; examsToPrint.forEach((exam, index) => { tableRows.push([ index + 1, exam.day, format(parseISO(exam.date), 'dd-MM-yyyy'), exam.session.replace(/Session \d+ \((.*)\)/, '$1'), exam.course_code, exam.course_name, exam.semester, exam.class, exam.student_amount, exam.room?.name || 'Take Home', ]); }); autoTable(doc, { head: [tableColumn], body: tableRows, startY: currentY, theme: 'grid', styles: { fontSize: 8, cellPadding: 1.5, valign: 'middle' }, headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' }, columnStyles: { 0: { halign: 'center', cellWidth: 8 }, 4: { halign: 'center' }, 6: { halign: 'center' }, 7: { halign: 'center' }, 8: { halign: 'center' } } }); const finalY = (doc as any).lastAutoTable.finalY || 100; doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.text(`Yogyakarta, ${format(new Date(), 'd MMMM yyyy')}`, 140, finalY + 10); doc.text("Ketua Jurusan,", 140, finalY + 17); doc.setFont('helvetica', 'bold'); doc.text(departmentHead.full_name, 140, finalY + 37); const nameWidth = doc.getTextWidth(departmentHead.full_name); doc.setLineWidth(0.2); doc.line(140, finalY + 38, 140 + nameWidth, finalY + 38); doc.setFont('helvetica', 'normal'); doc.text(`NIP. ${departmentHead.identity_number}`, 140, finalY + 43); doc.save(`Jadwal_UAS_${selectedProgram.code}_${formData.semester}.pdf`); } catch (e: any) { console.error("PDF Generation Error:", e); toast.error("An unexpected error occurred while generating the PDF."); } };
     const isDepartmentAdmin = profile?.role === 'department_admin';
     const isSuperAdmin = profile?.role === 'super_admin';
 
