@@ -270,6 +270,7 @@ const CheckOut: React.FC = () => {
       console.log('Processing checkout for booking:', selectedBooking.id);
 
       // Create checkout record
+      // Create checkout record
       const checkoutData = {
         user_id: selectedBooking.user_id,
         booking_id: data.booking_id,
@@ -280,6 +281,8 @@ const CheckOut: React.FC = () => {
         condition_on_checkout: 'good',
         condition_on_return: 'good',
         total_items: selectedBooking.equipment_requested?.length || 0,
+        // === TAMBAHKAN BARIS INI ===
+        equipment_back: selectedBooking.equipment_requested || [], // Salin data equipment ke kolom equipment_back
       };
 
       const { error: checkoutError } = await supabase
