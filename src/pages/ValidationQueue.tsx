@@ -2,13 +2,21 @@ import React, { useState, useEffect } from 'react';
 import {
   Bell, Clock, CheckCircle, XCircle, AlertTriangle, User, Building, Calendar,
   Timer, Eye, Check, X, RefreshCw, Filter, Search, FileText, Zap, Users, Package,
-  ChevronRight, ChevronDown, Flag, MessageSquare, AlertCircle, CalendarIcon
+  ChevronRight, ChevronDown, Flag, MessageSquare, AlertCircle, CalendarIcon, HardHat
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { Booking, Room, User as UserType, Department } from '../types';
 import toast from 'react-hot-toast';
 import { format, isToday, isTomorrow, isThisWeek, isPast, parseISO, compareAsc, isWithinInterval, startOfDay, endOfDay, subDays } from 'date-fns';
+
+// Tipe data untuk Equipment
+interface Equipment {
+  id: string;
+  name: string;
+  is_mandatory: boolean;
+  room_id: string;
+}
 
 // Tipe data untuk join yang kompleks
 interface BookingWithDetails extends Booking {
@@ -42,13 +50,19 @@ interface Checkout {
     severity: 'minor' | 'major' | 'critical';
     created_at: string;
   };
+  equipment_back: string[] | null;
 }
+
+// Tipe data untuk state equipment
+type RoomEquipmentMap = Map<string, Equipment[]>;
+
 
 const ValidationQueue: React.FC = () => {
   const { profile } = useAuth();
   
   const [activeTab, setActiveTab] = useState<'room' | 'equipment'>('room');
   const [checkouts, setCheckouts] = useState<Checkout[]>([]);
+  const [roomEquipment, setRoomEquipment] = useState<RoomEquipmentMap>(new Map());
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCheckout, setSelectedCheckout] = useState<Checkout | null>(null);
@@ -60,16 +74,48 @@ const ValidationQueue: React.FC = () => {
   const [reportTitle, setReportTitle] = useState('');
   const [reportDescription, setReportDescription] = useState('');
   const [reportSeverity, setReportSeverity] = useState<'minor' | 'major' | 'critical'>('minor');
-  const [sortOption, setSortOption] = useState<'priority' | 'date' | 'status'>('date'); // Default to date sorting
+  const [sortOption, setSortOption] = useState<'priority' | 'date' | 'status'>('date'); 
   
-  // Filter states
-  const [statusFilter, setStatusFilter] = useState<'all'| 'active' | 'returned' | 'overdue' | 'lost' | 'damaged'>('all');
+  // Filter status default adalah 'returned'
+  const [statusFilter, setStatusFilter] = useState<'all'| 'active' | 'returned' | 'overdue' | 'lost' | 'damaged'>('returned');
   const [dateFilter, setDateFilter] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
   const [activeFiltersCount, setActiveFiltersCount] = useState(0);
 
+  // useEffect untuk mengatur filter default berdasarkan tab
+  useEffect(() => {
+    if (activeTab === 'room') {
+      setStatusFilter('returned');
+    } else {
+      setStatusFilter('all');
+    }
+  }, [activeTab]);
+
+  // Helper function untuk memeriksa kelengkapan pengembalian
+  const isReturnIncomplete = (checkout: Checkout): boolean => {
+    if (checkout.type !== 'room' || !checkout.booking?.room_id) {
+      return false;
+    }
+    
+    const equipmentList = roomEquipment.get(checkout.booking.room_id) || [];
+    const mandatoryEquipment = equipmentList.filter(eq => eq.is_mandatory);
+    
+    if (mandatoryEquipment.length === 0) {
+      return false;
+    }
+
+    const returnedEquipmentIds = new Set(checkout.equipment_back || []);
+    
+    const allMandatoryReturned = mandatoryEquipment.every(eq => returnedEquipmentIds.has(eq.id));
+    
+    return !allMandatoryReturned;
+  };
+
   // -- Kumpulan Fungsi Helper --
   const getCheckoutPriority = (checkout: Checkout): string => {
+    if (checkout.status === 'active' && isReturnIncomplete(checkout)) {
+        return 'incomplete_return';
+    }
     if (checkout.status === 'overdue') return 'overdue';
     const returnDate = new Date(checkout.expected_return_date);
     if (isPast(returnDate) && checkout.status === 'active') return 'overdue';
@@ -81,6 +127,7 @@ const ValidationQueue: React.FC = () => {
 
   const getPriorityIcon = (priority: string) => {
     switch (priority) {
+      case 'incomplete_return': return AlertTriangle;
       case 'overdue': return AlertTriangle;
       case 'urgent': return Clock;
       case 'high': return Timer;
@@ -93,6 +140,7 @@ const ValidationQueue: React.FC = () => {
     if (hasReport) return 'border-yellow-400 bg-yellow-50';
     
     switch (priority) {
+      case 'incomplete_return': return 'border-red-500 bg-red-100';
       case 'overdue': return 'border-red-300 bg-red-50';
       case 'urgent': return 'border-orange-300 bg-orange-50';
       case 'high': return 'border-yellow-300 bg-yellow-50';
@@ -105,6 +153,7 @@ const ValidationQueue: React.FC = () => {
     if (hasReport) return 'bg-yellow-500';
     
     switch (priority) {
+      case 'incomplete_return': return 'bg-red-600';
       case 'overdue': return 'bg-red-500';
       case 'urgent': return 'bg-orange-500';
       case 'high': return 'bg-yellow-500';
@@ -161,6 +210,7 @@ const ValidationQueue: React.FC = () => {
         .from('checkouts')
         .select(`
           *,
+          equipment_back,
           user:users!checkouts_user_id_fkey(id, full_name, identity_number, email),
           booking:bookings(
             *,
@@ -178,12 +228,6 @@ const ValidationQueue: React.FC = () => {
         
         query = query.gte('checkout_date', startDate)
                      .lte('checkout_date', endDate);
-      } else {
-        // If no date filter, only show recent checkouts (yesterday and today)
-        const yesterday = subDays(new Date(), 1);
-        const yesterdayStart = startOfDay(yesterday).toISOString();
-        
-        query = query.gte('checkout_date', yesterdayStart);
       }
       
       // Apply status filter if not 'all'
@@ -201,6 +245,27 @@ const ValidationQueue: React.FC = () => {
         filteredData = filteredData.filter(checkout => 
           checkout.booking?.room?.department_id === profile.department_id
         );
+      }
+
+      // Ambil data equipment untuk semua ruangan yang relevan
+      if (activeTab === 'room' && filteredData.length > 0) {
+        const roomIds = [...new Set(filteredData.map(c => c.booking?.room_id).filter(Boolean))];
+        if (roomIds.length > 0) {
+          const { data: equipmentData, error: equipmentError } = await supabase
+            .from('equipment')
+            .select('*')
+            .in('room_id', roomIds as string[]);
+
+          if (equipmentError) throw equipmentError;
+
+          const equipmentMap: RoomEquipmentMap = new Map();
+          equipmentData.forEach(eq => {
+            const list = equipmentMap.get(eq.room_id) || [];
+            list.push(eq);
+            equipmentMap.set(eq.room_id, list);
+          });
+          setRoomEquipment(equipmentMap);
+        }
       }
 
       // Fetch reports for each checkout
@@ -262,27 +327,15 @@ const ValidationQueue: React.FC = () => {
 
   // -- Fungsi Handler untuk Tombol --
   const handleApproval = async (checkoutId: string) => {
+    // Fungsi ini sekarang berarti "Menyelesaikan Pengembalian"
     setProcessingIds(prev => new Set(prev).add(checkoutId));
     try {
-      // Get the checkout to find the booking and room
       const checkout = checkouts.find(c => c.id === checkoutId);
       if (!checkout || !checkout.booking || !checkout.booking.room_id) {
         throw new Error('Checkout, booking, or room information not found');
       }
       
-      // 1. Update checkout status
-      const { error: checkoutError } = await supabase
-        .from('checkouts')
-        .update({ 
-          approved_by: profile?.id, 
-          status: 'active',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', checkoutId);
-      
-      if (checkoutError) throw checkoutError;
-      
-      // 2. Update room availability to true (make it available again)
+      // Update room availability to true (make it available again)
       const { error: roomError } = await supabase
         .from('rooms')
         .update({ 
@@ -291,17 +344,14 @@ const ValidationQueue: React.FC = () => {
         })
         .eq('id', checkout.booking.room_id);
       
-      if (roomError) {
-        console.error('Error updating room availability:', roomError);
-        // Don't throw here, as the checkout was approved successfully
-      }
+      if (roomError) throw roomError;
       
-      toast.success('Checkout approved successfully and room marked as available!');
+      toast.success('Return process completed and room marked as available!');
       fetchPendingCheckouts();
       if (selectedCheckout?.id === checkoutId) setShowDetailModal(false);
     } catch (error: any) {
-      console.error('Error approving checkout:', error);
-      toast.error(error.message || 'Failed to approve checkout');
+      console.error('Error completing return:', error);
+      toast.error(error.message || 'Failed to complete return');
     } finally {
       setProcessingIds(prev => {
         const newSet = new Set(prev);
@@ -312,44 +362,27 @@ const ValidationQueue: React.FC = () => {
   };
 
   const handleReject = async (checkoutId: string) => {
+    // Fungsi ini sekarang berarti "Menolak Pengembalian"
     setProcessingIds(prev => new Set(prev).add(checkoutId));
     try {
-      // Get the checkout to find the booking ID
-      const checkout = checkouts.find(c => c.id === checkoutId);
-      const bookingId = checkout?.booking_id;
-      
-      if (!bookingId) {
-        throw new Error('Booking ID not found for this checkout');
-      }
-      
-      // First, update the booking status back to "approved"
-      const { error: bookingError } = await supabase
-        .from('bookings')
+      // Update status checkout dari 'returned' kembali ke 'active'
+      const { error } = await supabase
+        .from('checkouts')
         .update({ 
-          status: 'approved',
+          status: 'active',
           updated_at: new Date().toISOString()
         })
-        .eq('id', bookingId);
-
-      if (bookingError) {
-        throw bookingError;
-      }
-      
-      // Then delete the checkout
-      const { error: checkoutError } = await supabase
-        .from('checkouts')
-        .delete()
         .eq('id', checkoutId);
 
-      if (checkoutError) throw checkoutError;
+      if (error) throw error;
       
-      toast.success('Checkout rejected and booking status restored to approved');
+      toast.success('Return rejected. Checkout status has been set back to "active".');
       fetchPendingCheckouts();
       if (selectedCheckout?.id === checkoutId) setShowDetailModal(false);
       setShowDeleteConfirm(null);
     } catch (error: any) {
-      console.error('Error rejecting checkout:', error);
-      toast.error(error.message || 'Failed to reject checkout');
+      console.error('Error rejecting return:', error);
+      toast.error(error.message || 'Failed to reject return');
     } finally {
        setProcessingIds(prev => {
         const newSet = new Set(prev);
@@ -425,7 +458,7 @@ const ValidationQueue: React.FC = () => {
       
       if (sortOption === 'priority') {
         // Sort by priority
-        const priorityOrder = { overdue: 0, urgent: 1, high: 2, medium: 3, low: 4 };
+        const priorityOrder = { incomplete_return: -1, overdue: 0, urgent: 1, high: 2, medium: 3, low: 4 };
         return priorityOrder[getCheckoutPriority(a)] - priorityOrder[getCheckoutPriority(b)];
       } else if (sortOption === 'date') {
         // Sort by date (most recent first)
@@ -457,7 +490,7 @@ const ValidationQueue: React.FC = () => {
       <div className="bg-gradient-to-r from-orange-600 to-red-600 rounded-xl p-6 text-white">
         <div className="flex items-center justify-between">
             <div><h1 className="text-3xl font-bold flex items-center space-x-3"><Bell className="h-8 w-8" /><span>Validation Queue</span></h1><p className="mt-2 opacity-90">Review and approve pending checkouts</p></div>
-            <div className="hidden md:block text-right"><div className="text-2xl font-bold">{checkouts.length}</div><div className="text-sm opacity-80">Pending Approvals</div></div>
+            <div className="hidden md:block text-right"><div className="text-2xl font-bold">{checkouts.length}</div><div className="text-sm opacity-80">Pending Items</div></div>
         </div>
       </div>
 
@@ -516,7 +549,7 @@ const ValidationQueue: React.FC = () => {
               </label>
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'overdue')}
+                onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'returned' | 'overdue')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               >
                 <option value="all">All Statuses</option>
@@ -584,6 +617,8 @@ const ValidationQueue: React.FC = () => {
             const PriorityIcon = checkout.has_report ? Flag : getPriorityIcon(priority);
             const isProcessing = processingIds.has(checkout.id);
             const isExpanded = expandedItems.has(checkout.id);
+            const equipmentList = roomEquipment.get(checkout.booking?.room_id || '') || [];
+            const returnedIds = new Set(checkout.equipment_back || []);
             
             return (
               <div 
@@ -679,22 +714,26 @@ const ValidationQueue: React.FC = () => {
                         <Flag className="h-4 w-4" />
                         <span>{checkout.has_report ? 'Update Report' : 'Add Report'}</span>
                       </button>
-                      <button 
-                        onClick={() => handleApproval(checkout.id)} 
-                        disabled={isProcessing} 
-                        className="flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                      >
-                        <Check className="h-4 w-4" />
-                        <span>Approve</span>
-                      </button>
-                      <button 
-                        onClick={() => setShowDeleteConfirm(checkout.id)} 
-                        disabled={isProcessing} 
-                        className="flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
-                      >
-                        <X className="h-4 w-4" />
-                        <span>Reject</span>
-                      </button>
+                      {checkout.status === 'returned' && (
+                        <>
+                          <button 
+                            onClick={() => handleApproval(checkout.id)} 
+                            disabled={isProcessing} 
+                            className="flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                          >
+                            <Check className="h-4 w-4" />
+                            <span>Approve</span>
+                          </button>
+                          <button 
+                            onClick={() => setShowDeleteConfirm(checkout.id)} 
+                            disabled={isProcessing} 
+                            className="flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                          >
+                            <X className="h-4 w-4" />
+                            <span>Reject</span>
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
@@ -710,7 +749,7 @@ const ValidationQueue: React.FC = () => {
                         <h3 className="text-lg font-semibold text-gray-900">{checkout.booking?.purpose || 'Checkout'}</h3>
                         <div className="flex items-center space-x-2">
                           <p className="text-sm text-gray-600 capitalize">
-                            {checkout.has_report ? 'Reported' : `${priority} Priority`} • Status: {checkout.status}
+                            {checkout.has_report ? 'Reported' : `${priority.replace('_', ' ')} Priority`} • Status: {checkout.status}
                           </p>
                           {checkout.has_report && (
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
@@ -744,6 +783,29 @@ const ValidationQueue: React.FC = () => {
                         </div>
                       </div>
                     </div>
+                    
+                    {/* Checklist Equipment */}
+                    {activeTab === 'room' && equipmentList.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-gray-200">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Equipment Return Checklist</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2">
+                          {equipmentList.map(eq => (
+                            <div key={eq.id} className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={returnedIds.has(eq.id)}
+                                readOnly
+                                className="h-4 w-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500 cursor-not-allowed"
+                              />
+                              <label className={`ml-2 text-sm ${eq.is_mandatory ? 'font-bold text-gray-900' : 'text-gray-600'}`}>
+                                {eq.name}
+                                {eq.is_mandatory && <span className="text-red-500 ml-1">*</span>}
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     
                     {/* Report information (if exists) */}
                     {checkout.has_report && checkout.report && (
@@ -792,22 +854,26 @@ const ValidationQueue: React.FC = () => {
                       <Flag className="h-4 w-4" />
                       <span>{checkout.has_report ? 'Update Report' : 'Add Report'}</span>
                     </button>
-                    <button 
-                      onClick={() => handleApproval(checkout.id)} 
-                      disabled={isProcessing} 
-                      className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                    >
-                      <Check className="h-4 w-4" />
-                      <span>Approve</span>
-                    </button>
-                    <button 
-                      onClick={() => setShowDeleteConfirm(checkout.id)} 
-                      disabled={isProcessing} 
-                      className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
-                    >
-                      <X className="h-4 w-4" />
-                      <span>Reject</span>
-                    </button>
+                     {checkout.status === 'returned' && (
+                        <>
+                          <button 
+                            onClick={() => handleApproval(checkout.id)} 
+                            disabled={isProcessing} 
+                            className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                          >
+                            <Check className="h-4 w-4" />
+                            <span>Approve</span>
+                          </button>
+                          <button 
+                            onClick={() => setShowDeleteConfirm(checkout.id)} 
+                            disabled={isProcessing} 
+                            className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                          >
+                            <X className="h-4 w-4" />
+                            <span>Reject</span>
+                          </button>
+                        </>
+                      )}
                   </div>
                 </div>
               </div>
@@ -891,13 +957,15 @@ const ValidationQueue: React.FC = () => {
                 >
                   Close
                 </button>
-                <button 
-                  onClick={() => handleApproval(selectedCheckout.id)} 
-                  className="flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                >
-                  <Check className="h-5 w-5"/>
-                  <span>Approve Checkout</span>
-                </button>
+                {selectedCheckout.status === 'returned' && (
+                  <button 
+                    onClick={() => handleApproval(selectedCheckout.id)} 
+                    className="flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                  >
+                    <Check className="h-5 w-5"/>
+                    <span>Approve Return</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -909,8 +977,8 @@ const ValidationQueue: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-6 max-w-sm w-full">
             <h3 className="text-lg font-bold">Confirm Rejection</h3>
-            <p className="text-sm text-gray-600 mt-2">Are you sure you want to reject and delete this checkout request?</p>
-            <p className="text-sm text-gray-700 mt-2 font-medium">The associated booking will be restored to "approved" status.</p>
+            <p className="text-sm text-gray-600 mt-2">Are you sure you want to reject this return?</p>
+            <p className="text-sm text-gray-700 mt-2 font-medium">The checkout status will be set back to "active".</p>
             <div className="mt-6 flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-3">
               <button 
                 onClick={() => setShowDeleteConfirm(null)} 
