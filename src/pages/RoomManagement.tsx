@@ -65,7 +65,7 @@ const RoomManagement: React.FC = () => {
   const [searchEndTime, setSearchEndTime] = useState('17:00');
 
   const form = useForm<RoomForm>({ resolver: zodResolver(roomSchema) });
-  const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const dayNames = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
   const normalizeRoomName = (name: string): string => name ? name.toLowerCase().replace(/[\s.&-]/g, '') : '';
 
   const updateRoomStatuses = useCallback(async (isManual = false) => {
