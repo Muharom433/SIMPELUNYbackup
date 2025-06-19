@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-  Building, Plus, Search, Edit, Trash2, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Zap, Tv2, Speaker, Presentation, Mic, AirVent, Loader2
+  Building, Plus, Search, Edit, Trash2, Eye, Users, MapPin, AlertCircle, RefreshCw, X, List, Grid, Zap, Tv2, Speaker, Presentation, Mic, AirVent, Loader2
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -12,7 +12,7 @@ import toast from 'react-hot-toast';
 import { format, parse } from 'date-fns';
 import { id as localeID } from 'date-fns/locale';
 
-// --- INTERFACES & SCHEMA (TIDAK DIUBAH) ---
+// --- INTERFACES & SCHEMA ---
 interface Equipment {
     id: string;
     name: string;
@@ -57,44 +57,40 @@ const RoomManagement: React.FC = () => {
   const [roomEquipmentLinks, setRoomEquipmentLinks] = useState<RoomEquipment[]>([]);
   const [isUpdatingEquipment, setIsUpdatingEquipment] = useState<string | null>(null);
 
-  // State untuk filter yang ada
+  // --- State for filters ---
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   
-  // --- ADDED: State untuk filter pencarian baru ---
   const dayNamesEnglish = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const dayNamesIndonesian = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
-  const [searchDay, setSearchDay] = useState(format(new Date(), 'EEEE')); // Default ke nama hari Inggris
+  
+  const [searchDay, setSearchDay] = useState(format(new Date(), 'EEEE'));
   const [searchStartTime, setSearchStartTime] = useState('07:30');
   const [searchEndTime, setSearchEndTime] = useState('17:00');
+  const [isSearchMode, setIsSearchMode] = useState(false);
 
   const form = useForm<RoomForm>({ resolver: zodResolver(roomSchema) });
   const normalizeRoomName = (name: string): string => name ? name.toLowerCase().replace(/[\s.&-]/g, '') : '';
 
-  // --- UPDATED: Fungsi ini sekarang menerima parameter untuk pencarian atau refresh ---
-  const updateRoomStatuses = useCallback(async (dayToFetch: string, timeToCheck: Date, startTimeStr: string, endTimeStr: string, isManualAction = false) => {
-    if (isRefreshing && isManualAction) return;
+  const updateRoomStatuses = useCallback(async () => {
     setIsRefreshing(true);
     try {
+      const now = new Date();
+      const todayDayName = format(now, 'EEEE', { locale: localeID });
+      
       const { data: roomsData, error: roomsError } = await supabase.from('rooms').select(`*, department:departments(*)`);
       if (roomsError) throw roomsError;
-      
-      const { data: schedulesData, error: schedulesError } = await supabase.from('lecture_schedules').select('room, start_time, end_time, day').eq('day', dayToFetch);
+
+      const { data: schedulesData, error: schedulesError } = await supabase.from('lecture_schedules').select('room, start_time, end_time, day').eq('day', todayDayName);
       if (schedulesError) throw schedulesError;
 
       const scheduleMap = new Map<string, LectureSchedule[]>();
       schedulesData.forEach(schedule => {
-        if (schedule.room && schedule.start_time && schedule.end_time) {
-          const scheduleStart = parse(schedule.start_time, 'HH:mm:ss', new Date());
-          const scheduleEnd = parse(schedule.end_time, 'HH:mm:ss', new Date());
-          const searchStart = parse(startTimeStr, 'HH:mm', new Date());
-          const searchEnd = parse(endTimeStr, 'HH:mm', new Date());
-          if (scheduleStart < searchEnd && scheduleEnd > searchStart) {
-            const normalizedName = normalizeRoomName(schedule.room);
-            if (!scheduleMap.has(normalizedName)) scheduleMap.set(normalizedName, []);
-            scheduleMap.get(normalizedName)?.push(schedule);
-          }
+        if (schedule.room) {
+          const normalizedName = normalizeRoomName(schedule.room);
+          if (!scheduleMap.has(normalizedName)) scheduleMap.set(normalizedName, []);
+          scheduleMap.get(normalizedName)?.push(schedule);
         }
       });
       
@@ -103,11 +99,12 @@ const RoomManagement: React.FC = () => {
         const roomSchedules = scheduleMap.get(normalizedRoomName) || [];
         let status: RoomWithDetails['status'] = 'Available';
         if (roomSchedules.length > 0) {
-          const isToday = dayToFetch.toLowerCase() === format(new Date(), 'EEEE', { locale: localeID }).toLowerCase();
-          const isCurrentlyInUse = isToday && roomSchedules.some(schedule => {
+          const isCurrentlyInUse = roomSchedules.some(schedule => {
             if (!schedule.start_time || !schedule.end_time) return false;
             try {
-              return timeToCheck >= parse(schedule.start_time, 'HH:mm:ss', new Date()) && timeToCheck <= parse(schedule.end_time, 'HH:mm:ss', new Date());
+              const startTime = parse(schedule.start_time, 'HH:mm:ss', new Date());
+              const endTime = parse(schedule.end_time, 'HH:mm:ss', new Date());
+              return now >= startTime && now <= endTime;
             } catch (e) { return false; }
           });
           status = isCurrentlyInUse ? 'In Use' : 'Scheduled';
@@ -115,7 +112,6 @@ const RoomManagement: React.FC = () => {
         return { ...room, department: room.department, status };
       });
       setRooms(roomsWithStatus as RoomWithDetails[]);
-      if(isManualAction) toast.success('Room statuses updated!');
     } catch (error) {
       console.error('Error updating room statuses:', error);
       toast.error('Failed to refresh room statuses.');
@@ -124,39 +120,66 @@ const RoomManagement: React.FC = () => {
       setLoading(false);
     }
   }, []);
-  
-  // --- ADDED: Handler baru untuk tombol Search ---
-  const handleSearch = () => {
+
+  const handleSearch = async () => {
     if (!searchDay || !searchStartTime || !searchEndTime) {
-        toast.error("Please complete all search filters.");
-        return;
+      toast.error("Please complete all search filters.");
+      return;
     }
-    const dayToFetch = dayNamesIndonesian[dayNamesEnglish.indexOf(searchDay)];
-    const checkTime = parse(searchStartTime, 'HH:mm', new Date());
-    updateRoomStatuses(dayToFetch, checkTime, searchStartTime, searchEndTime, true);
+    setIsRefreshing(true);
+    setLoading(true);
+    setIsSearchMode(true);
+    try {
+      const dayToFetch = dayNamesIndonesian[dayNamesEnglish.indexOf(searchDay)];
+      const searchStart = parse(searchStartTime, 'HH:mm', new Date());
+      const searchEnd = parse(searchEndTime, 'HH:mm', new Date());
+
+      const { data: overlappingSchedules, error: schedulesError } = await supabase
+        .from('lecture_schedules').select('room').eq('day', dayToFetch);
+      if (schedulesError) throw schedulesError;
+
+      const busyRoomNames = new Set<string>();
+      overlappingSchedules.forEach(schedule => {
+          if(schedule.room && schedule.start_time && schedule.end_time) {
+              const scheduleStart = parse(schedule.start_time, 'HH:mm:ss', new Date());
+              const scheduleEnd = parse(schedule.end_time, 'HH:mm:ss', new Date());
+              if(scheduleStart < searchEnd && scheduleEnd > searchStart) {
+                  busyRoomNames.add(schedule.room);
+              }
+          }
+      });
+      
+      const { data: allRoomsData, error: roomsError } = await supabase.from('rooms').select(`*, department:departments(*)`);
+      if(roomsError) throw roomsError;
+
+      const availableRooms = allRoomsData
+        .filter(room => !busyRoomNames.has(room.name))
+        .map(room => ({ ...room, status: 'Available' as 'Available' }));
+      
+      setRooms(availableRooms as RoomWithDetails[]);
+      toast.success(`Found ${availableRooms.length} available rooms.`);
+    } catch (error) {
+      console.error('Error searching for available rooms:', error);
+      toast.error('Failed to perform search.');
+    } finally {
+      setIsRefreshing(false);
+      setLoading(false);
+    }
   };
-  
-  // --- Handler untuk tombol Refresh (fungsi lama dipertahankan) ---
+
   const handleManualRefresh = () => {
-    const now = new Date();
-    const todayDayNameIndonesian = format(now, 'EEEE', { locale: localeID });
-    const todayDayNameEnglish = format(now, 'EEEE');
-    setSearchDay(todayDayNameEnglish);
-    setSearchStartTime('07:30');
-    setSearchEndTime('17:00');
-    updateRoomStatuses(todayDayNameIndonesian, now, '07:30', '17:00', true);
+    setIsSearchMode(false);
+    setLoading(true);
+    updateRoomStatuses(true);
+    toast.success('Refreshing status for today...');
   };
   
   useEffect(() => {
     if (profile) {
-      handleManualRefresh();
+      updateRoomStatuses();
       fetchDepartments();
       fetchMasterEquipment();
-      const interval = setInterval(() => {
-        const now = new Date();
-        const todayDayName = format(now, 'EEEE', { locale: localeID });
-        updateRoomStatuses(todayDayName, now, format(now, 'HH:mm'), format(now, 'HH:mm'));
-      }, 10 * 60 * 1000);
+      const interval = setInterval(() => updateRoomStatuses(), 10 * 60 * 1000);
       return () => clearInterval(interval);
     }
   }, [profile, updateRoomStatuses]);
@@ -164,11 +187,11 @@ const RoomManagement: React.FC = () => {
   const fetchDepartments = async () => { try { const { data, error } = await supabase.from('departments').select('id, name').order('name'); if (error) throw error; setDepartments(data || []); } catch (error: any) { console.error('Error fetching departments:', error); toast.error('Failed to load departments'); } };
   const fetchMasterEquipment = async () => { const { data, error } = await supabase.from('equipment').select('*').order('name'); if (error) toast.error("Could not fetch equipment list."); else setMasterEquipmentList(data || []); };
   
-  // --- UPDATED: fetchSchedulesForRoom sekarang menerima hari yang difilter ---
   const fetchSchedulesForRoom = async (roomName: string, day: string) => {
     setLoadingSchedules(true);
     try {
-        const { data, error } = await supabase.from('lecture_schedules').select('*').eq('day', day).eq('room', roomName).order('start_time');
+        const dayToFetch = dayNamesIndonesian[dayNamesEnglish.indexOf(day)];
+        const { data, error } = await supabase.from('lecture_schedules').select('*').eq('day', dayToFetch).eq('room', roomName).order('start_time');
         if (error) throw error;
         setRoomSchedules(data || []);
     } catch (error: any) {
@@ -177,18 +200,17 @@ const RoomManagement: React.FC = () => {
         setLoadingSchedules(false);
     }
   };
+
+  const fetchRoomEquipment = async (roomId: string) => { setIsUpdatingEquipment(roomId); const { data, error } = await supabase.from('room_equipment').select('*').eq('room_id', roomId); if (error) toast.error("Could not fetch room's equipment."); else setRoomEquipmentLinks(data || []); setIsUpdatingEquipment(null); };
   
-  // --- UPDATED: useEffect untuk modal sekarang menggunakan searchDay ---
   useEffect(() => {
     if (showRoomDetail) {
-        const dayToFetch = dayNamesIndonesian[dayNamesEnglish.indexOf(searchDay)];
-        fetchSchedulesForRoom(showRoomDetail.name, dayToFetch);
+        fetchSchedulesForRoom(showRoomDetail.name, searchDay);
         fetchRoomEquipment(showRoomDetail.id);
     }
   }, [showRoomDetail, searchDay]);
 
   const handleEquipmentChange = async (equipmentId: string, isChecked: boolean) => { if (!showRoomDetail) return; setIsUpdatingEquipment(equipmentId); if (isChecked) { const { error } = await supabase.from('room_equipment').insert({ room_id: showRoomDetail.id, equipment_id: equipmentId }); if (error) { toast.error('Failed to add equipment.'); } else { toast.success('Equipment added.'); } } else { const { error } = await supabase.from('room_equipment').delete().eq('room_id', showRoomDetail.id).eq('equipment_id', equipmentId); if (error) { toast.error('Failed to remove equipment.'); } else { toast.success('Equipment removed.'); } } await fetchRoomEquipment(showRoomDetail.id); setIsUpdatingEquipment(null); };
-  const fetchRoomEquipment = async (roomId: string) => { const { data, error } = await supabase.from('room_equipment').select('*').eq('room_id', roomId); if (error) toast.error("Could not fetch room's equipment."); else setRoomEquipmentLinks(data || []); };
   const onSubmit = async (data: RoomForm) => { try { setLoading(true); const roomData = { name: data.name, code: data.code, capacity: data.capacity, department_id: data.department_id, }; if (editingRoom) { const { error } = await supabase.from('rooms').update(roomData).eq('id', editingRoom.id); if (error) throw error; toast.success('Room updated successfully!'); } else { const { error } = await supabase.from('rooms').insert(roomData); if (error) throw error; toast.success('Room created successfully!'); } setShowForm(false); setEditingRoom(null); form.reset(); handleManualRefresh(); } catch (error: any) { console.error('Error saving room:', error); toast.error(error.message || 'Failed to save room'); } finally { setLoading(false); } };
   const handleEdit = (room: RoomWithDetails) => { setEditingRoom(room); form.reset({ name: room.name, code: room.code, capacity: room.capacity, department_id: room.department_id, }); setShowForm(true); };
   const handleDelete = async (roomId: string) => { if (!confirm('Are you sure you want to delete this room?')) return; try { const { error } = await supabase.from('rooms').delete().eq('id', roomId); if (error) throw error; toast.success('Room deleted successfully!'); handleManualRefresh(); } catch (error: any) { console.error('Error deleting room:', error); toast.error(error.message || 'Failed to delete room'); } };
@@ -202,12 +224,12 @@ const RoomManagement: React.FC = () => {
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white"> <h1 className="text-3xl font-bold">Room Status & Availability</h1> <p className="mt-2 opacity-90">View real-time room status or search for future availability.</p> </div>
         <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
             <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Find Room Availability</h3>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Find Available Rooms</h3>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                     <div><label className="block text-sm font-medium text-gray-700">Day</label><select value={searchDay} onChange={(e) => setSearchDay(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm">{dayNamesEnglish.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
                     <div><label className="block text-sm font-medium text-gray-700">Start Time</label><input type="time" value={searchStartTime} onChange={(e) => setSearchStartTime(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/></div>
                     <div><label className="block text-sm font-medium text-gray-700">End Time</label><input type="time" value={searchEndTime} onChange={(e) => setSearchEndTime(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/></div>
-                    <button onClick={handleSearch} disabled={isRefreshing} className="col-span-1 md:col-span-2 flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 h-10">
+                    <button onClick={handleSearch} disabled={isRefreshing} className="flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 h-10">
                         {isRefreshing ? <Loader2 className="h-5 w-5 animate-spin"/> : <Search className="h-5 w-5" />} <span>Search</span>
                     </button>
                 </div>
@@ -217,9 +239,9 @@ const RoomManagement: React.FC = () => {
                     <button onClick={() => { setEditingRoom(null); form.reset(); setShowForm(true); }} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"> <Plus className="h-5 w-5" /> <span>Add Room</span> </button>
                 </div>
                 <div className="flex items-center space-x-3">
-                    <div className="relative"> <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" /> <input type="text" placeholder="Search by name/code..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-64"/></div>
+                    <div className="relative"> <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" /> <input type="text" placeholder="Filter results by name/code..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-64"/></div>
                     <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg"><option value="all">All Statuses</option><option value="Available">Available</option><option value="Scheduled">Scheduled</option><option value="In Use">In Use</option></select>
-                    <button onClick={handleManualRefresh} disabled={isRefreshing} className="p-2 border rounded-lg hover:bg-gray-100 disabled:opacity-50"> <RefreshCw className={`h-5 w-5 ${isRefreshing ? 'animate-spin' : ''}`} /> </button>
+                    <button onClick={handleManualRefresh} disabled={isRefreshing} className="p-2 border rounded-lg hover:bg-gray-100 disabled:opacity-50" title="Refresh to Today's Status"> <RefreshCw className={`h-5 w-5 ${isRefreshing ? 'animate-spin' : ''}`} /> </button>
                     <div className="flex border border-gray-300 rounded-lg overflow-hidden"> <button onClick={() => setViewMode('grid')} className={`p-2 ${viewMode === 'grid' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600'}`}><Grid className="h-5 w-5" /></button> <button onClick={() => setViewMode('list')} className={`p-2 ${viewMode === 'list' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600'}`}><List className="h-5 w-5" /></button> </div>
                 </div>
             </div>
