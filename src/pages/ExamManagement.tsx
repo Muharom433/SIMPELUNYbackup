@@ -164,14 +164,14 @@ const ExamManagement = () => {
     const fetchDepartments = async () => { try { let query = supabase.from('departments').select('id, name'); if (profile?.role === 'department_admin' && profile.department_id) { query = query.eq('id', profile.department_id); } const { data, error } = await query; if (error) throw error; setDepartments(data || []); } catch (error: any) { console.error('Error fetching departments:', error); toast.error('Failed to load departments.'); } };
     const fetchDepartmentHeads = async () => { try {  let query = supabase.from('users')
             .select('id, full_name, identity_number, department_id')
-            // THIS IS THE PROBLEM LINE
-            .in('role', ['department_admin', 'super_admin']); 
-            
-        if (profile?.role === 'department_admin' && profile.department_id) { 
-            query = query.eq('department_id', profile.department_id); 
-        } 
-        const { data, error } = await query; 
-        if (error) throw error; 
+            .eq('role', 'lecturer'); 
+
+        if (profile?.role === 'department_admin' && profile.department_id) {
+            query = query.eq('department_id', profile.department_id);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
         setDepartmentHeads(data || []); } catch (error: any) { console.error('Error fetching department heads:', error); toast.error('Failed to load department heads.'); } };
     const fetchBookedRooms = async (date: string, session: string) => { if (session === 'Take Home') return; try { const { data, error } = await supabase .from('exams') .select('room_id') .eq('date', date) .eq('session', session); if (error) throw error; const bookedRoomIds = data.map(exam => exam.room_id); setBookedRooms(prev => ({ ...prev, [session]: bookedRoomIds })); } catch (error: any) { console.error('Error fetching booked rooms:', error); } };
     const filterLecturersByStudyProgram = (studyProgramId: string) => { if (!studyProgramId) { setFilteredLecturers(lecturers); return; } const filtered = lecturers.filter(lecturer => lecturer.study_program_id === studyProgramId); setFilteredLecturers(filtered); };
