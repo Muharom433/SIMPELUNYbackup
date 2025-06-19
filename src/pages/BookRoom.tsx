@@ -75,6 +75,8 @@ const BookRoom: React.FC = () => {
   const watchClassType = form.watch('class_type');
   const watchIdentityNumber = form.watch('identity_number');
   const watchStudyProgramId = form.watch('study_program_id');
+  const getStatusColor = (status: RoomWithDetails['status']) => { switch (status) { case 'In Use': return 'bg-red-100 text-red-800'; case 'Scheduled': return 'bg-yellow-100 text-yellow-800'; case 'Available': return 'bg-green-100 text-green-800'; default: return 'bg-gray-100 text-gray-800'; } };
+  
 
   const normalizeRoomName = (name: string): string => name ? name.toLowerCase().replace(/[\s.&-]/g, '') : '';
 
