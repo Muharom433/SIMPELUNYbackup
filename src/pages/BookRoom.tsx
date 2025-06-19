@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-  Calendar, Clock, Users, MapPin, Zap, CheckCircle, AlertCircle, Search, Grid, List, X, Send, RefreshCw, ChevronDown, Monitor, Wifi, Phone, User, Eye
+  Calendar, Clock, Users, MapPin, Zap, CheckCircle, AlertCircle, Search, Grid, List, X, Send, RefreshCw, ChevronDown, Monitor, Wifi, Phone, User
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -64,14 +64,22 @@ const BookRoom: React.FC = () => {
   const [showStudyProgramDropdown, setShowStudyProgramDropdown] = useState(false);
   const [studyProgramSearchTerm, setStudyProgramSearchTerm] = useState('');
   const [showAllRooms, setShowAllRooms] = useState(false);
-  
-  // --- ADDED: State for the new schedule detail modal ---
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [selectedRoomForSchedule, setSelectedRoomForSchedule] = useState<RoomWithDetails | null>(null);
   const [scheduleDetails, setScheduleDetails] = useState<LectureSchedule[]>([]);
   const [loadingScheduleDetails, setLoadingScheduleDetails] = useState(false);
 
-  const form = useForm<BookingForm>({ resolver: zodResolver(bookingSchema), defaultValues: { class_type: 'theory', sks: 2, equipment_requested: [] } });
+  const form = useForm<BookingForm>({
+    resolver: zodResolver(bookingSchema),
+    defaultValues: { class_type: 'theory', sks: 2, equipment_requested: [], },
+  });
+
+  // --- THIS BLOCK WAS MISSING AND IS NOW RESTORED ---
+  const watchSks = form.watch('sks');
+  const watchClassType = form.watch('class_type');
+  const watchIdentityNumber = form.watch('identity_number');
+  const watchStudyProgramId = form.watch('study_program_id');
+  // --- END OF FIX ---
 
   const normalizeRoomName = (name: string): string => name ? name.toLowerCase().replace(/[\s.&-]/g, '') : '';
 
@@ -118,10 +126,10 @@ const BookRoom: React.FC = () => {
     }
   }, []);
 
-  const fetchStudyPrograms = async () => { /* ... */ };
-  const fetchEquipment = async () => { /* ... */ };
-  const fetchExistingUsers = async () => { /* ... */ };
-
+  const fetchStudyPrograms = async () => { try { const { data, error } = await supabase.from('study_programs').select(`*, department:departments(*)`).order('name'); if (error) throw error; setStudyPrograms(data || []); } catch (error: any) { console.error('Error fetching study programs:', error); toast.error('Failed to load study programs'); } };
+  const fetchEquipment = async () => { try { const { data, error } = await supabase.from('equipment').select('*').eq('is_available', true); if (error) throw error; setEquipment(data || []); } catch (error: any) { console.error('Error fetching equipment:', error); toast.error('Failed to load equipment'); } };
+  const fetchExistingUsers = async () => { try { const { data, error } = await supabase.from('users').select(`id, identity_number, full_name, email, phone_number, study_program_id, study_program:study_programs(*, department:departments(*))`).eq('role', 'student').order('full_name'); if (error) throw error; const usersWithPrograms = (data || []).map(user => ({...user, study_program: user.study_program})); setExistingUsers(usersWithPrograms); } catch (error) { console.error('Error fetching users:', error); } };
+  
   useEffect(() => {
     updateRoomStatuses(true);
     fetchStudyPrograms();
@@ -132,12 +140,12 @@ const BookRoom: React.FC = () => {
     return () => { clearInterval(timer); clearInterval(refreshStatusInterval); };
   }, [updateRoomStatuses]);
 
-  useEffect(() => { /* ... */ }, [watchIdentityNumber, existingUsers, form, studyPrograms]);
-  useEffect(() => { /* ... */ }, [watchStudyProgramId, studyPrograms]);
+  useEffect(() => { if (watchIdentityNumber && watchIdentityNumber.length >= 5) { const existingUser = existingUsers.find(user => user.identity_number === watchIdentityNumber); if (existingUser) { form.setValue('full_name', existingUser.full_name); if (existingUser.phone_number) { form.setValue('phone_number', existingUser.phone_number); } if (existingUser.study_program_id) { form.setValue('study_program_id', existingUser.study_program_id); const selectedProgram = studyPrograms.find(sp => sp.id === existingUser.study_program_id); if (selectedProgram) { setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`); } } toast.success('Data automatically filled!'); } } }, [watchIdentityNumber, existingUsers, form, studyPrograms]);
+  useEffect(() => { if (watchStudyProgramId) { const selectedProgram = studyPrograms.find(sp => sp.id === watchStudyProgramId); if (selectedProgram) { setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`); } } }, [watchStudyProgramId, studyPrograms]);
 
-  const handleNowBooking = () => { /* ... */ };
-  const calculateEndTime = (startTime: string, sks: number, classType: string) => { /* ... */ };
-
+  const handleNowBooking = () => { const now = new Date(); const formattedNow = format(now, "yyyy-MM-dd'T'HH:mm"); form.setValue('start_time', formattedNow); };
+  const calculateEndTime = (startTime: string, sks: number, classType: string) => { if (!startTime || !sks) return null; const duration = classType === 'theory' ? sks * 50 : sks * 170; const startDate = new Date(startTime); return addMinutes(startDate, duration); };
+  
   const filteredRooms = useMemo(() => {
     return rooms.filter(room => {
       const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) || room.code.toLowerCase().includes(searchTerm.toLowerCase());
@@ -146,39 +154,73 @@ const BookRoom: React.FC = () => {
       return matchesSearch && matchesCapacity && matchesAvailability;
     });
   }, [rooms, searchTerm, filterCapacity, showAllRooms]);
+  
+  const getStatusColor = (status: RoomWithDetails['status']) => {
+    switch (status) {
+      case 'In Use': return 'bg-red-100 text-red-800';
+      case 'Scheduled': return 'bg-yellow-100 text-yellow-800';
+      case 'Available': return 'bg-green-100 text-green-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
 
-  const getStatusColor = (status: RoomWithDetails['status']) => { /* ... */ };
-  const getEquipmentIcon = (category: string) => { /* ... */ };
+  const getEquipmentIcon = (category: string) => { switch (category?.toLowerCase()) { case 'audio visual': return Monitor; case 'connectivity': return Wifi; case 'power': return Zap; default: return Zap; } };
   const filteredIdentityNumbers = existingUsers.filter(user => user.identity_number.toLowerCase().includes(identitySearchTerm.toLowerCase()) || user.full_name.toLowerCase().includes(identitySearchTerm.toLowerCase()));
   const filteredStudyPrograms = studyPrograms.filter(program => program.name.toLowerCase().includes(studyProgramSearchTerm.toLowerCase()) || program.code.toLowerCase().includes(studyProgramSearchTerm.toLowerCase()) || program.department?.name.toLowerCase().includes(studyProgramSearchTerm.toLowerCase()));
+  
+  const onSubmit = async (data: BookingForm) => {
+    if (!selectedRoom) { toast.error('Please select a room'); return; }
+    setIsSubmitting(true);
+    try {
+      const duration = data.class_type === 'theory' ? data.sks * 50 : data.sks * 170;
+      const startDate = new Date(data.start_time);
+      const endDate = addMinutes(startDate, duration);
+      const { data: existingBookings, error: conflictError } = await supabase.from('bookings').select('*').eq('room_id', data.room_id).eq('status', 'approved');
+      if (conflictError) throw conflictError;
+      if (existingBookings && existingBookings.length > 0) {
+        for (const booking of existingBookings) {
+          const { error: updateError } = await supabase.from('bookings').update({ status: 'completed', updated_at: new Date().toISOString() }).eq('id', booking.id);
+          if (updateError) console.error('Error updating existing booking:', updateError);
+        }
+      }
+      const selectedStudyProgram = studyPrograms.find(sp => sp.id === data.study_program_id);
+      const departmentId = selectedStudyProgram?.department_id;
+      const bookingData = {
+        room_id: data.room_id, start_time: data.start_time, end_time: endDate.toISOString(), sks: data.sks,
+        class_type: data.class_type, equipment_requested: data.equipment_requested || [], notes: data.notes || null, status: 'pending',
+        purpose: 'Class/Study Session',
+        user_info: profile ? null : { full_name: data.full_name, identity_number: data.identity_number, study_program_id: data.study_program_id, phone_number: data.phone_number, email: `${data.identity_number}@student.edu`, department_id: departmentId },
+        user_id: profile?.id || null,
+      };
+      const { error } = await supabase.from('bookings').insert(bookingData);
+      if (error) throw error;
+      toast.success('Room booking submitted successfully! Awaiting approval.');
+      form.reset({ class_type: 'theory', sks: 2, equipment_requested: [] });
+      setSelectedRoom(null); setIdentitySearchTerm(''); setStudyProgramSearchTerm('');
+      updateRoomStatuses();
+    } catch (error: any) {
+      console.error('Error creating booking:', error);
+      toast.error(error.message || 'Failed to create booking');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
-  const onSubmit = async (data: BookingForm) => { /* ... */ };
+  const mandatoryEquipment = equipment.filter(eq => eq.is_mandatory);
+  const optionalEquipment = equipment.filter(eq => !eq.is_mandatory);
 
-  // --- ADDED: Function to fetch schedules for the modal ---
   const fetchAndShowSchedules = async (room: RoomWithDetails) => {
     setSelectedRoomForSchedule(room);
     setShowScheduleModal(true);
     setLoadingScheduleDetails(true);
     try {
         const todayDayName = format(new Date(), 'EEEE', { locale: localeID });
-        const { data, error } = await supabase
-            .from('lecture_schedules')
-            .select('*')
-            .eq('day', todayDayName)
-            .eq('room', room.name)
-            .order('start_time');
+        const { data, error } = await supabase.from('lecture_schedules').select('*').eq('day', todayDayName).eq('room', room.name).order('start_time');
         if (error) throw error;
         setScheduleDetails(data || []);
-    } catch(e) {
-        toast.error("Could not load schedule details.");
-    } finally {
-        setLoadingScheduleDetails(false);
-    }
+    } catch(e) { toast.error("Could not load schedule details.");
+    } finally { setLoadingScheduleDetails(false); }
   }
-
-  const mandatoryEquipment = equipment.filter(eq => eq.is_mandatory);
-  const optionalEquipment = equipment.filter(eq => !eq.is_mandatory);
-
   return (
     <div className="max-w-7xl mx-auto space-y-6 p-4">
       {/* ... (Header and Filters JSX remains the same) ... */}
