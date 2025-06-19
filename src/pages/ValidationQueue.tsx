@@ -237,7 +237,7 @@ const ValidationQueue: React.FC = () => {
       
       toast.success('Checkout rejected and booking status restored to approved');
       fetchPendingCheckouts();
-      if (selectedCheckoutId === checkoutId) setShowDetailModal(false);
+      if (selectedCheckoutId === checkoutId) setShowDetailModal(true);
       setShowDeleteConfirm(null);
     } catch (error: any) {
       toast.error(error.message || 'Failed to reject checkout');
