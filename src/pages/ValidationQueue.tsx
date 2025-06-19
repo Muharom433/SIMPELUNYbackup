@@ -371,6 +371,37 @@ const ValidationQueue: React.FC = () => {
             
             return (
             <div key={checkout.id} className={`bg-white rounded-xl shadow-sm border-2 p-4 md:p-6 hover:shadow-lg transition-all duration-200 ${getPriorityColor(priority, checkout.has_report)}`}>
+                {/* Tampilan Mobile */}
+                <div className="flex items-start justify-between md:hidden">
+                    <div className="flex items-start space-x-3">
+                        <div className={`flex-shrink-0 h-10 w-10 rounded-lg flex items-center justify-center ${getPriorityIconBgColor(priority, checkout.has_report)}`}><PriorityIcon className="h-5 w-5 text-white" /></div>
+                        <div>
+                            <h3 className="text-base font-semibold text-gray-900 line-clamp-1">{checkout.booking?.purpose || 'Checkout'}</h3>
+                            <p className="text-xs text-gray-600 capitalize">{checkout.has_report ? 'Reported' : `${priority.replace('_', ' ')} Priority`}</p>
+                            <p className="text-xs text-gray-600">{checkout.user?.full_name || 'Unknown User'}</p>
+                        </div>
+                    </div>
+                    <button onClick={() => toggleExpanded(checkout.id)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-md">{isExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}</button>
+                </div>
+                {isExpanded && (<div className="mt-4 pt-4 border-t border-gray-200 md:hidden">
+                    <div className="space-y-3">
+                        <div className="flex items-center space-x-3"><User className="h-4 w-4 text-gray-400 flex-shrink-0" /><div><p className="font-medium text-gray-800">{checkout.user?.full_name}</p><p className="text-xs text-gray-500">ID: {checkout.user?.identity_number}</p></div></div>
+                        <div className="flex items-center space-x-3"><Building className="h-4 w-4 text-gray-400 flex-shrink-0" /><div><p className="font-medium text-gray-800">{checkout.booking?.room?.name}</p><p className="text-xs text-gray-500">{checkout.booking?.room?.department?.name}</p></div></div>
+                        <div className="flex items-center space-x-3"><Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" /><div><p className="font-medium text-gray-800">{format(new Date(checkout.checkout_date), 'MMM d, yy')}</p><p className="text-xs text-gray-500">Return by: {format(new Date(checkout.expected_return_date), 'MMM d, yy')}</p></div></div>
+                    </div>
+                    <div className="flex flex-col space-y-2 mt-4">
+                        <button onClick={() => { setSelectedCheckout(checkout); setShowDetailModal(true); }} className="flex items-center justify-center space-x-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"><Eye className="h-4 w-4" /><span>View Details</span></button>
+                        <button onClick={() => { setSelectedCheckout(checkout); setShowReportModal(true); }} className="flex items-center justify-center space-x-2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200"><Flag className="h-4 w-4" /><span>{checkout.has_report ? 'Update Report' : 'Add Report'}</span></button>
+                        {checkout.status === 'returned' && (
+                        <>
+                            <button onClick={() => handleApproval(checkout.id)} disabled={isProcessing} className="flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"><Check className="h-4 w-4" /><span>Approve</span></button>
+                            <button onClick={() => setShowDeleteConfirm(checkout.id)} disabled={isProcessing} className="flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"><X className="h-4 w-4" /><span>Reject</span></button>
+                        </>
+                        )}
+                    </div>
+                </div>)}
+
+                {/* Tampilan Desktop */}
                 <div className="hidden md:flex md:items-start md:justify-between">
                     <div className="flex-1">
                         <div className="flex items-center space-x-4 mb-4">
@@ -378,7 +409,7 @@ const ValidationQueue: React.FC = () => {
                             <div>
                                 <h3 className="text-lg font-semibold text-gray-900">{checkout.booking?.purpose || 'Checkout'}</h3>
                                 <div className="flex items-center space-x-2">
-                                    <p className="text-sm text-gray-600 capitalize">{checkout.has_report ? 'Reported' : `${priority.replace('_', ' ')} Priority`} • Status: {checkout.status}</p>
+                                    <p className="text-sm text-gray-600 capitalize">{checkout.has_report ? 'Reported' : `${priority.replace(/_/g, ' ')} Priority`} • Status: {checkout.status}</p>
                                     {checkout.has_report && (<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800"><Flag className="h-3 w-3 mr-1" />REPORTED</span>)}
                                 </div>
                             </div>
@@ -401,7 +432,6 @@ const ValidationQueue: React.FC = () => {
                             </div>
                         </div>
                         )}
-                        {/* Perbaikan #2: Mengembalikan Tampilan Catatan Laporan pada Card */}
                         {checkout.has_report && checkout.report && (
                             <div className="mt-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg p-3">
                                 <div className="flex items-start space-x-3">
@@ -416,7 +446,7 @@ const ValidationQueue: React.FC = () => {
                     </div>
                     <div className="flex items-center space-x-2 ml-4">
                         <button onClick={() => { setSelectedCheckout(checkout); setShowDetailModal(true); }} className="p-2 text-gray-500 hover:bg-gray-100 rounded-md"><Eye className="h-4 w-4" /></button>
-                        <button onClick={() => { setSelectedCheckout(checkout); setShowReportModal(true); }} className="flex items-center space-x-2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200"><Flag className="h-4 w-4" /><span>{checkout.has_report ? 'Update' : 'Report'}</span></button>
+                        <button onClick={() => { setSelectedCheckout(checkout); setReportTitle(checkout.report?.title || ''); setReportDescription(checkout.report?.description || ''); setReportSeverity(checkout.report?.severity || 'minor'); setShowReportModal(true); }} className="flex items-center space-x-2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200"><Flag className="h-4 w-4" /><span>{checkout.has_report ? 'Update' : 'Report'}</span></button>
                         {(checkout.status === 'returned') && (
                         <>
                             <button onClick={() => handleApproval(checkout.id)} disabled={isProcessing} className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"><Check className="h-4 w-4" /><span>Approve</span></button>
