@@ -78,10 +78,18 @@ const ValidationQueue: React.FC = () => {
   const [reportDescription, setReportDescription] = useState('');
   const [reportSeverity, setReportSeverity] = useState<'minor' | 'major' | 'critical'>('minor');
   const [sortOption, setSortOption] = useState<'priority' | 'date' | 'status'>('date'); 
-  const [statusFilter, setStatusFilter] = useState<'all'| 'active' | 'returned' | 'overdue' | 'lost' | 'damaged' | 'pending'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all'| 'active' | 'returned' | 'overdue' | 'lost' | 'damaged' | 'pending'>('returned');
   const [dateFilter, setDateFilter] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
   const [activeFiltersCount, setActiveFiltersCount] = useState(0);
+
+  useEffect(() => {
+    if (activeTab === 'room') {
+      setStatusFilter('returned');
+    } else {
+      setStatusFilter('all');
+    }
+  }, [activeTab]);
 
   const getCheckoutPriority = (checkout: Checkout): string => {
     if (checkout.status === 'overdue') return 'overdue';
@@ -318,8 +326,8 @@ const ValidationQueue: React.FC = () => {
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-orange-600 to-red-600 rounded-xl p-6 text-white">
         <div className="flex items-center justify-between">
-            <div><h1 className="text-3xl font-bold flex items-center space-x-3"><Bell className="h-8 w-8" /><span>Validation Queue</span></h1><p className="mt-2 opacity-90">Review and approve pending checkouts</p></div>
-            <div className="hidden md:block text-right"><div className="text-2xl font-bold">{checkouts.length}</div><div className="text-sm opacity-80">Pending Items</div></div>
+            <div><h1 className="text-3xl font-bold flex items-center space-x-3"><Bell className="h-8 w-8" /><span>Validation Queue</span></h1><p className="mt-2 opacity-90">Review and validate checkouts</p></div>
+            <div className="hidden md:block text-right"><div className="text-2xl font-bold">{checkouts.length}</div><div className="text-sm opacity-80">Items in Queue</div></div>
         </div>
       </div>
 
@@ -387,16 +395,9 @@ const ValidationQueue: React.FC = () => {
           filteredCheckouts.map((checkout) => {
             const priority = getCheckoutPriority(checkout);
             const PriorityIcon = checkout.has_report ? Flag : getPriorityIcon(priority);
-            const isProcessing = processingIds.has(checkout.id);
-            const isExpanded = expandedItems.has(checkout.id);
             return (
             <div key={checkout.id} className={`bg-white rounded-xl shadow-sm border p-4 md:p-6 hover:shadow-lg transition-all duration-200 ${getPriorityColor(priority, checkout.has_report)}`}>
-                {/* Mobile View */}
-                <div className="flex items-start justify-between md:hidden">
-                    {/* ... Konten mobile view ... */}
-                </div>
-                {/* Desktop View */}
-                <div className="hidden md:flex items-start justify-between">
+                <div className="flex items-start justify-between">
                     <div className="flex-1">
                         <div className="flex items-center space-x-4 mb-4">
                             <div className={`flex-shrink-0 h-12 w-12 rounded-lg flex items-center justify-center ${getPriorityIconBgColor(priority, checkout.has_report)}`}><PriorityIcon className="h-6 w-6 text-white" /></div>
@@ -414,11 +415,9 @@ const ValidationQueue: React.FC = () => {
                             <div className="flex items-center space-x-3"><Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" /><div><p className="font-medium text-gray-800">{format(new Date(checkout.checkout_date), 'MMM d, yy')}</p><p className="text-xs text-gray-500">Return by: {format(new Date(checkout.expected_return_date), 'MMM d, yy')}</p></div></div>
                         </div>
                     </div>
+                    {/* Tombol Aksi di Kartu Utama Dihilangkan, hanya tombol detail */}
                     <div className="flex items-center space-x-2 ml-4">
                         <button onClick={() => { if(checkout.id) { setSelectedCheckoutId(checkout.id); setShowDetailModal(true); }}} className="p-2 text-gray-500 hover:bg-gray-100 rounded-md"><Eye className="h-4 w-4" /></button>
-                        <button onClick={() => { if(checkout.id) { setSelectedCheckoutId(checkout.id); setReportTitle(checkout.report?.title || ''); setReportDescription(checkout.report?.description || ''); setReportSeverity(checkout.report?.severity || 'minor'); setShowReportModal(true); }}} className="flex items-center space-x-2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200"><Flag className="h-4 w-4" /><span>{checkout.has_report ? 'Update' : 'Report'}</span></button>
-                        <button onClick={() => handleApproval(checkout.id)} disabled={isProcessing} className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"><Check className="h-4 w-4" /><span>Approve</span></button>
-                        <button onClick={() => setShowDeleteConfirm(checkout.id)} disabled={isProcessing} className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"><X className="h-4 w-4" /><span>Reject</span></button>
                     </div>
                 </div>
             </div>
@@ -431,6 +430,11 @@ const ValidationQueue: React.FC = () => {
         if (showDetailModal && selectedCheckoutId) {
           const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId);
           if (!selectedCheckout) return null;
+          
+          const equipmentList = selectedCheckout.booking?.room?.id ? roomEquipment.get(selectedCheckout.booking.room.id) || [] : [];
+          const returnedItems = new Set(selectedCheckout.equipment_back || []);
+          const isProcessing = processingIds.has(selectedCheckout.id);
+
           return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
               <div className="bg-white p-6 rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
@@ -441,10 +445,19 @@ const ValidationQueue: React.FC = () => {
                 <div className="space-y-6 pt-5">
                     <div><h4 className="text-base font-semibold text-gray-500 mb-2">User Information</h4><div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center"><User className="h-6 w-6 text-blue-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.user?.full_name}</p><p className="text-sm text-gray-500">ID: {selectedCheckout.user?.identity_number}</p></div></div></div>
                     <div><h4 className="text-base font-semibold text-gray-500 mb-2">Room Information</h4><div className="bg-white border border-gray-200 rounded-xl p-4 "><div className="flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-green-100 rounded-full flex items-center justify-center"><Building className="h-6 w-6 text-green-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.booking?.room?.name}</p><p className="text-sm text-gray-500">{selectedCheckout.booking?.room?.department?.name}</p></div></div></div></div>
+                    {activeTab === 'room' && equipmentList.length > 0 && (<div className="border rounded-xl p-4"><h4 className="text-base font-semibold text-gray-500 mb-2">Equipment Checklist</h4><div className="grid grid-cols-2 gap-2 pt-2">{equipmentList.map(eq => (<div key={eq.id} className="flex items-center"><input type="checkbox" checked={returnedItems.has(eq.name)} readOnly className="h-4 w-4 rounded" /><label className={`ml-2 text-sm ${eq.is_mandatory && 'font-bold'}`}>{eq.name}{eq.is_mandatory &&<span className="text-red-500">*</span>}</label></div>))}</div></div>)}
                     <div><h4 className="text-base font-semibold text-gray-500 mb-2">Booking & Schedule</h4><div className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-4"><div className="flex items-center space-x-3"><FileText className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Purpose</p><p className="font-semibold text-gray-800">{selectedCheckout.booking?.purpose}</p></div></div><div className="flex items-center space-x-3"><Calendar className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Checkout Date</p><p className="font-semibold text-gray-800">{format(new Date(selectedCheckout.checkout_date), 'E, d MMM yy')}</p></div></div><div className="flex items-center space-x-3"><Package className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Total Items</p><p className="font-semibold text-gray-800">{selectedCheckout.total_items}</p></div></div><div className="flex items-center space-x-3"><Timer className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Return by</p><p className="font-semibold text-gray-800">{format(new Date(selectedCheckout.expected_return_date), 'E, d MMM yy')}</p></div></div></div></div>
+                    {selectedCheckout.has_report && selectedCheckout.report && (<div><h4 className="text-base font-semibold text-gray-500 mb-2">Report Information</h4><div className="bg-yellow-50 border-l-4 border-yellow-400 rounded-lg p-4"><div className="flex items-start space-x-3"><Flag className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" /><div><p className="font-medium text-yellow-800">{selectedCheckout.report.title}</p><p className="text-sm text-yellow-700 mt-2">{selectedCheckout.report.description}</p><div className="mt-3 flex items-center justify-between"><span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getSeverityColor(selectedCheckout.report.severity)}`}>{selectedCheckout.report.severity.toUpperCase()}</span><span className="text-xs text-yellow-600">Reported on {format(new Date(selectedCheckout.report.created_at), 'MMM d, yy')}</span></div></div></div></div></div>)}
                     {selectedCheckout.checkout_notes && (<div><h4 className="text-base font-semibold text-gray-500 mb-2">Notes</h4><div className="bg-gray-50 border-l-4 border-gray-400 text-gray-800 p-4 rounded-r-lg"><p className="text-sm">{selectedCheckout.checkout_notes}</p></div></div>)}
                 </div>
-                <div className="mt-8 flex justify-end space-x-3 border-t pt-4">
+                <div className="mt-8 flex justify-end items-center gap-x-3 border-t pt-4">
+                    <button onClick={() => { setShowDetailModal(false); if(selectedCheckout.id) { setSelectedCheckoutId(selectedCheckout.id); setReportTitle(selectedCheckout.report?.title || ''); setReportDescription(selectedCheckout.report?.description || ''); setReportSeverity(selectedCheckout.report?.severity || 'minor'); setShowReportModal(true); }}} className="flex items-center space-x-2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200"><Flag className="h-4 w-4" /><span>{selectedCheckout.has_report ? 'Update Report' : 'Add Report'}</span></button>
+                    {selectedCheckout.status !== 'active' && selectedCheckout.status !== 'overdue' && (
+                        <>
+                            <button onClick={() => handleApproval(selectedCheckout.id)} disabled={isProcessing} className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"><Check className="h-4 w-4" /><span>Approve</span></button>
+                            <button onClick={() => { setShowDetailModal(false); setShowDeleteConfirm(selectedCheckout.id);}} disabled={isProcessing} className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"><X className="h-4 w-4" /><span>Reject</span></button>
+                        </>
+                    )}
                     <button onClick={() => setShowDetailModal(false)} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors">Close</button>
                 </div>
               </div>
