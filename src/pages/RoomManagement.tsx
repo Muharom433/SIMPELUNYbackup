@@ -68,50 +68,63 @@ const RoomManagement: React.FC = () => {
   const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const normalizeRoomName = (name: string): string => name ? name.toLowerCase().replace(/[\s.&-]/g, '') : '';
 
-  const updateRoomStatuses = useCallback(async (dayToFetch: string, startTimeStr: string, endTimeStr: string, isManual = false) => {
-    if (isRefreshing) return;
+  const updateRoomStatuses = useCallback(async (isManual = false) => {
+    if (isRefreshing && isManual) return;
     setIsRefreshing(true);
     try {
-      const { data: roomsData, error: roomsError } = await supabase.from('rooms').select(`*, department:departments(*)`);
+      const { data: roomsData, error: roomsError } = await supabase
+        .from('rooms')
+        .select(`*, department:departments(*)`);
       if (roomsError) throw roomsError;
+
       const now = new Date();
-      const { data: schedulesData, error: schedulesError } = await supabase.from('lecture_schedules').select('room, start_time, end_time, day').eq('day', dayToFetch);
+      const todayDayName = format(now, 'EEEE', { locale: localeID });
+
+      const { data: schedulesData, error: schedulesError } = await supabase
+        .from('lecture_schedules')
+        .select('room, start_time, end_time, day')
+        .eq('day', todayDayName);
       if (schedulesError) throw schedulesError;
+
       const scheduleMap = new Map<string, LectureSchedule[]>();
       schedulesData.forEach(schedule => {
-        if (schedule.room && schedule.start_time && schedule.end_time) {
-          const scheduleStart = parse(schedule.start_time, 'HH:mm:ss', new Date());
-          const scheduleEnd = parse(schedule.end_time, 'HH:mm:ss', new Date());
-          const searchStart = parse(startTimeStr, 'HH:mm', new Date());
-          const searchEnd = parse(endTimeStr, 'HH:mm', new Date());
-          const isOverlapping = scheduleStart < searchEnd && scheduleEnd > searchStart;
-          if (isOverlapping) {
-            const normalizedName = normalizeRoomName(schedule.room);
-            if (!scheduleMap.has(normalizedName)) scheduleMap.set(normalizedName, []);
-            scheduleMap.get(normalizedName)?.push(schedule);
+        if (schedule.room) {
+          const normalizedName = normalizeRoomName(schedule.room);
+          if (!scheduleMap.has(normalizedName)) {
+            scheduleMap.set(normalizedName, []);
           }
+          scheduleMap.get(normalizedName)?.push(schedule);
         }
       });
+      
       const roomsWithStatus = roomsData.map(room => {
         const normalizedRoomName = normalizeRoomName(room.name);
         const roomSchedules = scheduleMap.get(normalizedRoomName) || [];
         let status: RoomWithDetails['status'] = 'Available';
+
         if (roomSchedules.length > 0) {
-          const isToday = dayToFetch.toLowerCase() === format(now, 'EEEE', { locale: localeID }).toLowerCase();
-          const isCurrentlyInUse = isToday && roomSchedules.some(schedule => {
-            if (!schedule.start_time || !schedule.end_time) return false;
+          const isCurrentlyInUse = roomSchedules.some(schedule => {
+            // --- PERBAIKAN DI SINI ---
+            // Pastikan start_time dan end_time tidak null sebelum di-parse
+            if (!schedule.start_time || !schedule.end_time) {
+                return false;
+            }
+            
             try {
               const startTime = parse(schedule.start_time, 'HH:mm:ss', new Date());
               const endTime = parse(schedule.end_time, 'HH:mm:ss', new Date());
               return now >= startTime && now <= endTime;
-            } catch (e) { return false; }
+            } catch (e) { 
+              console.error("Invalid time format for schedule:", schedule);
+              return false; 
+            }
           });
           status = isCurrentlyInUse ? 'In Use' : 'Scheduled';
         }
         return { ...room, department: room.department, status };
       });
       setRooms(roomsWithStatus as RoomWithDetails[]);
-      if (isManual) toast.success('Room statuses updated!');
+      if(isManual) toast.success('Room statuses updated!');
     } catch (error) {
       console.error('Error updating room statuses:', error);
       toast.error('Failed to refresh room statuses.');
