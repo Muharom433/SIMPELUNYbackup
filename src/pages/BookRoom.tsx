@@ -471,9 +471,9 @@ const BookRoom: React.FC = () => {
                         <ul className="space-y-3">
                             {schedulesForModal.map(schedule => (
                                 <li key={schedule.id} className="p-3 bg-gray-50 rounded-md border border-gray-200">
-                                    <p className="font-semibold text-gray-800">{schedule.course_name}</p>
-                                    <p className="text-sm text-gray-600"><Clock className="inline h-4 w-4 mr-1"/>{schedule.start_time?.substring(0,5)} - {schedule.end_time?.substring(0,5)}</p>
-                                    <p className="text-xs text-gray-500 mt-1">Prodi: {schedule.subject_study}</p>
+                                  <p className="font-semibold text-gray-800"><Clock className="inline h-4 w-4 mr-1"/>{schedule.start_time?.substring(0,5)} - {schedule.end_time?.substring(0,5)}</p>
+                                    <p className="text-sm text-gray-600">{schedule.subject_study}</p>
+                                    <p className="text-xs text-gray-500 mt-1">Matkul: {schedule.course_name}</p>
                                 </li>
                             ))}
                         </ul>
