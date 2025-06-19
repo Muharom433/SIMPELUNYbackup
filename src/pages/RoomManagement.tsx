@@ -229,7 +229,7 @@ const RoomManagement: React.FC = () => {
                                             <li key={schedule.id} className="p-2 bg-white rounded-md shadow-sm">
                                                 <p className="font-semibold">{schedule.course_name}</p>
                                                 <p className="text-sm text-gray-600">{schedule.start_time?.substring(0,5)} - {schedule.end_time?.substring(0,5)}</p>
-                                                <p className="text-xs text-gray-500">Prodi: {schedule.Prodi}</p>
+                                                <p className="text-xs text-gray-500">Prodi: {schedule.subject_study}</p>
                                             </li>
                                         ))}
                                     </ul>
