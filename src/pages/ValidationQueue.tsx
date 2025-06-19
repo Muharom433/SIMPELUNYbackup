@@ -501,7 +501,7 @@ JavaScript
                   </div>
                 </div>
 
-                {/* Report Info */}
+               
                 {selectedCheckout.has_report && selectedCheckout.report && (
                   <div>
                     <h4 className="text-base font-semibold text-gray-500 mb-2">Report Information</h4>
@@ -525,7 +525,7 @@ JavaScript
                   </div>
                 )}
                 
-                {/* Notes */}
+                
                 {selectedCheckout.checkout_notes && (
                   <div>
                     <h4 className="text-base font-semibold text-gray-500 mb-2">Notes</h4>
