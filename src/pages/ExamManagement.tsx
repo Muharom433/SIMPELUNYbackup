@@ -162,7 +162,17 @@ const ExamManagement = () => {
     const fetchRooms = async () => { try { let query = supabase.from('rooms').select('*'); if (profile?.role === 'department_admin' && profile?.department_id) { query = query.or(`department_id.eq.${profile.department_id},department_id.is.null`); } const { data, error } = await query; if (error) throw error; setRooms(data || []); } catch (error: any) { console.error('Error fetching rooms:', error); toast.error('Failed to load rooms.'); } };
     const fetchLecturers = async () => { try { let query = supabase.from('users').select('*').eq('role', 'lecturer'); if (profile?.role === 'department_admin' && profile?.department_id) { query = query.eq('department_id', profile.department_id); } const { data, error } = await query; if (error) throw error; setLecturers(data || []); setFilteredLecturers(data || []); } catch (error: any) { console.error('Error fetching lecturers:', error); toast.error('Failed to load lecturers.'); } };
     const fetchDepartments = async () => { try { let query = supabase.from('departments').select('id, name'); if (profile?.role === 'department_admin' && profile.department_id) { query = query.eq('id', profile.department_id); } const { data, error } = await query; if (error) throw error; setDepartments(data || []); } catch (error: any) { console.error('Error fetching departments:', error); toast.error('Failed to load departments.'); } };
-    const fetchDepartmentHeads = async () => { try { let query = supabase.from('users').select('id, full_name, identity_number, department_id').in('role', ['department_admin', 'super_admin']); if (profile?.role === 'department_admin' && profile.department_id) { query = query.eq('department_id', profile.department_id); } const { data, error } = await query; if (error) throw error; setDepartmentHeads(data || []); } catch (error: any) { console.error('Error fetching department heads:', error); toast.error('Failed to load department heads.'); } };
+    const fetchDepartmentHeads = async () => { try {  let query = supabase.from('users')
+            .select('id, full_name, identity_number, department_id')
+            // THIS IS THE PROBLEM LINE
+            .in('role', ['department_admin', 'super_admin']); 
+            
+        if (profile?.role === 'department_admin' && profile.department_id) { 
+            query = query.eq('department_id', profile.department_id); 
+        } 
+        const { data, error } = await query; 
+        if (error) throw error; 
+        setDepartmentHeads(data || []); } catch (error: any) { console.error('Error fetching department heads:', error); toast.error('Failed to load department heads.'); } };
     const fetchBookedRooms = async (date: string, session: string) => { if (session === 'Take Home') return; try { const { data, error } = await supabase .from('exams') .select('room_id') .eq('date', date) .eq('session', session); if (error) throw error; const bookedRoomIds = data.map(exam => exam.room_id); setBookedRooms(prev => ({ ...prev, [session]: bookedRoomIds })); } catch (error: any) { console.error('Error fetching booked rooms:', error); } };
     const filterLecturersByStudyProgram = (studyProgramId: string) => { if (!studyProgramId) { setFilteredLecturers(lecturers); return; } const filtered = lecturers.filter(lecturer => lecturer.study_program_id === studyProgramId); setFilteredLecturers(filtered); };
     const getDayFromDate = (dateString: string) => { const date = new Date(dateString); const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']; return days[date.getDay()]; };
