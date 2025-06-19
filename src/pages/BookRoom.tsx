@@ -19,9 +19,9 @@ import {
   RefreshCw,
   ChevronDown,
   X,
-  Eye,       // NEW: Icon untuk melihat detail
-  Loader2,   // NEW: Icon untuk loading
-  Building   // NEW: Icon untuk placeholder
+  Eye,
+  Loader2,
+  Building
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -30,7 +30,7 @@ import toast from 'react-hot-toast';
 import { format, addMinutes, parse } from 'date-fns';
 import { id as localeID } from 'date-fns/locale';
 
-// --- BAGIAN INI TIDAK BERUBAH ---
+// --- BAGIAN SKEMA & INTERFACE FORM (TIDAK BERUBAH) ---
 const bookingSchema = z.object({
   full_name: z.string().min(3, 'Full name must be at least 3 characters'),
   identity_number: z.string().min(5, 'Identity number must be at least 5 characters'),
@@ -43,13 +43,10 @@ const bookingSchema = z.object({
   equipment_requested: z.array(z.string()).optional(),
   notes: z.string().optional(),
 });
-
 type BookingForm = z.infer<typeof bookingSchema>;
-
 interface StudyProgramWithDepartment extends StudyProgram {
   department?: Department;
 }
-
 interface ExistingUser {
   id: string;
   identity_number: string;
@@ -59,14 +56,13 @@ interface ExistingUser {
   study_program_id?: string;
   study_program?: StudyProgram & { department?: Department };
 }
-// --- AKHIR DARI BAGIAN YANG TIDAK BERUBAH ---
+// --- AKHIR DARI BAGIAN SKEMA & INTERFACE FORM ---
 
-// UPDATED: Interface baru untuk status ruangan dan jadwal
+// --- INTERFACE BARU UNTUK STATUS RUANGAN & JADWAL ---
 interface RoomWithStatus extends Room {
   department: Department | null;
   status: 'In Use' | 'Scheduled' | 'Available' | 'Loading';
 }
-
 interface LectureSchedule {
   id: string;
   course_name: string;
@@ -76,21 +72,18 @@ interface LectureSchedule {
   room: string;
   subject_study: string;
 }
+// --- AKHIR DARI INTERFACE BARU ---
 
 const BookRoom: React.FC = () => {
   const { profile } = useAuth();
   
-  // UPDATED: State management untuk ruangan dan status
   const [rooms, setRooms] = useState<RoomWithStatus[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // NEW: State untuk fungsionalitas baru
   const [showInUse, setShowInUse] = useState(false);
   const [viewingSchedulesFor, setViewingSchedulesFor] = useState<RoomWithStatus | null>(null);
   const [schedulesForModal, setSchedulesForModal] = useState<LectureSchedule[]>([]);
   const [loadingSchedules, setLoadingSchedules] = useState(false);
 
-  // --- BAGIAN STATE LAINNYA TIDAK BERUBAH ---
   const [studyPrograms, setStudyPrograms] = useState<StudyProgramWithDepartment[]>([]);
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [existingUsers, setExistingUsers] = useState<ExistingUser[]>([]);
@@ -102,7 +95,6 @@ const BookRoom: React.FC = () => {
   const [identitySearchTerm, setIdentitySearchTerm] = useState('');
   const [showStudyProgramDropdown, setShowStudyProgramDropdown] = useState(false);
   const [studyProgramSearchTerm, setStudyProgramSearchTerm] = useState('');
-  // --- AKHIR DARI BAGIAN STATE YANG TIDAK BERUBAH ---
 
   const form = useForm<BookingForm>({
     resolver: zodResolver(bookingSchema),
@@ -114,47 +106,67 @@ const BookRoom: React.FC = () => {
   const watchIdentityNumber = form.watch('identity_number');
   const watchStudyProgramId = form.watch('study_program_id');
 
-  // NEW: Utilitas untuk normalisasi nama ruangan
   const normalizeRoomName = (name: string): string => name ? name.toLowerCase().replace(/[\s.&-]/g, '') : '';
   
-  // UPDATED: Fungsi utama untuk mengambil data dan menghitung status
+  // --- REVISED: Fungsi utama untuk mengambil data dan menghitung status ---
+  // Logika diperbarui sesuai dengan handler yang Anda berikan.
   const fetchRoomsWithStatus = useCallback(async () => {
     setLoading(true);
     try {
         const now = new Date();
         const todayDayName = format(now, 'EEEE'); // e.g., 'Thursday'
-        
-        const { data: roomsData, error: roomsError } = await supabase.from('rooms').select(`*, department:departments(*)`);
+
+        // Mengambil data ruangan dan jadwal secara paralel untuk efisiensi
+        const [roomsResponse, schedulesResponse] = await Promise.all([
+            supabase.from('rooms').select(`*, department:departments(*)`),
+            supabase.from('lecture_schedules').select('*').eq('day', todayDayName)
+        ]);
+
+        const { data: roomsData, error: roomsError } = roomsResponse;
         if (roomsError) throw roomsError;
 
-        const { data: schedulesData, error: schedulesError } = await supabase.from('lecture_schedules').select('*').eq('day', todayDayName);
+        const { data: schedulesData, error: schedulesError } = schedulesResponse;
         if (schedulesError) throw schedulesError;
 
-        const scheduleMap = new Map<string, LectureSchedule[]>();
+        // Membuat Set untuk menampung nama ruangan yang terjadwal dan yang sedang dipakai
+        const scheduledRoomNames = new Set<string>();
+        const inUseRoomNames = new Set<string>();
+
         schedulesData.forEach(schedule => {
-            if (schedule.room) {
+            if (schedule.room && schedule.start_time && schedule.end_time) {
                 const normalizedName = normalizeRoomName(schedule.room);
-                if (!scheduleMap.has(normalizedName)) scheduleMap.set(normalizedName, []);
-                scheduleMap.get(normalizedName)?.push(schedule);
+                
+                // Setiap ruangan yang punya jadwal hari ini ditandai sebagai 'Scheduled'
+                scheduledRoomNames.add(normalizedName);
+
+                // Cek apakah waktu saat ini berada di dalam rentang jadwal
+                try {
+                    const scheduleStart = parse(schedule.start_time, 'HH:mm:ss', now);
+                    const scheduleEnd = parse(schedule.end_time, 'HH:mm:ss', now);
+
+                    // Jika 'now' berada di antara jam mulai dan selesai, tandai sebagai 'In Use'
+                    if (now >= scheduleStart && now <= scheduleEnd) {
+                        inUseRoomNames.add(normalizedName);
+                    }
+                } catch (e) {
+                    console.error("Error parsing schedule time:", e);
+                }
             }
         });
       
+        // Menentukan status akhir untuk setiap ruangan
         const roomsWithStatus = roomsData.map(room => {
             const normalizedRoomName = normalizeRoomName(room.name);
-            const roomSchedules = scheduleMap.get(normalizedRoomName) || [];
-            let status: RoomWithStatus['status'] = 'Available';
+            let status: RoomWithStatus['status'];
 
-            if (roomSchedules.length > 0) {
-                const isCurrentlyInUse = roomSchedules.some(schedule => {
-                    if (!schedule.start_time || !schedule.end_time) return false;
-                    try {
-                        const startTime = parse(schedule.start_time, 'HH:mm:ss', new Date());
-                        const endTime = parse(schedule.end_time, 'HH:mm:ss', new Date());
-                        return now >= startTime && now <= endTime;
-                    } catch (e) { return false; }
-                });
-                status = isCurrentlyInUse ? 'In Use' : 'Scheduled';
+            if (inUseRoomNames.has(normalizedRoomName)) {
+                status = 'In Use';
+            } else if (scheduledRoomNames.has(normalizedRoomName)) {
+                status = 'Scheduled';
+            } else {
+                status = 'Available';
             }
+
             return { ...room, department: room.department, status };
         });
 
@@ -166,8 +178,8 @@ const BookRoom: React.FC = () => {
         setLoading(false);
     }
   }, []);
+  // --- AKHIR DARI FUNGSI YANG DIREVISI ---
 
-  // NEW: Fungsi untuk mengambil jadwal untuk modal detail
   const fetchSchedulesForRoom = async (roomName: string) => {
     setLoadingSchedules(true);
     try {
@@ -190,13 +202,12 @@ const BookRoom: React.FC = () => {
 
   useEffect(() => {
     fetchRoomsWithStatus();
-    // --- FUNGSI LAINNYA YANG TIDAK BERUBAH ---
     fetchStudyPrograms();
     fetchEquipment();
     fetchExistingUsers();
     
     const timer = setInterval(() => setCurrentTime(new Date()), 60000);
-    const statusRefreshTimer = setInterval(() => fetchRoomsWithStatus(), 5 * 60 * 1000); // Refresh status setiap 5 menit
+    const statusRefreshTimer = setInterval(() => fetchRoomsWithStatus(), 5 * 60 * 1000);
 
     return () => {
       clearInterval(timer);
@@ -204,7 +215,6 @@ const BookRoom: React.FC = () => {
     };
   }, [fetchRoomsWithStatus]);
 
-  // NEW: useEffect untuk mengambil data saat modal terbuka
   useEffect(() => {
     if (viewingSchedulesFor) {
       fetchSchedulesForRoom(viewingSchedulesFor.name);
@@ -221,7 +231,7 @@ const BookRoom: React.FC = () => {
         if (existingUser.study_program_id) {
           form.setValue('study_program_id', existingUser.study_program_id);
           const selectedProgram = studyPrograms.find(sp => sp.id === existingUser.study_program_id);
-          if (selectedProgram) setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`);
+          if (selectedProgram) setStudyProgramSearchTerm(`<span class="math-inline">\{selectedProgram\.name\} \(</span>{selectedProgram.code}) - ${selectedProgram.department?.name}`);
         }
         toast.success('Data terisi otomatis dari pemesanan sebelumnya!');
       }
@@ -231,7 +241,7 @@ const BookRoom: React.FC = () => {
   useEffect(() => {
     if (watchStudyProgramId) {
       const selectedProgram = studyPrograms.find(sp => sp.id === watchStudyProgramId);
-      if (selectedProgram) setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`);
+      if (selectedProgram) setStudyProgramSearchTerm(`<span class="math-inline">\{selectedProgram\.name\} \(</span>{selectedProgram.code}) - ${selectedProgram.department?.name}`);
     }
   }, [watchStudyProgramId, studyPrograms]);
 
@@ -280,7 +290,6 @@ const BookRoom: React.FC = () => {
     user.full_name.toLowerCase().includes(identitySearchTerm.toLowerCase())
   );
 
-  // UPDATED: Logika filter baru
   const filteredRooms = useMemo(() => {
     return rooms.filter(room => {
         const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -290,7 +299,6 @@ const BookRoom: React.FC = () => {
     });
   }, [rooms, searchTerm, showInUse]);
 
-  // NEW: Helper untuk warna status
   const getStatusColor = (status: RoomWithStatus['status']) => {
     switch (status) {
         case 'In Use': return 'bg-red-100 text-red-800';
