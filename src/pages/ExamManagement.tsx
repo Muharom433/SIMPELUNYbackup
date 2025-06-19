@@ -370,7 +370,18 @@ let departmentHead; if (isSuperAdmin) { departmentHead = { full_name: 'KEPALA DE
                                 {isDepartmentAdmin && (
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Department Head *</label>
-                                        <Controller name="department_head_id" control={printForm.control} render={({ field }) => ( <Select options={departmentHeads.map(h => ({ value: h.id, label: h.full_name }))} value={field.value ? departmentHeads.map(h => ({ value: h.id, label: h.full_name })).find(o => o.value === field.value) : null} onChange={(option) => { field.onChange(option ? option.value : ''); const selectedHead = departmentHeads.find(h => h.id === option?.value); printForm.setValue('department_head_name', selectedHead?.full_name); }} placeholder="Search and select head..." isClearable /> )} />
+                                        <Controller name="department_head_id" control={printForm.control} render={({ field }) => ( <Select
+                    // --- MODIFIED: Uses the new 'signingLecturers' state ---
+                    options={signingLecturers.map(h => ({ value: h.id, label: h.full_name }))}
+                    value={field.value ? signingLecturers.map(h => ({ value: h.id, label: h.full_name })).find(o => o.value === field.value) : null}
+                    onChange={(option) => {
+                        field.onChange(option ? option.value : '');
+                        // --- MODIFIED: Finds the lecturer in the correct state ---
+                        const selectedLecturer = signingLecturers.find(h => h.id === option?.value);
+                        printForm.setValue('department_head_name', selectedLecturer?.full_name);
+                    }}
+                    placeholder="Cari dan pilih dosen..."
+                    isClearable /> )} />
                                         {printForm.formState.errors.department_head_id && <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.department_head_id.message}</p>}
                                     </div>
                                 )}
