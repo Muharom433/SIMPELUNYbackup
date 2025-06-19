@@ -305,7 +305,7 @@ const BookRoom: React.FC = () => {
     return <div className="flex justify-center items-center h-screen"><Loader2 className="h-12 w-12 animate-spin text-blue-600" /></div>;
   }
 
- return (
+  return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white">
         <div className="flex items-center justify-between">
@@ -487,5 +487,6 @@ const BookRoom: React.FC = () => {
       )}
     </div>
   );
+};
 
 export default BookRoom;
