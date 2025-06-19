@@ -12,7 +12,7 @@ import toast from 'react-hot-toast';
 import { format, parse } from 'date-fns';
 import { id as localeID } from 'date-fns/locale';
 
-// --- INTERFACES & SCHEMA ---
+// --- INTERFACES & SCHEMA (TIDAK DIUBAH) ---
 interface Equipment {
     id: string;
     name: string;
@@ -57,31 +57,29 @@ const RoomManagement: React.FC = () => {
   const [roomEquipmentLinks, setRoomEquipmentLinks] = useState<RoomEquipment[]>([]);
   const [isUpdatingEquipment, setIsUpdatingEquipment] = useState<string | null>(null);
 
-  // --- State for filters ---
+  // State untuk filter yang ada
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   
-  // State untuk pencarian berdasarkan waktu
+  // --- ADDED: State untuk filter pencarian baru ---
   const dayNamesEnglish = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const dayNamesIndonesian = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
-  
-  const [searchDay, setSearchDay] = useState(format(new Date(), 'EEEE')); // Default to English day name
+  const [searchDay, setSearchDay] = useState(format(new Date(), 'EEEE')); // Default ke nama hari Inggris
   const [searchStartTime, setSearchStartTime] = useState('07:30');
   const [searchEndTime, setSearchEndTime] = useState('17:00');
 
   const form = useForm<RoomForm>({ resolver: zodResolver(roomSchema) });
-  
   const normalizeRoomName = (name: string): string => name ? name.toLowerCase().replace(/[\s.&-]/g, '') : '';
 
-  const updateRoomStatuses = useCallback(async (dayToFetch: string, startTimeStr: string, endTimeStr: string, isManualAction = false) => {
+  // --- UPDATED: Fungsi ini sekarang menerima parameter untuk pencarian atau refresh ---
+  const updateRoomStatuses = useCallback(async (dayToFetch: string, timeToCheck: Date, startTimeStr: string, endTimeStr: string, isManualAction = false) => {
     if (isRefreshing && isManualAction) return;
     setIsRefreshing(true);
-    
     try {
       const { data: roomsData, error: roomsError } = await supabase.from('rooms').select(`*, department:departments(*)`);
       if (roomsError) throw roomsError;
-
+      
       const { data: schedulesData, error: schedulesError } = await supabase.from('lecture_schedules').select('room, start_time, end_time, day').eq('day', dayToFetch);
       if (schedulesError) throw schedulesError;
 
@@ -92,9 +90,7 @@ const RoomManagement: React.FC = () => {
           const scheduleEnd = parse(schedule.end_time, 'HH:mm:ss', new Date());
           const searchStart = parse(startTimeStr, 'HH:mm', new Date());
           const searchEnd = parse(endTimeStr, 'HH:mm', new Date());
-          const isOverlapping = scheduleStart < searchEnd && scheduleEnd > searchStart;
-
-          if (isOverlapping) {
+          if (scheduleStart < searchEnd && scheduleEnd > searchStart) {
             const normalizedName = normalizeRoomName(schedule.room);
             if (!scheduleMap.has(normalizedName)) scheduleMap.set(normalizedName, []);
             scheduleMap.get(normalizedName)?.push(schedule);
@@ -102,20 +98,16 @@ const RoomManagement: React.FC = () => {
         }
       });
       
-      const now = new Date();
       const roomsWithStatus = roomsData.map(room => {
         const normalizedRoomName = normalizeRoomName(room.name);
         const roomSchedules = scheduleMap.get(normalizedRoomName) || [];
         let status: RoomWithDetails['status'] = 'Available';
-
         if (roomSchedules.length > 0) {
-          const isToday = dayToFetch.toLowerCase() === format(now, 'EEEE', { locale: localeID }).toLowerCase();
+          const isToday = dayToFetch.toLowerCase() === format(new Date(), 'EEEE', { locale: localeID }).toLowerCase();
           const isCurrentlyInUse = isToday && roomSchedules.some(schedule => {
             if (!schedule.start_time || !schedule.end_time) return false;
             try {
-              const startTime = parse(schedule.start_time, 'HH:mm:ss', new Date());
-              const endTime = parse(schedule.end_time, 'HH:mm:ss', new Date());
-              return now >= startTime && now <= endTime;
+              return timeToCheck >= parse(schedule.start_time, 'HH:mm:ss', new Date()) && timeToCheck <= parse(schedule.end_time, 'HH:mm:ss', new Date());
             } catch (e) { return false; }
           });
           status = isCurrentlyInUse ? 'In Use' : 'Scheduled';
@@ -123,7 +115,7 @@ const RoomManagement: React.FC = () => {
         return { ...room, department: room.department, status };
       });
       setRooms(roomsWithStatus as RoomWithDetails[]);
-      if (isManualAction) toast.success('Room statuses updated!');
+      if(isManualAction) toast.success('Room statuses updated!');
     } catch (error) {
       console.error('Error updating room statuses:', error);
       toast.error('Failed to refresh room statuses.');
@@ -133,15 +125,18 @@ const RoomManagement: React.FC = () => {
     }
   }, []);
   
+  // --- ADDED: Handler baru untuk tombol Search ---
   const handleSearch = () => {
     if (!searchDay || !searchStartTime || !searchEndTime) {
         toast.error("Please complete all search filters.");
         return;
     }
     const dayToFetch = dayNamesIndonesian[dayNamesEnglish.indexOf(searchDay)];
-    updateRoomStatuses(dayToFetch, searchStartTime, searchEndTime, true);
+    const checkTime = parse(searchStartTime, 'HH:mm', new Date());
+    updateRoomStatuses(dayToFetch, checkTime, searchStartTime, searchEndTime, true);
   };
-
+  
+  // --- Handler untuk tombol Refresh (fungsi lama dipertahankan) ---
   const handleManualRefresh = () => {
     const now = new Date();
     const todayDayNameIndonesian = format(now, 'EEEE', { locale: localeID });
@@ -149,7 +144,7 @@ const RoomManagement: React.FC = () => {
     setSearchDay(todayDayNameEnglish);
     setSearchStartTime('07:30');
     setSearchEndTime('17:00');
-    updateRoomStatuses(todayDayNameIndonesian, "07:30", "17:00", true);
+    updateRoomStatuses(todayDayNameIndonesian, now, '07:30', '17:00', true);
   };
   
   useEffect(() => {
@@ -157,14 +152,33 @@ const RoomManagement: React.FC = () => {
       handleManualRefresh();
       fetchDepartments();
       fetchMasterEquipment();
+      const interval = setInterval(() => {
+        const now = new Date();
+        const todayDayName = format(now, 'EEEE', { locale: localeID });
+        updateRoomStatuses(todayDayName, now, format(now, 'HH:mm'), format(now, 'HH:mm'));
+      }, 10 * 60 * 1000);
+      return () => clearInterval(interval);
     }
-  }, [profile]);
+  }, [profile, updateRoomStatuses]);
 
   const fetchDepartments = async () => { try { const { data, error } = await supabase.from('departments').select('id, name').order('name'); if (error) throw error; setDepartments(data || []); } catch (error: any) { console.error('Error fetching departments:', error); toast.error('Failed to load departments'); } };
   const fetchMasterEquipment = async () => { const { data, error } = await supabase.from('equipment').select('*').order('name'); if (error) toast.error("Could not fetch equipment list."); else setMasterEquipmentList(data || []); };
-  const fetchSchedulesForRoom = async (roomName: string, day: string) => { setLoadingSchedules(true); try { const { data, error } = await supabase.from('lecture_schedules').select('*').eq('day', day).eq('room', roomName).order('start_time'); if (error) throw error; setRoomSchedules(data || []); } catch (error: any) { toast.error("Failed to load schedule for this room."); } finally { setLoadingSchedules(false); } };
-  const fetchRoomEquipment = async (roomId: string) => { setIsUpdatingEquipment(roomId); const { data, error } = await supabase.from('room_equipment').select('*').eq('room_id', roomId); if (error) toast.error("Could not fetch room's equipment."); else setRoomEquipmentLinks(data || []); setIsUpdatingEquipment(null); };
   
+  // --- UPDATED: fetchSchedulesForRoom sekarang menerima hari yang difilter ---
+  const fetchSchedulesForRoom = async (roomName: string, day: string) => {
+    setLoadingSchedules(true);
+    try {
+        const { data, error } = await supabase.from('lecture_schedules').select('*').eq('day', day).eq('room', roomName).order('start_time');
+        if (error) throw error;
+        setRoomSchedules(data || []);
+    } catch (error: any) {
+        toast.error("Failed to load schedule for this room.");
+    } finally {
+        setLoadingSchedules(false);
+    }
+  };
+  
+  // --- UPDATED: useEffect untuk modal sekarang menggunakan searchDay ---
   useEffect(() => {
     if (showRoomDetail) {
         const dayToFetch = dayNamesIndonesian[dayNamesEnglish.indexOf(searchDay)];
@@ -174,21 +188,18 @@ const RoomManagement: React.FC = () => {
   }, [showRoomDetail, searchDay]);
 
   const handleEquipmentChange = async (equipmentId: string, isChecked: boolean) => { if (!showRoomDetail) return; setIsUpdatingEquipment(equipmentId); if (isChecked) { const { error } = await supabase.from('room_equipment').insert({ room_id: showRoomDetail.id, equipment_id: equipmentId }); if (error) { toast.error('Failed to add equipment.'); } else { toast.success('Equipment added.'); } } else { const { error } = await supabase.from('room_equipment').delete().eq('room_id', showRoomDetail.id).eq('equipment_id', equipmentId); if (error) { toast.error('Failed to remove equipment.'); } else { toast.success('Equipment removed.'); } } await fetchRoomEquipment(showRoomDetail.id); setIsUpdatingEquipment(null); };
+  const fetchRoomEquipment = async (roomId: string) => { const { data, error } = await supabase.from('room_equipment').select('*').eq('room_id', roomId); if (error) toast.error("Could not fetch room's equipment."); else setRoomEquipmentLinks(data || []); };
   const onSubmit = async (data: RoomForm) => { try { setLoading(true); const roomData = { name: data.name, code: data.code, capacity: data.capacity, department_id: data.department_id, }; if (editingRoom) { const { error } = await supabase.from('rooms').update(roomData).eq('id', editingRoom.id); if (error) throw error; toast.success('Room updated successfully!'); } else { const { error } = await supabase.from('rooms').insert(roomData); if (error) throw error; toast.success('Room created successfully!'); } setShowForm(false); setEditingRoom(null); form.reset(); handleManualRefresh(); } catch (error: any) { console.error('Error saving room:', error); toast.error(error.message || 'Failed to save room'); } finally { setLoading(false); } };
   const handleEdit = (room: RoomWithDetails) => { setEditingRoom(room); form.reset({ name: room.name, code: room.code, capacity: room.capacity, department_id: room.department_id, }); setShowForm(true); };
   const handleDelete = async (roomId: string) => { if (!confirm('Are you sure you want to delete this room?')) return; try { const { error } = await supabase.from('rooms').delete().eq('id', roomId); if (error) throw error; toast.success('Room deleted successfully!'); handleManualRefresh(); } catch (error: any) { console.error('Error deleting room:', error); toast.error(error.message || 'Failed to delete room'); } };
-  const filteredRooms = useMemo(() => { return rooms.filter(room => { const matchesSearch = (room.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) || (room.code?.toLowerCase() || '').includes(searchTerm.toLowerCase()); const matchesStatus = filterStatus === 'all' || room.status.toLowerCase().replace(' ', '_') === filterStatus.toLowerCase().replace(' ', '_'); return matchesSearch && matchesStatus; }); }, [rooms, searchTerm, filterStatus]);
+  const filteredRooms = useMemo(() => { return rooms.filter(room => { const matchesSearch = (room.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) || (room.code?.toLowerCase() || '').includes(searchTerm.toLowerCase()); const matchesStatus = filterStatus === 'all' || room.status.toLowerCase() === filterStatus.toLowerCase(); return matchesSearch && matchesStatus; }); }, [rooms, searchTerm, filterStatus]);
   const getStatusColor = (status: RoomWithDetails['status']) => { switch (status) { case 'In Use': return 'bg-red-100 text-red-800'; case 'Scheduled': return 'bg-yellow-100 text-yellow-800'; case 'Available': return 'bg-green-100 text-green-800'; default: return 'bg-gray-100 text-gray-800'; } };
   
   if (loading) { return <div className="flex justify-center items-center h-screen"><RefreshCw className="h-12 w-12 animate-spin text-blue-600" /></div>; }
 
   return (
     <div className="space-y-6">
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white">
-            <h1 className="text-3xl font-bold">Room Status & Availability</h1>
-            <p className="mt-2 opacity-90">View real-time room status or search for future availability.</p>
-        </div>
-      
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white"> <h1 className="text-3xl font-bold">Room Status & Availability</h1> <p className="mt-2 opacity-90">View real-time room status or search for future availability.</p> </div>
         <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
             <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Find Room Availability</h3>
