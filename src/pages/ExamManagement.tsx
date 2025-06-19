@@ -201,6 +201,10 @@ const ExamManagement = () => {
         const nameY = signatureY + 30; 
 
         const nameLines = doc.splitTextToSize(departmentHead.full_name, signatureMaxWidth);
+        
+        doc.setFont('helvetica', 'bold');
+        const nameBlockHeight = (nameLines.length * doc.getLineHeight()) / doc.internal.scaleFactor;
+        
         const nipY = nameY + 4;
         doc.setFont('helvetica', 'normal');
         doc.text(`NIP. ${departmentHead.identity_number}`, signatureX, nipY);
