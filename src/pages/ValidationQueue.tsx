@@ -1,511 +1,369 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import {
-  Bell, Clock, CheckCircle, XCircle, AlertTriangle, User, Building, Calendar,
-  Timer, Eye, Check, X, RefreshCw, Filter, Search, FileText, Zap, Users, Package,
-  ChevronRight, ChevronDown, Flag, MessageSquare, AlertCircle, CalendarIcon
+  Calendar, Clock, Users, MapPin, Zap, CheckCircle, AlertCircle, Search, Grid, List, X, Send, RefreshCw, ChevronDown, Monitor, Wifi, Phone, User, Eye
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { Booking, Room, User as UserType, Department } from '../types';
+import { Room, Department, StudyProgram, Equipment, LectureSchedule } from '../types';
 import toast from 'react-hot-toast';
-import { format, isToday, isTomorrow, isThisWeek, isPast, parseISO, compareAsc, startOfDay, endOfDay } from 'date-fns';
+import { format, addMinutes, parse } from 'date-fns';
+import { id as localeID } from 'date-fns/locale';
 
-// Tipe data untuk Equipment
-interface Equipment {
+const bookingSchema = z.object({
+  full_name: z.string().min(3, 'Full name must be at least 3 characters'),
+  identity_number: z.string().min(5, 'Identity number must be at least 5 characters'),
+  study_program_id: z.string().min(1, 'Please select a study program'),
+  phone_number: z.string().min(10, 'Please enter a valid phone number'),
+  room_id: z.string().min(1, 'Please select a room'),
+  start_time: z.string().min(1, 'Please select start time'),
+  sks: z.number().min(1, 'SKS must be at least 1').max(6, 'SKS cannot exceed 6'),
+  class_type: z.enum(['theory', 'practical']),
+  equipment_requested: z.array(z.string()).optional(),
+  notes: z.string().optional(),
+});
+
+type BookingForm = z.infer<typeof bookingSchema>;
+
+interface RoomWithDetails extends Room {
+  department: Department | null;
+  status: 'In Use' | 'Scheduled' | 'Available' | 'Loading';
+}
+
+interface StudyProgramWithDepartment extends StudyProgram {
+  department?: Department;
+}
+
+interface ExistingUser {
   id: string;
-  name: string;
-  is_mandatory: boolean;
+  identity_number: string;
+  full_name: string;
+  email: string;
+  phone_number?: string;
+  study_program_id?: string;
+  study_program?: StudyProgram & { department?: Department };
 }
 
-// Tipe data untuk Room yang diperbarui sesuai skema
-interface RoomWithEquipment extends Room {
-  equipment: string[];
-}
-
-// Tipe data untuk join yang kompleks
-interface BookingWithDetails extends Booking {
-  user?: UserType;
-  room?: RoomWithEquipment & { department?: Department };
-}
-
-interface Checkout {
-  id: string;
-  user_id: string;
-  booking_id: string;
-  checkout_date: string;
-  expected_return_date: string;
-  status: 'active' | 'returned' | 'overdue' | 'lost' | 'damaged' | 'pending';
-  total_items: number;
-  created_at: string;
-  type: 'room' | 'equipment';
-  checkout_notes: string | null;
-  user?: {
-    id: string;
-    full_name: string;
-    identity_number: string;
-    email: string;
-  };
-  booking?: BookingWithDetails;
-  has_report?: boolean;
-  report?: {
-    id: string;
-    title: string;
-    description: string;
-    severity: 'minor' | 'major' | 'critical';
-    created_at: string;
-  };
-  equipment_back: string[] | null;
-}
-
-type RoomEquipmentMap = Map<string, Equipment[]>;
-
-
-const ValidationQueue: React.FC = () => {
+const BookRoom: React.FC = () => {
   const { profile } = useAuth();
-  
-  const [activeTab, setActiveTab] = useState<'room' | 'equipment'>('room');
-  const [checkouts, setCheckouts] = useState<Checkout[]>([]);
-  const [roomEquipment, setRoomEquipment] = useState<RoomEquipmentMap>(new Map());
+  const [rooms, setRooms] = useState<RoomWithDetails[]>([]);
+  const [studyPrograms, setStudyPrograms] = useState<StudyProgramWithDepartment[]>([]);
+  const [equipment, setEquipment] = useState<Equipment[]>([]);
+  const [existingUsers, setExistingUsers] = useState<ExistingUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCheckoutId, setSelectedCheckoutId] = useState<string | null>(null);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
-  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
-  const [showReportModal, setShowReportModal] = useState(false);
-  const [reportTitle, setReportTitle] = useState('');
-  const [reportDescription, setReportDescription] = useState('');
-  const [reportSeverity, setReportSeverity] = useState<'minor' | 'major' | 'critical'>('minor');
-  const [sortOption, setSortOption] = useState<'priority' | 'date' | 'status'>('date'); 
-  const [statusFilter, setStatusFilter] = useState<'all'| 'active' | 'returned' | 'overdue' | 'lost' | 'damaged' | 'pending'>('returned');
-  const [dateFilter, setDateFilter] = useState<string>('');
-  const [showFilters, setShowFilters] = useState(false);
-  const [activeFiltersCount, setActiveFiltersCount] = useState(0);
+  const [filterCapacity, setFilterCapacity] = useState<number | null>(null);
+  const [selectedRoom, setSelectedRoom] = useState<RoomWithDetails | null>(null);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [showIdentityDropdown, setShowIdentityDropdown] = useState(false);
+  const [identitySearchTerm, setIdentitySearchTerm] = useState('');
+  const [showStudyProgramDropdown, setShowStudyProgramDropdown] = useState(false);
+  const [studyProgramSearchTerm, setStudyProgramSearchTerm] = useState('');
+  const [showAllRooms, setShowAllRooms] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [selectedRoomForSchedule, setSelectedRoomForSchedule] = useState<RoomWithDetails | null>(null);
+  const [scheduleDetails, setScheduleDetails] = useState<LectureSchedule[]>([]);
+  const [loadingScheduleDetails, setLoadingScheduleDetails] = useState(false);
 
-  useEffect(() => {
-    if (activeTab === 'room') {
-      setStatusFilter('returned');
-    } else {
-      setStatusFilter('all');
+  const form = useForm<BookingForm>({
+    resolver: zodResolver(bookingSchema),
+    defaultValues: { class_type: 'theory', sks: 2, equipment_requested: [], },
+  });
+
+  const watchSks = form.watch('sks');
+  const watchClassType = form.watch('class_type');
+  const watchIdentityNumber = form.watch('identity_number');
+  const watchStudyProgramId = form.watch('study_program_id');
+
+  const normalizeRoomName = (name: string): string => name ? name.toLowerCase().replace(/[\s.&-]/g, '') : '';
+
+  const updateRoomStatuses = useCallback(async (isInitialLoad = false) => {
+    if (isInitialLoad) setLoading(true);
+    try {
+      const now = new Date();
+      const todayDayName = format(now, 'EEEE', { locale: localeID });
+      const { data: roomsData, error: roomsError } = await supabase.from('rooms').select(`*, department:departments(*)`);
+      if (roomsError) throw roomsError;
+      const { data: schedulesData, error: schedulesError } = await supabase.from('lecture_schedules').select('room, start_time, end_time, day').eq('day', todayDayName);
+      if (schedulesError) throw schedulesError;
+      const scheduleMap = new Map<string, LectureSchedule[]>();
+      schedulesData.forEach(schedule => {
+        if (schedule.room) {
+          const normalizedName = normalizeRoomName(schedule.room);
+          if (!scheduleMap.has(normalizedName)) scheduleMap.set(normalizedName, []);
+          scheduleMap.get(normalizedName)?.push(schedule);
+        }
+      });
+      const roomsWithStatus = roomsData.map(room => {
+        const normalizedRoomName = normalizeRoomName(room.name);
+        const roomSchedules = scheduleMap.get(normalizedRoomName) || [];
+        let status: RoomWithDetails['status'] = 'Available';
+        if (roomSchedules.length > 0) {
+          const isCurrentlyInUse = roomSchedules.some(schedule => {
+            if (!schedule.start_time || !schedule.end_time) return false;
+            try {
+              const startTime = parse(schedule.start_time, 'HH:mm:ss', new Date());
+              const endTime = parse(schedule.end_time, 'HH:mm:ss', new Date());
+              return now >= startTime && now <= endTime;
+            } catch (e) { return false; }
+          });
+          status = isCurrentlyInUse ? 'In Use' : 'Scheduled';
+        }
+        return { ...room, department: room.department, status };
+      });
+      setRooms(roomsWithStatus as RoomWithDetails[]);
+    } catch (error) {
+      console.error('Error fetching room statuses:', error);
+      toast.error('Failed to load room statuses.');
+    } finally {
+      if (isInitialLoad) setLoading(false);
     }
-  }, [activeTab]);
+  }, []);
 
-  const getCheckoutPriority = (checkout: Checkout): string => {
-    if (checkout.status === 'overdue') return 'overdue';
-    const returnDate = new Date(checkout.expected_return_date);
-    if (isPast(returnDate) && checkout.status === 'active') return 'overdue';
-    if (isToday(returnDate)) return 'urgent';
-    if (isTomorrow(returnDate)) return 'high';
-    if (isThisWeek(returnDate, { weekStartsOn: 1 })) return 'medium';
-    return 'low';
-  };
-
-  const getPriorityIcon = (priority: string) => {
-    switch (priority) {
-      case 'overdue': return AlertTriangle;
-      case 'urgent': return Clock;
-      case 'high': return Timer;
-      case 'medium': return Calendar;
-      default: return FileText;
-    }
-  };
-
-  const getPriorityColor = (priority: string, hasReport: boolean = false) => {
-    if (hasReport) return 'border-yellow-400 bg-yellow-50';
-    switch (priority) {
-      case 'overdue': return 'border-red-300 bg-red-50';
-      case 'urgent': return 'border-orange-300 bg-orange-50';
-      case 'high': return 'border-yellow-300 bg-yellow-50';
-      case 'medium': return 'border-blue-300 bg-blue-50';
-      default: return 'border-gray-300 bg-gray-50';
-    }
-  };
+  const fetchStudyPrograms = async () => { try { const { data, error } = await supabase.from('study_programs').select(`*, department:departments(*)`).order('name'); if (error) throw error; setStudyPrograms(data || []); } catch (error: any) { console.error('Error fetching study programs:', error); toast.error('Failed to load study programs'); } };
+  const fetchEquipment = async () => { try { const { data, error } = await supabase.from('equipment').select('*').eq('is_available', true); if (error) throw error; setEquipment(data || []); } catch (error: any) { console.error('Error fetching equipment:', error); toast.error('Failed to load equipment'); } };
+  const fetchExistingUsers = async () => { try { const { data, error } = await supabase.from('users').select(`id, identity_number, full_name, email, phone_number, study_program_id, study_program:study_programs(*, department:departments(*))`).eq('role', 'student').order('full_name'); if (error) throw error; const usersWithPrograms = (data || []).map(user => ({...user, study_program: user.study_program})); setExistingUsers(usersWithPrograms); } catch (error) { console.error('Error fetching users:', error); } };
   
-  const getPriorityIconBgColor = (priority: string, hasReport: boolean = false) => {
-    if (hasReport) return 'bg-yellow-500';
-    switch (priority) {
-      case 'overdue': return 'bg-red-500';
-      case 'urgent': return 'bg-orange-500';
-      case 'high': return 'bg-yellow-500';
-      case 'medium': return 'bg-blue-500';
-      default: return 'bg-gray-500';
-    }
-  };
+  useEffect(() => {
+    updateRoomStatuses(true);
+    fetchStudyPrograms();
+    fetchEquipment();
+    fetchExistingUsers();
+    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+    const refreshStatusInterval = setInterval(() => updateRoomStatuses(), 5 * 60 * 1000);
+    return () => { clearInterval(timer); clearInterval(refreshStatusInterval); };
+  }, [updateRoomStatuses]);
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'minor': return 'bg-blue-100 text-blue-800';
-      case 'major': return 'bg-orange-100 text-orange-800';
-      case 'critical': return 'bg-red-100 text-red-800';
+  useEffect(() => { if (watchIdentityNumber && watchIdentityNumber.length >= 5) { const existingUser = existingUsers.find(user => user.identity_number === watchIdentityNumber); if (existingUser) { form.setValue('full_name', existingUser.full_name); if (existingUser.phone_number) { form.setValue('phone_number', existingUser.phone_number); } if (existingUser.study_program_id) { form.setValue('study_program_id', existingUser.study_program_id); const selectedProgram = studyPrograms.find(sp => sp.id === existingUser.study_program_id); if (selectedProgram) { setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`); } } toast.success('Data automatically filled!'); } } }, [watchIdentityNumber, existingUsers, form, studyPrograms]);
+  useEffect(() => { if (watchStudyProgramId) { const selectedProgram = studyPrograms.find(sp => sp.id === watchStudyProgramId); if (selectedProgram) { setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`); } } }, [watchStudyProgramId, studyPrograms]);
+
+  const handleNowBooking = () => { const now = new Date(); const formattedNow = format(now, "yyyy-MM-dd'T'HH:mm"); form.setValue('start_time', formattedNow); };
+  const calculateEndTime = (startTime: string, sks: number, classType: string) => { if (!startTime || !sks) return null; const duration = classType === 'theory' ? sks * 50 : sks * 170; const startDate = new Date(startTime); return addMinutes(startDate, duration); };
+  
+  const filteredRooms = useMemo(() => {
+    return rooms.filter(room => {
+      const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) || room.code.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesCapacity = !filterCapacity || room.capacity >= filterCapacity;
+      const matchesAvailability = showAllRooms || room.status === 'Available' || room.status === 'Scheduled';
+      return matchesSearch && matchesCapacity && matchesAvailability;
+    });
+  }, [rooms, searchTerm, filterCapacity, showAllRooms]);
+  
+  const getStatusColor = (status: RoomWithDetails['status']) => {
+    switch (status) {
+      case 'In Use': return 'bg-red-100 text-red-800';
+      case 'Scheduled': return 'bg-yellow-100 text-yellow-800';
+      case 'Available': return 'bg-green-100 text-green-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
 
-  const toggleExpanded = (id: string) => {
-    setExpandedItems(prev => { const n = new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; });
-  };
-
-  useEffect(() => {
-    let count = 0;
-    if (statusFilter !== 'all') count++;
-    if (dateFilter) count++;
-    setActiveFiltersCount(count);
-  }, [statusFilter, dateFilter]);
-
-  const fetchPendingCheckouts = async () => {
+  const getEquipmentIcon = (category: string) => { switch (category?.toLowerCase()) { case 'audio visual': return Monitor; case 'connectivity': return Wifi; case 'power': return Zap; default: return Zap; } };
+  const filteredIdentityNumbers = existingUsers.filter(user => user.identity_number.toLowerCase().includes(identitySearchTerm.toLowerCase()) || user.full_name.toLowerCase().includes(identitySearchTerm.toLowerCase()));
+  const filteredStudyPrograms = studyPrograms.filter(program => program.name.toLowerCase().includes(studyProgramSearchTerm.toLowerCase()) || program.code.toLowerCase().includes(studyProgramSearchTerm.toLowerCase()) || program.department?.name.toLowerCase().includes(studyProgramSearchTerm.toLowerCase()));
+  
+  const onSubmit = async (data: BookingForm) => {
+    if (!selectedRoom) { toast.error('Please select a room'); return; }
+    setIsSubmitting(true);
     try {
-      setLoading(true);
-      setRoomEquipment(new Map());
-      let query = supabase.from('checkouts')
-        .select(`*, equipment_back, user:users!checkouts_user_id_fkey(*), booking:bookings(*, user:users!bookings_user_id_fkey(*), room:rooms(*, department:departments(*)))`)
-        .eq('type', activeTab);
-      
-      if (dateFilter) {
-        const d = new Date(dateFilter);
-        query = query.gte('checkout_date', startOfDay(d).toISOString()).lte('checkout_date', endOfDay(d).toISOString());
-      }
-      
-      if (statusFilter !== 'all') {
-        query = query.eq('status', statusFilter);
-      }
-      
-      const { data: checkoutData, error: checkoutError } = await query.order('created_at', { ascending: false });
-      if (checkoutError) throw checkoutError;
-      
-      let filteredData = (checkoutData as Checkout[]) || [];
-      if (profile?.role === 'department_admin' && profile.department_id) {
-        filteredData = filteredData.filter(c => c.booking?.room?.department?.id === profile.department_id);
-      }
-
-      if (activeTab === 'room' && filteredData.length > 0) {
-        const allEquipmentNames = new Set<string>();
-        filteredData.forEach(c => c.booking?.room?.equipment?.forEach(name => allEquipmentNames.add(name)));
-        if (allEquipmentNames.size > 0) {
-          const { data: equipmentDetails, error: equipmentError } = await supabase.from('equipment')
-            .select('id, name, is_mandatory').in('name', Array.from(allEquipmentNames));
-          if (equipmentError) throw equipmentError;
-          const detailsMap = new Map(equipmentDetails.map(eq => [eq.name, eq]));
-          const newRoomEquipmentMap = new Map<string, Equipment[]>();
-          filteredData.forEach(checkout => {
-            if (checkout.booking?.room?.id) {
-              const equipmentNames = checkout.booking.room.equipment || [];
-              const equipmentObjects = equipmentNames.map(name => detailsMap.get(name)).filter(Boolean) as Equipment[];
-              newRoomEquipmentMap.set(checkout.booking.room.id, equipmentObjects);
-            }
-          });
-          setRoomEquipment(newRoomEquipmentMap);
+      const duration = data.class_type === 'theory' ? data.sks * 50 : data.sks * 170;
+      const startDate = new Date(data.start_time);
+      const endDate = addMinutes(startDate, duration);
+      const { data: existingBookings, error: conflictError } = await supabase.from('bookings').select('*').eq('room_id', data.room_id).eq('status', 'approved');
+      if (conflictError) throw conflictError;
+      if (existingBookings && existingBookings.length > 0) {
+        for (const booking of existingBookings) {
+          const { error: updateError } = await supabase.from('bookings').update({ status: 'completed', updated_at: new Date().toISOString() }).eq('id', booking.id);
+          if (updateError) console.error('Error updating existing booking:', updateError);
         }
       }
-
-      const checkoutsWithReports = await Promise.all(
-        filteredData.map(async c => {
-            const { data: reports, error: e } = await supabase.from('checkout_violations').select('*').eq('checkout_id', c.id).order('created_at', { ascending: false }).limit(1);
-            if (e) { console.error(e); return c; }
-            return reports && reports.length > 0 ? { ...c, has_report: true, report: { ...reports[0] } } : { ...c, has_report: false };
-        })
-      );
-      setCheckouts(checkoutsWithReports as Checkout[]);
-    } catch (err: any) {
-      console.error('Error fetching pending checkouts:', err);
-      toast.error(`Failed to load data: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  useEffect(() => { fetchPendingCheckouts(); }, [profile, activeTab, statusFilter, dateFilter]);
-  useEffect(() => { const i = setInterval(() => { if (document.visibilityState === 'visible') fetchPendingCheckouts(); }, 30000); return () => clearInterval(i); }, [profile, activeTab, statusFilter, dateFilter]);
-
-  const handleApproval = async (checkoutId: string) => {
-    setProcessingIds(prev => new Set(prev).add(checkoutId));
-    try {
-      const checkout = checkouts.find(c => c.id === checkoutId);
-      if (!checkout || !checkout.booking || !checkout.booking.room_id) {
-        throw new Error('Checkout, booking, or room information not found');
-      }
-      
-      const { error: checkoutError } = await supabase
-        .from('checkouts')
-        .update({ approved_by: profile?.id, status: 'active', updated_at: new Date().toISOString() })
-        .eq('id', checkoutId);
-      if (checkoutError) throw checkoutError;
-      
-      const { error: roomError } = await supabase
-        .from('rooms')
-        .update({ is_available: true, updated_at: new Date().toISOString() })
-        .eq('id', checkout.booking.room_id);
-      if (roomError) console.error('Error updating room availability:', roomError);
-      
-      toast.success('Checkout approved successfully!');
-      fetchPendingCheckouts();
-      if (selectedCheckoutId === checkoutId) setShowDetailModal(false);
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to approve checkout');
-    } finally {
-      setProcessingIds(prev => { const s = new Set(prev); s.delete(checkoutId); return s; });
-    }
-  };
-
-  const handleReject = async (checkoutId: string) => {
-    setProcessingIds(prev => new Set(prev).add(checkoutId));
-    try {
-      const checkout = checkouts.find(c => c.id === checkoutId);
-      const bookingId = checkout?.booking_id;
-      if (!bookingId) throw new Error('Booking ID not found for this checkout');
-
-      const { error: bookingError } = await supabase
-        .from('bookings')
-        .update({ status: 'approved', updated_at: new Date().toISOString() })
-        .eq('id', bookingId);
-      if (bookingError) throw bookingError;
-      
-      const { error: checkoutError } = await supabase
-        .from('checkouts')
-        .delete()
-        .eq('id', checkoutId);
-      if (checkoutError) throw checkoutError;
-      
-      toast.success('Checkout rejected and booking status restored.');
-      fetchPendingCheckouts();
-      if (selectedCheckoutId === checkoutId) setShowDetailModal(false);
-      setShowDeleteConfirm(null);
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to reject checkout');
-    } finally {
-      setProcessingIds(prev => { const s = new Set(prev); s.delete(checkoutId); return s; });
-    }
-  };
-  
-  const handleAddReport = async () => {
-    const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId);
-    if (!selectedCheckout) return;
-    if (!reportTitle || !reportDescription) { toast.error('Title and description are required'); return; }
-    setProcessingIds(prev => new Set(prev).add(selectedCheckout.id));
-    try {
-      const { error } = await supabase.from('checkout_violations').insert({
-          checkout_id: selectedCheckout.id, user_id: selectedCheckout.user_id, violation_type: 'other',
-          severity: reportSeverity, title: reportTitle, description: reportDescription,
-          reported_by: profile?.id, status: 'active'
-        });
+      const selectedStudyProgram = studyPrograms.find(sp => sp.id === data.study_program_id);
+      const departmentId = selectedStudyProgram?.department_id;
+      const bookingData = {
+        room_id: data.room_id, start_time: data.start_time, end_time: endDate.toISOString(), sks: data.sks,
+        class_type: data.class_type, equipment_requested: data.equipment_requested || [], notes: data.notes || null, status: 'pending',
+        purpose: 'Class/Study Session',
+        user_info: profile ? null : { full_name: data.full_name, identity_number: data.identity_number, study_program_id: data.study_program_id, phone_number: data.phone_number, email: `${data.identity_number}@student.edu`, department_id: departmentId },
+        user_id: profile?.id || null,
+      };
+      const { error } = await supabase.from('bookings').insert(bookingData);
       if (error) throw error;
-      toast.success('Report added successfully');
-      setShowReportModal(false); setReportTitle(''); setReportDescription(''); setReportSeverity('minor');
-      fetchPendingCheckouts();
-    } catch (error: any) { toast.error(error.message || 'Failed to add report');
-    } finally { if (selectedCheckout) { setProcessingIds(prev => { const s = new Set(prev); s.delete(selectedCheckout.id); return s; }); } }
+      toast.success('Room booking submitted successfully! Awaiting approval.');
+      form.reset({ class_type: 'theory', sks: 2, equipment_requested: [] });
+      setSelectedRoom(null); setIdentitySearchTerm(''); setStudyProgramSearchTerm('');
+      updateRoomStatuses();
+    } catch (error: any) {
+      console.error('Error creating booking:', error);
+      toast.error(error.message || 'Failed to create booking');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const filteredCheckouts = checkouts.filter(c => {
-    const s = searchTerm.toLowerCase();
-    return !s || c.user?.full_name?.toLowerCase().includes(s) || c.booking?.purpose?.toLowerCase().includes(s) || c.booking?.room?.name?.toLowerCase().includes(s);
-  }).sort((a, b) => {
-    if (a.has_report && !b.has_report) return -1;
-    if (!a.has_report && b.has_report) return 1;
-    const pOrder = { overdue: 0, urgent: 1, high: 2, medium: 3, low: 4 };
-    if (sortOption === 'priority') return pOrder[getCheckoutPriority(a)] - pOrder[getCheckoutPriority(b)];
-    if (sortOption === 'date') {
-        const dateA = a.created_at ? parseISO(a.created_at) : 0;
-        const dateB = b.created_at ? parseISO(b.created_at) : 0;
-        if (!dateA || !dateB) return 0;
-        return compareAsc(dateB, dateA);
-    } 
-    if (sortOption === 'status') {
-      const sOrder = { overdue: 0, active: 1, returned: 2, pending: 3 };
-      const getStatus = (c: Checkout) => c.status === 'overdue' || (isPast(new Date(c.expected_return_date)) && c.status === 'active') ? 'overdue' : c.status;
-      return sOrder[getStatus(a)] - sOrder[getStatus(b)];
-    }
-    return 0;
-  });
+  const mandatoryEquipment = equipment.filter(eq => eq.is_mandatory);
+  const optionalEquipment = equipment.filter(eq => !eq.is_mandatory);
 
-  if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
-    return (<div className="flex items-center justify-center h-64"><div className="text-center"><Bell className="h-12 w-12 text-red-500 mx-auto mb-4" /><h3 className="text-lg font-medium">Access Denied</h3><p className="text-gray-600">You don't have permission to access this page.</p></div></div>);
+  const fetchAndShowSchedules = async (room: RoomWithDetails) => {
+    setSelectedRoomForSchedule(room);
+    setShowScheduleModal(true);
+    setLoadingScheduleDetails(true);
+    try {
+        const todayDayName = format(new Date(), 'EEEE', { locale: localeID });
+        const { data, error } = await supabase.from('lecture_schedules').select('*').eq('day', todayDayName).eq('room', room.name).order('start_time');
+        if (error) throw error;
+        setScheduleDetails(data || []);
+    } catch(e) {
+        toast.error("Could not load schedule details.");
+    } finally {
+        setLoadingScheduleDetails(false);
+    }
   }
 
   return (
-    <div className="space-y-6">
-      <div className="bg-gradient-to-r from-orange-600 to-red-600 rounded-xl p-6 text-white">
+    <div className="max-w-7xl mx-auto space-y-6 p-4">
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white">
         <div className="flex items-center justify-between">
-            <div><h1 className="text-3xl font-bold flex items-center space-x-3"><Bell className="h-8 w-8" /><span>Validation Queue</span></h1><p className="mt-2 opacity-90">Review and validate checkouts</p></div>
-            <div className="hidden md:block text-right"><div className="text-2xl font-bold">{checkouts.length}</div><div className="text-sm opacity-80">Items in Queue</div></div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="flex border-b border-gray-200">
-            <button onClick={() => setActiveTab('room')} className={`flex-1 py-4 px-6 text-center font-medium text-sm transition-colors duration-200 ${ activeTab === 'room' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-500 hover:text-gray-700'}`}>Room Checkouts ({activeTab === 'room' ? checkouts.length : 0})</button>
-            <button onClick={() => setActiveTab('equipment')} className={`flex-1 py-4 px-6 text-center font-medium text-sm transition-colors duration-200 ${ activeTab === 'equipment' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-500 hover:text-gray-700'}`}>Equipment Checkouts ({activeTab === 'equipment' ? checkouts.length : 0})</button>
-        </div>
-      </div>
-      
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-            <div className="relative w-full md:w-auto md:flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <input type="text" placeholder="Search by name, purpose, or room..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500" />
-            </div>
-            <div className="flex items-center space-x-2 w-full md:w-auto">
-                <button onClick={() => setShowFilters(!showFilters)} className="flex items-center space-x-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
-                    <Filter className="h-4 w-4" />
-                    <span>Filters</span>
-                    {activeFiltersCount > 0 && (<span className="inline-flex items-center justify-center w-5 h-5 ml-1 text-xs font-bold text-white bg-orange-500 rounded-full">{activeFiltersCount}</span>)}
-                </button>
-                <select value={sortOption} onChange={(e) => setSortOption(e.target.value as any)} className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
-                    <option value="date">Sort: Date (Recent)</option>
-                    <option value="priority">Sort: Priority</option>
-                    <option value="status">Sort: Status</option>
-                </select>
-            </div>
-        </div>
-        {showFilters && (
-        <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Status</label>
-                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
-                    <option value="all">All Statuses</option>
-                    <option value="pending">Pending</option>
-                    <option value="active">Active</option>
-                    <option value="overdue">Overdue</option>
-                    <option value="returned">Returned</option>
-                </select>
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Date</label>
-                <div className="relative">
-                    <input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"/>
-                    {dateFilter && (<button onClick={() => setDateFilter('')} className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>)}
-                </div>
-            </div>
-            <div className="md:col-span-2 flex justify-end">
-                <button onClick={() => { setStatusFilter('all'); setDateFilter(''); }} className="text-sm text-orange-600 hover:text-orange-800 font-medium">Clear Filters</button>
-            </div>
-        </div>
-        )}
-      </div>
-
-      <div className="space-y-4">
-        {loading ? (<div className="flex items-center justify-center h-64"><RefreshCw className="h-6 w-6 animate-spin text-orange-600 mr-2" /><span>Loading...</span></div>
-        ) : filteredCheckouts.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
-            <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">All Caught Up!</h3>
-            <p className="text-gray-600">No items match the current filters.</p>
+          <div>
+            <h1 className="text-3xl font-bold flex items-center space-x-3">
+              <Calendar className="h-8 w-8" />
+              <span>Book a Room</span>
+            </h1>
+            <p className="mt-2 opacity-90">
+              Reserve a room for your lecture, meeting, or study session
+            </p>
           </div>
-        ) : (
-          filteredCheckouts.map((checkout) => {
-            const priority = getCheckoutPriority(checkout);
-            const PriorityIcon = checkout.has_report ? Flag : getPriorityIcon(priority);
-            return (
-            <div key={checkout.id} className={`bg-white rounded-xl shadow-sm border p-4 md:p-6 hover:shadow-lg transition-all duration-200 ${getPriorityColor(priority, checkout.has_report)}`}>
-                <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                        <div className="flex items-center space-x-4 mb-4">
-                            <div className={`flex-shrink-0 h-12 w-12 rounded-lg flex items-center justify-center ${getPriorityIconBgColor(priority, checkout.has_report)}`}><PriorityIcon className="h-6 w-6 text-white" /></div>
-                            <div>
-                                <h3 className="text-lg font-semibold text-gray-900">{checkout.booking?.purpose || 'Checkout'}</h3>
-                                <div className="flex items-center space-x-2">
-                                    <p className="text-sm text-gray-600 capitalize">{priority} Priority • Status: {checkout.status}</p>
-                                    {checkout.has_report && (<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800"><Flag className="h-3 w-3 mr-1" />REPORTED</span>)}
+          <div className="hidden md:block text-right">
+            <div className="text-2xl font-bold">{format(currentTime, 'HH:mm')}</div>
+            <div className="text-sm opacity-80">{format(currentTime, 'EEEE, MMMM d')}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <input type="text" placeholder="Search rooms by name or code..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg"/>
+              </div>
+              <div className="flex items-center space-x-2">
+                <select value={filterCapacity || ''} onChange={(e) => setFilterCapacity(e.target.value ? Number(e.target.value) : null)} className="px-4 py-3 border border-gray-300 rounded-lg">
+                  <option value="">All Capacities</option>
+                  <option value="20">20+ seats</option>
+                  <option value="40">40+ seats</option>
+                  <option value="60">60+ seats</option>
+                  <option value="100">100+ seats</option>
+                </select>
+                <div className="flex border border-gray-300 rounded-lg overflow-hidden">
+                  <button onClick={() => setViewMode('grid')} className={`p-3 ${viewMode === 'grid' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600'}`}><Grid className="h-5 w-5" /></button>
+                  <button onClick={() => setViewMode('list')} className={`p-3 ${viewMode === 'list' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600'}`}><List className="h-5 w-5" /></button>
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 flex items-center">
+              <div className="flex items-center">
+                <input id="show-all-rooms" type="checkbox" checked={showAllRooms} onChange={() => setShowAllRooms(!showAllRooms)} className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"/>
+                <label htmlFor="show-all-rooms" className="ml-2 block text-sm text-gray-900">Show all rooms (including in use)</label>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Rooms</h2>
+            {loading ? <div className="text-center py-8"><RefreshCw className="h-8 w-8 animate-spin text-gray-400 mx-auto"/></div>
+            : viewMode === 'grid' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {filteredRooms.map((room) => (
+                  <div key={room.id} onClick={() => { setSelectedRoom(room); form.setValue('room_id', room.id); }} className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${selectedRoom?.id === room.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                    <div className="flex items-start justify-between mb-3">
+                      <div><h3 className="font-semibold text-gray-900">{room.name}</h3><p className="text-sm text-gray-600">{room.code}</p></div>
+                      <div className="flex items-center space-x-1">
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(room.status)}`}>{room.status}</span>
+                        {room.status === 'Scheduled' && (
+                          <button onClick={(e) => { e.stopPropagation(); fetchAndShowSchedules(room); }} className="p-1 text-gray-400 hover:text-blue-600">
+                              <Eye className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2 mb-3"> <Users className="h-4 w-4 text-gray-400" /> <span className="text-sm text-gray-600">{room.capacity} seats</span> </div>
+                    <div className="flex items-center space-x-2"> <MapPin className="h-4 w-4 text-gray-400" /> <span className="text-sm text-gray-600">{room.department?.name || 'General'}</span> </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+                <div className="space-y-3">
+                    {filteredRooms.map((room) => (
+                        <div key={room.id} onClick={() => { setSelectedRoom(room); form.setValue('room_id', room.id); }} className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${selectedRoom?.id === room.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-4">
+                                    <div>
+                                        <h3 className="font-semibold text-gray-900">{room.name}</h3>
+                                        <p className="text-sm text-gray-600">{room.code} • {room.department?.name}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center space-x-4">
+                                    <div className="flex items-center space-x-1"><Users className="h-4 w-4 text-gray-400" /><span className="text-sm text-gray-600">{room.capacity} seats</span></div>
+                                    <div className="flex items-center space-x-1">
+                                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(room.status)}`}>{room.status}</span>
+                                        {room.status === 'Scheduled' && (<button onClick={(e) => { e.stopPropagation(); fetchAndShowSchedules(room); }} className="ml-1 p-1 text-gray-400 hover:text-blue-600"><Eye className="h-4 w-4" /></button>)}
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4 text-sm">
-                            <div className="flex items-center space-x-3"><User className="h-4 w-4 text-gray-400 flex-shrink-0" /><div><p className="font-medium text-gray-800">{checkout.user?.full_name}</p><p className="text-xs text-gray-500">ID: {checkout.user?.identity_number}</p></div></div>
-                            <div className="flex items-center space-x-3"><Building className="h-4 w-4 text-gray-400 flex-shrink-0" /><div><p className="font-medium text-gray-800">{checkout.booking?.room?.name}</p><p className="text-xs text-gray-500">{checkout.booking?.room?.department?.name}</p></div></div>
-                            <div className="flex items-center space-x-3"><Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" /><div><p className="font-medium text-gray-800">{format(new Date(checkout.checkout_date), 'MMM d, yy')}</p><p className="text-xs text-gray-500">Return by: {format(new Date(checkout.expected_return_date), 'MMM d, yy')}</p></div></div>
-                        </div>
-                    </div>
-                    {/* Tombol Aksi di Kartu Utama Dihilangkan, hanya tombol detail */}
-                    <div className="flex items-center space-x-2 ml-4">
-                        <button onClick={() => { if(checkout.id) { setSelectedCheckoutId(checkout.id); setShowDetailModal(true); }}} className="p-2 text-gray-500 hover:bg-gray-100 rounded-md"><Eye className="h-4 w-4" /></button>
-                    </div>
+                    ))}
                 </div>
-            </div>
-            );
-          })
-        )}
-      </div>
-      
-      {(() => {
-        if (showDetailModal && selectedCheckoutId) {
-          const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId);
-          if (!selectedCheckout) return null;
-          
-          const equipmentList = selectedCheckout.booking?.room?.id ? roomEquipment.get(selectedCheckout.booking.room.id) || [] : [];
-          const returnedItems = new Set(selectedCheckout.equipment_back || []);
-          const isProcessing = processingIds.has(selectedCheckout.id);
-
-          return (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white p-6 rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-                <div className="flex justify-between items-center pb-4 border-b border-gray-200">
-                    <div><h2 className="text-xl font-bold text-gray-900">Checkout Details</h2></div>
-                    <button onClick={() => setShowDetailModal(false)} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100"><X className="h-5 w-5"/></button>
-                </div>
-                <div className="space-y-6 pt-5">
-                    <div><h4 className="text-base font-semibold text-gray-500 mb-2">User Information</h4><div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center"><User className="h-6 w-6 text-blue-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.user?.full_name}</p><p className="text-sm text-gray-500">ID: {selectedCheckout.user?.identity_number}</p></div></div></div>
-                    <div><h4 className="text-base font-semibold text-gray-500 mb-2">Room Information</h4><div className="bg-white border border-gray-200 rounded-xl p-4 "><div className="flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-green-100 rounded-full flex items-center justify-center"><Building className="h-6 w-6 text-green-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.booking?.room?.name}</p><p className="text-sm text-gray-500">{selectedCheckout.booking?.room?.department?.name}</p></div></div></div></div>
-                    {activeTab === 'room' && equipmentList.length > 0 && (<div className="border rounded-xl p-4"><h4 className="text-base font-semibold text-gray-500 mb-2">Equipment Checklist</h4><div className="grid grid-cols-2 gap-2 pt-2">{equipmentList.map(eq => (<div key={eq.id} className="flex items-center"><input type="checkbox" checked={returnedItems.has(eq.name)} readOnly className="h-4 w-4 rounded" /><label className={`ml-2 text-sm ${eq.is_mandatory && 'font-bold'}`}>{eq.name}{eq.is_mandatory &&<span className="text-red-500">*</span>}</label></div>))}</div></div>)}
-                    <div><h4 className="text-base font-semibold text-gray-500 mb-2">Booking & Schedule</h4><div className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-4"><div className="flex items-center space-x-3"><FileText className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Purpose</p><p className="font-semibold text-gray-800">{selectedCheckout.booking?.purpose}</p></div></div><div className="flex items-center space-x-3"><Calendar className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Checkout Date</p><p className="font-semibold text-gray-800">{format(new Date(selectedCheckout.checkout_date), 'E, d MMM yy')}</p></div></div><div className="flex items-center space-x-3"><Package className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Total Items</p><p className="font-semibold text-gray-800">{selectedCheckout.total_items}</p></div></div><div className="flex items-center space-x-3"><Timer className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Return by</p><p className="font-semibold text-gray-800">{format(new Date(selectedCheckout.expected_return_date), 'E, d MMM yy')}</p></div></div></div></div>
-                    {selectedCheckout.has_report && selectedCheckout.report && (<div><h4 className="text-base font-semibold text-gray-500 mb-2">Report Information</h4><div className="bg-yellow-50 border-l-4 border-yellow-400 rounded-lg p-4"><div className="flex items-start space-x-3"><Flag className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" /><div><p className="font-medium text-yellow-800">{selectedCheckout.report.title}</p><p className="text-sm text-yellow-700 mt-2">{selectedCheckout.report.description}</p><div className="mt-3 flex items-center justify-between"><span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getSeverityColor(selectedCheckout.report.severity)}`}>{selectedCheckout.report.severity.toUpperCase()}</span><span className="text-xs text-yellow-600">Reported on {format(new Date(selectedCheckout.report.created_at), 'MMM d, yy')}</span></div></div></div></div></div>)}
-                    {selectedCheckout.checkout_notes && (<div><h4 className="text-base font-semibold text-gray-500 mb-2">Notes</h4><div className="bg-gray-50 border-l-4 border-gray-400 text-gray-800 p-4 rounded-r-lg"><p className="text-sm">{selectedCheckout.checkout_notes}</p></div></div>)}
-                </div>
-                <div className="mt-8 flex justify-end items-center gap-x-3 border-t pt-4">
-                    <button onClick={() => { setShowDetailModal(false); if(selectedCheckout.id) { setSelectedCheckoutId(selectedCheckout.id); setReportTitle(selectedCheckout.report?.title || ''); setReportDescription(selectedCheckout.report?.description || ''); setReportSeverity(selectedCheckout.report?.severity || 'minor'); setShowReportModal(true); }}} className="flex items-center space-x-2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200"><Flag className="h-4 w-4" /><span>{selectedCheckout.has_report ? 'Update Report' : 'Add Report'}</span></button>
-                    {selectedCheckout.status !== 'active' && selectedCheckout.status !== 'overdue' && (
-                        <>
-                            <button onClick={() => handleApproval(selectedCheckout.id)} disabled={isProcessing} className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"><Check className="h-4 w-4" /><span>Approve</span></button>
-                            <button onClick={() => { setShowDetailModal(false); setShowDeleteConfirm(selectedCheckout.id);}} disabled={isProcessing} className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"><X className="h-4 w-4" /><span>Reject</span></button>
-                        </>
-                    )}
-                    <button onClick={() => setShowDetailModal(false)} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors">Close</button>
-                </div>
-              </div>
-            </div>
-          );
-        }
-        return null;
-      })()}
-      
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-sm w-full">
-            <h3 className="text-lg font-bold">Confirm Rejection</h3>
-            <p className="text-sm text-gray-600 mt-2">Are you sure you want to reject this checkout request?</p>
-            <p className="text-sm text-gray-700 mt-2 font-medium">The associated booking will be restored to "approved" status.</p>
-            <div className="mt-6 flex justify-end space-x-3">
-              <button onClick={() => setShowDeleteConfirm(null)} className="px-4 py-2 border rounded-lg">Cancel</button>
-              <button onClick={() => { if(showDeleteConfirm) handleReject(showDeleteConfirm); }} disabled={processingIds.has(showDeleteConfirm || '')} className="px-4 py-2 bg-red-600 text-white rounded-lg">{processingIds.has(showDeleteConfirm || '') ? 'Processing...' : 'Confirm Reject'}</button>
-            </div>
+            )}
+            {!loading && filteredRooms.length === 0 && (<div className="text-center py-8"><AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-3" /><h3 className="text-lg font-medium text-gray-900 mb-1">No Rooms Available</h3><p className="text-gray-500">Try adjusting your filters or check "Show all rooms".</p></div>)}
           </div>
         </div>
-      )}
-      
-      {showReportModal && selectedCheckoutId && (() => {
-        const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId);
-        if(!selectedCheckout) return null;
-        return (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-                <div className="flex justify-between items-center pb-4 border-b border-gray-200">
-                  <h3 className="text-lg font-bold text-gray-900">{selectedCheckout.has_report ? 'Update Report' : 'Add Report'}</h3>
-                  <button onClick={() => setShowReportModal(false)} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100"><X className="h-5 w-5"/></button>
+
+        <div className="lg:col-span-1 space-y-6">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-6">Booking Details</h2>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              {!profile && ( <div className="space-y-4"> <h3 className="text-lg font-medium text-gray-900 flex items-center space-x-2"> <User className="h-5 w-5" /> <span>Personal Information</span> </h3> <div> <label className="block text-sm font-medium text-gray-700 mb-2"> Identity Number (NIM/NIP) * </label> <div className="relative"> <input {...form.register('identity_number')} type="text" placeholder="Enter or select your student/staff ID" value={identitySearchTerm} onChange={(e) => { setIdentitySearchTerm(e.target.value); form.setValue('identity_number', e.target.value); setShowIdentityDropdown(true); }} onFocus={() => setShowIdentityDropdown(true)} className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg" /> <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" /> {showIdentityDropdown && filteredIdentityNumbers.length > 0 && ( <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto"> {filteredIdentityNumbers.map((user) => ( <div key={user.id} onClick={() => { setIdentitySearchTerm(user.identity_number); form.setValue('identity_number', user.identity_number); setShowIdentityDropdown(false); }} className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b"> <div className="font-medium text-gray-900">{user.identity_number}</div> <div className="text-sm text-gray-600">{user.full_name}</div> {user.study_program && ( <div className="text-xs text-gray-500">{user.study_program.name}</div> )} </div> ))} </div> )} </div> {form.formState.errors.identity_number && ( <p className="mt-1 text-sm text-red-600"> {form.formState.errors.identity_number.message} </p> )} </div> <div> <label className="block text-sm font-medium text-gray-700 mb-2"> Full Name * </label> <input {...form.register('full_name')} type="text" placeholder="Enter your full name" className="w-full px-3 py-2 border border-gray-300 rounded-lg" /> {form.formState.errors.full_name && ( <p className="mt-1 text-sm text-red-600"> {form.formState.errors.full_name.message} </p> )} </div> <div> <label className="block text-sm font-medium text-gray-700 mb-2"> Study Program * </label> <div className="relative"> <input type="text" placeholder="Search and select your study program" value={studyProgramSearchTerm} onChange={(e) => { setStudyProgramSearchTerm(e.target.value); setShowStudyProgramDropdown(true); }} onFocus={() => setShowStudyProgramDropdown(true)} className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg" /> <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" /> {showStudyProgramDropdown && ( <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto"> {filteredStudyPrograms.map((program) => ( <div key={program.id} onClick={() => { const displayText = `${program.name} (${program.code}) - ${program.department?.name}`; setStudyProgramSearchTerm(displayText); form.setValue('study_program_id', program.id); setShowStudyProgramDropdown(false); }} className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b"> <div className="font-medium text-gray-900">{program.name} ({program.code})</div> <div className="text-sm text-gray-600">{program.department?.name}</div> </div> ))} </div> )} </div> {form.formState.errors.study_program_id && ( <p className="mt-1 text-sm text-red-600"> {form.formState.errors.study_program_id.message} </p> )} </div> <div> <label className="block text-sm font-medium text-gray-700 mb-2"> Phone Number * </label> <div className="relative"> <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" /> <input {...form.register('phone_number')} type="tel" placeholder="08xxxxxxxxxx" className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg" /> </div> {form.formState.errors.phone_number && ( <p className="mt-1 text-sm text-red-600"> {form.formState.errors.phone_number.message} </p> )} </div> </div> )}
+              <div className="space-y-4"> <h3 className="text-lg font-medium text-gray-900 flex items-center space-x-2"> <Calendar className="h-5 w-5" /> <span>Booking Details</span> </h3> <div> <label className="block text-sm font-medium text-gray-700 mb-2"> Start Time * </label> <div className="flex space-x-2"> <input {...form.register('start_time')} type="datetime-local" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg" /> <button type="button" onClick={handleNowBooking} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium"> NOW </button> </div> {form.formState.errors.start_time && ( <p className="mt-1 text-sm text-red-600"> {form.formState.errors.start_time.message} </p> )} </div> <div className="grid grid-cols-2 gap-4"> <div> <label className="block text-sm font-medium text-gray-700 mb-2"> SKS (Credit Hours) * </label> <input {...form.register('sks', { valueAsNumber: true })} type="number" min="1" max="6" className="w-full px-3 py-2 border border-gray-300 rounded-lg" /> {form.formState.errors.sks && ( <p className="mt-1 text-sm text-red-600"> {form.formState.errors.sks.message} </p> )} </div> <div> <label className="block text-sm font-medium text-gray-700 mb-2"> Class Type * </label> <select {...form.register('class_type')} className="w-full px-3 py-2 border border-gray-300 rounded-lg"> <option value="theory">Theory</option> <option value="practical">Practical</option> </select> </div> </div> {form.watch('start_time') && watchSks && ( <div className="bg-green-50 border border-green-200 rounded-lg p-4"> <div className="flex items-center space-x-2"> <Clock className="h-5 w-5 text-green-600" /> <div className="text-sm text-green-800"> <p className="font-medium">Calculated Duration: {watchClassType === 'theory' ? watchSks * 50 : watchSks * 170} minutes</p> {calculateEndTime(form.watch('start_time'), watchSks, watchClassType) && ( <p>End Time: {format(calculateEndTime(form.watch('start_time'), watchSks, watchClassType)!, 'MMM d, yyyy, h:mm a')}</p> )} </div> </div> </div> )} </div>
+              <div className="space-y-4"> <h3 className="text-lg font-medium text-gray-900 flex items-center space-x-2"> <Zap className="h-5 w-5" /> <span>Equipment</span> </h3> {optionalEquipment.length > 0 && ( <div> <h4 className="text-sm font-medium text-gray-700 mb-3">Optional Equipment</h4> <div className="space-y-2"> {optionalEquipment.map((eq) => { const IconComponent = getEquipmentIcon(eq.category); return ( <div key={eq.id} className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg"> <input type="checkbox" value={eq.id} {...form.register('equipment_requested')} className="h-4 w-4 text-blue-600 border-gray-300 rounded" /> <IconComponent className="h-5 w-5 text-gray-600" /> <div className="flex-1"> <p className="text-sm font-medium text-gray-900">{eq.name}</p> </div> </div> ); })} </div> </div> )} </div>
+              <div> <label className="block text-sm font-medium text-gray-700 mb-2"> Additional Notes (Optional) </label> <textarea {...form.register('notes')} rows={3} placeholder="Any special requirements..." className="w-full px-3 py-2 border border-gray-300 rounded-lg" /> </div>
+              <div className="flex space-x-3"> <button type="submit" disabled={isSubmitting || !selectedRoom} className="flex-1 flex items-center justify-center space-x-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"> {isSubmitting ? <RefreshCw className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />} <span>{isSubmitting ? 'Submitting...' : 'Submit Booking'}</span> </button> </div>
+            </form>
+          </div>
+          {selectedRoom && ( <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"> <h3 className="text-lg font-semibold text-gray-900 mb-4">Selected Room</h3> <div className="space-y-3"> <div className="flex items-center justify-between"> <span className="text-sm font-medium text-gray-700">Room:</span> <span className="text-sm text-gray-900">{selectedRoom.name} ({selectedRoom.code})</span> </div> <div className="flex items-center justify-between"> <span className="text-sm font-medium text-gray-700">Department:</span> <span className="text-sm text-gray-900">{selectedRoom.department?.name || 'General'}</span> </div> <div className="flex items-center justify-between"> <span className="text-sm font-medium text-gray-700">Capacity:</span> <span className="text-sm text-gray-900">{selectedRoom.capacity} seats</span> </div> <div className="flex items-center justify-between"> <span className="text-sm font-medium text-gray-700">Status:</span> <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedRoom.status)}`}> {selectedRoom.status} </span> </div> </div> </div> )}
+        </div>
+      </div>
+      {(showIdentityDropdown || showStudyProgramDropdown) && ( <div className="fixed inset-0 z-5" onClick={() => { setShowIdentityDropdown(false); setShowStudyProgramDropdown(false); }} /> )}
+      {showScheduleModal && selectedRoomForSchedule && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-xl max-w-lg w-full">
+                <div className="p-6">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-semibold">Schedule for {selectedRoomForSchedule.name}</h3>
+                        <button onClick={() => setShowScheduleModal(false)} className="p-1 rounded-full hover:bg-gray-100"><X size={20}/></button>
+                    </div>
+                    {loadingScheduleDetails ? <div className="flex justify-center items-center h-32"><RefreshCw className="animate-spin h-6 w-6 text-gray-500"/></div>
+                    : scheduleDetails.length > 0 ? (
+                        <ul className="space-y-3">
+                            {scheduleDetails.map(schedule => (
+                                <li key={schedule.id} className="p-3 bg-gray-50 rounded-md">
+                                    <p className="font-semibold">{schedule.course_name}</p>
+                                    <p className="text-sm text-gray-700">{schedule.start_time?.substring(0,5)} - {schedule.end_time?.substring(0,5)}</p>
+                                    <p className="text-xs text-gray-500">Prodi: {schedule.subject_study}</p>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : ( <p className="text-center text-gray-500 py-8">No lecture schedule for this room today.</p> )}
                 </div>
-                <div className="space-y-4 mt-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Report Title *</label><input type="text" value={reportTitle} onChange={(e) => setReportTitle(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Severity</label><select value={reportSeverity} onChange={(e) => setReportSeverity(e.target.value as any)} className="w-full px-3 py-2 border border-gray-300 rounded-lg"><option value="minor">Minor</option><option value="major">Major</option><option value="critical">Critical</option></select></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Description *</label><textarea value={reportDescription} onChange={(e) => setReportDescription(e.target.value)} rows={4} className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div>
-                </div>
-                <div className="mt-6 flex justify-end space-x-3 pt-4 border-t">
-                  <button onClick={() => setShowReportModal(false)} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg">Cancel</button>
-                  <button onClick={handleAddReport} disabled={!reportTitle || !reportDescription || (selectedCheckout && processingIds.has(selectedCheckout.id))} className="flex items-center justify-center space-x-2 px-4 py-2 bg-yellow-600 text-white rounded-lg disabled:opacity-50"><Flag className="h-4 w-4" /><span>{selectedCheckout && processingIds.has(selectedCheckout.id) ? 'Saving...' : (selectedCheckout.has_report ? 'Update Report' : 'Add Report')}</span></button>
-                </div>
-              </div>
             </div>
-        )
-      })()}
+        </div>
+      )}
     </div>
   );
 };
 
-export default ValidationQueue;
+export default BookRoom;
