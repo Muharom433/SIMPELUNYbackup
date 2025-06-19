@@ -492,16 +492,13 @@ const ValidationQueue: React.FC = () => {
                     <div className="flex items-center space-x-3"><Timer className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Return by</p><p className="font-semibold text-gray-800">{format(new Date(selectedCheckout.expected_return_date), 'E, d MMM yyyy')}</p></div></div>
                   </div>
                 </div>
-                
-                {/* Notes */}
-                {selectedCheckout.checkout_notes && (
+              
                   <div>
                     <h4 className="text-base font-semibold text-gray-500 mb-2">Notes</h4>
                     <div className="bg-gray-50 border-l-4 border-gray-400 text-gray-800 p-4 rounded-r-lg">
                       <p className="text-sm">{selectedCheckout.checkout_notes}</p>
                     </div>
                   </div>
-                )}
             </div>
             <div className="mt-8 flex justify-end space-x-3 border-t pt-4">
                 <button onClick={() => setShowDetailModal(false)} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors">Close</button>
