@@ -166,29 +166,12 @@ const RoomManagement: React.FC = () => {
     }
   }, [profile, updateRoomStatuses]);
 
-  const fetchDepartments = async () => { /* ... */ };
-  const fetchMasterEquipment = async () => { /* ... */ };
-
-  // --- UPDATED: fetchSchedulesForRoom now accepts the filtered day ---
-  const fetchSchedulesForRoom = async (roomName: string, day: string) => {
-    setLoadingSchedules(true);
-    try {
-        const { data, error } = await supabase
-            .from('lecture_schedules')
-            .select('*')
-            .eq('day', day)
-            .eq('room', roomName)
-            .order('start_time');
-        if (error) throw error;
-        setRoomSchedules(data || []);
-    } catch (error: any) {
-        toast.error("Failed to load schedule for this room.");
-    } finally {
-        setLoadingSchedules(false);
-    }
-  };
-
-  const fetchRoomEquipment = async (roomId: string) => { /* ... */ };
+  
+  const fetchDepartments = async () => { try { const { data, error } = await supabase.from('departments').select('id, name').order('name'); if (error) throw error; setDepartments(data || []); } catch (error: any) { console.error('Error fetching departments:', error); toast.error('Failed to load departments'); } };
+  const fetchMasterEquipment = async () => { const { data, error } = await supabase.from('equipment').select('*').order('name'); if (error) toast.error("Could not fetch equipment list."); else setMasterEquipmentList(data || []); };
+  const fetchSchedulesForRoom = async (roomName: string) => { setLoadingSchedules(true); try { const todayDayName = format(new Date(), 'EEEE', { locale: localeID }); const { data, error } = await supabase.from('lecture_schedules').select('*').eq('day', todayDayName).eq('room', roomName).order('start_time'); if (error) throw error; setRoomSchedules(data || []); } catch (error: any) { toast.error("Failed to load schedule for this room."); } finally { setLoadingSchedules(false); } };
+  const fetchRoomEquipment = async (roomId: string) => { setIsUpdatingEquipment(roomId); const { data, error } = await supabase.from('room_equipment').select('*').eq('room_id', roomId); if (error) toast.error("Could not fetch room's equipment."); else setRoomEquipmentLinks(data || []); setIsUpdatingEquipment(null); };
+  
   
   // --- UPDATED: useEffect for detail modal now passes the searchDay ---
   useEffect(() => {
