@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import { format, parse } from 'date-fns';
 import { id as localeID } from 'date-fns/locale';
 
+// --- INTERFACES & SCHEMA ---
 interface Equipment {
     id: string;
     name: string;
@@ -43,8 +44,8 @@ const iconMap: { [key: string]: React.FC<any> } = {
 
 const RoomManagement: React.FC = () => {
   const { profile } = useAuth();
-  const [allRooms, setAllRooms] = useState<RoomWithDetails[]>([]);
-  const [displayedRooms, setDisplayedRooms] = useState<RoomWithDetails[]>([]);
+  const [allRooms, setAllRooms] = useState<RoomWithDetails[]>([]); // Master list of all rooms with their current status
+  const [displayedRooms, setDisplayedRooms] = useState<RoomWithDetails[]>([]); // Rooms currently shown in the UI (can be filtered)
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -56,6 +57,8 @@ const RoomManagement: React.FC = () => {
   const [masterEquipmentList, setMasterEquipmentList] = useState<Equipment[]>([]);
   const [roomEquipmentLinks, setRoomEquipmentLinks] = useState<RoomEquipment[]>([]);
   const [isUpdatingEquipment, setIsUpdatingEquipment] = useState<string | null>(null);
+
+  // --- State for filters ---
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -73,6 +76,7 @@ const RoomManagement: React.FC = () => {
   const form = useForm<RoomForm>({ resolver: zodResolver(roomSchema) });
   const normalizeRoomName = (name: string): string => name ? name.toLowerCase().replace(/[\s.&-]/g, '') : '';
 
+  // --- Function to get the status of ALL rooms for TODAY ---
   const refreshTodayStatus = useCallback(async (isManual = false) => {
     if (isRefreshing && isManual) return;
     setIsRefreshing(true);
@@ -80,10 +84,13 @@ const RoomManagement: React.FC = () => {
     try {
       const now = new Date();
       const todayDayName = format(now, 'EEEE', { locale: localeID });
+      
       const { data: roomsData, error: roomsError } = await supabase.from('rooms').select(`*, department:departments(*)`);
       if (roomsError) throw roomsError;
+
       const { data: schedulesData, error: schedulesError } = await supabase.from('lecture_schedules').select('room, start_time, end_time, day').eq('day', todayDayName);
       if (schedulesError) throw schedulesError;
+
       const scheduleMap = new Map<string, LectureSchedule[]>();
       schedulesData.forEach(schedule => {
         if (schedule.room) {
@@ -92,6 +99,7 @@ const RoomManagement: React.FC = () => {
           scheduleMap.get(normalizedName)?.push(schedule);
         }
       });
+      
       const roomsWithStatus = roomsData.map(room => {
         const normalizedRoomName = normalizeRoomName(room.name);
         const roomSchedules = scheduleMap.get(normalizedRoomName) || [];
@@ -108,10 +116,16 @@ const RoomManagement: React.FC = () => {
       setAllRooms(roomsWithStatus as RoomWithDetails[]);
       setDisplayedRooms(roomsWithStatus as RoomWithDetails[]);
       if (isManual) toast.success('Room statuses updated for today!');
-    } catch (error) { console.error('Error refreshing today status:', error); toast.error('Failed to refresh statuses.');
-    } finally { setIsRefreshing(false); setLoading(false); }
+    } catch (error) {
+      console.error('Error refreshing today status:', error);
+      toast.error('Failed to refresh statuses.');
+    } finally {
+      setIsRefreshing(false);
+      setLoading(false);
+    }
   }, []);
 
+  // --- NEW search function to find ONLY available rooms ---
   const findAvailableRooms = async () => {
     if (!searchDay || !searchStartTime || !searchEndTime) {
       toast.error("Please complete all search filters.");
@@ -120,6 +134,7 @@ const RoomManagement: React.FC = () => {
     setIsRefreshing(true);
     setLoading(true);
     setIsSearchMode(true);
+    
     try {
       const dayToFetch = getIndonesianDay(searchDay);
       const searchStart = parse(searchStartTime, 'HH:mm', new Date());
@@ -144,10 +159,10 @@ const RoomManagement: React.FC = () => {
 
       const availableRooms = allRoomsData
         .filter(room => !busyRoomNames.has(room.name))
-        .map(room => ({ ...room, status: 'Available' as 'Available' }));
+        .map(room => ({ ...room, department: room.department, status: 'Available' as 'Available' }));
 
       setDisplayedRooms(availableRooms as RoomWithDetails[]);
-      toast.success(`Found ${availableRooms.length} available rooms for the selected time.`);
+      toast.success(`Found ${availableRooms.length} available rooms.`);
     } catch (error) {
       console.error('Error searching for available rooms:', error);
       toast.error('Failed to perform search.');
@@ -158,7 +173,7 @@ const RoomManagement: React.FC = () => {
   };
 
   const handleManualRefresh = () => {
-    setIsSearchMode(false);
+    setIsSearchMode(false); // Keluar dari mode pencarian
     refreshTodayStatus(true);
   };
   
@@ -167,11 +182,7 @@ const RoomManagement: React.FC = () => {
       refreshTodayStatus();
       fetchDepartments();
       fetchMasterEquipment();
-      const interval = setInterval(() => {
-        if (!isSearchMode) {
-            refreshTodayStatus();
-        }
-      }, 10 * 60 * 1000);
+      const interval = setInterval(() => { if (!isSearchMode) { refreshTodayStatus(); } }, 10 * 60 * 1000);
       return () => clearInterval(interval);
     }
   }, [profile, isSearchMode, refreshTodayStatus]);
@@ -190,7 +201,7 @@ const RoomManagement: React.FC = () => {
     } finally { setLoadingSchedules(false); }
   };
   
-  const fetchRoomEquipment = async (roomId: string) => { const { data, error } = await supabase.from('room_equipment').select('*').eq('room_id', roomId); if (error) toast.error("Could not fetch room's equipment."); else setRoomEquipmentLinks(data || []); };
+  const fetchRoomEquipment = async (roomId: string) => { setIsUpdatingEquipment(roomId); const { data, error } = await supabase.from('room_equipment').select('*').eq('room_id', roomId); if (error) toast.error("Could not fetch room's equipment."); else setRoomEquipmentLinks(data || []); setIsUpdatingEquipment(null); };
   
   useEffect(() => {
     if (showRoomDetail) {
@@ -204,7 +215,7 @@ const RoomManagement: React.FC = () => {
   const handleEdit = (room: RoomWithDetails) => { setEditingRoom(room); form.reset({ name: room.name, code: room.code, capacity: room.capacity, department_id: room.department_id, }); setShowForm(true); };
   const handleDelete = async (roomId: string) => { if (!confirm('Are you sure you want to delete this room?')) return; try { const { error } = await supabase.from('rooms').delete().eq('id', roomId); if (error) throw error; toast.success('Room deleted successfully!'); handleManualRefresh(); } catch (error: any) { console.error('Error deleting room:', error); toast.error(error.message || 'Failed to delete room'); } };
   
-  const filteredRooms = useMemo(() => {
+  const filteredRooms = useMemo(() => { 
     return displayedRooms.filter(room => {
         const matchesSearch = (room.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) || (room.code?.toLowerCase() || '').includes(searchTerm.toLowerCase());
         const matchesStatus = filterStatus === 'all' || room.status.toLowerCase() === filterStatus.toLowerCase();
