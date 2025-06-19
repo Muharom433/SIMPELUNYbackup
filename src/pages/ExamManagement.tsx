@@ -198,7 +198,7 @@ const ExamManagement = () => {
 
         // --- Logic for Name Wrapping ---
         // Reduced the initial gap by changing + 27 to + 22
-        const nameY = signatureY + 22; 
+        const nameY = signatureY + 30; 
 
         const nameLines = doc.splitTextToSize(departmentHead.full_name, signatureMaxWidth);
         
