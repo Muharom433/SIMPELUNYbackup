@@ -214,12 +214,9 @@ const ExamManagement = () => {
         // The '+ 1' adds a small, clean gap.
         const underlineY = nameY + nameBlockHeight + 1; 
 
-        doc.setLineWidth(0.2);
-        doc.line(signatureX, underlineY, signatureX + signatureMaxWidth, underlineY);
-
         // Position the NIP just below the underline
         // Reduced the gap from 5 to 4 for a tighter look.
-        const nipY = underlineY + 4;
+        const nipY = underlineY;
         doc.setFont('helvetica', 'normal');
         doc.text(`NIP. ${departmentHead.identity_number}`, signatureX, nipY);
         
