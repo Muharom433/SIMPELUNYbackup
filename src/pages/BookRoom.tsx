@@ -109,14 +109,14 @@ const BookRoom: React.FC = () => {
   const normalizeRoomName = (name: string): string => name ? name.toLowerCase().replace(/[\s.&-]/g, '') : '';
   
   // --- REVISED: Fungsi utama untuk mengambil data dan menghitung status ---
-  // Logika diperbarui sesuai dengan handler yang Anda berikan.
+  // Logika diperbarui dengan format hari dalam Bahasa Indonesia.
   const fetchRoomsWithStatus = useCallback(async () => {
     setLoading(true);
     try {
         const now = new Date();
-        const todayDayName = format(now, 'EEEE'); // e.g., 'Thursday'
+        // KRUSIAL: Menggunakan nama hari dalam Bahasa Indonesia sesuai format database
+        const todayDayName = format(now, 'EEEE', { locale: localeID }); // e.g., "Kamis"
 
-        // Mengambil data ruangan dan jadwal secara paralel untuk efisiensi
         const [roomsResponse, schedulesResponse] = await Promise.all([
             supabase.from('rooms').select(`*, department:departments(*)`),
             supabase.from('lecture_schedules').select('*').eq('day', todayDayName)
@@ -128,23 +128,18 @@ const BookRoom: React.FC = () => {
         const { data: schedulesData, error: schedulesError } = schedulesResponse;
         if (schedulesError) throw schedulesError;
 
-        // Membuat Set untuk menampung nama ruangan yang terjadwal dan yang sedang dipakai
         const scheduledRoomNames = new Set<string>();
         const inUseRoomNames = new Set<string>();
 
         schedulesData.forEach(schedule => {
             if (schedule.room && schedule.start_time && schedule.end_time) {
                 const normalizedName = normalizeRoomName(schedule.room);
-                
-                // Setiap ruangan yang punya jadwal hari ini ditandai sebagai 'Scheduled'
                 scheduledRoomNames.add(normalizedName);
 
-                // Cek apakah waktu saat ini berada di dalam rentang jadwal
                 try {
                     const scheduleStart = parse(schedule.start_time, 'HH:mm:ss', now);
                     const scheduleEnd = parse(schedule.end_time, 'HH:mm:ss', now);
 
-                    // Jika 'now' berada di antara jam mulai dan selesai, tandai sebagai 'In Use'
                     if (now >= scheduleStart && now <= scheduleEnd) {
                         inUseRoomNames.add(normalizedName);
                     }
@@ -154,7 +149,6 @@ const BookRoom: React.FC = () => {
             }
         });
       
-        // Menentukan status akhir untuk setiap ruangan
         const roomsWithStatus = roomsData.map(room => {
             const normalizedRoomName = normalizeRoomName(room.name);
             let status: RoomWithStatus['status'];
@@ -173,7 +167,7 @@ const BookRoom: React.FC = () => {
         setRooms(roomsWithStatus as RoomWithStatus[]);
     } catch (error) {
         console.error('Error fetching rooms with status:', error);
-        toast.error('Failed to load room statuses.');
+        toast.error('Gagal memuat status ruangan.');
     } finally {
         setLoading(false);
     }
@@ -183,7 +177,7 @@ const BookRoom: React.FC = () => {
   const fetchSchedulesForRoom = async (roomName: string) => {
     setLoadingSchedules(true);
     try {
-      const todayDayName = format(new Date(), 'EEEE');
+      const todayDayName = format(new Date(), 'EEEE', { locale: localeID });
       const { data, error } = await supabase
         .from('lecture_schedules')
         .select('*')
@@ -193,7 +187,7 @@ const BookRoom: React.FC = () => {
       if (error) throw error;
       setSchedulesForModal(data || []);
     } catch (error) {
-      toast.error("Failed to load schedule for this room.");
+      toast.error("Gagal memuat jadwal untuk ruangan ini.");
       setSchedulesForModal([]);
     } finally {
       setLoadingSchedules(false);
@@ -231,7 +225,7 @@ const BookRoom: React.FC = () => {
         if (existingUser.study_program_id) {
           form.setValue('study_program_id', existingUser.study_program_id);
           const selectedProgram = studyPrograms.find(sp => sp.id === existingUser.study_program_id);
-          if (selectedProgram) setStudyProgramSearchTerm(`<span class="math-inline">\{selectedProgram\.name\} \(</span>{selectedProgram.code}) - ${selectedProgram.department?.name}`);
+          if (selectedProgram) setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`);
         }
         toast.success('Data terisi otomatis dari pemesanan sebelumnya!');
       }
@@ -241,20 +235,19 @@ const BookRoom: React.FC = () => {
   useEffect(() => {
     if (watchStudyProgramId) {
       const selectedProgram = studyPrograms.find(sp => sp.id === watchStudyProgramId);
-      if (selectedProgram) setStudyProgramSearchTerm(`<span class="math-inline">\{selectedProgram\.name\} \(</span>{selectedProgram.code}) - ${selectedProgram.department?.name}`);
+      if (selectedProgram) setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`);
     }
   }, [watchStudyProgramId, studyPrograms]);
 
-  const fetchStudyPrograms = async () => { try { const { data, error } = await supabase.from('study_programs').select(`*, department:departments(*)`); if (error) throw error; setStudyPrograms(data || []); } catch (error) { console.error('Error fetching study programs:', error); toast.error('Failed to load study programs'); } };
-  const fetchEquipment = async () => { try { const { data, error } = await supabase.from('equipment').select('*').eq('is_available', true); if (error) throw error; setEquipment(data || []); } catch (error) { console.error('Error fetching equipment:', error); toast.error('Failed to load equipment'); } };
+  const fetchStudyPrograms = async () => { try { const { data, error } = await supabase.from('study_programs').select(`*, department:departments(*)`); if (error) throw error; setStudyPrograms(data || []); } catch (error) { console.error('Error fetching study programs:', error); toast.error('Gagal memuat program studi.'); } };
+  const fetchEquipment = async () => { try { const { data, error } = await supabase.from('equipment').select('*').eq('is_available', true); if (error) throw error; setEquipment(data || []); } catch (error) { console.error('Error fetching equipment:', error); toast.error('Gagal memuat peralatan.'); } };
   const fetchExistingUsers = async () => { try { const { data, error } = await supabase.from('users').select(`id, identity_number, full_name, email, phone_number, department_id, study_program_id, study_program:study_programs(*, department:departments(*))`).eq('role', 'student').order('full_name'); if (error) throw error; const usersWithPrograms = (data || []).map(user => ({...user, study_program: user.study_program })); setExistingUsers(usersWithPrograms); } catch (error) { console.error('Error fetching users:', error); } };
   const handleNowBooking = () => { const now = new Date(); const formattedNow = format(now, "yyyy-MM-dd'T'HH:mm"); form.setValue('start_time', formattedNow); };
   const calculateEndTime = (startTime: string, sks: number, classType: string) => { if (!startTime || !sks) return null; const duration = classType === 'theory' ? sks * 50 : sks * 170; const startDate = new Date(startTime); const endDate = addMinutes(startDate, duration); return endDate; };
   const getEquipmentIcon = (category: string) => { switch (category.toLowerCase()) { case 'audio visual': return Users; case 'connectivity': return Wifi; default: return Zap; } };
   
   const onSubmit = async (data: BookingForm) => {
-    // FUNGSI INI TIDAK BERUBAH SAMA SEKALI
-    if (!selectedRoom) { toast.error('Please select a room'); return; }
+    if (!selectedRoom) { toast.error('Silakan pilih ruangan'); return; }
     setLoading(true);
     try {
       const duration = data.class_type === 'theory' ? data.sks * 50 : data.sks * 170;
@@ -275,13 +268,13 @@ const BookRoom: React.FC = () => {
       if (error) throw error;
       const { error: roomUpdateError } = await supabase.from('rooms').update({ is_available: false, updated_at: new Date().toISOString() }).eq('id', data.room_id);
       if (roomUpdateError) console.error('Error updating room availability:', roomUpdateError);
-      toast.success('Room booking submitted successfully! Awaiting approval.');
+      toast.success('Pemesanan ruangan berhasil diajukan! Menunggu persetujuan.');
       form.reset({ class_type: 'theory', sks: 2, equipment_requested: [], });
       setSelectedRoom(null);
       setIdentitySearchTerm('');
       setStudyProgramSearchTerm('');
       fetchRoomsWithStatus();
-    } catch (error: any) { console.error('Error creating booking:', error); toast.error(error.message || 'Failed to create booking'); } finally { setLoading(false); }
+    } catch (error: any) { console.error('Error creating booking:', error); toast.error(error.message || 'Gagal membuat pemesanan'); } finally { setLoading(false); }
   };
   // --- AKHIR DARI BAGIAN YANG TIDAK BERUBAH ---
 
@@ -314,12 +307,11 @@ const BookRoom: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      {/* --- HEADER TIDAK BERUBAH --- */}
       <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold flex items-center space-x-3"><Calendar className="h-8 w-8" /><span>Book a Room</span></h1>
-            <p className="mt-2 opacity-90">Reserve a room for your lecture, meeting, or study session</p>
+            <h1 className="text-3xl font-bold flex items-center space-x-3"><Calendar className="h-8 w-8" /><span>Pesan Ruangan</span></h1>
+            <p className="mt-2 opacity-90">Pesan ruangan untuk kuliah, rapat, atau sesi belajar Anda</p>
           </div>
           <div className="hidden md:block text-right">
             <div className="text-2xl font-bold">{format(currentTime, 'HH:mm')}</div>
@@ -330,14 +322,13 @@ const BookRoom: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          {/* UPDATED: Bagian filter disederhanakan */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
               <div className="flex-1 relative w-full sm:w-auto">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search rooms by name or code..."
+                  placeholder="Cari ruangan berdasarkan nama atau kode..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -359,14 +350,13 @@ const BookRoom: React.FC = () => {
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="show-in-use" className="ml-2 block text-sm text-gray-900">
-                    Show rooms currently in use
+                    Tampilkan ruangan yang sedang dipakai
                 </label>
             </div>
           </div>
 
-          {/* UPDATED: Tampilan daftar ruangan dengan status baru */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Available Rooms Today</h2>
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Ruangan Tersedia Hari Ini</h2>
             {viewMode === 'grid' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filteredRooms.map((room) => (
@@ -380,10 +370,10 @@ const BookRoom: React.FC = () => {
                       </div>
                       <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(room.status)}`}>{room.status}</span>
                     </div>
-                    <div className="flex items-center space-x-2 mb-3"><Users className="h-4 w-4 text-gray-400" /> <span className="text-sm text-gray-600">{room.capacity} seats</span></div>
-                    <div className="flex items-center space-x-2"><MapPin className="h-4 w-4 text-gray-400" /> <span className="text-sm text-gray-600">{room.department?.name || 'General'}</span></div>
+                    <div className="flex items-center space-x-2 mb-3"><Users className="h-4 w-4 text-gray-400" /> <span className="text-sm text-gray-600">{room.capacity} kursi</span></div>
+                    <div className="flex items-center space-x-2"><MapPin className="h-4 w-4 text-gray-400" /> <span className="text-sm text-gray-600">{room.department?.name || 'Umum'}</span></div>
                     {room.status === 'Scheduled' && (
-                        <button onClick={(e) => { e.stopPropagation(); setViewingSchedulesFor(room); }} className="absolute bottom-2 right-2 p-2 text-gray-400 hover:text-blue-600 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button title="Lihat Jadwal" onClick={(e) => { e.stopPropagation(); setViewingSchedulesFor(room); }} className="absolute bottom-2 right-2 p-2 text-gray-400 hover:text-blue-600 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity">
                             <Eye className="h-5 w-5"/>
                         </button>
                     )}
@@ -399,14 +389,14 @@ const BookRoom: React.FC = () => {
                     <div className="flex items-center space-x-4">
                       <div>
                         <h3 className="font-semibold text-gray-900">{room.name}</h3>
-                        <p className="text-sm text-gray-600">{room.code} • {room.department?.name || 'General'}</p>
+                        <p className="text-sm text-gray-600">{room.code} • {room.department?.name || 'Umum'}</p>
                       </div>
                     </div>
                     <div className="flex items-center space-x-4">
-                      <div className="flex items-center space-x-1"><Users className="h-4 w-4 text-gray-400" /> <span className="text-sm text-gray-600">{room.capacity} seats</span></div>
+                      <div className="flex items-center space-x-1"><Users className="h-4 w-4 text-gray-400" /> <span className="text-sm text-gray-600">{room.capacity} kursi</span></div>
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(room.status)}`}>{room.status}</span>
                       {room.status === 'Scheduled' && (
-                        <button onClick={(e) => { e.stopPropagation(); setViewingSchedulesFor(room); }} className="p-2 text-gray-400 hover:text-blue-600 rounded-full hover:bg-gray-100">
+                        <button title="Lihat Jadwal" onClick={(e) => { e.stopPropagation(); setViewingSchedulesFor(room); }} className="p-2 text-gray-400 hover:text-blue-600 rounded-full hover:bg-gray-100">
                             <Eye className="h-5 w-5"/>
                         </button>
                       )}
@@ -415,66 +405,63 @@ const BookRoom: React.FC = () => {
                  ))}
               </div>
             )}
-            {filteredRooms.length === 0 && (
+            {filteredRooms.length === 0 && !loading && (
               <div className="text-center py-8">
                 <Building className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                <h3 className="text-lg font-medium text-gray-900 mb-1">No Rooms Available</h3>
-                <p className="text-gray-500">Try adjusting your search or show rooms in use.</p>
+                <h3 className="text-lg font-medium text-gray-900 mb-1">Tidak Ada Ruangan Tersedia</h3>
+                <p className="text-gray-500">Coba sesuaikan pencarian atau tampilkan ruangan yang dipakai.</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* --- FORM PEMESANAN DI SISI KANAN INI TIDAK BERUBAH --- */}
         <div className="space-y-6">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <h2 className="text-xl font-semibold text-gray-900 mb-6">Booking Details</h2>
+                <h2 className="text-xl font-semibold text-gray-900 mb-6">Detail Pemesanan</h2>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                     {!profile && (
                     <div className="space-y-4">
-                        <h3 className="text-lg font-medium text-gray-900 flex items-center space-x-2"><User className="h-5 w-5" /><span>Personal Information</span></h3>
+                        <h3 className="text-lg font-medium text-gray-900 flex items-center space-x-2"><User className="h-5 w-5" /><span>Informasi Pribadi</span></h3>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Identity Number (NIM/NIP) *</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Nomor Identitas (NIM/NIP) *</label>
                             <div className="relative">
-                                <input {...form.register('identity_number')} type="text" placeholder="Enter or select your student/staff ID" value={identitySearchTerm} onChange={(e) => { setIdentitySearchTerm(e.target.value); form.setValue('identity_number', e.target.value); setShowIdentityDropdown(true); }} onFocus={() => setShowIdentityDropdown(true)} className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                                <input {...form.register('identity_number')} type="text" placeholder="Masukkan atau pilih ID Anda" value={identitySearchTerm} onChange={(e) => { setIdentitySearchTerm(e.target.value); form.setValue('identity_number', e.target.value); setShowIdentityDropdown(true); }} onFocus={() => setShowIdentityDropdown(true)} className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                                 <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                                 {showIdentityDropdown && filteredIdentityNumbers.length > 0 && ( <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">{filteredIdentityNumbers.map((user) => ( <div key={user.id} onClick={() => { setIdentitySearchTerm(user.identity_number); form.setValue('identity_number', user.identity_number); setShowIdentityDropdown(false); }} className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"><div className="font-medium text-gray-900">{user.identity_number}</div><div className="text-sm text-gray-600">{user.full_name}</div>{user.study_program && ( <div className="text-xs text-gray-500">{user.study_program.name}</div> )}</div> ))}</div> )}
                             </div>
                             {form.formState.errors.identity_number && ( <p className="mt-1 text-sm text-red-600">{form.formState.errors.identity_number.message}</p> )}
                         </div>
-                        <div><label className="block text-sm font-medium text-gray-700 mb-2">Full Name *</label><input {...form.register('full_name')} type="text" placeholder="Enter your full name" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />{form.formState.errors.full_name && ( <p className="mt-1 text-sm text-red-600">{form.formState.errors.full_name.message}</p> )}</div>
+                        <div><label className="block text-sm font-medium text-gray-700 mb-2">Nama Lengkap *</label><input {...form.register('full_name')} type="text" placeholder="Masukkan nama lengkap Anda" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />{form.formState.errors.full_name && ( <p className="mt-1 text-sm text-red-600">{form.formState.errors.full_name.message}</p> )}</div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Study Program *</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Program Studi *</label>
                             <div className="relative">
-                                <input type="text" placeholder="Search and select your study program" value={studyProgramSearchTerm} onChange={(e) => { setStudyProgramSearchTerm(e.target.value); setShowStudyProgramDropdown(true); }} onFocus={() => setShowStudyProgramDropdown(true)} className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                                <input type="text" placeholder="Cari dan pilih program studi Anda" value={studyProgramSearchTerm} onChange={(e) => { setStudyProgramSearchTerm(e.target.value); setShowStudyProgramDropdown(true); }} onFocus={() => setShowStudyProgramDropdown(true)} className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                                 <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                {showStudyProgramDropdown && ( <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">{filteredStudyPrograms.map((program) => ( <div key={program.id} onClick={() => { const displayText = `${program.name} (${program.code}) - ${program.department?.name}`; setStudyProgramSearchTerm(displayText); form.setValue('study_program_id', program.id); setShowStudyProgramDropdown(false); }} className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"><div className="font-medium text-gray-900">{program.name} ({program.code})</div><div className="text-sm text-gray-600">{program.department?.name}</div></div> ))}</div> )}
+                                {showStudyProgramDropdown && ( <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">{studyPrograms.map((program) => ( <div key={program.id} onClick={() => { const displayText = `${program.name} (${program.code}) - ${program.department?.name}`; setStudyProgramSearchTerm(displayText); form.setValue('study_program_id', program.id); setShowStudyProgramDropdown(false); }} className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"><div className="font-medium text-gray-900">{program.name} ({program.code})</div><div className="text-sm text-gray-600">{program.department?.name}</div></div> ))}</div> )}
                             </div>
                             {form.formState.errors.study_program_id && ( <p className="mt-1 text-sm text-red-600">{form.formState.errors.study_program_id.message}</p> )}
                         </div>
-                        <div><label className="block text-sm font-medium text-gray-700 mb-2">Phone Number *</label><div className="relative"><Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" /><input {...form.register('phone_number')} type="tel" placeholder="08xxxxxxxxxx" className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" /></div>{form.formState.errors.phone_number && ( <p className="mt-1 text-sm text-red-600">{form.formState.errors.phone_number.message}</p> )}</div>
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4"><div className="flex items-start space-x-2"><AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" /><div className="text-sm text-blue-800"><p className="font-medium">Physical ID Required</p><p>Please bring your physical student/staff ID when using the booked room.</p></div></div></div>
+                        <div><label className="block text-sm font-medium text-gray-700 mb-2">Nomor Telepon *</label><div className="relative"><Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" /><input {...form.register('phone_number')} type="tel" placeholder="08xxxxxxxxxx" className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>{form.formState.errors.phone_number && ( <p className="mt-1 text-sm text-red-600">{form.formState.errors.phone_number.message}</p> )}</div>
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4"><div className="flex items-start space-x-2"><AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" /><div className="text-sm text-blue-800"><p className="font-medium">Wajib Bawa Kartu Identitas</p><p>Harap bawa kartu identitas fisik (KTM/KTP) saat menggunakan ruangan.</p></div></div></div>
                     </div>
                     )}
                     <div className="space-y-4">
-                        <h3 className="text-lg font-medium text-gray-900 flex items-center space-x-2"><Calendar className="h-5 w-5" /><span>Booking Details</span></h3>
-                        <div><label className="block text-sm font-medium text-gray-700 mb-2">Start Time *</label><div className="flex space-x-2"><input {...form.register('start_time')} type="datetime-local" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" /><button type="button" onClick={handleNowBooking} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">NOW</button></div>{form.formState.errors.start_time && ( <p className="mt-1 text-sm text-red-600">{form.formState.errors.start_time.message}</p> )}</div>
-                        <div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-700 mb-2">SKS (Credit Hours) *</label><input {...form.register('sks', { valueAsNumber: true })} type="number" min="1" max="6" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />{form.formState.errors.sks && ( <p className="mt-1 text-sm text-red-600">{form.formState.errors.sks.message}</p> )}</div><div><label className="block text-sm font-medium text-gray-700 mb-2">Class Type *</label><select {...form.register('class_type')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"><option value="theory">Theory (50 min/SKS)</option><option value="practical">Practical (170 min/SKS)</option></select></div></div>
-                        {form.watch('start_time') && watchSks && ( <div className="bg-green-50 border border-green-200 rounded-lg p-4"><div className="flex items-center space-x-2"><Clock className="h-5 w-5 text-green-600" /><div className="text-sm text-green-800"><p className="font-medium">Calculated Duration: {watchClassType === 'theory' ? watchSks * 50 : watchSks * 170} minutes</p>{calculateEndTime(form.watch('start_time'), watchSks, watchClassType) && ( <p>End Time: {format(calculateEndTime(form.watch('start_time'), watchSks, watchClassType)!, 'MMM d, yyyy \'at\' h:mm a')}</p> )}</div></div></div> )}
+                        <h3 className="text-lg font-medium text-gray-900 flex items-center space-x-2"><Calendar className="h-5 w-5" /><span>Detail Pemesanan</span></h3>
+                        <div><label className="block text-sm font-medium text-gray-700 mb-2">Waktu Mulai *</label><div className="flex space-x-2"><input {...form.register('start_time')} type="datetime-local" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" /><button type="button" onClick={handleNowBooking} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">SEKARANG</button></div>{form.formState.errors.start_time && ( <p className="mt-1 text-sm text-red-600">{form.formState.errors.start_time.message}</p> )}</div>
+                        <div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-700 mb-2">SKS *</label><input {...form.register('sks', { valueAsNumber: true })} type="number" min="1" max="6" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />{form.formState.errors.sks && ( <p className="mt-1 text-sm text-red-600">{form.formState.errors.sks.message}</p> )}</div><div><label className="block text-sm font-medium text-gray-700 mb-2">Tipe Kelas *</label><select {...form.register('class_type')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"><option value="theory">Teori (50 men/SKS)</option><option value="practical">Praktik (170 men/SKS)</option></select></div></div>
+                        {form.watch('start_time') && watchSks && ( <div className="bg-green-50 border border-green-200 rounded-lg p-4"><div className="flex items-center space-x-2"><Clock className="h-5 w-5 text-green-600" /><div className="text-sm text-green-800"><p className="font-medium">Estimasi Durasi: {watchClassType === 'theory' ? watchSks * 50 : watchSks * 170} menit</p>{calculateEndTime(form.watch('start_time'), watchSks, watchClassType) && ( <p>Waktu Selesai: {format(calculateEndTime(form.watch('start_time'), watchSks, watchClassType)!, 'MMM d, yyyy \'pukul\' HH:mm')}</p> )}</div></div></div> )}
                     </div>
-                    {/* ... Sisa form (equipment & notes) tidak berubah ... */}
-                    <div className="flex space-x-3"><button type="submit" disabled={!selectedRoom} className="flex-1 flex items-center justify-center space-x-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"><Send className="h-5 w-5" /><span>Submit Booking</span></button></div>
+                    <div className="flex space-x-3"><button type="submit" disabled={!selectedRoom} className="flex-1 flex items-center justify-center space-x-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"><Send className="h-5 w-5" /><span>Ajukan Pemesanan</span></button></div>
                 </form>
             </div>
         </div>
       </div>
 
-      {/* NEW: Modal untuk menampilkan detail jadwal */}
       {viewingSchedulesFor && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col">
                 <div className="p-4 border-b flex justify-between items-center">
-                    <h3 className="text-lg font-semibold text-gray-900">Today's Schedule for {viewingSchedulesFor.name}</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">Jadwal Hari Ini: {viewingSchedulesFor.name}</h3>
                     <button onClick={() => setViewingSchedulesFor(null)} className="p-1 text-gray-400 hover:text-gray-600 rounded-full"><X className="h-5 w-5"/></button>
                 </div>
                 <div className="p-6 overflow-y-auto">
@@ -486,12 +473,12 @@ const BookRoom: React.FC = () => {
                                 <li key={schedule.id} className="p-3 bg-gray-50 rounded-md border border-gray-200">
                                     <p className="font-semibold text-gray-800">{schedule.course_name}</p>
                                     <p className="text-sm text-gray-600"><Clock className="inline h-4 w-4 mr-1"/>{schedule.start_time?.substring(0,5)} - {schedule.end_time?.substring(0,5)}</p>
-                                    <p className="text-xs text-gray-500 mt-1">Study Program: {schedule.subject_study}</p>
+                                    <p className="text-xs text-gray-500 mt-1">Prodi: {schedule.subject_study}</p>
                                 </li>
                             ))}
                         </ul>
                     ) : (
-                        <p className="text-sm text-gray-500 text-center py-4">No schedules found for this room today.</p>
+                        <p className="text-sm text-gray-500 text-center py-4">Tidak ada jadwal untuk ruangan ini hari ini.</p>
                     )}
                 </div>
             </div>
