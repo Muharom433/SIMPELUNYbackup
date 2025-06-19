@@ -432,7 +432,10 @@ const ValidationQueue: React.FC = () => {
       </div>
 
       {/* Perbaikan #1: Mengembalikan SEMUA KONTEN MODAL */}
-      {showDetailModal && selectedCheckout && (
+       {showDetailModal && selectedCheckout && (() => {
+        const equipmentList = selectedCheckout.booking?.room?.id ? roomEquipment.get(selectedCheckout.booking.room.id) || [] : [];
+        const returnedItems = new Set(selectedCheckout.equipment_back || []);
+        return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center pb-4 border-b border-gray-200">
@@ -440,11 +443,18 @@ const ValidationQueue: React.FC = () => {
                 <button onClick={() => setShowDetailModal(false)} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100"><X className="h-5 w-5"/></button>
             </div>
             <div className="space-y-6 pt-5">
-                {/* User, Room, Booking Info */}
+                <div><h4 className="text-base font-semibold text-gray-500 mb-2">User Information</h4><div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center"><User className="h-6 w-6 text-blue-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.user?.full_name}</p><p className="text-sm text-gray-500">ID: {selectedCheckout.user?.identity_number}</p></div></div></div>
+                <div><h4 className="text-base font-semibold text-gray-500 mb-2">Room Information</h4><div className="bg-white border border-gray-200 rounded-xl p-4 "><div className="flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-green-100 rounded-full flex items-center justify-center"><Building className="h-6 w-6 text-green-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.booking?.room?.name}</p><p className="text-sm text-gray-500">{selectedCheckout.booking?.room?.department?.name}</p></div></div>{activeTab === 'room' && equipmentList.length > 0 && (<div className="mt-4 pt-4 border-t"><h4 className="text-sm font-semibold text-gray-700 mb-2">Equipment Checklist</h4><div className="grid grid-cols-2 gap-2">{equipmentList.map(eq => (<div key={eq.id} className="flex items-center"><input type="checkbox" checked={returnedItems.has(eq.name)} readOnly className="h-4 w-4 rounded" /><label className={`ml-2 text-sm ${eq.is_mandatory && 'font-bold'}`}>{eq.name}{eq.is_mandatory &&<span className="text-red-500">*</span>}</label></div>))}</div></div>)}</div></div>
+                <div><h4 className="text-base font-semibold text-gray-500 mb-2">Booking & Schedule</h4><div className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-4">{/* ... schedule info ... */}</div></div>
+                {selectedCheckout.has_report && selectedCheckout.report && (<div><h4 className="text-base font-semibold text-gray-500 mb-2">Report Information</h4><div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">{/* ... report info ... */}</div></div>)}
+                {selectedCheckout.checkout_notes && (<div><h4 className="text-base font-semibold text-gray-500 mb-2">Notes</h4><div className="bg-gray-50 border-l-4 p-4"><p>{selectedCheckout.checkout_notes}</p></div></div>)}
+            </div>
+            <div className="mt-8 flex justify-end space-x-3 border-t pt-4">
+                <button onClick={() => setShowDetailModal(false)} className="px-4 py-2 bg-gray-200 rounded-lg">Close</button>
             </div>
           </div>
         </div>
-      )}
+      )})}
       
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
