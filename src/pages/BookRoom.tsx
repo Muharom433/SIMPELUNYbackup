@@ -352,8 +352,8 @@ const BookRoom: React.FC = () => {
                             {scheduleDetails.map(schedule => (
                                 <li key={schedule.id} className="p-3 bg-gray-50 rounded-md">
                                   <p className="font-semibold">{schedule.start_time?.substring(0,5)} - {schedule.end_time?.substring(0,5)}</p>
-                                    <p className="text-sm text-gray-700">{schedule.course_name}</p>
-                                    <p className="text-xs text-gray-500">Prodi: {schedule.subject_study}</p>
+                                    <p className="text-xs text-gray-700">Prodi: {schedule.subject_study}</p>
+                                    <p className="text-sm text-gray-500">{schedule.course_name}</p>
                                 </li>
                             ))}
                         </ul>
