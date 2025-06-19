@@ -12,7 +12,6 @@ import toast from 'react-hot-toast';
 import { format, parse } from 'date-fns';
 import { id as localeID } from 'date-fns/locale';
 
-// --- INTERFACES & SCHEMA (TIDAK DIUBAH) ---
 interface Equipment {
     id: string;
     name: string;
@@ -44,11 +43,11 @@ const iconMap: { [key: string]: React.FC<any> } = {
 
 const RoomManagement: React.FC = () => {
   const { profile } = useAuth();
-  const [allRooms, setAllRooms] = useState<RoomWithDetails[]>([]); // Menyimpan daftar asli semua ruangan
-  const [displayedRooms, setDisplayedRooms] = useState<RoomWithDetails[]>([]); // Ruangan yang ditampilkan (bisa difilter)
+  const [allRooms, setAllRooms] = useState<RoomWithDetails[]>([]);
+  const [displayedRooms, setDisplayedRooms] = useState<RoomWithDetails[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isSearching, setIsSearching] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingRoom, setEditingRoom] = useState<RoomWithDetails | null>(null);
   const [showRoomDetail, setShowRoomDetail] = useState<RoomWithDetails | null>(null);
@@ -63,7 +62,7 @@ const RoomManagement: React.FC = () => {
   
   const dayNamesEnglish = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const dayNamesIndonesian = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
-
+  
   const getIndonesianDay = (englishDay: string) => dayNamesIndonesian[dayNamesEnglish.indexOf(englishDay)] || 'Senin';
 
   const [searchDay, setSearchDay] = useState(format(new Date(), 'EEEE'));
@@ -74,8 +73,10 @@ const RoomManagement: React.FC = () => {
   const form = useForm<RoomForm>({ resolver: zodResolver(roomSchema) });
   const normalizeRoomName = (name: string): string => name ? name.toLowerCase().replace(/[\s.&-]/g, '') : '';
 
-  const updateTodayStatus = useCallback(async (isManual = false) => {
+  const refreshTodayStatus = useCallback(async (isManual = false) => {
+    if (isRefreshing && isManual) return;
     setIsRefreshing(true);
+    setLoading(true);
     try {
       const now = new Date();
       const todayDayName = format(now, 'EEEE', { locale: localeID });
@@ -83,7 +84,6 @@ const RoomManagement: React.FC = () => {
       if (roomsError) throw roomsError;
       const { data: schedulesData, error: schedulesError } = await supabase.from('lecture_schedules').select('room, start_time, end_time, day').eq('day', todayDayName);
       if (schedulesError) throw schedulesError;
-
       const scheduleMap = new Map<string, LectureSchedule[]>();
       schedulesData.forEach(schedule => {
         if (schedule.room) {
@@ -92,7 +92,6 @@ const RoomManagement: React.FC = () => {
           scheduleMap.get(normalizedName)?.push(schedule);
         }
       });
-      
       const roomsWithStatus = roomsData.map(room => {
         const normalizedRoomName = normalizeRoomName(room.name);
         const roomSchedules = scheduleMap.get(normalizedRoomName) || [];
@@ -125,6 +124,7 @@ const RoomManagement: React.FC = () => {
       const dayToFetch = getIndonesianDay(searchDay);
       const searchStart = parse(searchStartTime, 'HH:mm', new Date());
       const searchEnd = parse(searchEndTime, 'HH:mm', new Date());
+
       const { data: schedulesData, error: schedulesError } = await supabase.from('lecture_schedules').select('room, start_time, end_time').eq('day', dayToFetch);
       if (schedulesError) throw schedulesError;
 
@@ -139,12 +139,15 @@ const RoomManagement: React.FC = () => {
           }
       });
       
-      const availableRooms = allRooms
+      const { data: allRoomsData, error: roomsError } = await supabase.from('rooms').select(`*, department:departments(*)`);
+      if(roomsError) throw roomsError;
+
+      const availableRooms = allRoomsData
         .filter(room => !busyRoomNames.has(room.name))
         .map(room => ({ ...room, status: 'Available' as 'Available' }));
 
-      setDisplayedRooms(availableRooms);
-      toast.success(`Found ${availableRooms.length} available rooms.`);
+      setDisplayedRooms(availableRooms as RoomWithDetails[]);
+      toast.success(`Found ${availableRooms.length} available rooms for the selected time.`);
     } catch (error) {
       console.error('Error searching for available rooms:', error);
       toast.error('Failed to perform search.');
@@ -156,18 +159,22 @@ const RoomManagement: React.FC = () => {
 
   const handleManualRefresh = () => {
     setIsSearchMode(false);
-    updateTodayStatus(true);
+    refreshTodayStatus(true);
   };
   
   useEffect(() => {
     if (profile) {
+      refreshTodayStatus();
       fetchDepartments();
       fetchMasterEquipment();
-      updateTodayStatus(); // Initial load for today
-      const interval = setInterval(() => { if (!isSearchMode) { updateTodayStatus(); } }, 10 * 60 * 1000);
+      const interval = setInterval(() => {
+        if (!isSearchMode) {
+            refreshTodayStatus();
+        }
+      }, 10 * 60 * 1000);
       return () => clearInterval(interval);
     }
-  }, [profile, updateTodayStatus]);
+  }, [profile, isSearchMode, refreshTodayStatus]);
 
   const fetchDepartments = async () => { try { const { data, error } = await supabase.from('departments').select('id, name').order('name'); if (error) throw error; setDepartments(data || []); } catch (error: any) { toast.error('Failed to load departments'); } };
   const fetchMasterEquipment = async () => { const { data, error } = await supabase.from('equipment').select('*').order('name'); if (error) toast.error("Could not fetch equipment list."); else setMasterEquipmentList(data || []); };
@@ -187,24 +194,23 @@ const RoomManagement: React.FC = () => {
   
   useEffect(() => {
     if (showRoomDetail) {
-      fetchSchedulesForRoom(showRoomDetail.name, searchDay);
-      fetchRoomEquipment(showRoomDetail.id);
+        fetchSchedulesForRoom(showRoomDetail.name, searchDay);
+        fetchRoomEquipment(showRoomDetail.id);
     }
   }, [showRoomDetail, searchDay]);
 
-  const handleEquipmentChange = async (equipmentId: string, isChecked: boolean) => { if (!showRoomDetail) return; setIsUpdatingEquipment(equipmentId); if (isChecked) { const { error } = await supabase.from('room_equipment').insert({ room_id: showRoomDetail.id, equipment_id: equipmentId }); if (error) toast.error('Failed to add equipment.'); else toast.success('Equipment added.'); } else { const { error } = await supabase.from('room_equipment').delete().eq('room_id', showRoomDetail.id).eq('equipment_id', equipmentId); if (error) toast.error('Failed to remove equipment.'); else toast.success('Equipment removed.'); } await fetchRoomEquipment(showRoomDetail.id); setIsUpdatingEquipment(null); };
+  const handleEquipmentChange = async (equipmentId: string, isChecked: boolean) => { if (!showRoomDetail) return; setIsUpdatingEquipment(equipmentId); if (isChecked) { const { error } = await supabase.from('room_equipment').insert({ room_id: showRoomDetail.id, equipment_id: equipmentId }); if (error) { toast.error('Failed to add equipment.'); } else { toast.success('Equipment added.'); } } else { const { error } = await supabase.from('room_equipment').delete().eq('room_id', showRoomDetail.id).eq('equipment_id', equipmentId); if (error) { toast.error('Failed to remove equipment.'); } else { toast.success('Equipment removed.'); } } await fetchRoomEquipment(showRoomDetail.id); setIsUpdatingEquipment(null); };
   const onSubmit = async (data: RoomForm) => { try { setLoading(true); const roomData = { name: data.name, code: data.code, capacity: data.capacity, department_id: data.department_id, }; if (editingRoom) { const { error } = await supabase.from('rooms').update(roomData).eq('id', editingRoom.id); if (error) throw error; toast.success('Room updated successfully!'); } else { const { error } = await supabase.from('rooms').insert(roomData); if (error) throw error; toast.success('Room created successfully!'); } setShowForm(false); setEditingRoom(null); form.reset(); handleManualRefresh(); } catch (error: any) { console.error('Error saving room:', error); toast.error(error.message || 'Failed to save room'); } finally { setLoading(false); } };
   const handleEdit = (room: RoomWithDetails) => { setEditingRoom(room); form.reset({ name: room.name, code: room.code, capacity: room.capacity, department_id: room.department_id, }); setShowForm(true); };
   const handleDelete = async (roomId: string) => { if (!confirm('Are you sure you want to delete this room?')) return; try { const { error } = await supabase.from('rooms').delete().eq('id', roomId); if (error) throw error; toast.success('Room deleted successfully!'); handleManualRefresh(); } catch (error: any) { console.error('Error deleting room:', error); toast.error(error.message || 'Failed to delete room'); } };
   
-  const filteredRooms = useMemo(() => { 
-    let itemsToFilter = isSearchMode ? rooms : allRooms;
-    return itemsToFilter.filter(room => {
-      const matchesSearch = (room.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) || (room.code?.toLowerCase() || '').includes(searchTerm.toLowerCase());
-      const matchesStatus = filterStatus === 'all' || room.status.toLowerCase() === filterStatus.toLowerCase();
-      return matchesSearch && matchesStatus;
+  const filteredRooms = useMemo(() => {
+    return displayedRooms.filter(room => {
+        const matchesSearch = (room.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) || (room.code?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+        const matchesStatus = filterStatus === 'all' || room.status.toLowerCase() === filterStatus.toLowerCase();
+        return matchesSearch && matchesStatus;
     });
-  }, [rooms, allRooms, isSearchMode, searchTerm, filterStatus]);
+  }, [displayedRooms, searchTerm, filterStatus]);
   
   const getStatusColor = (status: RoomWithDetails['status']) => { switch (status) { case 'In Use': return 'bg-red-100 text-red-800'; case 'Scheduled': return 'bg-yellow-100 text-yellow-800'; case 'Available': return 'bg-green-100 text-green-800'; default: return 'bg-gray-100 text-gray-800'; } };
   
@@ -212,7 +218,11 @@ const RoomManagement: React.FC = () => {
 
   return (
     <div className="space-y-6">
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white"> <div className="flex items-center justify-between"> <div> <h1 className="text-3xl font-bold flex items-center space-x-3"> <Building className="h-8 w-8" /> <span>Room Status & Availability</span> </h1> <p className="mt-2 opacity-90"> View real-time room status or search for future availability. </p> </div> <div className="hidden md:block text-right"> <div className="text-2xl font-bold">{filteredRooms.length}</div> <div className="text-sm opacity-80">Rooms Displayed</div> </div> </div> </div>
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white">
+            <h1 className="text-3xl font-bold">Room Status & Availability</h1>
+            <p className="mt-2 opacity-90">View real-time room status or search for future availability.</p>
+        </div>
+      
         <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
             <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Find Available Rooms</h3>
@@ -220,13 +230,15 @@ const RoomManagement: React.FC = () => {
                     <div><label className="block text-sm font-medium text-gray-700">Day</label><select value={searchDay} onChange={(e) => setSearchDay(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm">{dayNamesEnglish.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
                     <div><label className="block text-sm font-medium text-gray-700">Start Time</label><input type="time" value={searchStartTime} onChange={(e) => setSearchStartTime(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/></div>
                     <div><label className="block text-sm font-medium text-gray-700">End Time</label><input type="time" value={searchEndTime} onChange={(e) => setSearchEndTime(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/></div>
-                    <button onClick={handleSearch} disabled={isRefreshing} className="flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 h-10">
-                        {isRefreshing ? <Loader2 className="h-5 w-5 animate-spin"/> : <Search className="h-5 w-5" />} <span>Search Available</span>
+                    <button onClick={findAvailableRooms} disabled={isRefreshing} className="flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 h-10">
+                        {isRefreshing ? <Loader2 className="h-5 w-5 animate-spin"/> : <Search className="h-5 w-5" />} <span>Search</span>
                     </button>
                 </div>
             </div>
             <div className="border-t pt-4 flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-                <div className="flex flex-wrap gap-3"> <button onClick={() => { setEditingRoom(null); form.reset(); setShowForm(true); }} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"> <Plus className="h-5 w-5" /> <span>Add Room</span> </button> </div>
+                <div className="flex flex-wrap gap-3">
+                    <button onClick={() => { setEditingRoom(null); form.reset(); setShowForm(true); }} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"> <Plus className="h-5 w-5" /> <span>Add Room</span> </button>
+                </div>
                 <div className="flex items-center space-x-3">
                     <div className="relative"> <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" /> <input type="text" placeholder="Filter results by name/code..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-64"/></div>
                     {!isSearchMode && (<select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg"><option value="all">All Statuses</option><option value="Available">Available</option><option value="Scheduled">Scheduled</option><option value="In Use">In Use</option></select>)}
@@ -238,7 +250,7 @@ const RoomManagement: React.FC = () => {
       
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             {viewMode === 'grid' ? ( <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"> {filteredRooms.map((room) => ( <div key={room.id} className="border border-gray-200 rounded-xl p-4 hover:shadow-lg transition-shadow group relative"> <div className={`absolute top-2 right-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(room.status)}`}>{room.status}</div> <div className="flex flex-col h-full"> <div className="flex-grow"> <h3 className="font-semibold text-gray-900 text-lg mt-8">{room.name}</h3> <p className="text-sm text-gray-600">{room.code}</p> <div className="flex items-center text-sm text-gray-600 mt-2"><Users className="h-4 w-4 mr-1"/><span>{room.capacity} seats</span></div> <div className="flex items-center text-sm text-gray-600"><MapPin className="h-4 w-4 mr-1"/><span>{room.department?.name || 'Umum'}</span></div> </div> <div className="flex items-center justify-end pt-4 mt-4 border-t border-gray-100 space-x-1"> <button onClick={() => setShowRoomDetail(room)} className="p-1 text-gray-500 hover:text-indigo-600"><Eye className="h-4 w-4" /></button> <button onClick={() => handleEdit(room)} className="p-1 text-gray-500 hover:text-blue-600"><Edit className="h-4 w-4" /></button> <button onClick={() => handleDelete(room.id)} className="p-1 text-gray-500 hover:text-red-600"><Trash2 className="h-4 w-4" /></button> </div> </div> </div> ))} </div> ) : ( <div className="space-y-3"> {filteredRooms.map((room) => ( <div key={room.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50"> <div className="flex items-center space-x-4"> <div className={`w-3 h-12 rounded-full ${getStatusColor(room.status).split(' ')[0]}`}></div> <div> <h3 className="font-semibold text-gray-900">{room.name}</h3> <p className="text-sm text-gray-600">{room.code} • {room.department?.name || 'Umum'}</p> </div> </div> <div className="flex items-center space-x-6"> <div className="text-center"><div className="text-sm font-medium text-gray-900">{room.capacity}</div><div className="text-xs text-gray-500">Capacity</div></div> <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(room.status)}`}>{room.status}</span> <div className="flex items-center space-x-2"> <button onClick={() => handleEdit(room)} className="p-2 text-gray-600 hover:text-blue-600"><Edit className="h-4 w-4" /></button> <button onClick={() => handleDelete(room.id)} className="p-2 text-gray-600 hover:text-red-600"><Trash2 className="h-4 w-4" /></button> </div> </div> </div> ))} </div> )}
-            {filteredRooms.length === 0 && (<div className="text-center py-12"><Building className="h-12 w-12 text-gray-400 mx-auto mb-4" /><h3 className="text-lg font-medium text-gray-900">No rooms found</h3><p className="text-gray-600">Try adjusting your filter criteria.</p></div>)}
+            {filteredRooms.length === 0 && !loading && (<div className="text-center py-12"><Building className="h-12 w-12 text-gray-400 mx-auto mb-4" /><h3 className="text-lg font-medium text-gray-900">No Rooms Found</h3><p className="text-gray-600">Try adjusting your filter criteria.</p></div>)}
         </div>
       
         {showForm && ( <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"> <div className="bg-white rounded-xl shadow-xl max-w-lg w-full"> <div className="p-6"> <div className="flex items-center justify-between mb-6"> <h3 className="text-lg font-semibold text-gray-900">{editingRoom ? 'Edit Room' : 'Add New Room'}</h3> <button onClick={() => { setShowForm(false); setEditingRoom(null); form.reset(); }} className="text-gray-400 hover:text-gray-600"><X className="h-6 w-6" /></button> </div> <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4"> <div><label className="block text-sm font-medium text-gray-700">Name *</label><input {...form.register('name')} type="text" className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/>{form.formState.errors.name && <p className="text-red-500 text-xs mt-1">{form.formState.errors.name.message}</p>}</div> <div><label className="block text-sm font-medium text-gray-700">Code *</label><input {...form.register('code')} type="text" className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/>{form.formState.errors.code && <p className="text-red-500 text-xs mt-1">{form.formState.errors.code.message}</p>}</div> <div><label className="block text-sm font-medium text-gray-700">Capacity *</label><input {...form.register('capacity', {valueAsNumber: true})} type="number" className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/>{form.formState.errors.capacity && <p className="text-red-500 text-xs mt-1">{form.formState.errors.capacity.message}</p>}</div> <div><label className="block text-sm font-medium text-gray-700">Department *</label><select {...form.register('department_id')} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"><option value="">Select Department</option>{departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select>{form.formState.errors.department_id && <p className="text-red-500 text-xs mt-1">{form.formState.errors.department_id.message}</p>}</div> <div className="flex justify-end space-x-3 pt-4"><button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 border rounded-md">Cancel</button><button type="submit" disabled={loading} className="px-4 py-2 bg-blue-600 text-white rounded-md disabled:opacity-50">{loading ? 'Saving...' : 'Save Room'}</button></div> </form> </div> </div> </div> )}
