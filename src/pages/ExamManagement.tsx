@@ -48,21 +48,35 @@ const examSchema = z.object({
     }
 });
 
+// pages/ExamManagement.tsx
+
 const printSchema = z.object({
     department_id: z.string().optional(),
     study_program_id: z.string().min(1, 'Study Program is required'),
     semester: z.enum(['GASAL', 'GENAP'], { required_error: 'Semester type is required' }),
     academic_year: z.string().min(9, 'Academic Year is required (e.g., 2023/2024)').regex(/^\d{4}\/\d{4}$/, 'Invalid format. Use (`YYYY/YYYY`)'),
-    department_head_id: z.string().min(1, 'Department Head is required'),
+    // --- MODIFIED: Made optional to accommodate department admin ---
+    department_head_id: z.string().optional(),
     department_head_name: z.string().optional(),
 }).superRefine((data, ctx) => {
+    // This function now handles conditional validation for both roles
     const { profile } = useAuth.getState();
-    if (profile?.role === 'super_admin' && !data.department_id) {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['department_id'],
-            message: 'Department is required for Super Admin.',
-        });
+    if (profile?.role === 'super_admin') {
+        if (!data.department_id) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['department_id'],
+                message: 'Department is required for Super Admin.',
+            });
+        }
+        // --- NEW: Rule to make department head required only for super_admin ---
+        if (!data.department_head_id) {
+             ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['department_head_id'],
+                message: 'Department Head is required for Super Admin.',
+            });
+        }
     }
 });
 
