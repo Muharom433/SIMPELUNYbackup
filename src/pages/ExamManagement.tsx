@@ -230,7 +230,7 @@ const ExamManagement = () => {
         console.error("PDF Generation Error:", e);
         toast.error("An unexpected error occurred while generating the PDF.");
     }
-};};
+}};
     const isDepartmentAdmin = profile?.role === 'department_admin';
     const isSuperAdmin = profile?.role === 'super_admin';
 
