@@ -198,7 +198,20 @@ const RoomManagement: React.FC = () => {
             <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Find Room Availability</h3>
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
-                    <div><label className="block text-sm font-medium text-gray-700">Day</label><select value={searchDay} onChange={(e) => setSearchDay(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm">{dayNames.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+                   <div>
+  <label className="block text-sm font-medium text-gray-700">Day</label>
+  <select 
+    value={searchDay} // This state will now hold 'Senin', 'Selasa', etc.
+    onChange={(e) => setSearchDay(e.target.value)} 
+    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
+  >
+    {namaHari.map((hari, index) => (
+      <option key={hari} value={hari}>
+        {dayNames[index]}
+      </option>
+    ))}
+  </select>
+</div>
                     <div><label className="block text-sm font-medium text-gray-700">Start Time</label><input type="time" value={searchStartTime} onChange={(e) => setSearchStartTime(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/></div>
                     <div><label className="block text-sm font-medium text-gray-700">End Time</label><input type="time" value={searchEndTime} onChange={(e) => setSearchEndTime(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/></div>
                     <button onClick={handleSearch} disabled={isRefreshing} className="col-span-1 md:col-span-2 flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 h-10">
