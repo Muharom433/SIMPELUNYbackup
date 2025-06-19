@@ -444,10 +444,43 @@ const ValidationQueue: React.FC = () => {
             </div>
             <div className="space-y-6 pt-5">
                 {/* User Info */}
-                <div><h4 className="text-base font-semibold text-gray-500 mb-2">User Information</h4><div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center"><User className="h-6 w-6 text-blue-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.user?.full_name}</p><p className="text-sm text-gray-500">ID: {selectedCheckout.user?.identity_number}</p></div></div></div>
+                <div>
+                    <h4 className="text-base font-semibold text-gray-500 mb-2">User Information</h4>
+                    <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center space-x-4">
+                        <div className="flex-shrink-0 h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center"><User className="h-6 w-6 text-blue-600" /></div>
+                        <div>
+                            <p className="text-lg font-bold text-gray-900">{selectedCheckout.user?.full_name}</p>
+                            <p className="text-sm text-gray-500">ID: {selectedCheckout.user?.identity_number}</p>
+                        </div>
+                    </div>
+                </div>
                 
                 {/* Room Info & Checklist */}
-                <div><h4 className="text-base font-semibold text-gray-500 mb-2">Room Information</h4><div className="bg-white border border-gray-200 rounded-xl p-4 "><div className="flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-green-100 rounded-full flex items-center justify-center"><Building className="h-6 w-6 text-green-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.booking?.room?.name}</p><p className="text-sm text-gray-500">{selectedCheckout.booking?.room?.department?.name}</p></div></div>{activeTab === 'room' && equipmentList.length > 0 && (<div className="mt-4 pt-4 border-t"><h4 className="text-sm font-semibold text-gray-700 mb-2">Equipment Checklist</h4><div className="grid grid-cols-2 gap-2">{equipmentList.map(eq => (<div key={eq.id} className="flex items-center"><input type="checkbox" checked={returnedItems.has(eq.name)} readOnly className="h-4 w-4 rounded" /><label className={`ml-2 text-sm ${eq.is_mandatory && 'font-bold'}`}>{eq.name}{eq.is_mandatory &&<span className="text-red-500">*</span>}</label></div>))}</div></div>)}</div></div>
+                <div>
+                    <h4 className="text-base font-semibold text-gray-500 mb-2">Room Information</h4>
+                    <div className="bg-white border border-gray-200 rounded-xl p-4 ">
+                        <div className="flex items-center space-x-4">
+                            <div className="flex-shrink-0 h-12 w-12 bg-green-100 rounded-full flex items-center justify-center"><Building className="h-6 w-6 text-green-600" /></div>
+                            <div>
+                                <p className="text-lg font-bold text-gray-900">{selectedCheckout.booking?.room?.name}</p>
+                                <p className="text-sm text-gray-500">{selectedCheckout.booking?.room?.department?.name}</p>
+                            </div>
+                        </div>
+                        {activeTab === 'room' && equipmentList.length > 0 && (
+                            <div className="mt-4 pt-4 border-t">
+                                <h4 className="text-sm font-semibold text-gray-700 mb-2">Equipment Checklist</h4>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {equipmentList.map(eq => (
+                                        <div key={eq.id} className="flex items-center">
+                                            <input type="checkbox" checked={returnedItems.has(eq.name)} readOnly className="h-4 w-4 rounded" />
+                                            <label className={`ml-2 text-sm ${eq.is_mandatory && 'font-bold'}`}>{eq.name}{eq.is_mandatory &&<span className="text-red-500">*</span>}</label>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
                 
                 {/* Schedule Info */}
                 <div>
@@ -459,30 +492,6 @@ const ValidationQueue: React.FC = () => {
                     <div className="flex items-center space-x-3"><Timer className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Return by</p><p className="font-semibold text-gray-800">{format(new Date(selectedCheckout.expected_return_date), 'E, d MMM yyyy')}</p></div></div>
                   </div>
                 </div>
-
-                {/* Report Info */}
-                {selectedCheckout.has_report && selectedCheckout.report && (
-                  <div>
-                    <h4 className="text-base font-semibold text-gray-500 mb-2">Report Information</h4>
-                    <div className="bg-yellow-50 border-l-4 border-yellow-400 rounded-lg p-4">
-                      <div className="flex items-start space-x-3">
-                        <Flag className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="font-medium text-yellow-800">{selectedCheckout.report.title}</p>
-                          <p className="text-sm text-yellow-700 mt-2">{selectedCheckout.report.description}</p>
-                          <div className="mt-3 flex items-center justify-between">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getSeverityColor(selectedCheckout.report.severity)}`}>
-                              {selectedCheckout.report.severity.toUpperCase()}
-                            </span>
-                            <span className="text-xs text-yellow-600">
-                              Reported on {format(new Date(selectedCheckout.report.created_at), 'MMM d, yyyy')}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
                 
                 {/* Notes */}
                 {selectedCheckout.checkout_notes && (
