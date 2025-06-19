@@ -337,12 +337,28 @@ const ExamManagement = () => {
                             </div>
                             <form onSubmit={printForm.handleSubmit(handlePrint)} className="space-y-4">
                                 {isSuperAdmin && (
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Department *</label>
-                                        <Controller name="department_id" control={printForm.control} render={({ field }) => (<Select options={departments.map(d => ({ value: d.id, label: d.name }))} onChange={(option) => { field.onChange(option ? option.value : ''); setPrintSelectedDepartment(option ? option.value : ''); }} placeholder="Select department..." isClearable />)} />
-                                        {printForm.formState.errors.department_id && <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.department_id.message}</p>}
-                                    </div>
-                                )}
+    <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Department Head *</label>
+        <Controller
+            name="department_head_id"
+            control={printForm.control}
+            render={({ field }) => (
+                <Select
+                    options={departmentHeads.map(h => ({ value: h.id, label: h.full_name }))}
+                    value={field.value ? departmentHeads.map(h => ({ value: h.id, label: h.full_name })).find(o => o.value === field.value) : null}
+                    onChange={(option) => {
+                        field.onChange(option ? option.value : '');
+                        const selectedHead = departmentHeads.find(h => h.id === option?.value);
+                        printForm.setValue('department_head_name', selectedHead?.full_name);
+                    }}
+                    placeholder="Select head..."
+                    isClearable
+                />
+            )}
+        />
+        {printForm.formState.errors.department_head_id && <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.department_head_id.message}</p>}
+    </div>
+)}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Study Program *</label>
                                     <Controller name="study_program_id" control={printForm.control} render={({ field }) => { const filteredPrograms = isSuperAdmin ? studyPrograms.filter(p => p.department_id === printSelectedDepartment) : studyPrograms; const options = filteredPrograms.map(p => ({ value: p.id, label: p.name })); const currentValue = options.find(o => o.value === field.value); return ( <Select {...field} options={options} value={currentValue} onChange={option => field.onChange(option ? option.value : '')} placeholder="Select study program..." isDisabled={isSuperAdmin && !printSelectedDepartment} isClearable /> )}} />
