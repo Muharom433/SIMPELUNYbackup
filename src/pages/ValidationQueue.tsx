@@ -376,34 +376,50 @@ const ValidationQueue: React.FC = () => {
         )}
       </div>
 
-      {showDetailModal && selectedCheckoutId && (() => {
-        const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId);
-        if (!selectedCheckout) return null;
-        return (
+      {(() => {
+    // Log ini akan muncul setiap kali komponen render ulang
+    console.log('Status State Saat Ini -> showDetailModal:', showDetailModal, '| selectedCheckoutId:', selectedCheckoutId);
+
+    if (showDetailModal && selectedCheckoutId) {
+      console.log('Kondisi terpenuhi! Mencoba merender modal...');
+
+      const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId);
+
+      if (!selectedCheckout) {
+        console.error('KESALAHAN: Modal tidak bisa tampil karena checkout dengan ID', selectedCheckoutId, 'tidak ditemukan dalam daftar.');
+        // Kita bisa tutup modal secara otomatis jika data tidak ditemukan
+        // setShowDetailModal(false); 
+        return null;
+      }
+
+      console.log('Data ditemukan, modal akan ditampilkan:', selectedCheckout);
+
+      // Kode modal asli Anda diletakkan di sini
+      const equipmentList = selectedCheckout.booking?.room?.id ? roomEquipment.get(selectedCheckout.booking.room.id) || [] : [];
+      const returnedItems = new Set(selectedCheckout.equipment_back || []);
+      return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white p-6 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center pb-4 border-b">
-                <h2 className="text-xl font-bold">Checkout Details</h2>
-                <button onClick={() => setShowDetailModal(false)}><X className="h-5 w-5"/></button>
+          <div className="bg-white p-6 rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center pb-4 border-b border-gray-200">
+              <div><h2 className="text-xl font-bold text-gray-900">Checkout Details</h2></div>
+              <button onClick={() => setShowDetailModal(false)} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100"><X className="h-5 w-5"/></button>
             </div>
+            {/* Konten modal yang sudah lengkap dari sebelumnya */}
             <div className="space-y-6 pt-5">
-                <div><h4 className="text-base font-semibold text-gray-500 mb-2">User Information</h4><div className="border rounded-xl p-4 flex items-center space-x-4"><div><User className="h-6 w-6" /></div><div><p className="font-bold">{selectedCheckout.user?.full_name}</p><p className="text-sm">ID: {selectedCheckout.user?.identity_number}</p></div></div></div>
-                <div><h4 className="text-base font-semibold text-gray-500 mb-2">Room Information</h4><div className="border rounded-xl p-4"><div className="flex items-center space-x-4"><div><Building className="h-6 w-6" /></div><div><p className="font-bold">{selectedCheckout.booking?.room?.name}</p><p className="text-sm">{selectedCheckout.booking?.room?.department?.name}</p></div></div></div></div>
-                <div><h4 className="text-base font-semibold text-gray-500 mb-2">Booking & Schedule</h4><div className="border rounded-xl p-4 grid grid-cols-2 gap-4">
-                    <div><p className="text-xs">Purpose</p><p className="font-semibold">{selectedCheckout.booking?.purpose}</p></div>
-                    <div><p className="text-xs">Checkout Date</p><p className="font-semibold">{format(new Date(selectedCheckout.checkout_date), 'E, d MMM yyyy')}</p></div>
-                    <div><p className="text-xs">Total Items</p><p className="font-semibold">{selectedCheckout.total_items}</p></div>
-                    <div><p className="text-xs">Return by</p><p className="font-semibold">{format(new Date(selectedCheckout.expected_return_date), 'E, d MMM yyyy')}</p></div>
-                </div></div>
-                {selectedCheckout.has_report && selectedCheckout.report && (<div><h4 className="text-base font-semibold text-gray-500 mb-2">Report Info</h4><div className="bg-yellow-50 p-4">{/* Report Info */}</div></div>)}
-                {selectedCheckout.checkout_notes && (<div><h4 className="text-base font-semibold text-gray-500 mb-2">Notes</h4><p>{selectedCheckout.checkout_notes}</p></div>)}
+                <div><h4 className="text-base font-semibold text-gray-500 mb-2">User Information</h4><div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center"><User className="h-6 w-6 text-blue-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.user?.full_name}</p><p className="text-sm text-gray-500">ID: {selectedCheckout.user?.identity_number}</p></div></div></div>
+                <div><h4 className="text-base font-semibold text-gray-500 mb-2">Room Information</h4><div className="bg-white border border-gray-200 rounded-xl p-4 "><div className="flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-green-100 rounded-full flex items-center justify-center"><Building className="h-6 w-6 text-green-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.booking?.room?.name}</p><p className="text-sm text-gray-500">{selectedCheckout.booking?.room?.department?.name}</p></div></div>{activeTab === 'room' && equipmentList.length > 0 && (<div className="mt-4 pt-4 border-t"><h4 className="text-sm font-semibold text-gray-700 mb-2">Equipment Checklist</h4><div className="grid grid-cols-2 gap-2">{equipmentList.map(eq => (<div key={eq.id} className="flex items-center"><input type="checkbox" checked={returnedItems.has(eq.name)} readOnly className="h-4 w-4 rounded" /><label className={`ml-2 text-sm ${eq.is_mandatory && 'font-bold'}`}>{eq.name}{eq.is_mandatory &&<span className="text-red-500">*</span>}</label></div>))}</div></div>)}</div></div>
+                <div><h4 className="text-base font-semibold text-gray-500 mb-2">Booking & Schedule</h4><div className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-4"><div className="flex items-center space-x-3"><FileText className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Purpose</p><p className="font-semibold text-gray-800">{selectedCheckout.booking?.purpose}</p></div></div><div className="flex items-center space-x-3"><Calendar className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Checkout Date</p><p className="font-semibold text-gray-800">{format(new Date(selectedCheckout.checkout_date), 'E, d MMM yyyy')}</p></div></div><div className="flex items-center space-x-3"><Package className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Total Items</p><p className="font-semibold text-gray-800">{selectedCheckout.total_items}</p></div></div><div className="flex items-center space-x-3"><Timer className="h-5 w-5 text-gray-400 flex-shrink-0" /><div><p className="text-xs text-gray-500">Return by</p><p className="font-semibold text-gray-800">{format(new Date(selectedCheckout.expected_return_date), 'E, d MMM yyyy')}</p></div></div></div></div>
+                {selectedCheckout.checkout_notes && (<div><h4 className="text-base font-semibold text-gray-500 mb-2">Notes</h4><div className="bg-gray-50 border-l-4 border-gray-400 text-gray-800 p-4 rounded-r-lg"><p className="text-sm">{selectedCheckout.checkout_notes}</p></div></div>)}
             </div>
-            <div className="mt-8 flex justify-end space-x-3 pt-4 border-t">
-                <button onClick={() => setShowDetailModal(false)} className="px-4 py-2 bg-gray-200 rounded-lg">Close</button>
+            <div className="mt-8 flex justify-end space-x-3 border-t pt-4">
+                <button onClick={() => setShowDetailModal(false)} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors">Close</button>
             </div>
           </div>
         </div>
-      )})}
+      );
+    }
+    return null;
+  })()}
       
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
