@@ -183,41 +183,43 @@ const ExamManagement = () => {
     const getAvailableRooms = () => { if (!watchSession || watchSession === 'Take Home') return rooms; const currentRoomId = editingExam?.room_id; return rooms.filter(room => { const isBooked = bookedRooms[watchSession]?.includes(room.id); return !isBooked || room.id === currentRoomId; }); };
     const handlePrint = async (formData: PrintFormData) => { try { const isSuperAdmin = profile?.role === 'super_admin'; const departmentIdForQuery = isSuperAdmin ? formData.department_id : profile.department_id; const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id); const currentDepartment = departments.find(d => d.id === departmentIdForQuery); let departmentHead; if (isSuperAdmin) { departmentHead = { full_name: 'KEPALA DEPARTEMEN', identity_number: '123' }; } else { departmentHead = departmentHeads.find(h => h.id === formData.department_head_id); } if (!selectedProgram || !departmentHead || !currentDepartment) { toast.error("Please ensure all fields are selected and data is loaded."); return; } const examsToPrint = exams.filter(exam => exam.study_program_id === formData.study_program_id && exam.department_id === departmentIdForQuery); if (examsToPrint.length === 0) { toast.error("No exams found for the selected criteria."); return; } const doc = new jsPDF(); let pageWidth = doc.internal.pageSize.getWidth(); const departmentName = currentDepartment.name.toUpperCase(); const logoDataUrl = await getImageDataUrl(logoUNY); doc.addImage(logoDataUrl, 'PNG', 12, 15, 30, 30); let currentY = 22; doc.setFont('helvetica', 'normal'); doc.setFontSize(12); pageWidth += 30; doc.setFontSize(12); doc.setFont('helvetica', 'normal'); doc.text("KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI", pageWidth / 2, currentY, { align: 'center' }); currentY += 5; doc.text("UNIVERSITAS NEGERI YOGYAKARTA", pageWidth / 2, currentY, { align: 'center' }); currentY += 5; doc.text("FAKULTAS VOKASI", pageWidth / 2, currentY, { align: 'center' }); doc.setFontSize(14); doc.setFont('helvetica', 'bold'); currentY += 5; doc.text(`DEPARTEMEN ${departmentName}`, pageWidth / 2, currentY, { align: 'center' }); currentY += 5; doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.text("Kampus I: Jalan Mandung No. 1 Pengasih, Kulon Progo Telp.(0274)774625", pageWidth / 2, currentY, { align: 'center' }); currentY += 3; doc.text("Kampus II: Pacarejo, Semanu, Gunungkidul Telp. (0274)5042222/(0274)5042255", pageWidth / 2, currentY, { align: 'center' }); currentY += 3; doc.text("Laman: https://fv.uny.ac.id E-mail: fv@uny.ac.id", pageWidth / 2, currentY, { align: 'center' }); currentY += 3; pageWidth -= 30; doc.setLineWidth(1); doc.line(14, currentY, pageWidth - 14, currentY); currentY += 10; const subtitle = `JADWAL UAS ${selectedProgram.name.toUpperCase()} SEMESTER ${formData.semester.toUpperCase()} TAHUN AKADEMIK ${formData.academic_year}`; doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.text(subtitle, pageWidth / 2, currentY, { align: 'center' }); currentY += 7; const tableColumn = ["No.", "HARI", "TANGGAL", "SESI", "KODE MK", "MATA KULIAH", "SMT", "KLS", "MHS", "RUANG"]; const tableRows: any[] = []; examsToPrint.forEach((exam, index) => { tableRows.push([ index + 1, exam.day, format(parseISO(exam.date), 'dd-MM-yyyy'), exam.session.replace(/Session \d+ \((.*)\)/, '$1'), exam.course_code, exam.course_name, exam.semester, exam.class, exam.student_amount, exam.room?.name || 'Take Home', ]); }); autoTable(doc, { head: [tableColumn], body: tableRows, startY: currentY, theme: 'grid', styles: { fontSize: 8, cellPadding: 1.5, valign: 'middle' }, headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' }, columnStyles: { 0: { halign: 'center', cellWidth: 8 }, 4: { halign: 'center' }, 6: { halign: 'center' }, 7: { halign: 'center' }, 8: { halign: 'center' } } }); const finalY = (doc as any).lastAutoTable.finalY || 100;
 
-        // --- MODIFIED SIGNATURE BLOCK LOGIC ---
+        // --- MODIFIED SIGNATURE BLOCK WITH MORE PRECISE SPACING ---
 
-        const signatureX = 140; // The starting horizontal position for the signature block
-        const signatureY = finalY + 10; // The starting vertical position
-        const signatureMaxWidth = 60; // The maximum width for the name and the fixed width for the underline
+        const signatureX = 140; 
+        const signatureY = finalY + 10; 
+        const signatureMaxWidth = 60; 
 
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
 
         // Draw the date and title
-        doc.text(`Yogyakarta, ${format(new Date(), 'd MMMM yyyy')}`, signatureX, signatureY);
+        doc.text(`Yogyakarta, ${format(new Date(), 'd MMMMspecialmeal')}`, signatureX, signatureY);
         doc.text("Ketua Jurusan,", signatureX, signatureY + 7);
 
         // --- Logic for Name Wrapping ---
-       const nameY = signatureY + 22; 
+        const nameY = signatureY + 22;
 
         const nameLines = doc.splitTextToSize(departmentHead.full_name, signatureMaxWidth);
         
         doc.setFont('helvetica', 'bold');
         doc.text(nameLines, signatureX, nameY);
 
-        // --- Logic for Dynamic Underline and NIP position ---
+        // --- NEW, MORE PRECISE LOGIC for Underline and NIP position ---
 
-        // Get the height of the name block
-        const nameBlockHeight = (nameLines.length * doc.getLineHeight()) / doc.internal.scaleFactor;
+        // 1. Get the height of a single line of text
+        const lineHeight = doc.getLineHeight() / doc.internal.scaleFactor;
         
-        // Position the underline just below the name block
-        // The '+ 1' adds a small, clean gap.
-        const underlineY = nameY + nameBlockHeight + 1; 
+        // 2. Calculate the exact baseline of the LAST line of the name
+        const lastLineBaselineY = nameY + ((nameLines.length - 1) * lineHeight);
 
+        // 3. Position the underline just 2 points below the last line's baseline for a tight fit
+        const underlineY = lastLineBaselineY + 2; 
+
+        // 4. Draw the fixed-width underline
         doc.setLineWidth(0.2);
         doc.line(signatureX, underlineY, signatureX + signatureMaxWidth, underlineY);
 
-        // Position the NIP just below the underline
-        // Reduced the gap from 5 to 4 for a tighter look.
+        // 5. Position the NIP cleanly below the underline
         const nipY = underlineY + 4;
         doc.setFont('helvetica', 'normal');
         doc.text(`NIP. ${departmentHead.identity_number}`, signatureX, nipY);
