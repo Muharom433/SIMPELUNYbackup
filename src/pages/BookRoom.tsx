@@ -275,6 +275,11 @@ const BookRoom: React.FC = () => {
   };
   // --- AKHIR DARI BAGIAN YANG TIDAK BERUBAH ---
 
+  const filteredIdentityNumbers = existingUsers.filter(user =>
+    user.identity_number.toLowerCase().includes(identitySearchTerm.toLowerCase()) ||
+    user.full_name.toLowerCase().includes(identitySearchTerm.toLowerCase())
+  );
+
   // UPDATED: Logika filter baru
   const filteredRooms = useMemo(() => {
     return rooms.filter(room => {
