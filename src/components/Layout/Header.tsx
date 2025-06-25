@@ -17,6 +17,7 @@ import {
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { useNavigate } from 'react-router-dom';
+import { useLanguage, translations } from '../Translate/LanguageContext';
 
 interface HeaderProps {
   user: UserType | null;
@@ -31,9 +32,19 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
   const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
-  const [currentLanguage, setCurrentLanguage] = useState('en'); // 'en' or 'id'
   const [currentTime, setCurrentTime] = useState(new Date());
   const navigate = useNavigate();
+  
+  // Use language context
+  const { 
+    currentLanguage, 
+    setLanguage, 
+    getText, 
+    formatTime, 
+    formatDate, 
+    getLanguageLabel, 
+    getLanguageFlag 
+  } = useLanguage();
 
   useEffect(() => {
     // Update time every minute
@@ -151,48 +162,9 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
 
   const totalNotifications = pendingBookingsCount + pendingCheckoutsCount;
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString(currentLanguage === 'id' ? 'id-ID' : 'en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: false 
-    });
-  };
-
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString(currentLanguage === 'id' ? 'id-ID' : 'en-US', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    });
-  };
-
   const changeLanguage = (lang: 'en' | 'id') => {
-    setCurrentLanguage(lang);
+    setLanguage(lang);
     setShowLanguageDropdown(false);
-    // Here you would typically call your i18n library's change language function
-    // i18n.changeLanguage(lang);
-  };
-
-  const getLanguageLabel = (lang: 'en' | 'id') => {
-    switch (lang) {
-      case 'en': return 'English';
-      case 'id': return 'Bahasa Indonesia';
-      default: return 'English';
-    }
-  };
-
-  const getLanguageFlag = (lang: 'en' | 'id') => {
-    switch (lang) {
-      case 'en': return '🇺🇸';
-      case 'id': return '🇮🇩';
-      default: return '🇺🇸';
-    }
-  };
-
-  const getText = (en: string, id: string) => {
-    return currentLanguage === 'id' ? id : en;
   };
 
   const closeAllDropdowns = () => {
@@ -224,7 +196,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                     SIMPEL Kuliah
                   </h1>
                   <p className="text-sm text-gray-600 font-medium">
-                    {getText('Smart Campus Management', 'Sistem Manajemen Kampus Cerdas')}
+                    {getText(translations.smartRoomBooking.en, translations.smartRoomBooking.id).split(' ').slice(1).join(' ')}
                   </p>
                 </div>
               </div>
