@@ -1,5 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { LanguageProvider } from './contexts/LanguageContext'; // Add this import
 import Layout from './components/Layout/Layout';
 import AuthForm from './components/Auth/AuthForm';
 import Dashboard from './pages/Dashboard';
@@ -24,53 +25,57 @@ function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 font-medium">Loading Faculty CRM...</p>
+      <LanguageProvider> {/* Wrap the loading screen too */}
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600 font-medium">Loading Faculty CRM...</p>
+          </div>
         </div>
-      </div>
+      </LanguageProvider>
     );
   }
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/auth" element={<AuthForm />} />
-        <Route path="/" element={<Layout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="book" element={<BookRoom />} />
-          <Route path="checkout" element={<CheckOut />} />
-          
-          {/* Student/Public Routes */}
-          <Route path="tools" element={<div className="p-6">Tool Lending Service - Coming Soon</div>} />
-          <Route path="my-bookings" element={<div className="p-6">My Bookings - Coming Soon</div>} />
-          <Route path="profile" element={<div className="p-6">Profile Management - Coming Soon</div>} />
-          
-          {/* Department Admin Routes */}
-          <Route path="department-analytics" element={<div className="p-6">Department Analytics - Coming Soon</div>} />
-          <Route path="exam-schedules" element={<div className="p-6">Exam Schedules - Coming Soon</div>} />
-          <Route path="department-bookings" element={<div className="p-6">Department Bookings - Coming Soon</div>} />
-          <Route path="department-reports" element={<div className="p-6">Department Reports - Coming Soon</div>} />
-          <Route path="department-equipment" element={<div className="p-6">Equipment Management - Coming Soon</div>} />
-          <Route path="exams" element={<ExamManagement />} />
-          
-          {/* Super Admin Routes */}
-          <Route path="rooms" element={<RoomManagement />} />
-          <Route path="users" element={<UserManagement />} />
-          <Route path="departments" element={<DepartmentManagement />} />
-          <Route path="study-programs" element={<StudyProgramManagement />} />
-          <Route path="bookings" element={<BookingManagement />} />
-          <Route path="validation" element={<ValidationQueue />} />
-          <Route path="checkout-validation" element={<CheckoutValidation />} />
-          <Route path="schedules" element={<LectureSchedules />} />
-          <Route path="tool-admin" element={<ToolAdministration />} />
-          <Route path="reports" element={<Reports />} />
-          <Route path="settings" element={<SystemSettings />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Router>
+    <LanguageProvider> {/* Wrap the entire router */}
+      <Router>
+        <Routes>
+          <Route path="/auth" element={<AuthForm />} />
+          <Route path="/" element={<Layout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="book" element={<BookRoom />} />
+            <Route path="checkout" element={<CheckOut />} />
+            
+            {/* Student/Public Routes */}
+            <Route path="tools" element={<div className="p-6">Tool Lending Service - Coming Soon</div>} />
+            <Route path="my-bookings" element={<div className="p-6">My Bookings - Coming Soon</div>} />
+            <Route path="profile" element={<div className="p-6">Profile Management - Coming Soon</div>} />
+            
+            {/* Department Admin Routes */}
+            <Route path="department-analytics" element={<div className="p-6">Department Analytics - Coming Soon</div>} />
+            <Route path="exam-schedules" element={<div className="p-6">Exam Schedules - Coming Soon</div>} />
+            <Route path="department-bookings" element={<div className="p-6">Department Bookings - Coming Soon</div>} />
+            <Route path="department-reports" element={<div className="p-6">Department Reports - Coming Soon</div>} />
+            <Route path="department-equipment" element={<div className="p-6">Equipment Management - Coming Soon</div>} />
+            <Route path="exams" element={<ExamManagement />} />
+            
+            {/* Super Admin Routes */}
+            <Route path="rooms" element={<RoomManagement />} />
+            <Route path="users" element={<UserManagement />} />
+            <Route path="departments" element={<DepartmentManagement />} />
+            <Route path="study-programs" element={<StudyProgramManagement />} />
+            <Route path="bookings" element={<BookingManagement />} />
+            <Route path="validation" element={<ValidationQueue />} />
+            <Route path="checkout-validation" element={<CheckoutValidation />} />
+            <Route path="schedules" element={<LectureSchedules />} />
+            <Route path="tool-admin" element={<ToolAdministration />} />
+            <Route path="reports" element={<Reports />} />
+            <Route path="settings" element={<SystemSettings />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Router>
+    </LanguageProvider>
   );
 }
 
