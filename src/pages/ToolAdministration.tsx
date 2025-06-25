@@ -3,7 +3,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-    Wrench, Plus, Search, Edit, Trash2, Eye, Package, AlertCircle, RefreshCw, X, QrCode, Building
+    Wrench, Plus, Search, Edit, Trash2, Eye, Package, AlertCircle, RefreshCw, X, 
+    QrCode, Building, Monitor, Wifi, Zap, FlaskConical, Armchair, Shield,
+    Camera, Headphones, Cpu, Router, Battery, Microscope, ChevronDown,
+    MapPin, Hash, Layers, CheckCircle, XCircle, Star, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -47,7 +50,15 @@ const ToolAdministration: React.FC = () => {
         defaultValues: { is_mandatory: false, is_available: true, quantity: 1 },
     });
 
-    const categories = [ 'Audio Visual', 'Computing', 'Connectivity', 'Power', 'Laboratory', 'Furniture', 'Safety' ];
+    const categories = [
+        { name: 'Audio Visual', icon: Camera, color: 'from-purple-500 to-pink-500', bgColor: 'bg-purple-50', textColor: 'text-purple-700' },
+        { name: 'Computing', icon: Cpu, color: 'from-blue-500 to-cyan-500', bgColor: 'bg-blue-50', textColor: 'text-blue-700' },
+        { name: 'Connectivity', icon: Wifi, color: 'from-green-500 to-emerald-500', bgColor: 'bg-green-50', textColor: 'text-green-700' },
+        { name: 'Power', icon: Zap, color: 'from-yellow-500 to-orange-500', bgColor: 'bg-yellow-50', textColor: 'text-yellow-700' },
+        { name: 'Laboratory', icon: FlaskConical, color: 'from-red-500 to-rose-500', bgColor: 'bg-red-50', textColor: 'text-red-700' },
+        { name: 'Furniture', icon: Armchair, color: 'from-indigo-500 to-purple-500', bgColor: 'bg-indigo-50', textColor: 'text-indigo-700' },
+        { name: 'Safety', icon: Shield, color: 'from-gray-500 to-slate-500', bgColor: 'bg-gray-50', textColor: 'text-gray-700' }
+    ];
 
     useEffect(() => {
         fetchEquipment();
@@ -98,11 +109,11 @@ const ToolAdministration: React.FC = () => {
             if (editingEquipment) {
                 const { error } = await supabase.from('equipment').update(equipmentData).eq('id', editingEquipment.id);
                 if (error) throw error;
-                toast.success('Equipment updated successfully');
+                toast.success('Equipment updated successfully! 🎉');
             } else {
                 const { error } = await supabase.from('equipment').insert([equipmentData]);
                 if (error) throw error;
-                toast.success('Equipment created successfully');
+                toast.success('Equipment created successfully! ✨');
             }
 
             setShowModal(false);
@@ -111,8 +122,11 @@ const ToolAdministration: React.FC = () => {
             fetchEquipment();
         } catch (error: any) {
             console.error('Error saving equipment:', error);
-            if (error.code === '23505') { toast.error('Equipment code already exists'); } 
-            else { toast.error(error.message || 'Failed to save equipment'); }
+            if (error.code === '23505') { 
+                toast.error('Equipment code already exists! Please use a different code.'); 
+            } else { 
+                toast.error(error.message || 'Failed to save equipment'); 
+            }
         } finally { setLoading(false); }
     };
 
@@ -137,7 +151,7 @@ const ToolAdministration: React.FC = () => {
             setLoading(true);
             const { error } = await supabase.from('equipment').delete().eq('id', equipmentId);
             if (error) throw error;
-            toast.success('Equipment deleted successfully');
+            toast.success('Equipment deleted successfully! 🗑️');
             setShowDeleteConfirm(null);
             fetchEquipment();
         } catch (error: any) {
@@ -147,125 +161,660 @@ const ToolAdministration: React.FC = () => {
     };
 
     const filteredEquipment = equipment.filter(eq => {
-        const matchesSearch = eq.name.toLowerCase().includes(searchTerm.toLowerCase()) || eq.code.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesSearch = eq.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                            eq.code.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesCategory = categoryFilter === 'all' || eq.category === categoryFilter;
         const matchesRoom = roomFilter === 'all' || eq.rooms_id === roomFilter;
         return matchesSearch && matchesCategory && matchesRoom;
     });
 
-    const getStatusChip = (is_available: boolean) => {
-        const statusClass = is_available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
-        return (<span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClass}`}>{is_available ? 'AVAILABLE' : 'IN USE'}</span>);
+    const getCategoryConfig = (categoryName: string) => {
+        return categories.find(cat => cat.name === categoryName) || categories[0];
+    };
+
+    const getStatusConfig = (is_available: boolean, is_mandatory: boolean) => {
+        if (is_available) {
+            return {
+                icon: CheckCircle,
+                label: 'AVAILABLE',
+                className: 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+            };
+        } else {
+            return {
+                icon: XCircle,
+                label: 'IN USE',
+                className: 'bg-red-100 text-red-800 border border-red-200'
+            };
+        }
+    };
+
+    const getStatusChip = (is_available: boolean, is_mandatory: boolean = false) => {
+        const config = getStatusConfig(is_available, is_mandatory);
+        const StatusIcon = config.icon;
+        
+        return (
+            <div className="flex items-center gap-1">
+                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${config.className}`}>
+                    <StatusIcon className="h-3 w-3" />
+                    {config.label}
+                </span>
+                {is_mandatory && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                        <Star className="h-3 w-3" />
+                        REQUIRED
+                    </span>
+                )}
+            </div>
+        );
     };
 
     if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
-        return (<div className="flex items-center justify-center h-64"><div className="text-center"><AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" /><h3 className="text-lg font-medium text-gray-900 mb-2">Access Denied</h3><p className="text-gray-600">You don't have permission to access tool administration.</p></div></div>);
+        return (
+            <div className="flex items-center justify-center h-64">
+                <div className="text-center">
+                    <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+                    <p className="text-gray-600">You don't have permission to access tool administration.</p>
+                </div>
+            </div>
+        );
     }
 
     return (
-        <div className="space-y-6">
-            <div className="bg-gradient-to-r from-gray-700 to-gray-900 rounded-xl p-6 text-white">
-                <div className="flex items-center justify-between"><div><h1 className="text-3xl font-bold flex items-center space-x-3"><Wrench className="h-8 w-8" /><span>Tool Administration</span></h1><p className="mt-2 opacity-90">Manage all equipment inventory</p></div><div className="hidden md:block text-right"><div className="text-2xl font-bold">{equipment.length}</div><div className="text-sm opacity-80">Total Equipment</div></div></div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-                <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
-                    <div className="relative flex-1 w-full max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" /><input type="text" placeholder="Search by name or code..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 border rounded-lg" /></div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="px-3 py-2 border rounded-lg"><option value="all">All Categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
-                        <select value={roomFilter} onChange={(e) => setRoomFilter(e.target.value)} className="px-3 py-2 border rounded-lg"><option value="all">All Rooms</option>{rooms.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>
-                        <button onClick={() => fetchEquipment()} className="p-2 border rounded-lg"><RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} /></button>
-                        <button onClick={() => { setEditingEquipment(null); form.reset({ is_available: true, quantity: 1 }); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900"><Plus className="h-4 w-4" /><span>Add Equipment</span></button>
+        <div className="space-y-8">
+            {/* Header Section */}
+            <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl p-8 text-white relative overflow-hidden">
+                <div className="absolute inset-0 bg-black opacity-10"></div>
+                <div className="relative z-10 flex items-center justify-between">
+                    <div>
+                        <h1 className="text-4xl font-bold flex items-center space-x-4 mb-2">
+                            <div className="p-3 bg-white bg-opacity-20 rounded-xl backdrop-blur-sm">
+                                <Wrench className="h-10 w-10" />
+                            </div>
+                            <span>Equipment Hub</span>
+                        </h1>
+                        <p className="text-xl opacity-90">Manage your laboratory and classroom equipment</p>
+                        <div className="mt-4 flex items-center space-x-6">
+                            <div className="flex items-center space-x-2">
+                                <Package className="h-5 w-5 opacity-80" />
+                                <span className="text-sm">Total Items: {equipment.length}</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <CheckCircle className="h-5 w-5 opacity-80" />
+                                <span className="text-sm">Available: {equipment.filter(eq => eq.is_available).length}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="hidden lg:block">
+                        <div className="text-right">
+                            <div className="text-5xl font-bold opacity-80">{equipment.length}</div>
+                            <div className="text-lg opacity-70">Equipment</div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {filteredEquipment.map(eq => (
-                    <div key={eq.id} className="bg-white rounded-xl shadow-sm border p-4 flex flex-col justify-between">
-                        <div>
-                            <div className="flex justify-between items-start"><h3 className="font-semibold text-lg text-gray-900">{eq.name}</h3>{getStatusChip(eq.is_available)}</div>
-                            <p className="text-sm text-gray-500 mb-2">{eq.code}</p>
-                            <div className="text-xs text-gray-600 space-y-1">
-                                <p><strong>Category:</strong> {eq.category}</p>
-                                <p><strong>Location:</strong> {eq.rooms?.name || 'Not assigned'}</p>
-                                <p><strong>Department:</strong> {eq.rooms?.department?.name || 'N/A'}</p>
-                                <p><strong>Quantity:</strong> {eq.quantity} {eq.unit}</p>
-                            </div>
-                        </div>
-                        <div className="flex items-center justify-end space-x-1 pt-3 mt-3 border-t">
-                            <button onClick={() => setSelectedEquipment(eq)} className="p-1 text-gray-500 hover:text-blue-600"><Eye className="h-4 w-4" /></button>
-                            <button onClick={() => handleEdit(eq)} className="p-1 text-gray-500 hover:text-green-600"><Edit className="h-4 w-4" /></button>
-                            <button onClick={() => setShowDeleteConfirm(eq.id)} className="p-1 text-gray-500 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
-                        </div>
+            {/* Filters Section */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+                <div className="flex flex-col lg:flex-row gap-6 items-center justify-between">
+                    <div className="relative flex-1 w-full max-w-md">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                        <input 
+                            type="text" 
+                            placeholder="Search equipment by name or code..." 
+                            value={searchTerm} 
+                            onChange={(e) => setSearchTerm(e.target.value)} 
+                            className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-0 transition-colors"
+                        />
                     </div>
-                ))}
+                    
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <div className="relative">
+                            <Layers className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                            <select 
+                                value={categoryFilter} 
+                                onChange={(e) => setCategoryFilter(e.target.value)} 
+                                className="pl-10 pr-8 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-0 appearance-none bg-white min-w-[150px]"
+                            >
+                                <option value="all">All Categories</option>
+                                {categories.map(cat => (
+                                    <option key={cat.name} value={cat.name}>{cat.name}</option>
+                                ))}
+                            </select>
+                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" />
+                        </div>
+
+                        <div className="relative">
+                            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                            <select 
+                                value={roomFilter} 
+                                onChange={(e) => setRoomFilter(e.target.value)} 
+                                className="pl-10 pr-8 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-0 appearance-none bg-white min-w-[150px]"
+                            >
+                                <option value="all">All Locations</option>
+                                {rooms.map(room => (
+                                    <option key={room.id} value={room.id}>{room.name}</option>
+                                ))}
+                            </select>
+                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" />
+                        </div>
+
+                        <button 
+                            onClick={() => fetchEquipment()} 
+                            className="p-3 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors group"
+                            title="Refresh"
+                        >
+                            <RefreshCw className={`h-5 w-5 text-gray-600 group-hover:text-gray-800 ${loading ? 'animate-spin' : ''}`} />
+                        </button>
+
+                        <button 
+                            onClick={() => { 
+                                setEditingEquipment(null); 
+                                form.reset({ is_available: true, quantity: 1 }); 
+                                setShowModal(true); 
+                            }} 
+                            className="flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                        >
+                            <Plus className="h-5 w-5" />
+                            <span className="font-semibold">Add Equipment</span>
+                        </button>
+                    </div>
+                </div>
             </div>
 
+            {/* Equipment Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {loading && (
+                    Array.from({ length: 8 }).map((_, index) => (
+                        <div key={index} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 animate-pulse">
+                            <div className="h-4 bg-gray-200 rounded w-3/4 mb-3"></div>
+                            <div className="h-3 bg-gray-200 rounded w-1/2 mb-4"></div>
+                            <div className="space-y-2">
+                                <div className="h-3 bg-gray-200 rounded"></div>
+                                <div className="h-3 bg-gray-200 rounded w-2/3"></div>
+                            </div>
+                        </div>
+                    ))
+                )}
+
+                {!loading && filteredEquipment.length === 0 && (
+                    <div className="col-span-full flex flex-col items-center justify-center py-16 text-gray-500">
+                        <Package className="h-16 w-16 mb-4 opacity-50" />
+                        <h3 className="text-xl font-semibold mb-2">No Equipment Found</h3>
+                        <p>Try adjusting your search or filters</p>
+                    </div>
+                )}
+
+                {!loading && filteredEquipment.map(eq => {
+                    const categoryConfig = getCategoryConfig(eq.category);
+                    const CategoryIcon = categoryConfig.icon;
+                    
+                    return (
+                        <div key={eq.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 group">
+                            <div className="p-6">
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className={`p-3 rounded-xl bg-gradient-to-r ${categoryConfig.color} text-white shadow-lg`}>
+                                        <CategoryIcon className="h-6 w-6" />
+                                    </div>
+                                    {getStatusChip(eq.is_available, eq.is_mandatory)}
+                                </div>
+                                
+                                <h3 className="font-bold text-lg text-gray-900 mb-2 group-hover:text-indigo-600 transition-colors">
+                                    {eq.name}
+                                </h3>
+                                
+                                <div className="flex items-center gap-2 mb-4">
+                                    <Hash className="h-4 w-4 text-gray-400" />
+                                    <span className="text-sm font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded-md">
+                                        {eq.code}
+                                    </span>
+                                </div>
+
+                                <div className="space-y-3 text-sm">
+                                    <div className={`flex items-center gap-2 p-2 rounded-lg ${categoryConfig.bgColor}`}>
+                                        <Layers className="h-4 w-4 text-gray-500" />
+                                        <span className={`font-medium ${categoryConfig.textColor}`}>{eq.category}</span>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-50">
+                                        <MapPin className="h-4 w-4 text-gray-500" />
+                                        <span className="text-blue-700 font-medium">
+                                            {eq.rooms?.name || 'Unassigned'}
+                                        </span>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-2 p-2 rounded-lg bg-green-50">
+                                        <Package className="h-4 w-4 text-gray-500" />
+                                        <span className="text-green-700 font-semibold">
+                                            {eq.quantity} {eq.unit}
+                                        </span>
+                                    </div>
+
+                                    {eq.rooms?.department?.name && (
+                                        <div className="flex items-center gap-2 p-2 rounded-lg bg-purple-50">
+                                            <Building className="h-4 w-4 text-gray-500" />
+                                            <span className="text-purple-700 font-medium text-xs">
+                                                {eq.rooms.department.name}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="px-6 pb-6">
+                                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                                    <button 
+                                        onClick={() => setSelectedEquipment(eq)} 
+                                        className="flex items-center gap-2 text-indigo-600 hover:text-indigo-800 font-medium transition-colors"
+                                        title="View Details"
+                                    >
+                                        <Eye className="h-4 w-4" />
+                                        <span className="text-sm">View</span>
+                                    </button>
+                                    
+                                    <div className="flex items-center space-x-2">
+                                        <button 
+                                            onClick={() => handleEdit(eq)} 
+                                            className="p-2 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors"
+                                            title="Edit Equipment"
+                                        >
+                                            <Edit className="h-4 w-4" />
+                                        </button>
+                                        <button 
+                                            onClick={() => setShowDeleteConfirm(eq.id)} 
+                                            className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
+                                            title="Delete Equipment"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Add/Edit Modal */}
             {showModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-lg w-full">
-                        <div className="p-6">
-                            <div className="flex items-center justify-between mb-6"><h3 className="text-lg font-semibold">{editingEquipment ? 'Edit Equipment' : 'Add New Equipment'}</h3><button onClick={() => setShowModal(false)}><X className="h-6 w-6" /></button></div>
-                            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div><label>Name *</label><input {...form.register('name')} className="w-full border rounded-md p-2" />{form.formState.errors.name && <p className="text-red-500 text-xs mt-1">{form.formState.errors.name.message}</p>}</div>
-                                    <div><label>Code *</label><input {...form.register('code')} className="w-full border rounded-md p-2" />{form.formState.errors.code && <p className="text-red-500 text-xs mt-1">{form.formState.errors.code.message}</p>}</div>
-                                </div>
-                                <div><label>Category *</label><select {...form.register('category')} className="w-full border rounded-md p-2"><option value="">Select Category</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>{form.formState.errors.category && <p className="text-red-500 text-xs mt-1">{form.formState.errors.category.message}</p>}</div>
-                                <div><label>Room Location</label><select {...form.register('rooms_id')} className="w-full border rounded-md p-2"><option value="">Not Assigned</option>{rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div><label>Quantity *</label><input type="number" {...form.register('quantity', {valueAsNumber: true})} className="w-full border rounded-md p-2" />{form.formState.errors.quantity && <p className="text-red-500 text-xs mt-1">{form.formState.errors.quantity.message}</p>}</div>
-                                    <div><label>Unit *</label><input {...form.register('unit')} placeholder="e.g. pcs, set, unit" className="w-full border rounded-md p-2" />{form.formState.errors.unit && <p className="text-red-500 text-xs mt-1">{form.formState.errors.unit.message}</p>}</div>
-                                </div>
-                                <div><label>Specification</label><textarea {...form.register('Spesification')} className="w-full border rounded-md p-2" rows={3}></textarea></div>
-                                <div className="flex items-center"><input {...form.register('is_mandatory')} type="checkbox" className="h-4 w-4 rounded" /><label className="ml-2 text-sm">Mandatory for room bookings</label></div>
-                                <div className="flex items-center"><input {...form.register('is_available')} type="checkbox" className="h-4 w-4 rounded" /><label className="ml-2 text-sm">Available for lending</label></div>
-                                <div className="flex justify-end space-x-3 pt-4"><button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border rounded-md">Cancel</button><button type="submit" disabled={loading} className="px-4 py-2 bg-gray-800 text-white rounded-md disabled:opacity-50">{loading ? 'Saving...' : 'Save'}</button></div>
-                            </form>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+                        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-2xl font-bold flex items-center gap-3">
+                                    <Wrench className="h-6 w-6" />
+                                    {editingEquipment ? 'Edit Equipment' : 'Add New Equipment'}
+                                </h3>
+                                <button 
+                                    onClick={() => setShowModal(false)}
+                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                                >
+                                    <X className="h-6 w-6" />
+                                </button>
+                            </div>
                         </div>
+                        
+                        <form onSubmit={form.handleSubmit(handleSubmit)} className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-semibold text-gray-700">Equipment Name *</label>
+                                    <input 
+                                        {...form.register('name')} 
+                                        className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-0 transition-colors" 
+                                        placeholder="Enter equipment name"
+                                    />
+                                    {form.formState.errors.name && (
+                                        <p className="text-red-500 text-sm flex items-center gap-1">
+                                            <AlertTriangle className="h-4 w-4" />
+                                            {form.formState.errors.name.message}
+                                        </p>
+                                    )}
+                                </div>
+                                
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-semibold text-gray-700">Equipment Code *</label>
+                                    <input 
+                                        {...form.register('code')} 
+                                        className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-0 transition-colors font-mono" 
+                                        placeholder="e.g. LAB-001"
+                                    />
+                                    {form.formState.errors.code && (
+                                        <p className="text-red-500 text-sm flex items-center gap-1">
+                                            <AlertTriangle className="h-4 w-4" />
+                                            {form.formState.errors.code.message}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-semibold text-gray-700">Category *</label>
+                                <select 
+                                    {...form.register('category')} 
+                                    className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-0 transition-colors"
+                                >
+                                    <option value="">Select Category</option>
+                                    {categories.map(cat => (
+                                        <option key={cat.name} value={cat.name}>{cat.name}</option>
+                                    ))}
+                                </select>
+                                {form.formState.errors.category && (
+                                    <p className="text-red-500 text-sm flex items-center gap-1">
+                                        <AlertTriangle className="h-4 w-4" />
+                                        {form.formState.errors.category.message}
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-semibold text-gray-700">Room Location</label>
+                                <select 
+                                    {...form.register('rooms_id')} 
+                                    className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-0 transition-colors"
+                                >
+                                    <option value="">Not Assigned</option>
+                                    {rooms.map(room => (
+                                        <option key={room.id} value={room.id}>{room.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-semibold text-gray-700">Quantity *</label>
+                                    <input 
+                                        type="number" 
+                                        {...form.register('quantity', {valueAsNumber: true})} 
+                                        className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-0 transition-colors" 
+                                        min="0"
+                                    />
+                                    {form.formState.errors.quantity && (
+                                        <p className="text-red-500 text-sm flex items-center gap-1">
+                                            <AlertTriangle className="h-4 w-4" />
+                                            {form.formState.errors.quantity.message}
+                                        </p>
+                                    )}
+                                </div>
+                                
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-semibold text-gray-700">Unit *</label>
+                                    <input 
+                                        {...form.register('unit')} 
+                                        placeholder="e.g. pcs, set, unit" 
+                                        className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-0 transition-colors" 
+                                    />
+                                    {form.formState.errors.unit && (
+                                        <p className="text-red-500 text-sm flex items-center gap-1">
+                                            <AlertTriangle className="h-4 w-4" />
+                                            {form.formState.errors.unit.message}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-semibold text-gray-700">Specification</label>
+                                <textarea 
+                                    {...form.register('Spesification')} 
+                                    className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-0 transition-colors" 
+                                    rows={4}
+                                    placeholder="Enter detailed specifications..."
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="flex items-center p-4 bg-amber-50 rounded-xl border border-amber-200">
+                                    <input 
+                                        {...form.register('is_mandatory')} 
+                                        type="checkbox" 
+                                        className="h-5 w-5 text-amber-600 border-2 border-amber-300 rounded focus:ring-amber-500" 
+                                    />
+                                    <div className="ml-3">
+                                        <label className="text-sm font-semibold text-amber-800">Mandatory Equipment</label>
+                                        <p className="text-xs text-amber-600">Required for room bookings</p>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex items-center p-4 bg-green-50 rounded-xl border border-green-200">
+                                    <input 
+                                        {...form.register('is_available')} 
+                                        type="checkbox" 
+                                        className="h-5 w-5 text-green-600 border-2 border-green-300 rounded focus:ring-green-500" 
+                                    />
+                                    <div className="ml-3">
+                                        <label className="text-sm font-semibold text-green-800">Available for Lending</label>
+                                        <p className="text-xs text-green-600">Can be borrowed by users</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
+                                <button 
+                                    type="button" 
+                                    onClick={() => setShowModal(false)} 
+                                    className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-semibold transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    disabled={loading} 
+                                    className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 font-semibold transition-all shadow-lg"
+                                >
+                                    {loading ? (
+                                        <div className="flex items-center gap-2">
+                                            <RefreshCw className="h-4 w-4 animate-spin" />
+                                            Saving...
+                                        </div>
+                                    ) : (
+                                        editingEquipment ? 'Update Equipment' : 'Create Equipment'
+                                    )}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}
             
+            {/* Equipment Detail Modal */}
             {selectedEquipment && (
-                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
-                        <div className="p-6 border-b flex justify-between items-center"><h2 className="text-2xl font-bold text-gray-900">{selectedEquipment.name}</h2><button onClick={() => setSelectedEquipment(null)} className="p-2 rounded-full hover:bg-gray-100"><X/></button></div>
-                        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 overflow-y-auto">
-                            <div className="space-y-4">
-                                <h3 className="text-lg font-semibold">Details</h3>
-                                <div className="bg-gray-50 p-4 rounded-lg space-y-2 text-sm">
-                                    <p><strong>Code:</strong> {selectedEquipment.code}</p>
-                                    <p><strong>Category:</strong> {selectedEquipment.category}</p>
-                                    <p><strong>Status:</strong> {getStatusChip(selectedEquipment.is_available)}</p>
-                                    <p><strong>Location:</strong> {selectedEquipment.rooms?.name || 'Not assigned'}</p>
-                                    <p><strong>Quantity:</strong> {selectedEquipment.quantity} {selectedEquipment.unit}</p>
-                                    <p><strong>Mandatory:</strong> {selectedEquipment.is_mandatory ? 'Yes' : 'No'}</p>
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+                        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <h2 className="text-3xl font-bold mb-2">{selectedEquipment.name}</h2>
+                                    <div className="flex items-center gap-2">
+                                        <Hash className="h-4 w-4 opacity-80" />
+                                        <span className="font-mono text-lg opacity-90">{selectedEquipment.code}</span>
+                                    </div>
                                 </div>
-                                <h3 className="text-lg font-semibold">Specification</h3>
-                                <div className="bg-gray-50 p-4 rounded-lg h-full text-sm"><p>{selectedEquipment.Spesification || 'No specification details.'}</p></div>
+                                <button 
+                                    onClick={() => setSelectedEquipment(null)} 
+                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-xl transition-colors"
+                                >
+                                    <X className="h-6 w-6" />
+                                </button>
                             </div>
-                            <div className="space-y-4">
-                                <h3 className="text-lg font-semibold">History & Maintenance</h3>
-                                <div className="bg-gray-50 p-4 rounded-lg h-full text-center text-gray-500">Maintenance and lending history will be shown here.</div>
+                        </div>
+                        
+                        <div className="p-8 overflow-y-auto flex-1">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                {/* Equipment Details */}
+                                <div className="space-y-6">
+                                    <div>
+                                        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                            <Package className="h-5 w-5 text-indigo-600" />
+                                            Equipment Details
+                                        </h3>
+                                        <div className="bg-gray-50 rounded-2xl p-6 space-y-4">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">Category</span>
+                                                <div className="flex items-center gap-2">
+                                                    {(() => {
+                                                        const config = getCategoryConfig(selectedEquipment.category);
+                                                        const CategoryIcon = config.icon;
+                                                        return (
+                                                            <>
+                                                                <CategoryIcon className="h-4 w-4 text-gray-600" />
+                                                                <span className="font-semibold text-gray-900">{selectedEquipment.category}</span>
+                                                            </>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">Status</span>
+                                                {getStatusChip(selectedEquipment.is_available, selectedEquipment.is_mandatory)}
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">Location</span>
+                                                <div className="flex items-center gap-2">
+                                                    <MapPin className="h-4 w-4 text-gray-600" />
+                                                    <span className="font-semibold text-gray-900">
+                                                        {selectedEquipment.rooms?.name || 'Unassigned'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">Department</span>
+                                                <div className="flex items-center gap-2">
+                                                    <Building className="h-4 w-4 text-gray-600" />
+                                                    <span className="font-semibold text-gray-900">
+                                                        {selectedEquipment.rooms?.department?.name || 'N/A'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">Quantity</span>
+                                                <div className="flex items-center gap-2">
+                                                    <Package className="h-4 w-4 text-gray-600" />
+                                                    <span className="font-bold text-lg text-gray-900">
+                                                        {selectedEquipment.quantity} {selectedEquipment.unit}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">Created</span>
+                                                <span className="text-sm text-gray-700">
+                                                    {format(new Date(selectedEquipment.created_at), 'MMM d, yyyy')}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Specifications */}
+                                <div className="space-y-6">
+                                    <div>
+                                        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                            <FlaskConical className="h-5 w-5 text-indigo-600" />
+                                            Specifications
+                                        </h3>
+                                        <div className="bg-gray-50 rounded-2xl p-6 h-64 overflow-y-auto">
+                                            {selectedEquipment.Spesification ? (
+                                                <div className="prose prose-sm max-w-none">
+                                                    <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
+                                                        {selectedEquipment.Spesification}
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                                                    <AlertCircle className="h-12 w-12 mb-3 opacity-50" />
+                                                    <p className="text-center">No specification details available.</p>
+                                                    <p className="text-sm text-center mt-1">Consider adding specifications for better equipment management.</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Quick Actions */}
+                                    <div>
+                                        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                            <Wrench className="h-5 w-5 text-indigo-600" />
+                                            Quick Actions
+                                        </h3>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <button 
+                                                onClick={() => {
+                                                    setSelectedEquipment(null);
+                                                    handleEdit(selectedEquipment);
+                                                }}
+                                                className="flex items-center justify-center gap-2 p-4 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-xl transition-colors"
+                                            >
+                                                <Edit className="h-5 w-5" />
+                                                <span className="font-semibold">Edit</span>
+                                            </button>
+                                            
+                                            <button 
+                                                onClick={() => {
+                                                    setSelectedEquipment(null);
+                                                    setShowDeleteConfirm(selectedEquipment.id);
+                                                }}
+                                                className="flex items-center justify-center gap-2 p-4 bg-red-100 hover:bg-red-200 text-red-800 rounded-xl transition-colors"
+                                            >
+                                                <Trash2 className="h-5 w-5" />
+                                                <span className="font-semibold">Delete</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             )}
             
+            {/* Delete Confirmation Modal */}
             {showDeleteConfirm && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-                        <div className="flex items-center mb-4">
-                            <div className="flex-shrink-0"><AlertCircle className="h-6 w-6 text-red-600" /></div>
-                            <div className="ml-3"><h3 className="text-lg font-medium text-gray-900">Delete Equipment</h3></div>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+                        <div className="flex items-center mb-6">
+                            <div className="flex-shrink-0 p-3 bg-red-100 rounded-full">
+                                <AlertCircle className="h-8 w-8 text-red-600" />
+                            </div>
+                            <div className="ml-4">
+                                <h3 className="text-xl font-bold text-gray-900">Delete Equipment</h3>
+                                <p className="text-sm text-gray-600 mt-1">This action cannot be undone</p>
+                            </div>
                         </div>
-                        <p className="text-sm text-gray-500 mb-6">Are you sure you want to delete this equipment? This action cannot be undone and may affect related booking records.</p>
+                        
+                        <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+                            <p className="text-sm text-red-800">
+                                Are you sure you want to delete this equipment? This action will permanently remove 
+                                the equipment from the system and may affect related booking records.
+                            </p>
+                        </div>
+                        
                         <div className="flex space-x-3">
-                            <button onClick={() => setShowDeleteConfirm(null)} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-200">Cancel</button>
-                            <button onClick={() => handleDelete(showDeleteConfirm)} disabled={loading} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200">{loading ? 'Deleting...' : 'Delete'}</button>
+                            <button 
+                                onClick={() => setShowDeleteConfirm(null)} 
+                                className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-semibold transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={() => handleDelete(showDeleteConfirm)} 
+                                disabled={loading} 
+                                className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-50 font-semibold transition-colors shadow-lg"
+                            >
+                                {loading ? (
+                                    <div className="flex items-center justify-center gap-2">
+                                        <RefreshCw className="h-4 w-4 animate-spin" />
+                                        Deleting...
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center justify-center gap-2">
+                                        <Trash2 className="h-4 w-4" />
+                                        Delete Equipment
+                                    </div>
+                                )}
+                            </button>
                         </div>
                     </div>
                 </div>
