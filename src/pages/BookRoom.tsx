@@ -224,9 +224,10 @@ return (
             </div>
 
             <div className="max-w-7xl mx-auto px-4 py-8">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Left Column - Room Selection */}
-                    <div className="lg:col-span-2 space-y-6">
+                {/* Changed grid proportions: 5 columns for rooms, 7 columns for form */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                    {/* Left Column - Room Selection (5/12 width) */}
+                    <div className="lg:col-span-5 space-y-6">
                         {/* Search and Filter Controls */}
                         <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
                             <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
@@ -283,7 +284,7 @@ return (
                             </div>
                             
                             {viewMode === 'grid' ? (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 gap-4">
                                     {filteredRooms.map((room) => (
                                         <div 
                                             key={room.id} 
@@ -422,8 +423,8 @@ return (
                         </div>
                     </div>
 
-                    {/* Right Column - Booking Form */}
-                    <div className="lg:col-span-1">
+                    {/* Right Column - Booking Form (7/12 width - wider than before) */}
+                    <div className="lg:col-span-7">
                         <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 sticky top-24">
                             <div className="flex items-center space-x-3 mb-8">
                                 <div className="p-2 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-lg">
@@ -440,8 +441,8 @@ return (
                                             <h3 className="text-lg font-semibold text-gray-800">Personal Information</h3>
                                         </div>
                                         
-                                        <div className="space-y-4">
-                                            <div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="md:col-span-2">
                                                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                                                     Identity Number (NIM/NIP) *
                                                 </label>
@@ -508,6 +509,24 @@ return (
                                             </div>
                                             
                                             <div>
+                                                <label className="block text-sm font-semibold text-gray-700 mb-2">Phone Number *</label>
+                                                <div className="relative">
+                                                    <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                                    <input 
+                                                        {...form.register('phone_number')} 
+                                                        type="tel" 
+                                                        placeholder="08xxxxxxxxxx" 
+                                                        className="w-full pl-12 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200" 
+                                                    />
+                                                </div>
+                                                {form.formState.errors.phone_number && (
+                                                    <p className="mt-2 text-sm text-red-600 font-medium">
+                                                        {form.formState.errors.phone_number.message}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            
+                                            <div className="md:col-span-2">
                                                 <label className="block text-sm font-semibold text-gray-700 mb-2">Study Program *</label>
                                                 <div className="relative">
                                                     <input 
@@ -552,25 +571,7 @@ return (
                                                 )}
                                             </div>
                                             
-                                            <div>
-                                                <label className="block text-sm font-semibold text-gray-700 mb-2">Phone Number *</label>
-                                                <div className="relative">
-                                                    <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                                                    <input 
-                                                        {...form.register('phone_number')} 
-                                                        type="tel" 
-                                                        placeholder="08xxxxxxxxxx" 
-                                                        className="w-full pl-12 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200" 
-                                                    />
-                                                </div>
-                                                {form.formState.errors.phone_number && (
-                                                    <p className="mt-2 text-sm text-red-600 font-medium">
-                                                        {form.formState.errors.phone_number.message}
-                                                    </p>
-                                                )}
-                                            </div>
-                                            
-                                            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-xl p-4">
+                                            <div className="md:col-span-2 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-xl p-4">
                                                 <div className="flex items-start space-x-3">
                                                     <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
                                                     <div className="text-sm text-blue-800">
@@ -591,7 +592,7 @@ return (
                                     
                                     <div>
                                         <label className="block text-sm font-semibold text-gray-700 mb-2">Start Time *</label>
-                                        <div className="flex space-x-3">
+                                        <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
                                             <input 
                                                 {...form.register('start_time')} 
                                                 type="datetime-local" 
@@ -600,7 +601,7 @@ return (
                                             <button 
                                                 type="button" 
                                                 onClick={handleNowBooking} 
-                                                className="px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl hover:from-blue-600 hover:to-indigo-600 font-semibold transition-all duration-200 shadow-lg hover:shadow-xl"
+                                                className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl hover:from-blue-600 hover:to-indigo-600 font-semibold transition-all duration-200 shadow-lg hover:shadow-xl"
                                             >
                                                 NOW
                                             </button>
@@ -612,7 +613,7 @@ return (
                                         )}
                                     </div>
                                     
-                                    <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-sm font-semibold text-gray-700 mb-2">SKS (Credits) *</label>
                                             <input 
@@ -665,7 +666,7 @@ return (
                                             <Zap className="h-5 w-5 text-blue-500" />
                                             <h3 className="text-lg font-semibold text-gray-800">Request Equipment</h3>
                                         </div>
-                                        <div className="space-y-3 max-h-48 overflow-y-auto pr-2">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-48 overflow-y-auto pr-2">
                                             {availableEquipment.map(eq => (
                                                 <label 
                                                     key={eq.id} 
@@ -688,14 +689,16 @@ return (
                                                         }} 
                                                         className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed" 
                                                     />
-                                                    <span className={`ml-4 text-sm font-medium ${eq.is_mandatory ? 'text-gray-900' : 'text-gray-700'}`}>
-                                                        {eq.name}
-                                                    </span>
-                                                    {eq.is_mandatory && (
-                                                        <span className="ml-2 px-2 py-1 text-xs font-bold text-blue-600 bg-blue-100 rounded-full">
-                                                            Mandatory
+                                                    <div className="ml-4 flex-1">
+                                                        <span className={`text-sm font-medium ${eq.is_mandatory ? 'text-gray-900' : 'text-gray-700'}`}>
+                                                            {eq.name}
                                                         </span>
-                                                    )}
+                                                        {eq.is_mandatory && (
+                                                            <span className="block mt-1 text-xs font-bold text-blue-600">
+                                                                Mandatory
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </label>
                                             ))}
                                         </div>
