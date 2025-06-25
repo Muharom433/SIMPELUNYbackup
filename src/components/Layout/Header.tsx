@@ -17,7 +17,7 @@ import {
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { useLanguage, translations } from '../../Translate/LanguageContext';
+import { useLanguage, translations } from '../../contexts/LanguageContext';
 
 interface HeaderProps {
   user: UserType | null;
@@ -196,7 +196,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                     SIMPEL Kuliah
                   </h1>
                   <p className="text-sm text-gray-600 font-medium">
-                    {getText(translations.smartRoomBooking.en, translations.smartRoomBooking.id).split(' ').slice(1).join(' ')}
+                    {getText(translations.smartRoomBooking.en, translations.smartRoomBooking.id)}
                   </p>
                 </div>
               </div>
