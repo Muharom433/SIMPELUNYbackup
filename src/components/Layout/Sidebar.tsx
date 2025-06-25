@@ -31,9 +31,15 @@ import {
   X,
   ChevronRight,
   Sparkles,
+  Home,
+  PieChart,
+  Archive,
+  ClipboardCheck,
+  Briefcase,
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 interface SidebarProps {
   user: UserType | null;
@@ -44,6 +50,9 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
   const [pendingBookingsCount, setPendingBookingsCount] = useState(0);
   const [pendingCheckoutsCount, setPendingCheckoutsCount] = useState(0);
+  
+  // Use language context
+  const { getText } = useLanguage();
 
   useEffect(() => {
     if (user && (user.role === 'super_admin' || user.role === 'department_admin')) {
@@ -157,49 +166,234 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
     if (!user) {
       // Public/Non-logged student access
       return [
-        { icon: LayoutDashboard, label: 'Dashboard', path: '/', badge: null, color: 'from-blue-500 to-indigo-500' },
-        { icon: Calendar, label: 'Book Room', path: '/book', badge: null, color: 'from-emerald-500 to-teal-500' },
-        { icon: Package, label: 'Tool Lending', path: '/tools', badge: null, color: 'from-purple-500 to-pink-500' },
-        { icon: CheckCircle, label: 'Check Out', path: '/checkout', badge: null, color: 'from-orange-500 to-red-500' },
+        { 
+          icon: Home, 
+          label: getText('Dashboard', 'Dasbor'), 
+          path: '/', 
+          badge: null, 
+          color: 'from-blue-500 to-indigo-500' 
+        },
+        { 
+          icon: Calendar, 
+          label: getText('Book Room', 'Pesan Ruangan'), 
+          path: '/book', 
+          badge: null, 
+          color: 'from-emerald-500 to-teal-500' 
+        },
+        { 
+          icon: Package, 
+          label: getText('Tool Lending', 'Peminjaman Alat'), 
+          path: '/tools', 
+          badge: null, 
+          color: 'from-purple-500 to-pink-500' 
+        },
+        { 
+          icon: CheckCircle, 
+          label: getText('Check Out', 'Pengembalian'), 
+          path: '/checkout', 
+          badge: null, 
+          color: 'from-orange-500 to-red-500' 
+        },
       ];
     }
 
     const baseItems = [
-      { icon: LayoutDashboard, label: 'Dashboard', path: '/', badge: null, color: 'from-blue-500 to-indigo-500' },
-      { icon: Calendar, label: 'Book Room', path: '/book', badge: null, color: 'from-emerald-500 to-teal-500' },
-      { icon: Package, label: 'Tool Lending', path: '/tools', badge: null, color: 'from-purple-500 to-pink-500' },
-      { icon: CheckCircle, label: 'Check Out', path: '/checkout', badge: null, color: 'from-orange-500 to-red-500' },
-      { icon: User, label: 'Profile', path: '/profile', badge: null, color: 'from-gray-500 to-slate-500' },
+      { 
+        icon: Home, 
+        label: getText('Dashboard', 'Dasbor'), 
+        path: '/', 
+        badge: null, 
+        color: 'from-blue-500 to-indigo-500' 
+      },
+      { 
+        icon: Calendar, 
+        label: getText('Book Room', 'Pesan Ruangan'), 
+        path: '/book', 
+        badge: null, 
+        color: 'from-emerald-500 to-teal-500' 
+      },
+      { 
+        icon: Package, 
+        label: getText('Tool Lending', 'Peminjaman Alat'), 
+        path: '/tools', 
+        badge: null, 
+        color: 'from-purple-500 to-pink-500' 
+      },
+      { 
+        icon: CheckCircle, 
+        label: getText('Check Out', 'Pengembalian'), 
+        path: '/checkout', 
+        badge: null, 
+        color: 'from-orange-500 to-red-500' 
+      },
+      { 
+        icon: User, 
+        label: getText('Profile', 'Profil'), 
+        path: '/profile', 
+        badge: null, 
+        color: 'from-gray-500 to-slate-500' 
+      },
     ];
 
     if (user.role === 'department_admin') {
-      // Simplified menu for department admins
+      // Department admin menu
       return [
-        { icon: LayoutDashboard, label: 'Dashboard', path: '/', badge: null, color: 'from-blue-500 to-indigo-500' },
-        { icon: Calendar, label: 'Exam Management', path: '/exams', badge: null, color: 'from-emerald-500 to-teal-500' },
-        { icon: Users, label: 'User Management', path: '/users', badge: null, color: 'from-purple-500 to-pink-500' },
-        { icon: User, label: 'Profile', path: '/profile', badge: null, color: 'from-gray-500 to-slate-500' },
+        { 
+          icon: PieChart, 
+          label: getText('Department Analytics', 'Analitik Departemen'), 
+          path: '/department-analytics', 
+          badge: null, 
+          color: 'from-blue-500 to-indigo-500' 
+        },
+        { 
+          icon: CalendarCheck, 
+          label: getText('Exam Management', 'Manajemen Ujian'), 
+          path: '/exams', 
+          badge: null, 
+          color: 'from-emerald-500 to-teal-500' 
+        },
+        { 
+          icon: Clock, 
+          label: getText('Exam Schedules', 'Jadwal Ujian'), 
+          path: '/exam-schedules', 
+          badge: null, 
+          color: 'from-purple-500 to-pink-500' 
+        },
+        { 
+          icon: BookOpen, 
+          label: getText('Department Bookings', 'Pemesanan Departemen'), 
+          path: '/department-bookings', 
+          badge: null, 
+          color: 'from-orange-500 to-red-500' 
+        },
+        { 
+          icon: FileText, 
+          label: getText('Department Reports', 'Laporan Departemen'), 
+          path: '/department-reports', 
+          badge: null, 
+          color: 'from-teal-500 to-cyan-500' 
+        },
+        { 
+          icon: Wrench, 
+          label: getText('Equipment Management', 'Manajemen Peralatan'), 
+          path: '/department-equipment', 
+          badge: null, 
+          color: 'from-indigo-500 to-purple-500' 
+        },
+        { 
+          icon: Users, 
+          label: getText('User Management', 'Manajemen Pengguna'), 
+          path: '/users', 
+          badge: null, 
+          color: 'from-pink-500 to-rose-500' 
+        },
+        { 
+          icon: User, 
+          label: getText('Profile', 'Profil'), 
+          path: '/profile', 
+          badge: null, 
+          color: 'from-gray-500 to-slate-500' 
+        },
       ];
     }
 
     if (user.role === 'super_admin') {
       return [
-        { icon: LayoutDashboard, label: 'System Analytics', path: '/', badge: null, color: 'from-blue-500 to-indigo-500' },
-        { icon: Building, label: 'Room Management', path: '/rooms', badge: null, color: 'from-emerald-500 to-teal-500' },
-        { icon: Users, label: 'User Management', path: '/users', badge: null, color: 'from-purple-500 to-pink-500' },
-        { icon: Building, label: 'Departments', path: '/departments', badge: null, color: 'from-cyan-500 to-blue-500' },
-        { icon: GraduationCap, label: 'Study Programs', path: '/study-programs', badge: null, color: 'from-indigo-500 to-purple-500' },
-        { icon: BookOpen, label: 'Booking Management', path: '/bookings', badge: pendingBookingsCount > 0 ? pendingBookingsCount : null, color: 'from-yellow-500 to-orange-500' },
-        { icon: Bell, label: 'Validation Queue', path: '/validation', badge: pendingBookingsCount + pendingCheckoutsCount > 0 ? pendingBookingsCount + pendingCheckoutsCount : null, color: 'from-red-500 to-pink-500' },
-        { icon: Clock, label: 'Lecture Schedules', path: '/schedules', badge: null, color: 'from-green-500 to-emerald-500' },
-        { icon: Calendar, label: 'Exam Management', path: '/exams', badge: null, color: 'from-teal-500 to-cyan-500' },
-        { icon: Wrench, label: 'Tool Administration', path: '/tool-admin', badge: null, color: 'from-slate-500 to-gray-500' },
-        { icon: BarChart3, label: 'Reports', path: '/reports', badge: null, color: 'from-violet-500 to-purple-500' },
-        { icon: Settings, label: 'System Settings', path: '/settings', badge: null, color: 'from-gray-500 to-slate-500' },
-        { icon: User, label: 'Profile', path: '/profile', badge: null, color: 'from-rose-500 to-pink-500' },
+        { 
+          icon: BarChart3, 
+          label: getText('System Analytics', 'Analitik Sistem'), 
+          path: '/', 
+          badge: null, 
+          color: 'from-blue-500 to-indigo-500' 
+        },
+        { 
+          icon: Building, 
+          label: getText('Room Management', 'Manajemen Ruangan'), 
+          path: '/rooms', 
+          badge: null, 
+          color: 'from-emerald-500 to-teal-500' 
+        },
+        { 
+          icon: Users, 
+          label: getText('User Management', 'Manajemen Pengguna'), 
+          path: '/users', 
+          badge: null, 
+          color: 'from-purple-500 to-pink-500' 
+        },
+        { 
+          icon: MapPin, 
+          label: getText('Departments', 'Departemen'), 
+          path: '/departments', 
+          badge: null, 
+          color: 'from-orange-500 to-red-500' 
+        },
+        { 
+          icon: GraduationCap, 
+          label: getText('Study Programs', 'Program Studi'), 
+          path: '/study-programs', 
+          badge: null, 
+          color: 'from-teal-500 to-cyan-500' 
+        },
+        { 
+          icon: Calendar, 
+          label: getText('Booking Management', 'Manajemen Pemesanan'), 
+          path: '/bookings', 
+          badge: pendingBookingsCount > 0 ? pendingBookingsCount : null, 
+          color: 'from-indigo-500 to-purple-500' 
+        },
+        { 
+          icon: ClipboardCheck, 
+          label: getText('Validation Queue', 'Antrian Validasi'), 
+          path: '/validation', 
+          badge: pendingCheckoutsCount > 0 ? pendingCheckoutsCount : null, 
+          color: 'from-pink-500 to-rose-500' 
+        },
+        { 
+          icon: CheckSquare, 
+          label: getText('Checkout Validation', 'Validasi Pengembalian'), 
+          path: '/checkout-validation', 
+          badge: null, 
+          color: 'from-amber-500 to-orange-500' 
+        },
+        { 
+          icon: Clock, 
+          label: getText('Lecture Schedules', 'Jadwal Kuliah'), 
+          path: '/schedules', 
+          badge: null, 
+          color: 'from-lime-500 to-emerald-500' 
+        },
+        { 
+          icon: CalendarCheck, 
+          label: getText('Exam Management', 'Manajemen Ujian'), 
+          path: '/exams', 
+          badge: null, 
+          color: 'from-sky-500 to-blue-500' 
+        },
+        { 
+          icon: Wrench, 
+          label: getText('Tool Administration', 'Administrasi Alat'), 
+          path: '/tool-admin', 
+          badge: null, 
+          color: 'from-violet-500 to-purple-500' 
+        },
+        { 
+          icon: FileText, 
+          label: getText('Reports', 'Laporan'), 
+          path: '/reports', 
+          badge: null, 
+          color: 'from-rose-500 to-pink-500' 
+        },
+        { 
+          icon: Settings, 
+          label: getText('System Settings', 'Pengaturan Sistem'), 
+          path: '/settings', 
+          badge: null, 
+          color: 'from-gray-500 to-slate-500' 
+        },
       ];
     }
 
+    // Regular student menu items
     return baseItems;
   };
 
@@ -207,163 +401,155 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
 
   return (
     <>
-      {/* Mobile overlay */}
+      {/* Mobile Overlay */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden transition-all duration-300"
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden"
           onClick={onClose}
         />
       )}
 
       {/* Sidebar */}
-      <div
-        className={`fixed left-0 top-0 h-full w-72 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 backdrop-blur-xl transform transition-all duration-500 ease-out z-50 lg:translate-x-0 border-r border-white/20 shadow-2xl ${
+      <aside
+        className={`fixed left-0 top-0 z-50 h-full w-80 bg-white/95 backdrop-blur-sm border-r border-white/20 shadow-2xl transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:z-auto ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex flex-col h-full relative overflow-hidden">
-          {/* Decorative elements */}
-          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-400/20 to-indigo-400/20 rounded-full -translate-y-16 translate-x-16"></div>
-          <div className="absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr from-emerald-400/20 to-teal-400/20 rounded-full translate-y-12 -translate-x-12"></div>
-
-          {/* Header */}
-          <div className="relative">
-            <div className="flex items-center justify-between h-20 px-6 bg-white/70 backdrop-blur-sm border-b border-white/20">
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl shadow-lg">
-                  <Building className="h-7 w-7 text-white" />
-                </div>
-                <div>
-                  <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                    SIMPEL
-                  </span>
-                  <div className="text-sm text-gray-600 font-medium">Kuliah System</div>
-                </div>
-              </div>
-              <button
-                onClick={onClose}
-                className="lg:hidden p-2 rounded-xl bg-white/50 hover:bg-white/70 transition-all duration-200"
-              >
-                <X className="h-5 w-5 text-gray-600" />
-              </button>
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200/50">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl shadow-lg">
+              <Sparkles className="h-8 w-8 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                SIMPEL Kuliah
+              </h2>
+              <p className="text-sm text-gray-600 font-medium">
+                {getText('Smart Campus Management', 'Sistem Manajemen Kampus Cerdas')}
+              </p>
             </div>
           </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-xl text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors duration-200 lg:hidden"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
-          {/* Navigation */}
-          <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto scrollbar-hide">
-            {menuItems.map((item, index) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                onClick={onClose}
-                className={({ isActive }) =>
-                  `group flex items-center px-4 py-4 text-sm font-medium rounded-2xl transition-all duration-300 ease-out relative overflow-hidden ${
-                    isActive
-                      ? 'bg-white/80 backdrop-blur-sm text-gray-800 shadow-lg border border-white/30 scale-[1.02]'
-                      : 'text-gray-600 hover:bg-white/50 hover:backdrop-blur-sm hover:text-gray-800 hover:shadow-md hover:scale-[1.01] hover:border hover:border-white/20'
-                  }`
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    {/* Icon container with gradient background */}
-                    <div className={`relative p-2.5 rounded-xl mr-4 transition-all duration-300 ${
-                      isActive 
-                        ? `bg-gradient-to-r ${item.color} shadow-lg`
-                        : 'bg-gray-100/50 group-hover:bg-gradient-to-r group-hover:' + item.color.split(' ').join(' group-hover:') + ' group-hover:shadow-md'
-                    }`}>
-                      <item.icon className={`h-5 w-5 transition-all duration-300 ${
-                        isActive ? 'text-white' : 'text-gray-600 group-hover:text-white'
-                      }`} />
-                      
-                      {/* Sparkle effect for active items */}
-                      {isActive && (
-                        <div className="absolute -top-1 -right-1">
-                          <Sparkles className="h-3 w-3 text-yellow-300 animate-pulse" />
-                        </div>
-                      )}
-                    </div>
-                    
-                    <span className="flex-1 font-semibold transition-all duration-300">
-                      {item.label}
-                    </span>
-                    
-                    {/* Badge */}
-                    {item.badge && item.badge > 0 && (
-                      <div className="relative">
-                        <span className="inline-flex items-center justify-center px-2.5 py-1 text-xs font-bold text-white bg-gradient-to-r from-red-500 to-pink-500 rounded-full shadow-lg animate-pulse">
-                          {item.badge > 99 ? '99+' : item.badge}
-                        </span>
-                        <div className="absolute inset-0 bg-gradient-to-r from-red-400 to-pink-400 rounded-full animate-ping opacity-30"></div>
-                      </div>
-                    )}
-                    
-                    {/* Arrow indicator for active item */}
-                    {isActive && (
-                      <ChevronRight className="h-4 w-4 text-gray-400 transition-all duration-300" />
-                    )}
-                    
-                    {/* Hover effect background */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
-                  </>
-                )}
-              </NavLink>
-            ))}
-          </nav>
-
-          {/* User Profile Section */}
-          {user && (
-            <div className="relative">
-              <div className="m-4 p-4 bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/30">
-                <div className="flex items-center space-x-3">
-                  <div className="relative">
-                    <div className="h-12 w-12 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl flex items-center justify-center shadow-lg">
-                      <User className="h-6 w-6 text-white" />
-                    </div>
-                    {/* Online indicator */}
-                    <div className="absolute -bottom-1 -right-1 h-4 w-4 bg-emerald-400 border-2 border-white rounded-full shadow-sm">
-                      <div className="h-full w-full bg-emerald-400 rounded-full animate-pulse"></div>
-                    </div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-gray-900 truncate">
-                      {user.full_name}
-                    </p>
-                    <div className="flex items-center space-x-2">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-800 border border-blue-200/50">
-                        {user.role.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                      </span>
-                    </div>
-                    <div className="flex items-center mt-1.5">
-                      <div className="h-1.5 w-1.5 bg-emerald-400 rounded-full mr-2 animate-pulse"></div>
-                      <span className="text-xs text-emerald-600 font-medium">Online</span>
-                    </div>
-                  </div>
+        {/* User Info */}
+        {user && (
+          <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200/50">
+            <div className="flex items-center space-x-4">
+              <div className="relative">
+                <div className="h-14 w-14 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl flex items-center justify-center shadow-lg">
+                  <User className="h-7 w-7 text-white" />
+                </div>
+                <div className="absolute -bottom-1 -right-1 h-5 w-5 bg-emerald-400 border-2 border-white rounded-full">
+                  <div className="h-full w-full bg-emerald-400 rounded-full animate-pulse"></div>
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-lg font-bold text-gray-900 truncate">{user.full_name}</p>
+                <p className="text-sm text-gray-600 capitalize">
+                  {getText(
+                    user.role.replace('_', ' '), 
+                    user.role === 'super_admin' ? 'Super Admin' :
+                    user.role === 'department_admin' ? 'Admin Departemen' :
+                    user.role === 'student' ? 'Mahasiswa' :
+                    user.role === 'lecturer' ? 'Dosen' : user.role
+                  )}
+                </p>
+                <div className="flex items-center mt-1">
+                  <div className="h-2 w-2 bg-emerald-400 rounded-full mr-2"></div>
+                  <span className="text-xs text-emerald-600 font-medium">
+                    {getText('Online', 'Online')}
+                  </span>
                 </div>
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Version info */}
-          <div className="px-6 pb-4">
-            <div className="text-center">
-              <div className="text-xs text-gray-400 font-medium">Version 2.1.0</div>
-              <div className="text-xs text-gray-400">© 2024 SIMPEL Kuliah</div>
+        {/* Navigation Menu */}
+        <nav className="flex-1 overflow-y-auto py-6">
+          <div className="px-4 space-y-2">
+            {menuItems.map((item, index) => {
+              const Icon = item.icon;
+              return (
+                <NavLink
+                  key={index}
+                  to={item.path}
+                  onClick={onClose}
+                  className={({ isActive }) =>
+                    `group flex items-center justify-between px-4 py-3.5 rounded-2xl font-medium transition-all duration-200 ${
+                      isActive
+                        ? 'bg-gradient-to-r text-white shadow-lg transform scale-[1.02]'
+                        : 'text-gray-700 hover:bg-white/60 hover:text-gray-900 hover:shadow-md hover:scale-[1.01]'
+                    } ${isActive ? item.color : ''}`
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      <div className="flex items-center space-x-4">
+                        <div className={`p-2.5 rounded-xl transition-all duration-200 ${
+                          isActive 
+                            ? 'bg-white/20 shadow-lg' 
+                            : 'bg-gray-100/50 group-hover:bg-white/80'
+                        }`}>
+                          <Icon className={`h-5 w-5 transition-colors duration-200 ${
+                            isActive ? 'text-white' : 'text-gray-600 group-hover:text-gray-800'
+                          }`} />
+                        </div>
+                        <span className="text-sm font-semibold truncate">
+                          {item.label}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center space-x-2">
+                        {item.badge && (
+                          <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-full text-xs font-bold transition-all duration-200 ${
+                            isActive
+                              ? 'bg-white/20 text-white'
+                              : 'bg-red-100 text-red-600 group-hover:bg-red-200'
+                          }`}>
+                            {item.badge > 99 ? '99+' : item.badge}
+                          </span>
+                        )}
+                        
+                        <ChevronRight className={`h-4 w-4 transition-all duration-200 ${
+                          isActive 
+                            ? 'text-white/70 transform translate-x-1' 
+                            : 'text-gray-400 group-hover:text-gray-600 group-hover:transform group-hover:translate-x-1'
+                        }`} />
+                      </div>
+                    </>
+                  )}
+                </NavLink>
+              );
+            })}
+          </div>
+        </nav>
+
+        {/* Footer */}
+        <div className="p-6 border-t border-gray-200/50 bg-gradient-to-r from-gray-50 to-blue-50">
+          <div className="text-center">
+            <p className="text-xs text-gray-500 mb-2">
+              {getText('Powered by', 'Didukung oleh')}
+            </p>
+            <div className="flex items-center justify-center space-x-2">
+              <Zap className="h-4 w-4 text-blue-500" />
+              <span className="text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                SIMPEL Technology
+              </span>
             </div>
+            <p className="text-xs text-gray-400 mt-1">
+              {getText('Version 2.0.1', 'Versi 2.0.1')}
+            </p>
           </div>
         </div>
-      </div>
-
-      {/* Custom scrollbar styles */}
-      <style jsx>{`
-        .scrollbar-hide {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-        .scrollbar-hide::-webkit-scrollbar {
-          display: none;
-        }
-      `}</style>
+      </aside>
     </>
   );
 };
