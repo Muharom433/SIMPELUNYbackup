@@ -369,34 +369,6 @@ const RoomManagement: React.FC = () => {
                             </div>
                         </div>
                     </div>
-                    {/* Equipment Panel */}
-                    <div>
-                        <h3 className="text-lg font-semibold text-gray-800 mb-3">Equipment</h3>
-                        <div className="space-y-2">
-                            {masterEquipmentList.map((eq) => {
-                                const Icon = iconMap[eq.icon_name || 'Zap'] || Zap;
-                                const isChecked = roomEquipmentLinks.some(link => link.equipment_id === eq.id);
-                                const isProcessing = isUpdatingEquipment === eq.id;
-                                return (
-                                    <label key={eq.id} className="flex items-center justify-between p-3 bg-white rounded-lg border hover:bg-gray-50 transition-colors">
-                                        <div className="flex items-center space-x-3">
-                                            <Icon className="h-5 w-5 text-gray-500" />
-                                            <div>
-                                                <span className="font-medium text-gray-800">{eq.name}</span>
-                                                <span className="block text-xs text-gray-500">{eq.category}</span>
-                                            </div>
-                                        </div>
-                                        {isProcessing ? 
-                                            <Loader2 className="h-5 w-5 animate-spin text-gray-400"/> : 
-                                            <input type="checkbox" checked={isChecked} onChange={(e) => handleEquipmentChange(eq.id, e.target.checked)} className="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"/>
-                                        }
-                                    </label>
-                                );
-                            })}
-                            {masterEquipmentList.length === 0 && <p className="text-sm text-gray-500 text-center py-4">No master equipment data found.</p>}
-                        </div>
-                    </div>
-                </div>
                 
                 {/* --- RESTORED SCHEDULE PANEL --- */}
                 <div className="lg:col-span-3">
@@ -434,6 +406,34 @@ const RoomManagement: React.FC = () => {
                     </div>
                 </div>
                 {/* --- END OF RESTORED SECTION --- */}
+                    {/* Equipment Panel */}
+                    <div>
+                        <h3 className="text-lg font-semibold text-gray-800 mb-3">Equipment</h3>
+                        <div className="space-y-2">
+                            {masterEquipmentList.map((eq) => {
+                                const Icon = iconMap[eq.icon_name || 'Zap'] || Zap;
+                                const isChecked = roomEquipmentLinks.some(link => link.equipment_id === eq.id);
+                                const isProcessing = isUpdatingEquipment === eq.id;
+                                return (
+                                    <label key={eq.id} className="flex items-center justify-between p-3 bg-white rounded-lg border hover:bg-gray-50 transition-colors">
+                                        <div className="flex items-center space-x-3">
+                                            <Icon className="h-5 w-5 text-gray-500" />
+                                            <div>
+                                                <span className="font-medium text-gray-800">{eq.name}</span>
+                                                <span className="block text-xs text-gray-500">{eq.category}</span>
+                                            </div>
+                                        </div>
+                                        {isProcessing ? 
+                                            <Loader2 className="h-5 w-5 animate-spin text-gray-400"/> : 
+                                            <input type="checkbox" checked={isChecked} onChange={(e) => handleEquipmentChange(eq.id, e.target.checked)} className="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"/>
+                                        }
+                                    </label>
+                                );
+                            })}
+                            {masterEquipmentList.length === 0 && <p className="text-sm text-gray-500 text-center py-4">No master equipment data found.</p>}
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
