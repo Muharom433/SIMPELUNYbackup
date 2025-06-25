@@ -48,7 +48,7 @@ const AuthForm: React.FC = () => {
         toast.error(error.message || 'Failed to sign in');
       } else {
         toast.success('Welcome back!');
-        window.location.href = '/';
+        window.location.href = '/book';
       }
     } catch (error) {
       toast.error('An error occurred during sign in');
