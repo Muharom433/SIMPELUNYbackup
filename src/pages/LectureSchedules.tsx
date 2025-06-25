@@ -18,8 +18,10 @@ import {
   ChevronLeft,
   ChevronRight,
   BarChart3,
-  Activity
+  Activity,
+  TrendingUp
 } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
@@ -252,31 +254,53 @@ const LectureSchedules: React.FC = () => {
   const startIndex = (currentPage - 1) * rowsPerPage;
   const currentTableData = sortedSchedules.slice(startIndex, startIndex + rowsPerPage);
 
-  // Day intensity analysis
+  // Day intensity analysis with color coding
   const dayIntensityStats = useMemo(() => {
     const stats = dayNames.map(day => {
       const daySchedules = schedules.filter(s => s.day?.toLowerCase() === day.toLowerCase());
+      const count = daySchedules.length;
+      
+      let intensity, color;
+      if (count === 0) {
+        intensity = 'Empty';
+        color = '#9CA3AF'; // gray-400
+      } else if (count <= 3) {
+        intensity = 'Light';
+        color = '#10B981'; // green-500
+      } else if (count <= 6) {
+        intensity = 'Moderate';
+        color = '#3B82F6'; // blue-500
+      } else if (count <= 9) {
+        intensity = 'Busy';
+        color = '#F59E0B'; // yellow-500
+      } else {
+        intensity = 'Very Busy';
+        color = '#EF4444'; // red-500
+      }
+      
       return {
         day,
-        count: daySchedules.length,
-        intensity: daySchedules.length === 0 ? 'Empty' : 
-                  daySchedules.length <= 3 ? 'Light' :
-                  daySchedules.length <= 6 ? 'Moderate' :
-                  daySchedules.length <= 9 ? 'Busy' : 'Very Busy'
+        count,
+        intensity,
+        color,
+        fullDay: day
       };
     });
     return stats;
   }, [schedules]);
 
-  const getIntensityColor = (intensity: string) => {
-    switch (intensity) {
-      case 'Empty': return 'bg-gray-100 text-gray-600';
-      case 'Light': return 'bg-green-100 text-green-700';
-      case 'Moderate': return 'bg-blue-100 text-blue-700';
-      case 'Busy': return 'bg-yellow-100 text-yellow-700';
-      case 'Very Busy': return 'bg-red-100 text-red-700';
-      default: return 'bg-gray-100 text-gray-600';
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
+          <p className="font-semibold text-gray-900">{`${data.fullDay}`}</p>
+          <p className="text-sm text-gray-600">{`Schedules: ${data.count}`}</p>
+          <p className="text-sm" style={{ color: data.color }}>{`Status: ${data.intensity}`}</p>
+        </div>
+      );
     }
+    return null;
   };
 
   const isScheduleActive = (schedule: LectureSchedule) => {
@@ -349,22 +373,74 @@ const LectureSchedules: React.FC = () => {
         </div>
       </div>
 
-      {/* Day Intensity Analysis */}
+      {/* Day Intensity Chart */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <BarChart3 className="h-5 w-5 text-teal-600" />
-          <h3 className="text-lg font-semibold text-gray-900">Daily Schedule Intensity</h3>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          {dayIntensityStats.map((stat) => (
-            <div key={stat.day} className="text-center">
-              <div className="text-sm font-medium text-gray-700 mb-2">{stat.day}</div>
-              <div className={`p-3 rounded-lg ${getIntensityColor(stat.intensity)}`}>
-                <div className="text-lg font-bold">{stat.count}</div>
-                <div className="text-xs">{stat.intensity}</div>
-              </div>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-teal-100 rounded-lg">
+              <TrendingUp className="h-5 w-5 text-teal-600" />
             </div>
-          ))}
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Daily Schedule Intensity</h3>
+              <p className="text-sm text-gray-600">Weekly schedule distribution analysis</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-2xl font-bold text-gray-900">{schedules.length}</div>
+            <div className="text-xs text-gray-500">Total Schedules</div>
+          </div>
+        </div>
+        
+        <div className="h-64 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={dayIntensityStats} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis 
+                dataKey="day" 
+                tick={{ fontSize: 12 }}
+                stroke="#64748b"
+              />
+              <YAxis 
+                tick={{ fontSize: 12 }}
+                stroke="#64748b"
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar 
+                dataKey="count" 
+                radius={[4, 4, 0, 0]}
+                stroke="#0f172a"
+                strokeWidth={1}
+              >
+                {dayIntensityStats.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        
+        {/* Legend */}
+        <div className="flex flex-wrap items-center justify-center gap-4 mt-4 pt-4 border-t border-gray-100">
+          <div className="flex items-center gap-2 text-xs">
+            <div className="w-3 h-3 rounded bg-gray-400"></div>
+            <span className="text-gray-600">Empty (0)</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <div className="w-3 h-3 rounded bg-green-500"></div>
+            <span className="text-gray-600">Light (1-3)</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <div className="w-3 h-3 rounded bg-blue-500"></div>
+            <span className="text-gray-600">Moderate (4-6)</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <div className="w-3 h-3 rounded bg-yellow-500"></div>
+            <span className="text-gray-600">Busy (7-9)</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <div className="w-3 h-3 rounded bg-red-500"></div>
+            <span className="text-gray-600">Very Busy (10+)</span>
+          </div>
         </div>
       </div>
 
