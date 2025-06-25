@@ -37,7 +37,7 @@ function App() {
     <Router>
       <Routes>
         <Route path="/auth" element={<AuthForm />} />
-        <Route path="/book" element={<Layout />}>
+        <Route path="/" element={<Layout />}>
           <Route index element={<Dashboard />} />
           <Route path="book" element={<BookRoom />} />
           <Route path="checkout" element={<CheckOut />} />
