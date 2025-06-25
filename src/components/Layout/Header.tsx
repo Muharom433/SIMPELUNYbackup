@@ -423,8 +423,10 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                   className="flex items-center space-x-2 p-2 hover:bg-gray-100 rounded-lg"
                 >
                   <div className="hidden sm:block text-right">
-                    <p className="text-sm font-semibold text-gray-900">{user.full_name}</p>
-                    <p className="text-xs text-gray-500">{user.role.replace('_', ' ')}</p>
+                    <p className="text-sm font-semibold text-gray-900">{user.full_name || 'User'}</p>
+                    <p className="text-xs text-gray-500">
+                      {user.role?.replace('_', ' ') || 'user'}
+                    </p>
                   </div>
                   
                   <div className="h-8 w-8 sm:h-10 sm:w-10 bg-blue-500 rounded-lg flex items-center justify-center">
@@ -442,8 +444,10 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                           <UserIcon className="h-6 w-6 text-white" />
                         </div>
                         <div>
-                          <p className="font-semibold text-gray-900">{user.full_name}</p>
-                          <p className="text-sm text-gray-600">{user.role.replace('_', ' ')}</p>
+                          <p className="font-semibold text-gray-900">{user.full_name || 'User'}</p>
+                          <p className="text-sm text-gray-600">
+                            {user.role?.replace('_', ' ') || 'user'}
+                          </p>
                         </div>
                       </div>
                     </div>
