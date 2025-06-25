@@ -86,6 +86,10 @@ const UserManagement: React.FC = () => {
   useEffect(() => {
     if (watchDepartmentId) {
       fetchStudyProgramsByDepartment(watchDepartmentId);
+    } else if (profile?.role === 'super_admin') {
+      // Reset study programs when no department selected for super admin
+      setStudyPrograms([]);
+      form.setValue('study_program_id', '');
     }
   }, [watchDepartmentId]);
 
@@ -134,9 +138,17 @@ const UserManagement: React.FC = () => {
   const fetchStudyPrograms = async () => {
     try {
         let query = supabase.from('study_programs').select('*');
+        
+        // For department admin, always filter by their department
         if (profile?.role === 'department_admin' && profile.department_id) {
             query = query.eq('department_id', profile.department_id);
         }
+        // For super admin, don't load all study programs initially
+        // They will be loaded when a department is selected
+        else if (profile?.role === 'super_admin') {
+            return; // Don't load all study programs initially
+        }
+        
         const { data, error } = await query;
         if (error) throw error;
         setStudyPrograms(data || []);
@@ -357,6 +369,12 @@ const UserManagement: React.FC = () => {
                   role: 'student',
                   department_id: profile?.role === 'department_admin' ? profile.department_id : ''
                 });
+                // Load study programs for department admin
+                if (profile?.role === 'department_admin' && profile.department_id) {
+                  fetchStudyProgramsByDepartment(profile.department_id);
+                } else {
+                  setStudyPrograms([]); // Clear study programs for super admin
+                }
                 setShowModal(true);
               }}
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
@@ -557,12 +575,17 @@ const UserManagement: React.FC = () => {
                   </div>
                 )}
 
-                {/* --- UPDATED: Always show department dropdown for super admin --- */}
+                {/* --- UPDATED: Department selection for super admin --- */}
                 {profile?.role === 'super_admin' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
                     <select
                       {...form.register('department_id')}
+                      onChange={(e) => {
+                        form.setValue('department_id', e.target.value);
+                        // Reset study program when department changes
+                        form.setValue('study_program_id', '');
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">Select Department</option>
@@ -575,21 +598,30 @@ const UserManagement: React.FC = () => {
                   </div>
                 )}
 
-                {/* --- UPDATED: Always show study program dropdown when department is selected or for department admin --- */}
+                {/* --- UPDATED: Study program dropdown with proper filtering --- */}
                 {(watchDepartmentId || profile?.role === 'department_admin') && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Study Program</label>
                     <select
                       {...form.register('study_program_id')}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={!watchDepartmentId && profile?.role === 'super_admin'}
                     >
-                      <option value="">Select Study Program</option>
+                      <option value="">
+                        {!watchDepartmentId && profile?.role === 'super_admin' 
+                          ? 'Select Department First' 
+                          : 'Select Study Program'
+                        }
+                      </option>
                       {studyPrograms.map((program) => (
                         <option key={program.id} value={program.id}>
                           {program.name} ({program.code})
                         </option>
                       ))}
                     </select>
+                    {!watchDepartmentId && profile?.role === 'super_admin' && (
+                      <p className="mt-1 text-sm text-gray-500">Please select a department first to see available study programs</p>
+                    )}
                     {form.formState.errors.study_program_id && (
                       <p className="mt-1 text-sm text-red-600">{form.formState.errors.study_program_id.message}</p>
                     )}
