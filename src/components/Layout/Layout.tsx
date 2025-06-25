@@ -46,9 +46,8 @@ const Layout: React.FC = () => {
       {/* Sidebar Container */}
       <div className={`
         ${sidebarOpen ? 'fixed inset-y-0 left-0 w-80 z-50' : 'hidden'} 
-        lg:block lg:relative lg:z-auto
-        ${sidebarOpen ? 'lg:w-80' : 'lg:w-0'} 
-        transition-all duration-300 ease-in-out lg:overflow-hidden
+        lg:block lg:relative lg:w-80 lg:z-auto
+        transition-all duration-300 ease-in-out
       `}>
         <Sidebar 
           user={user} 
