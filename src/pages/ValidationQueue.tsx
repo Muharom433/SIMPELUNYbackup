@@ -101,7 +101,7 @@ const ValidationQueue: React.FC = () => {
                 equipmentData.forEach(eq => equipmentDetailsMap.set(eq.id, eq));
             }
 
-            let processedData = (checkoutData || []).map(c => ({ ...c, booking: { ...c.booking, room: { ...c.booking.room, equipment: c.booking.room.equipment.map(e => e.equipment).filter(Boolean) }, equipment_requested_details: (c.booking?.equipment_requested || []).map(id => equipmentDetailsMap.get(id)).filter(Boolean) as Equipment[] } }));
+            let processedData = (checkoutData || []).map(c => ({ ...c, booking: { ...c.booking, room: { ...c.booking.room, equipment: c.booking.room.equipment.map((e: any) => e.equipment).filter(Boolean) }, equipment_requested_details: (c.booking?.equipment_requested || []).map(id => equipmentDetailsMap.get(id)).filter(Boolean) as Equipment[] } }));
             
             if (profile?.role === 'department_admin' && profile.department_id) {
                 processedData = processedData.filter(c => c.booking?.room?.department?.id === profile.department_id);
@@ -110,7 +110,7 @@ const ValidationQueue: React.FC = () => {
             const checkoutsWithReports = await Promise.all(
                 processedData.map(async c => {
                     const { data: reports, error } = await supabase.from('checkout_violations').select('*').eq('checkout_id', c.id).order('created_at', { ascending: false }).limit(1);
-                    if (error) return c;
+                    if (error) { console.error(error); return c; }
                     return reports && reports.length > 0 ? { ...c, has_report: true, report: { ...reports[0] } } : { ...c, has_report: false };
                 })
             );
@@ -127,7 +127,10 @@ const ValidationQueue: React.FC = () => {
         setIsDetailLoading(true);
         const { data, error } = await supabase.from('checkout_items').select('*').eq('checkout_id', checkoutId);
         
-        if (error) { toast.error("Failed to load item verification status."); setCheckedItems(new Set()); setConditionNotes({});
+        if (error) {
+            toast.error("Failed to load item verification status.");
+            setCheckedItems(new Set());
+            setConditionNotes({});
         } else {
             const checked = new Set<string>();
             const notes: Record<string, string> = {};
@@ -234,8 +237,8 @@ const ValidationQueue: React.FC = () => {
     }
 
     return (
-        <div className="space-y-6">
-            <div className="bg-gradient-to-r from-orange-600 to-red-600 rounded-xl p-6 text-white"><div className="flex items-center justify-between"><div><h1 className="text-3xl font-bold flex items-center space-x-3"><Bell className="h-8 w-8" /><span>Validation Queue</span></h1><p className="mt-2 opacity-90">Review and validate checkouts</p></div><div className="hidden md:block text-right"><div className="text-2xl font-bold">{checkouts.length}</div><div className="text-sm opacity-80">Items in Queue</div></div></div></div>
+        <div className="space-y-6 p-4 md:p-6">
+            <div className="bg-gradient-to-r from-orange-600 to-red-600 rounded-xl p-6 text-white"><div className="flex items-center justify-between"><div><h1 className="text-3xl font-bold flex items-center space-x-3"><Bell className="h-8 w-8" /><span>Validation Queue</span></h1><p className="mt-2 opacity-90">Review and validate checkouts</p></div><div className="hidden md:block text-right"><div className="text-2xl font-bold">{filteredCheckouts.length}</div><div className="text-sm opacity-80">Items in Queue</div></div></div></div>
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"><div className="flex border-b border-gray-200"><button onClick={() => setActiveTab('room')} className={`flex-1 py-4 px-6 text-center font-medium text-sm transition-colors duration-200 ${ activeTab === 'room' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-500 hover:text-gray-700'}`}>Room Checkouts</button><button onClick={() => setActiveTab('equipment')} className={`flex-1 py-4 px-6 text-center font-medium text-sm transition-colors duration-200 ${ activeTab === 'equipment' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-500 hover:text-gray-700'}`}>Equipment Checkouts</button></div></div>
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between"><div className="relative w-full md:w-auto md:flex-1"><Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" /><input type="text" placeholder="Search by name, purpose, or room..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500" /></div><div className="flex items-center space-x-2 w-full md:w-auto"><button onClick={() => setShowFilters(!showFilters)} className="flex items-center space-x-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"><Filter className="h-4 w-4" /><span>Filters</span>{activeFiltersCount > 0 && (<span className="inline-flex items-center justify-center w-5 h-5 ml-1 text-xs font-bold text-white bg-orange-500 rounded-full">{activeFiltersCount}</span>)}</button><select value={sortOption} onChange={(e) => setSortOption(e.target.value as any)} className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"><option value="date">Sort: Date (Recent)</option><option value="priority">Sort: Priority</option><option value="status">Sort: Status</option></select></div></div>
                 {showFilters && (<div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">Filter by Status</label><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"><option value="all">All Statuses</option><option value="pending">Pending</option><option value="active">Active</option><option value="overdue">Overdue</option><option value="returned">Returned</option></select></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Filter by Date</label><div className="relative"><input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"/>{dateFilter && (<button onClick={() => setDateFilter('')} className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>)}</div></div><div className="md:col-span-2 flex justify-end"><button onClick={() => { setStatusFilter(activeTab === 'room' ? 'returned' : 'all'); setDateFilter(''); }} className="text-sm text-orange-600 hover:text-orange-800 font-medium">Clear Filters</button></div></div>)}
