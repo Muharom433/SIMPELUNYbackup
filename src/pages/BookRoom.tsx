@@ -19,6 +19,7 @@ const bookingSchema = z.object({
     phone_number: z.string().min(10, 'Please enter a valid phone number'),
     room_id: z.string().min(1, 'Please select a room'),
     start_time: z.string().min(1, 'Please select start time'),
+    end_time: z.string().optional(),
     sks: z.number().min(1, 'SKS must be at least 1').max(6, 'SKS cannot exceed 6'),
     class_type: z.enum(['theory', 'practical']),
     equipment_requested: z.array(z.string()).optional(),
@@ -63,6 +64,7 @@ const BookRoom: React.FC = () => {
     const [studyProgramSearchTerm, setStudyProgramSearchTerm] = useState('');
     const [availableEquipment, setAvailableEquipment] = useState<Equipment[]>([]);
     const [checkedEquipment, setCheckedEquipment] = useState<Set<string>>(new Set());
+    const [useManualEndTime, setUseManualEndTime] = useState(false);
 
     const form = useForm<BookingForm>({
         resolver: zodResolver(bookingSchema),
@@ -73,6 +75,8 @@ const BookRoom: React.FC = () => {
     const watchClassType = form.watch('class_type');
     const watchIdentityNumber = form.watch('identity_number');
     const watchStudyProgramId = form.watch('study_program_id');
+    const watchStartTime = form.watch('start_time');
+    const watchEndTime = form.watch('end_time');
 
     const normalizeRoomName = (name: string): string => name ? name.toLowerCase().replace(/[\s.&-]/g, '') : '';
     
@@ -159,7 +163,24 @@ const BookRoom: React.FC = () => {
     const fetchEquipment = async () => { try { const { data, error } = await supabase.from('equipment').select('*').eq('is_available', true); if (error) throw error; setMasterEquipmentList(data || []); } catch (error) { console.error('Error fetching equipment:', error); toast.error('Failed to load equipment.'); } };
     const fetchExistingUsers = async () => { try { const { data, error } = await supabase.from('users').select(`id, identity_number, full_name, email, phone_number, department_id, study_program_id, study_program:study_programs(*, department:departments(*))`).eq('role', 'student').order('full_name'); if (error) throw error; const usersWithPrograms = (data || []).map(user => ({...user, study_program: user.study_program })); setExistingUsers(usersWithPrograms); } catch (error) { console.error('Error fetching users:', error); } };
     const handleNowBooking = () => { const now = new Date(); const formattedNow = format(now, "yyyy-MM-dd'T'HH:mm"); form.setValue('start_time', formattedNow); };
-    const calculateEndTime = (startTime: string, sks: number, classType: string) => { if (!startTime || !sks) return null; const duration = classType === 'theory' ? sks * 50 : sks * 170; const startDate = new Date(startTime); const endDate = addMinutes(startDate, duration); return endDate; };
+    const calculateEndTime = (startTime: string, sks: number, classType: string) => { 
+        if (!startTime || !sks) return null; 
+        const duration = classType === 'theory' ? sks * 50 : sks * 170; 
+        const startDate = new Date(startTime); 
+        const endDate = addMinutes(startDate, duration); 
+        return endDate; 
+    };
+
+    // Auto-update end time when not in manual mode
+    useEffect(() => {
+        if (!useManualEndTime && watchStartTime && watchSks > 0 && watchClassType) {
+            const calculatedEndTime = calculateEndTime(watchStartTime, watchSks, watchClassType);
+            if (calculatedEndTime) {
+                const formattedEndTime = format(calculatedEndTime, "yyyy-MM-dd'T'HH:mm");
+                form.setValue('end_time', formattedEndTime);
+            }
+        }
+    }, [watchStartTime, watchSks, watchClassType, useManualEndTime, form]);
     
     const onSubmit = async (data: BookingForm) => {
         if (!selectedRoom) { toast.error('Please select a room'); return; }
@@ -171,12 +192,40 @@ const BookRoom: React.FC = () => {
                 const idsToUpdate = existingBookings.map(b => b.id);
                 await supabase.from('bookings').update({ status: 'completed' }).in('id', idsToUpdate);
             }
-            const duration = data.class_type === 'theory' ? data.sks * 50 : data.sks * 170;
-            const startDate = new Date(data.start_time);
-            const endDate = addMinutes(startDate, duration);
+            
+            // Use manual end time if set, otherwise calculate automatically
+            let endTime;
+            if (useManualEndTime && data.end_time) {
+                endTime = new Date(data.end_time).toISOString();
+            } else {
+                const duration = data.class_type === 'theory' ? data.sks * 50 : data.sks * 170;
+                const startDate = new Date(data.start_time);
+                const endDate = addMinutes(startDate, duration);
+                endTime = endDate.toISOString();
+            }
+            
             const selectedStudyProgram = studyPrograms.find(sp => sp.id === data.study_program_id);
             const departmentId = selectedStudyProgram?.department_id;
-            const bookingData = { room_id: data.room_id, start_time: data.start_time, end_time: endDate.toISOString(), sks: data.sks, class_type: data.class_type, equipment_requested: Array.from(checkedEquipment), notes: data.notes || null, status: 'pending', purpose: 'Class/Study Session', user_info: profile ? null : { full_name: data.full_name, identity_number: data.identity_number, study_program_id: data.study_program_id, phone_number: data.phone_number, email: `${data.identity_number}@student.edu`, department_id: departmentId, }, user_id: profile?.id || null, };
+            const bookingData = { 
+                room_id: data.room_id, 
+                start_time: data.start_time, 
+                end_time: endTime, 
+                sks: data.sks, 
+                class_type: data.class_type, 
+                equipment_requested: Array.from(checkedEquipment), 
+                notes: data.notes || null, 
+                status: 'pending', 
+                purpose: 'Class/Study Session', 
+                user_info: profile ? null : { 
+                    full_name: data.full_name, 
+                    identity_number: data.identity_number, 
+                    study_program_id: data.study_program_id, 
+                    phone_number: data.phone_number, 
+                    email: `${data.identity_number}@student.edu`, 
+                    department_id: departmentId, 
+                }, 
+                user_id: profile?.id || null, 
+            };
             const { error } = await supabase.from('bookings').insert(bookingData);
             if (error) throw error;
             const { error: roomUpdateError } = await supabase.from('rooms').update({ is_available: false }).eq('id', data.room_id);
@@ -186,6 +235,7 @@ const BookRoom: React.FC = () => {
             setSelectedRoom(null);
             setIdentitySearchTerm('');
             setStudyProgramSearchTerm('');
+            setUseManualEndTime(false);
             fetchRoomsWithStatus();
         } catch (error: any) { console.error('Error creating booking:', error); toast.error(error.message || 'Failed to create booking'); } finally { setLoading(false); }
     };
@@ -641,7 +691,58 @@ return (
                                         </div>
                                     </div>
                                     
-                                    {form.watch('start_time') && watchSks > 0 && (
+                                    {/* End Time Section */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-4">
+                                            <label className="block text-sm font-semibold text-gray-700">End Time</label>
+                                            <div className="flex items-center space-x-3">
+                                                <label className="flex items-center space-x-2 cursor-pointer">
+                                                    <input 
+                                                        type="radio" 
+                                                        checked={!useManualEndTime} 
+                                                        onChange={() => setUseManualEndTime(false)}
+                                                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                                                    />
+                                                    <span className="text-sm font-medium text-gray-700">Auto Calculate</span>
+                                                </label>
+                                                <label className="flex items-center space-x-2 cursor-pointer">
+                                                    <input 
+                                                        type="radio" 
+                                                        checked={useManualEndTime} 
+                                                        onChange={() => setUseManualEndTime(true)}
+                                                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                                                    />
+                                                    <span className="text-sm font-medium text-gray-700">Manual</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        
+                                        {useManualEndTime ? (
+                                            <input 
+                                                {...form.register('end_time')} 
+                                                type="datetime-local" 
+                                                className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200" 
+                                            />
+                                        ) : (
+                                            <div className="px-4 py-3 bg-gray-50/50 border border-gray-200/50 rounded-xl text-gray-600">
+                                                {watchStartTime && watchSks > 0 && watchClassType ? (
+                                                    `Auto-calculated: ${calculateEndTime(watchStartTime, watchSks, watchClassType) ? 
+                                                        format(calculateEndTime(watchStartTime, watchSks, watchClassType)!, "MMM d, yyyy 'at' HH:mm") : 
+                                                        'Invalid calculation'
+                                                    }`
+                                                ) : (
+                                                    'End time will be calculated automatically based on SKS and class type'
+                                                )}
+                                            </div>
+                                        )}
+                                        {form.formState.errors.end_time && (
+                                            <p className="mt-2 text-sm text-red-600 font-medium">
+                                                {form.formState.errors.end_time.message}
+                                            </p>
+                                        )}
+                                    </div>
+                                    
+                                    {watchStartTime && watchSks > 0 && (
                                         <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200/50 rounded-xl p-4">
                                             <div className="flex items-start space-x-3">
                                                 <Clock className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
@@ -649,10 +750,16 @@ return (
                                                     <p className="font-semibold">
                                                         Duration: {watchClassType === 'theory' ? watchSks * 50 : watchSks * 170} minutes
                                                     </p>
-                                                    {calculateEndTime(form.watch('start_time'), watchSks, watchClassType) && (
+                                                    {useManualEndTime && watchEndTime && watchStartTime ? (
                                                         <p className="mt-1">
-                                                            End Time: {format(calculateEndTime(form.watch('start_time'), watchSks, watchClassType)!, "MMM d, yyyy 'at' HH:mm")}
+                                                            Custom Duration: {Math.round((new Date(watchEndTime).getTime() - new Date(watchStartTime).getTime()) / (1000 * 60))} minutes
                                                         </p>
+                                                    ) : (
+                                                        calculateEndTime(watchStartTime, watchSks, watchClassType) && (
+                                                            <p className="mt-1">
+                                                                End Time: {format(calculateEndTime(watchStartTime, watchSks, watchClassType)!, "MMM d, yyyy 'at' HH:mm")}
+                                                            </p>
+                                                        )
                                                     )}
                                                 </div>
                                             </div>
