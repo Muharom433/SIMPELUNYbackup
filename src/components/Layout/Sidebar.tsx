@@ -57,7 +57,10 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
       }
     };
 
-    document.addEventListener('mousedown', handleOutsideClick);
+    if (isOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [isOpen, onClose]);
 
@@ -410,11 +413,11 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
     <div 
       id="mobile-sidebar"
       className={`
-        h-full w-full
+        h-full w-80
         bg-white border-r border-gray-200 
-        lg:bg-white/95 lg:backdrop-blur-sm lg:border-gray-200/50
         flex flex-col
-        ${isOpen ? 'block' : 'hidden lg:flex'}
+        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        transition-transform duration-300 ease-in-out
       `}
     >
       {/* Header */}
