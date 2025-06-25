@@ -133,7 +133,7 @@ export const translations = {
   systemSettings: { en: 'System Settings', id: 'Pengaturan Sistem' },
   
   // Book Room
-  smartRoomBooking: { en: 'Smart Room Booking', id: 'Sistem Pemesanan Ruangan' },
+  smartRoomBooking: { en: 'Smart Room Booking', id: 'Sistem Pelayanan' },
   reserveYourSpace: { en: 'Reserve your perfect study space', id: 'Pesan ruang belajar yang sempurna' },
   availableRooms: { en: 'Available Rooms', id: 'Ruangan Tersedia' },
   bookYourRoom: { en: 'Book Your Room', id: 'Pesan Ruangan Anda' },
