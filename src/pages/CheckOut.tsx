@@ -724,7 +724,7 @@ const CheckOut: React.FC = () => {
                     ) : (
                       <>
                         <CheckCircle className="h-5 w-5" />
-                        <span>Complete Equipment Return</span>
+                        <span>Check Out</span>
                       </>
                     )}
                   </button>
