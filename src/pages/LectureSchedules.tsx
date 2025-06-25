@@ -21,7 +21,7 @@ import {
   Activity,
   TrendingUp
 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line } from 'recharts';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
@@ -393,7 +393,7 @@ const LectureSchedules: React.FC = () => {
         
         <div className="h-64 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={dayIntensityStats} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+            <LineChart data={dayIntensityStats} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis 
                 dataKey="day" 
@@ -405,17 +405,15 @@ const LectureSchedules: React.FC = () => {
                 stroke="#64748b"
               />
               <Tooltip content={<CustomTooltip />} />
-              <Bar 
+              <Line 
+                type="monotone"
                 dataKey="count" 
-                radius={[4, 4, 0, 0]}
-                stroke="#0f172a"
-                strokeWidth={1}
-              >
-                {dayIntensityStats.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Bar>
-            </BarChart>
+                stroke="#0d9488"
+                strokeWidth={3}
+                dot={{ fill: '#0d9488', strokeWidth: 2, r: 6 }}
+                activeDot={{ r: 8, fill: '#0f766e' }}
+              />
+            </LineChart>
           </ResponsiveContainer>
         </div>
         
