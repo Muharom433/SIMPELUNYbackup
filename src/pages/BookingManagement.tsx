@@ -1,6 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import {
-    BookOpen, Search, Eye, Check, X, Clock, Calendar, Users, AlertCircle, CheckCircle, XCircle, RefreshCw, Download, User, Building, Phone
+  BookOpen,
+  Search,
+  Eye,
+  Edit, 
+  Trash2,
+  Check,
+  X,
+  Clock,
+  Calendar,
+  Users,
+  AlertCircle,
+  CheckCircle,
+  XCircle,
+  RefreshCw,
+  Download,
+  User,
+  Building,
+  Phone,
+  Zap,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
