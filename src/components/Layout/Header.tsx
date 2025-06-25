@@ -175,7 +175,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
 
   return (
     <>
-      <header className="bg-white/95 backdrop-blur-sm border-b border-gray-200/50 shadow-sm">
+      <header className="bg-white border-b border-gray-200 shadow-sm relative z-40">
         {/* Main Header Container */}
         <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
           
@@ -510,10 +510,11 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
         </div>
       </header>
 
-      {/* Click outside to close dropdowns */}
+      {/* Click outside to close dropdowns - dengan z-index yang tepat */}
       {(showNotificationsDropdown || showUserDropdown || showLanguageDropdown) && (
         <div
-          className="fixed inset-0 z-40"
+          className="fixed inset-0"
+          style={{ zIndex: 35 }}
           onClick={closeAllDropdowns}
         />
       )}
