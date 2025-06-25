@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 interface SidebarProps {
   user: UserType | null;
@@ -146,6 +147,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
       console.error('Error fetching pending checkouts count:', error);
     }
   };
+
 
   const getMenuItems = () => {
     if (!user) {
