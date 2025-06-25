@@ -219,21 +219,15 @@ const ToolAdministration: React.FC = () => {
         }
     };
 
-    const getStatusChip = (is_available: boolean, condition: string, is_mandatory: boolean = false) => {
+    const getStatusChip = (condition: string, is_mandatory: boolean = false) => {
         const conditionConfig = getConditionConfig(condition);
-        const statusConfig = getStatusConfig(is_available);
         const ConditionIcon = conditionConfig.icon;
-        const StatusIcon = statusConfig.icon;
         
         return (
             <div className="flex flex-col gap-1">
                 <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${conditionConfig.className}`}>
                     <ConditionIcon className="h-3 w-3" />
                     {conditionConfig.label}
-                </span>
-                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${statusConfig.className}`}>
-                    <StatusIcon className="h-3 w-3" />
-                    {statusConfig.label}
                 </span>
                 {is_mandatory && (
                     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
@@ -386,7 +380,7 @@ const ToolAdministration: React.FC = () => {
                                     <div className={`p-2 rounded-lg bg-gradient-to-r ${categoryConfig.color} text-white`}>
                                         <CategoryIcon className="h-5 w-5" />
                                     </div>
-                                    {getStatusChip(eq.is_available, eq.condition, eq.is_mandatory)}
+                                    {getStatusChip(eq.condition, eq.is_mandatory)}
                                 </div>
                                 
                                 <h3 className="font-semibold text-lg text-gray-900 mb-2 hover:text-blue-600 transition-colors">
@@ -394,36 +388,35 @@ const ToolAdministration: React.FC = () => {
                                 </h3>
                                 
                                 <div className="flex items-center gap-2 mb-3">
-                                    <Hash className="h-3 w-3 text-gray-400" />
                                     <span className="text-xs font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded">
                                         {eq.code}
                                     </span>
                                 </div>
 
                                 <div className="space-y-2 text-sm mb-4">
-                                    <div className={`flex items-center gap-2 p-2 rounded ${categoryConfig.bgColor}`}>
-                                        <Layers className="h-3 w-3 text-gray-500" />
-                                        <span className={`font-medium ${categoryConfig.textColor} text-xs`}>{eq.category}</span>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-gray-600">Category</span>
+                                        <span className="font-medium text-gray-900">{eq.category}</span>
                                     </div>
                                     
-                                    <div className="flex items-center gap-2 p-2 rounded bg-slate-50">
-                                        <MapPin className="h-3 w-3 text-gray-500" />
-                                        <span className="text-slate-700 font-medium text-xs">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-gray-600">Location</span>
+                                        <span className="font-medium text-gray-900">
                                             {eq.rooms?.name || 'Unassigned'}
                                         </span>
                                     </div>
                                     
-                                    <div className="flex items-center gap-2 p-2 rounded bg-blue-50">
-                                        <Package className="h-3 w-3 text-gray-500" />
-                                        <span className="text-blue-700 font-medium text-xs">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-gray-600">Quantity</span>
+                                        <span className="font-medium text-gray-900">
                                             {eq.quantity} {eq.unit}
                                         </span>
                                     </div>
 
                                     {eq.rooms?.department?.name && (
-                                        <div className="flex items-center gap-2 p-2 rounded bg-gray-50">
-                                            <Building className="h-3 w-3 text-gray-500" />
-                                            <span className="text-gray-600 font-medium text-xs">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-gray-600">Department</span>
+                                            <span className="font-medium text-gray-900">
                                                 {eq.rooms.department.name}
                                             </span>
                                         </div>
