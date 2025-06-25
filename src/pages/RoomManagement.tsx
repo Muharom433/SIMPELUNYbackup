@@ -320,7 +320,6 @@ const RoomManagement: React.FC = () => {
 
 {showRoomDetail && (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[9999] p-4 transition-opacity duration-300">
-        {/* --- MODIFIED: Removed animation classes that were causing invisibility --- */}
         <div className="bg-gray-50 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
             <div className="p-6 border-b flex justify-between items-center">
                 <div className='flex items-center space-x-3'>
@@ -399,10 +398,42 @@ const RoomManagement: React.FC = () => {
                     </div>
                 </div>
                 
-                {/* Right column for Schedule */}
+                {/* --- RESTORED SCHEDULE PANEL --- */}
                 <div className="lg:col-span-3">
-                    {/* ... Schedule JSX ... */}
+                    <h3 className="text-lg font-semibold text-gray-800 mb-3">Schedule for {searchDay}</h3>
+                    <div className="bg-white p-4 rounded-lg border h-full">
+                        {loadingSchedules ? 
+                            <div className="flex justify-center items-center h-full"><RefreshCw className="animate-spin h-6 w-6 text-gray-500"/></div> : 
+                            roomSchedules.length > 0 ? (
+                                <ul className="space-y-3">
+                                    {roomSchedules.map(schedule => (
+                                        <li key={schedule.id} className="p-4 bg-gray-50/80 rounded-lg border border-gray-200/80">
+                                            <p className="font-semibold text-gray-900">{schedule.course_name}</p>
+                                            <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
+                                                <div className="flex items-center space-x-1.5">
+                                                    <Clock className="h-4 w-4"/>
+                                                    <span>{schedule.start_time?.substring(0,5)} - {schedule.end_time?.substring(0,5)}</span>
+                                                </div>
+                                                <div className="flex items-center space-x-1.5">
+                                                    <Users className="h-4 w-4"/>
+                                                    <span>{schedule.class}</span>
+                                                </div>
+                                            </div>
+                                            <p className="text-xs text-gray-500 mt-2">Prodi: {schedule.subject_study}</p>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <div className="flex flex-col justify-center items-center h-full text-center text-gray-500">
+                                    <CalendarIcon className="h-10 w-10 mb-2"/>
+                                    <p className="font-medium">No schedules</p>
+                                    <p className="text-sm">This room is free on the selected day.</p>
+                                </div>
+                            )
+                        }
+                    </div>
                 </div>
+                {/* --- END OF RESTORED SECTION --- */}
             </div>
         </div>
     </div>
