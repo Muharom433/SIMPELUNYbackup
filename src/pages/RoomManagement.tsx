@@ -316,121 +316,97 @@ const RoomManagement: React.FC = () => {
                 </div>
             )}
 
-            {showRoomDetail && (
-                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[9999] p-4 transition-opacity duration-300">
-                    <div className="bg-gray-50 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col transform transition-all duration-300 scale-95 opacity-0 animate-fade-in-scale">
-                        <div className="p-6 border-b flex justify-between items-center">
-                            <div className='flex items-center space-x-3'>
-                               <div className='bg-blue-100 p-2 rounded-lg'>
-                                <DoorClosed className="h-6 w-6 text-blue-600"/>
-                               </div>
-                               <div>
-                                 <h2 className="text-2xl font-bold text-gray-900">{showRoomDetail.name}</h2>
-                                 <p className="text-sm text-gray-500">{showRoomDetail.department?.name || 'General Use'}</p>
-                               </div>
-                            </div>
-                            <button onClick={() => setShowRoomDetail(null)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full"><X/></button>
-                        </div>
-                        
-                        <div className="p-6 grid grid-cols-1 lg:grid-cols-5 gap-6 overflow-y-auto">
-                            <div className="lg:col-span-2 space-y-6">
+            // Find this entire block in your code and replace it
+
+{showRoomDetail && (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[9999] p-4 transition-opacity duration-300">
+        {/* --- MODIFIED: Removed animation classes that were causing invisibility --- */}
+        <div className="bg-gray-50 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+            <div className="p-6 border-b flex justify-between items-center">
+                <div className='flex items-center space-x-3'>
+                    <div className='bg-blue-100 p-2 rounded-lg'>
+                    <DoorClosed className="h-6 w-6 text-blue-600"/>
+                    </div>
+                    <div>
+                        <h2 className="text-2xl font-bold text-gray-900">{showRoomDetail.name}</h2>
+                        <p className="text-sm text-gray-500">{showRoomDetail.department?.name || 'General Use'}</p>
+                    </div>
+                </div>
+                <button onClick={() => setShowRoomDetail(null)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full"><X/></button>
+            </div>
+            
+            <div className="p-6 grid grid-cols-1 lg:grid-cols-5 gap-6 overflow-y-auto">
+                {/* Left column for Room Info and Equipment */}
+                <div className="lg:col-span-2 space-y-6">
+                    {/* Room Information Panel */}
+                    <div>
+                        <h3 className="text-lg font-semibold text-gray-800 mb-3">Room Information</h3>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
+                                <Hash className="h-5 w-5 text-gray-400"/>
                                 <div>
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-3">Room Information</h3>
-                                    <div className="grid grid-cols-2 gap-4 text-sm">
-                                        <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
-                                            <Hash className="h-5 w-5 text-gray-400"/>
-                                            <div>
-                                                <p className="text-gray-500">Code</p>
-                                                <p className="font-semibold text-gray-800">{showRoomDetail.code}</p>
-                                            </div>
-                                        </div>
-                                        <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
-                                            <Users className="h-5 w-5 text-gray-400"/>
-                                            <div>
-                                                <p className="text-gray-500">Capacity</p>
-                                                <p className="font-semibold text-gray-800">{showRoomDetail.capacity} seats</p>
-                                            </div>
-                                        </div>
-                                        <div className={`bg-white p-3 rounded-lg border flex items-center space-x-3 col-span-2`}>
-                                            {showRoomDetail.status === 'Available' ? 
-                                                <CheckCircle className="h-5 w-5 text-green-500"/> : 
-                                                <AlertCircle className="h-5 w-5 text-red-500"/>
-                                            }
-                                            <div>
-                                                <p className="text-gray-500">Current Status</p>
-                                                <p className={`font-semibold ${showRoomDetail.status === 'Available' ? 'text-green-600' : 'text-red-600'}`}>
-                                                    {showRoomDetail.status === 'Available' ? 'FREE' : 'BOOKED'}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-3">Equipment</h3>
-                                    <div className="space-y-2">
-                                        {masterEquipmentList.map((eq) => {
-                                            const Icon = iconMap[eq.icon_name || 'Zap'] || Zap;
-                                            const isChecked = roomEquipmentLinks.some(link => link.equipment_id === eq.id);
-                                            const isProcessing = isUpdatingEquipment === eq.id;
-                                            return (
-                                                <label key={eq.id} className="flex items-center justify-between p-3 bg-white rounded-lg border hover:bg-gray-50 transition-colors">
-                                                    <div className="flex items-center space-x-3">
-                                                        <Icon className="h-5 w-5 text-gray-500" />
-                                                        <div>
-                                                            <span className="font-medium text-gray-800">{eq.name}</span>
-                                                            <span className="block text-xs text-gray-500">{eq.category}</span>
-                                                        </div>
-                                                    </div>
-                                                    {isProcessing ? 
-                                                        <Loader2 className="h-5 w-5 animate-spin text-gray-400"/> : 
-                                                        <input type="checkbox" checked={isChecked} onChange={(e) => handleEquipmentChange(eq.id, e.target.checked)} className="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"/>
-                                                    }
-                                                </label>
-                                            );
-                                        })}
-                                        {masterEquipmentList.length === 0 && <p className="text-sm text-gray-500 text-center py-4">No master equipment data found.</p>}
-                                    </div>
+                                    <p className="text-gray-500">Code</p>
+                                    <p className="font-semibold text-gray-800">{showRoomDetail.code}</p>
                                 </div>
                             </div>
-                            
-                            <div className="lg:col-span-3">
-                                <h3 className="text-lg font-semibold text-gray-800 mb-3">Schedule for {searchDay}</h3>
-                                <div className="bg-white p-4 rounded-lg border h-full">
-                                    {loadingSchedules ? 
-                                        <div className="flex justify-center items-center h-full"><RefreshCw className="animate-spin h-6 w-6 text-gray-500"/></div> : 
-                                        roomSchedules.length > 0 ? (
-                                            <ul className="space-y-3">
-                                                {roomSchedules.map(schedule => (
-                                                    <li key={schedule.id} className="p-4 bg-gray-50/80 rounded-lg border border-gray-200/80">
-                                                        <p className="font-semibold text-gray-900">{schedule.course_name}</p>
-                                                        <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
-                                                            <div className="flex items-center space-x-1.5">
-                                                                <Clock className="h-4 w-4"/>
-                                                                <span>{schedule.start_time?.substring(0,5)} - {schedule.end_time?.substring(0,5)}</span>
-                                                            </div>
-                                                            <div className="flex items-center space-x-1.5">
-                                                                <Users className="h-4 w-4"/>
-                                                                <span>{schedule.class}</span>
-                                                            </div>
-                                                        </div>
-                                                        <p className="text-xs text-gray-500 mt-2">Prodi: {schedule.subject_study}</p>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        ) : (
-                                            <div className="flex flex-col justify-center items-center h-full text-center text-gray-500">
-                                                <CalendarIcon className="h-10 w-10 mb-2"/>
-                                                <p className="font-medium">No schedules</p>
-                                                <p className="text-sm">This room is free on the selected day.</p>
-                                            </div>
-                                        )
-                                    }
+                            <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
+                                <Users className="h-5 w-5 text-gray-400"/>
+                                <div>
+                                    <p className="text-gray-500">Capacity</p>
+                                    <p className="font-semibold text-gray-800">{showRoomDetail.capacity} seats</p>
+                                </div>
+                            </div>
+                            <div className={`bg-white p-3 rounded-lg border flex items-center space-x-3 col-span-2`}>
+                                {showRoomDetail.status === 'Available' ? 
+                                    <CheckCircle className="h-5 w-5 text-green-500"/> : 
+                                    <AlertCircle className="h-5 w-5 text-red-500"/>
+                                }
+                                <div>
+                                    <p className="text-gray-500">Current Status</p>
+                                    <p className={`font-semibold ${showRoomDetail.status === 'Available' ? 'text-green-600' : 'text-red-600'}`}>
+                                        {showRoomDetail.status === 'Available' ? 'FREE' : 'BOOKED'}
+                                    </p>
                                 </div>
                             </div>
                         </div>
                     </div>
+                    {/* Equipment Panel */}
+                    <div>
+                        <h3 className="text-lg font-semibold text-gray-800 mb-3">Equipment</h3>
+                        <div className="space-y-2">
+                            {masterEquipmentList.map((eq) => {
+                                const Icon = iconMap[eq.icon_name || 'Zap'] || Zap;
+                                const isChecked = roomEquipmentLinks.some(link => link.equipment_id === eq.id);
+                                const isProcessing = isUpdatingEquipment === eq.id;
+                                return (
+                                    <label key={eq.id} className="flex items-center justify-between p-3 bg-white rounded-lg border hover:bg-gray-50 transition-colors">
+                                        <div className="flex items-center space-x-3">
+                                            <Icon className="h-5 w-5 text-gray-500" />
+                                            <div>
+                                                <span className="font-medium text-gray-800">{eq.name}</span>
+                                                <span className="block text-xs text-gray-500">{eq.category}</span>
+                                            </div>
+                                        </div>
+                                        {isProcessing ? 
+                                            <Loader2 className="h-5 w-5 animate-spin text-gray-400"/> : 
+                                            <input type="checkbox" checked={isChecked} onChange={(e) => handleEquipmentChange(eq.id, e.target.checked)} className="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"/>
+                                        }
+                                    </label>
+                                );
+                            })}
+                            {masterEquipmentList.length === 0 && <p className="text-sm text-gray-500 text-center py-4">No master equipment data found.</p>}
+                        </div>
+                    </div>
                 </div>
-            )}
+                
+                {/* Right column for Schedule */}
+                <div className="lg:col-span-3">
+                    {/* ... Schedule JSX ... */}
+                </div>
+            </div>
+        </div>
+    </div>
+)}
         </div>
     );
 };
