@@ -1,56 +1,65 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Menu, 
-  Bell, 
-  LogOut, 
-  LogIn, 
-  Settings, 
-  User as UserIcon, 
-  CheckSquare,
+import { NavLink } from 'react-router-dom';
+import {
+  LayoutDashboard,
   Calendar,
+  Package,
+  CheckCircle,
+  BookOpen,
+  Users,
+  Building,
+  Settings,
+  User,
+  FileText,
+  BarChart3,
   Clock,
-  ChevronDown,
-  Sparkles,
+  GraduationCap,
+  Wrench,
+  ClipboardCheck,
+  MapPin,
+  CalendarCheck,
+  CheckSquare,
   X,
-  Globe
+  ChevronRight,
+  Sparkles,
+  Home,
+  PieChart,
+  Zap,
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
-import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../../contexts/LanguageContext';
 
-interface HeaderProps {
+interface SidebarProps {
   user: UserType | null;
-  onMenuClick: () => void;
-  onSignOut: () => void;
-  onSignIn: () => void;
+  isOpen: boolean;
+  onClose: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn }) => {
+const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
   const [pendingBookingsCount, setPendingBookingsCount] = useState(0);
   const [pendingCheckoutsCount, setPendingCheckoutsCount] = useState(0);
-  const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
-  const [showUserDropdown, setShowUserDropdown] = useState(false);
-  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const navigate = useNavigate();
   
   // Use language context
-  const { 
-    currentLanguage, 
-    setLanguage, 
-    getText, 
-    formatTime, 
-    formatDate, 
-    getLanguageLabel, 
-    getLanguageFlag 
-  } = useLanguage();
+  const { getText } = useLanguage();
 
+  // Close sidebar when clicking outside on mobile
   useEffect(() => {
-    // Update time every minute
-    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
-    return () => clearInterval(timer);
-  }, []);
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (isOpen && window.innerWidth < 1024) {
+        const target = event.target as Element;
+        const sidebar = document.getElementById('mobile-sidebar');
+        const menuButton = document.querySelector('[aria-label="Toggle menu"]');
+        
+        if (sidebar && !sidebar.contains(target) && !menuButton?.contains(target)) {
+          onClose();
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     if (user && (user.role === 'super_admin' || user.role === 'department_admin')) {
@@ -59,7 +68,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
       
       // Set up real-time subscription for pending bookings
       const bookingSubscription = supabase
-        .channel('pending-bookings')
+        .channel('sidebar-pending-bookings')
         .on('postgres_changes', 
           { 
             event: '*', 
@@ -75,7 +84,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
 
       // Set up real-time subscription for pending checkouts
       const checkoutSubscription = supabase
-        .channel('pending-checkouts')
+        .channel('sidebar-pending-checkouts')
         .on('postgres_changes', 
           { 
             event: '*', 
@@ -160,365 +169,391 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
     }
   };
 
-  const totalNotifications = pendingBookingsCount + pendingCheckoutsCount;
+  const getMenuItems = () => {
+    if (!user) {
+      // Public/Non-logged student access
+      return [
+        { 
+          icon: Home, 
+          label: getText('Dashboard', 'Dasbor'), 
+          path: '/', 
+          badge: null, 
+          color: 'from-blue-500 to-indigo-500' 
+        },
+        { 
+          icon: Calendar, 
+          label: getText('Book Room', 'Pesan Ruangan'), 
+          path: '/book', 
+          badge: null, 
+          color: 'from-emerald-500 to-teal-500' 
+        },
+        { 
+          icon: Package, 
+          label: getText('Tool Lending', 'Peminjaman Alat'), 
+          path: '/tools', 
+          badge: null, 
+          color: 'from-purple-500 to-pink-500' 
+        },
+        { 
+          icon: CheckCircle, 
+          label: getText('Check Out', 'Pengembalian'), 
+          path: '/checkout', 
+          badge: null, 
+          color: 'from-orange-500 to-red-500' 
+        },
+      ];
+    }
 
-  const changeLanguage = (lang: 'en' | 'id') => {
-    setLanguage(lang);
-    setShowLanguageDropdown(false);
+    const baseItems = [
+      { 
+        icon: Home, 
+        label: getText('Dashboard', 'Dasbor'), 
+        path: '/', 
+        badge: null, 
+        color: 'from-blue-500 to-indigo-500' 
+      },
+      { 
+        icon: Calendar, 
+        label: getText('Book Room', 'Pesan Ruangan'), 
+        path: '/book', 
+        badge: null, 
+        color: 'from-emerald-500 to-teal-500' 
+      },
+      { 
+        icon: Package, 
+        label: getText('Tool Lending', 'Peminjaman Alat'), 
+        path: '/tools', 
+        badge: null, 
+        color: 'from-purple-500 to-pink-500' 
+      },
+      { 
+        icon: CheckCircle, 
+        label: getText('Check Out', 'Pengembalian'), 
+        path: '/checkout', 
+        badge: null, 
+        color: 'from-orange-500 to-red-500' 
+      },
+      { 
+        icon: User, 
+        label: getText('Profile', 'Profil'), 
+        path: '/profile', 
+        badge: null, 
+        color: 'from-gray-500 to-slate-500' 
+      },
+    ];
+
+    if (user.role === 'department_admin') {
+      // Department admin menu
+      return [
+        { 
+          icon: PieChart, 
+          label: getText('Department Analytics', 'Analitik Departemen'), 
+          path: '/department-analytics', 
+          badge: null, 
+          color: 'from-blue-500 to-indigo-500' 
+        },
+        { 
+          icon: CalendarCheck, 
+          label: getText('Exam Management', 'Manajemen Ujian'), 
+          path: '/exams', 
+          badge: null, 
+          color: 'from-emerald-500 to-teal-500' 
+        },
+        { 
+          icon: Clock, 
+          label: getText('Exam Schedules', 'Jadwal Ujian'), 
+          path: '/exam-schedules', 
+          badge: null, 
+          color: 'from-purple-500 to-pink-500' 
+        },
+        { 
+          icon: BookOpen, 
+          label: getText('Department Bookings', 'Pemesanan Departemen'), 
+          path: '/department-bookings', 
+          badge: null, 
+          color: 'from-orange-500 to-red-500' 
+        },
+        { 
+          icon: FileText, 
+          label: getText('Department Reports', 'Laporan Departemen'), 
+          path: '/department-reports', 
+          badge: null, 
+          color: 'from-teal-500 to-cyan-500' 
+        },
+        { 
+          icon: Wrench, 
+          label: getText('Equipment Management', 'Manajemen Peralatan'), 
+          path: '/department-equipment', 
+          badge: null, 
+          color: 'from-indigo-500 to-purple-500' 
+        },
+        { 
+          icon: Users, 
+          label: getText('User Management', 'Manajemen Pengguna'), 
+          path: '/users', 
+          badge: null, 
+          color: 'from-pink-500 to-rose-500' 
+        },
+        { 
+          icon: User, 
+          label: getText('Profile', 'Profil'), 
+          path: '/profile', 
+          badge: null, 
+          color: 'from-gray-500 to-slate-500' 
+        },
+      ];
+    }
+
+    if (user.role === 'super_admin') {
+      return [
+        { 
+          icon: BarChart3, 
+          label: getText('System Analytics', 'Analitik Sistem'), 
+          path: '/', 
+          badge: null, 
+          color: 'from-blue-500 to-indigo-500' 
+        },
+        { 
+          icon: Building, 
+          label: getText('Room Management', 'Manajemen Ruangan'), 
+          path: '/rooms', 
+          badge: null, 
+          color: 'from-emerald-500 to-teal-500' 
+        },
+        { 
+          icon: Users, 
+          label: getText('User Management', 'Manajemen Pengguna'), 
+          path: '/users', 
+          badge: null, 
+          color: 'from-purple-500 to-pink-500' 
+        },
+        { 
+          icon: MapPin, 
+          label: getText('Departments', 'Departemen'), 
+          path: '/departments', 
+          badge: null, 
+          color: 'from-orange-500 to-red-500' 
+        },
+        { 
+          icon: GraduationCap, 
+          label: getText('Study Programs', 'Program Studi'), 
+          path: '/study-programs', 
+          badge: null, 
+          color: 'from-teal-500 to-cyan-500' 
+        },
+        { 
+          icon: Calendar, 
+          label: getText('Booking Management', 'Manajemen Pemesanan'), 
+          path: '/bookings', 
+          badge: pendingBookingsCount > 0 ? pendingBookingsCount : null, 
+          color: 'from-indigo-500 to-purple-500' 
+        },
+        { 
+          icon: ClipboardCheck, 
+          label: getText('Validation Queue', 'Antrian Validasi'), 
+          path: '/validation', 
+          badge: pendingCheckoutsCount > 0 ? pendingCheckoutsCount : null, 
+          color: 'from-pink-500 to-rose-500' 
+        },
+        { 
+          icon: CheckSquare, 
+          label: getText('Checkout Validation', 'Validasi Pengembalian'), 
+          path: '/checkout-validation', 
+          badge: null, 
+          color: 'from-amber-500 to-orange-500' 
+        },
+        { 
+          icon: Clock, 
+          label: getText('Lecture Schedules', 'Jadwal Kuliah'), 
+          path: '/schedules', 
+          badge: null, 
+          color: 'from-lime-500 to-emerald-500' 
+        },
+        { 
+          icon: CalendarCheck, 
+          label: getText('Exam Management', 'Manajemen Ujian'), 
+          path: '/exams', 
+          badge: null, 
+          color: 'from-sky-500 to-blue-500' 
+        },
+        { 
+          icon: Wrench, 
+          label: getText('Tool Administration', 'Administrasi Alat'), 
+          path: '/tool-admin', 
+          badge: null, 
+          color: 'from-violet-500 to-purple-500' 
+        },
+        { 
+          icon: FileText, 
+          label: getText('Reports', 'Laporan'), 
+          path: '/reports', 
+          badge: null, 
+          color: 'from-rose-500 to-pink-500' 
+        },
+        { 
+          icon: Settings, 
+          label: getText('System Settings', 'Pengaturan Sistem'), 
+          path: '/settings', 
+          badge: null, 
+          color: 'from-gray-500 to-slate-500' 
+        },
+      ];
+    }
+
+    // Regular student menu items
+    return baseItems;
   };
 
-  const closeAllDropdowns = () => {
-    setShowNotificationsDropdown(false);
-    setShowUserDropdown(false);
-    setShowLanguageDropdown(false);
-  };
+  const menuItems = getMenuItems();
 
   return (
-    <>
-      <header className="bg-white border-b border-gray-200 shadow-sm lg:bg-white/95 lg:backdrop-blur-sm lg:border-gray-200/50">
-        {/* Main Header Container */}
-        <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
-          
-          {/* Left Section - Menu & Brand */}
-          <div className="flex items-center space-x-4 flex-shrink-0">
-            {/* Mobile Menu Button */}
-            <button
-              onClick={onMenuClick}
-              className="p-2 rounded-xl text-gray-600 hover:text-gray-900 hover:bg-gray-100 lg:hidden transition-all duration-200"
-              aria-label="Toggle menu"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-            
-            {/* Brand */}
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl shadow-lg flex-shrink-0">
-                <Sparkles className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-              </div>
-              <div className="hidden sm:block">
-                <h1 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent whitespace-nowrap">
-                  SIMPEL Kuliah
-                </h1>
-                <p className="text-xs sm:text-sm text-gray-600 font-medium whitespace-nowrap">
-                  {getText('Smart Campus Management', 'Sistem Manajemen Kampus Cerdas')}
-                </p>
-              </div>
-            </div>
+    <div 
+      id="mobile-sidebar"
+      className={`
+        h-full w-full
+        bg-white border-r border-gray-200 
+        lg:bg-white/95 lg:backdrop-blur-sm lg:border-gray-200/50
+        flex flex-col
+        ${isOpen ? 'block' : 'hidden lg:flex'}
+      `}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200/50 flex-shrink-0">
+        <div className="flex items-center space-x-3 min-w-0 flex-1">
+          <div className="p-2 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl shadow-lg flex-shrink-0">
+            <Sparkles className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
           </div>
-
-          {/* Center Section - Language Switcher (Hidden on small screens) */}
-          <div className="hidden lg:flex flex-1 justify-center max-w-xs mx-8">
-            <div className="relative">
-              <button
-                onClick={() => {
-                  setShowLanguageDropdown(!showLanguageDropdown);
-                  setShowNotificationsDropdown(false);
-                  setShowUserDropdown(false);
-                }}
-                className="flex items-center space-x-3 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-all duration-200 min-w-[160px] justify-center"
-              >
-                <Globe className="h-4 w-4 text-gray-500 flex-shrink-0" />
-                <div className="flex items-center space-x-2">
-                  <span className="text-base">{getLanguageFlag(currentLanguage)}</span>
-                  <span className="text-sm font-medium text-gray-700 truncate">{getLanguageLabel(currentLanguage)}</span>
-                </div>
-                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 flex-shrink-0 ${showLanguageDropdown ? 'rotate-180' : ''}`} />
-              </button>
-
-              {/* Language Dropdown */}
-              {showLanguageDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
-                  <div className="p-1">
-                    {(['en', 'id'] as const).map((lang) => (
-                      <button
-                        key={lang}
-                        onClick={() => changeLanguage(lang)}
-                        className={`w-full flex items-center space-x-3 px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-all duration-200 ${
-                          currentLanguage === lang ? 'bg-blue-50 border border-blue-200' : ''
-                        }`}
-                      >
-                        <span className="text-base">{getLanguageFlag(lang)}</span>
-                        <span className={`text-sm font-medium flex-1 ${
-                          currentLanguage === lang ? 'text-blue-700' : 'text-gray-700'
-                        }`}>
-                          {getLanguageLabel(lang)}
-                        </span>
-                        {currentLanguage === lang && (
-                          <div className="h-2 w-2 bg-blue-500 rounded-full flex-shrink-0"></div>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Right Section - Actions */}
-          <div className="flex items-center space-x-2 sm:space-x-3 flex-shrink-0">
-            {/* Time Display (Hidden on mobile) */}
-            <div className="hidden xl:flex items-center space-x-2 px-3 py-2 bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl border border-gray-200">
-              <Clock className="h-4 w-4 text-gray-500 flex-shrink-0" />
-              <div className="text-right">
-                <div className="text-sm font-bold text-gray-800">{formatTime(currentTime)}</div>
-                <div className="text-xs text-gray-500 leading-none">{formatDate(currentTime).split(',')[0]}</div>
-              </div>
-            </div>
-
-            {user && (
-              <>
-                {/* Notifications */}
-                <div className="relative">
-                  <button 
-                    className="relative p-2 sm:p-2.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-all duration-200"
-                    onClick={() => {
-                      setShowNotificationsDropdown(!showNotificationsDropdown);
-                      setShowUserDropdown(false);
-                      setShowLanguageDropdown(false);
-                    }}
-                    aria-label="Notifications"
-                  >
-                    <Bell className="h-5 w-5" />
-                    {totalNotifications > 0 && (
-                      <div className="absolute -top-1 -right-1">
-                        <span className="flex h-4 w-4 sm:h-5 sm:w-5 items-center justify-center bg-gradient-to-r from-red-500 to-pink-500 rounded-full shadow-lg">
-                          <span className="text-xs text-white font-bold">
-                            {totalNotifications > 99 ? '99+' : totalNotifications}
-                          </span>
-                        </span>
-                        <span className="absolute inset-0 bg-gradient-to-r from-red-400 to-pink-400 rounded-full animate-ping opacity-30"></span>
-                      </div>
-                    )}
-                  </button>
-
-                  {/* Notifications Dropdown */}
-                  {showNotificationsDropdown && (
-                    <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-2xl border border-gray-200 z-50 overflow-hidden">
-                      <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-lg font-bold text-gray-900">
-                            {getText('Notifications', 'Notifikasi')}
-                          </h3>
-                          <button
-                            onClick={() => setShowNotificationsDropdown(false)}
-                            className="p-1 rounded-lg hover:bg-white/60 transition-colors duration-200"
-                          >
-                            <X className="h-4 w-4 text-gray-500" />
-                          </button>
-                        </div>
-                      </div>
-                      
-                      <div className="max-h-80 overflow-y-auto">
-                        {totalNotifications === 0 ? (
-                          <div className="p-8 text-center">
-                            <div className="p-4 bg-gray-100 rounded-xl w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                              <Bell className="h-8 w-8 text-gray-400" />
-                            </div>
-                            <p className="text-gray-500 font-medium">
-                              {getText('No new notifications', 'Tidak ada notifikasi baru')}
-                            </p>
-                            <p className="text-sm text-gray-400 mt-1">
-                              {getText("You're all caught up!", 'Semua sudah terbaca!')}
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="p-2 space-y-2">
-                            {pendingBookingsCount > 0 && (
-                              <div 
-                                className="p-4 hover:bg-blue-50 cursor-pointer rounded-xl transition-all duration-200"
-                                onClick={() => {
-                                  navigate('/bookings');
-                                  setShowNotificationsDropdown(false);
-                                }}
-                              >
-                                <div className="flex items-start space-x-3">
-                                  <div className="p-2 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl shadow-lg flex-shrink-0">
-                                    <Calendar className="h-5 w-5 text-white" />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-semibold text-gray-900">
-                                      {getText('Pending Room Bookings', 'Pemesanan Ruangan Menunggu')}
-                                    </p>
-                                    <p className="text-sm text-gray-600 mt-1">
-                                      {pendingBookingsCount} {getText('booking', 'pemesanan')}{pendingBookingsCount !== 1 ? (currentLanguage === 'id' ? '' : 's') : ''} {getText('waiting for approval', 'menunggu persetujuan')}
-                                    </p>
-                                    <div className="flex items-center mt-2">
-                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                        {getText('Action Required', 'Aksi Diperlukan')}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                            
-                            {pendingCheckoutsCount > 0 && (
-                              <div 
-                                className="p-4 hover:bg-emerald-50 cursor-pointer rounded-xl transition-all duration-200"
-                                onClick={() => {
-                                  navigate('/validation');
-                                  setShowNotificationsDropdown(false);
-                                }}
-                              >
-                                <div className="flex items-start space-x-3">
-                                  <div className="p-2 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl shadow-lg flex-shrink-0">
-                                    <CheckSquare className="h-5 w-5 text-white" />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-semibold text-gray-900">
-                                      {getText('Pending Checkouts', 'Pengembalian Menunggu')}
-                                    </p>
-                                    <p className="text-sm text-gray-600 mt-1">
-                                      {pendingCheckoutsCount} {getText('checkout', 'pengembalian')}{pendingCheckoutsCount !== 1 ? (currentLanguage === 'id' ? '' : 's') : ''} {getText('waiting for approval', 'menunggu persetujuan')}
-                                    </p>
-                                    <div className="flex items-center mt-2">
-                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
-                                        {getText('Review Needed', 'Perlu Ditinjau')}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      
-                      {totalNotifications > 0 && (
-                        <div className="p-3 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-blue-50">
-                          <button 
-                            className="w-full text-center text-sm text-blue-600 hover:text-blue-800 font-semibold transition-colors duration-200"
-                            onClick={() => setShowNotificationsDropdown(false)}
-                          >
-                            {getText('Mark all as read', 'Tandai semua sebagai telah dibaca')}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Settings (Hidden on small screens) */}
-                <button className="hidden sm:block p-2.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-all duration-200">
-                  <Settings className="h-5 w-5" />
-                </button>
-
-                {/* User Menu */}
-                <div className="relative">
-                  <button
-                    onClick={() => {
-                      setShowUserDropdown(!showUserDropdown);
-                      setShowNotificationsDropdown(false);
-                      setShowLanguageDropdown(false);
-                    }}
-                    className="flex items-center space-x-2 sm:space-x-3 p-1.5 sm:p-2 hover:bg-gray-100 rounded-xl transition-all duration-200"
-                  >
-                    {/* User Info (Hidden on small screens) */}
-                    <div className="hidden sm:block text-right">
-                      <p className="text-sm font-semibold text-gray-900 truncate max-w-32">{user.full_name}</p>
-                      <p className="text-xs text-gray-500 capitalize">{user.role.replace('_', ' ')}</p>
-                    </div>
-                    
-                    {/* Avatar */}
-                    <div className="relative flex-shrink-0">
-                      <div className="h-8 w-8 sm:h-10 sm:w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center shadow-lg">
-                        <UserIcon className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
-                      </div>
-                      <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 sm:h-4 sm:w-4 bg-emerald-400 border-2 border-white rounded-full">
-                        <div className="h-full w-full bg-emerald-400 rounded-full animate-pulse"></div>
-                      </div>
-                    </div>
-                    
-                    <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 flex-shrink-0 ${showUserDropdown ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {/* User Dropdown */}
-                  {showUserDropdown && (
-                    <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-2xl border border-gray-200 z-50 overflow-hidden">
-                      <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
-                        <div className="flex items-center space-x-3">
-                          <div className="h-12 w-12 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
-                            <UserIcon className="h-6 w-6 text-white" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-gray-900 truncate">{user.full_name}</p>
-                            <p className="text-sm text-gray-600 capitalize">{user.role.replace('_', ' ')}</p>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="p-2">
-                        <button
-                          onClick={() => {
-                            navigate('/profile');
-                            setShowUserDropdown(false);
-                          }}
-                          className="w-full flex items-center space-x-3 p-3 text-left hover:bg-gray-50 rounded-xl transition-colors duration-200"
-                        >
-                          <UserIcon className="h-4 w-4 text-gray-500 flex-shrink-0" />
-                          <span className="text-sm font-medium text-gray-700">
-                            {getText('View Profile', 'Lihat Profil')}
-                          </span>
-                        </button>
-                        
-                        <button
-                          onClick={() => {
-                            navigate('/settings');
-                            setShowUserDropdown(false);
-                          }}
-                          className="w-full flex items-center space-x-3 p-3 text-left hover:bg-gray-50 rounded-xl transition-colors duration-200"
-                        >
-                          <Settings className="h-4 w-4 text-gray-500 flex-shrink-0" />
-                          <span className="text-sm font-medium text-gray-700">
-                            {getText('Settings', 'Pengaturan')}
-                          </span>
-                        </button>
-                      </div>
-                      
-                      <div className="p-2 border-t border-gray-200">
-                        <button
-                          onClick={() => {
-                            onSignOut();
-                            setShowUserDropdown(false);
-                          }}
-                          className="w-full flex items-center space-x-3 p-3 text-left hover:bg-red-50 rounded-xl transition-colors duration-200 text-red-600 hover:text-red-700"
-                        >
-                          <LogOut className="h-4 w-4 flex-shrink-0" />
-                          <span className="text-sm font-medium">
-                            {getText('Sign Out', 'Keluar')}
-                          </span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {!user && (
-              <button
-                onClick={onSignIn}
-                className="flex items-center space-x-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
-              >
-                <LogIn className="h-4 w-4 flex-shrink-0" />
-                <span className="hidden sm:inline">
-                  {getText('Sign In', 'Masuk')}
-                </span>
-              </button>
-            )}
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent truncate">
+              SIMPEL Kuliah
+            </h2>
+            <p className="text-xs sm:text-sm text-gray-600 font-medium truncate">
+              {getText('Smart Campus Management', 'Sistem Manajemen Kampus Cerdas')}
+            </p>
           </div>
         </div>
-      </header>
+        <button
+          onClick={onClose}
+          className="p-2 rounded-xl text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors duration-200 lg:hidden flex-shrink-0"
+          aria-label="Close sidebar"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
 
-      {/* Click outside to close dropdowns - only for desktop dropdowns */}
-      {(showNotificationsDropdown || showUserDropdown || showLanguageDropdown) && (
-        <div
-          className="fixed inset-0 z-30 lg:z-40"
-          onClick={closeAllDropdowns}
-        />
+      {/* User Info */}
+      {user && (
+        <div className="p-4 sm:p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200/50 flex-shrink-0">
+          <div className="flex items-center space-x-3 sm:space-x-4">
+            <div className="relative flex-shrink-0">
+              <div className="h-12 w-12 sm:h-14 sm:w-14 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center shadow-lg">
+                <User className="h-6 w-6 sm:h-7 sm:w-7 text-white" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 h-4 w-4 sm:h-5 sm:w-5 bg-emerald-400 border-2 border-white rounded-full">
+                <div className="h-full w-full bg-emerald-400 rounded-full animate-pulse"></div>
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-base sm:text-lg font-bold text-gray-900 truncate">{user.full_name}</p>
+              <p className="text-xs sm:text-sm text-gray-600 capitalize truncate">
+                {getText(
+                  user.role.replace('_', ' '), 
+                  user.role === 'super_admin' ? 'Super Admin' :
+                  user.role === 'department_admin' ? 'Admin Departemen' :
+                  user.role === 'student' ? 'Mahasiswa' :
+                  user.role === 'lecturer' ? 'Dosen' : user.role
+                )}
+              </p>
+              <div className="flex items-center mt-1">
+                <div className="h-2 w-2 bg-emerald-400 rounded-full mr-2 flex-shrink-0"></div>
+                <span className="text-xs text-emerald-600 font-medium">
+                  {getText('Online', 'Online')}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
-    </>
+
+      {/* Navigation Menu */}
+      <nav className="flex-1 overflow-y-auto py-4 sm:py-6">
+        <div className="px-3 sm:px-4 space-y-1 sm:space-y-2">
+          {menuItems.map((item, index) => {
+            const Icon = item.icon;
+            return (
+              <NavLink
+                key={index}
+                to={item.path}
+                onClick={onClose}
+                className={({ isActive }) =>
+                  `group flex items-center justify-between px-3 sm:px-4 py-3 sm:py-3.5 rounded-xl font-medium transition-all duration-200 ${
+                    isActive
+                      ? 'bg-gradient-to-r text-white shadow-lg transform scale-[1.02]'
+                      : 'text-gray-700 hover:bg-white/60 hover:text-gray-900 hover:shadow-md hover:scale-[1.01]'
+                  } ${isActive ? item.color : ''}`
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
+                      <div className={`p-2 sm:p-2.5 rounded-xl transition-all duration-200 flex-shrink-0 ${
+                        isActive 
+                          ? 'bg-white/20 shadow-lg' 
+                          : 'bg-gray-100/50 group-hover:bg-white/80'
+                      }`}>
+                        <Icon className={`h-4 w-4 sm:h-5 sm:w-5 transition-colors duration-200 ${
+                          isActive ? 'text-white' : 'text-gray-600 group-hover:text-gray-800'
+                        }`} />
+                      </div>
+                      <span className="text-sm font-semibold truncate">
+                        {item.label}
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2 flex-shrink-0">
+                      {item.badge && (
+                        <span className={`inline-flex items-center justify-center px-2 sm:px-2.5 py-1 rounded-full text-xs font-bold transition-all duration-200 ${
+                          isActive
+                            ? 'bg-white/20 text-white'
+                            : 'bg-red-100 text-red-600 group-hover:bg-red-200'
+                        }`}>
+                          {item.badge > 99 ? '99+' : item.badge}
+                        </span>
+                      )}
+                      
+                      <ChevronRight className={`h-4 w-4 transition-all duration-200 ${
+                        isActive 
+                          ? 'text-white/70 transform translate-x-1' 
+                          : 'text-gray-400 group-hover:text-gray-600 group-hover:transform group-hover:translate-x-1'
+                      }`} />
+                    </div>
+                  </>
+                )}
+              </NavLink>
+            );
+          })}
+        </div>
+      </nav>
+
+      {/* Footer */}
+      <div className="p-4 sm:p-6 border-t border-gray-200/50 bg-gradient-to-r from-gray-50 to-blue-50 flex-shrink-0">
+        <div className="text-center">
+          <p className="text-xs text-gray-500 mb-2">
+            {getText('Powered by', 'Didukung oleh')}
+          </p>
+          <div className="flex items-center justify-center space-x-2">
+            <Zap className="h-4 w-4 text-blue-500 flex-shrink-0" />
+            <span className="text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+              SIMPEL Technology
+            </span>
+          </div>
+          <p className="text-xs text-gray-400 mt-1">
+            {getText('Version 2.0.1', 'Versi 2.0.1')}
+          </p>
+        </div>
+      </div>
+    </div>
   );
 };
 
-export default Header;
+export default Sidebar;
