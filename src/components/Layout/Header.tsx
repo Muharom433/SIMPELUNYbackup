@@ -17,7 +17,7 @@ import {
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { useLanguage, translations } from '../Translate/LanguageContext';
+import { useLanguage, translations } from '../../Translate/LanguageContext';
 
 interface HeaderProps {
   user: UserType | null;
