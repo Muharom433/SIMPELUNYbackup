@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -27,6 +27,7 @@ import {
   Lock,
   GraduationCap,
   BookOpen,
+  ChevronDown,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -51,6 +52,125 @@ type UserForm = z.infer<typeof userSchema>;
 interface UserWithDepartment extends UserType {
   department?: Department;
 }
+
+// Searchable Dropdown Component
+interface SearchableDropdownProps {
+  options: { id: string; name: string; code?: string }[];
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  disabled?: boolean;
+  searchPlaceholder?: string;
+  emptyMessage?: string;
+}
+
+const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
+  options,
+  value,
+  onChange,
+  placeholder,
+  disabled = false,
+  searchPlaceholder = "Search...",
+  emptyMessage = "No options found"
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const selectedOption = options.find(option => option.id === value);
+  
+  const filteredOptions = options.filter(option =>
+    option.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (option.code && option.code.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+        setSearchTerm('');
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSelect = (optionId: string) => {
+    onChange(optionId);
+    setIsOpen(false);
+    setSearchTerm('');
+  };
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-left flex items-center justify-between ${
+          disabled ? 'bg-gray-100 cursor-not-allowed text-gray-500' : 'hover:border-gray-400'
+        }`}
+      >
+        <span className={selectedOption ? 'text-gray-900' : 'text-gray-500'}>
+          {selectedOption 
+            ? `${selectedOption.name}${selectedOption.code ? ` (${selectedOption.code})` : ''}`
+            : placeholder
+          }
+        </span>
+        <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && !disabled && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-hidden">
+          <div className="p-2 border-b border-gray-200">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder={searchPlaceholder}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-8 pr-3 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                autoFocus
+              />
+            </div>
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            {value && (
+              <button
+                type="button"
+                onClick={() => handleSelect('')}
+                className="w-full px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100"
+              >
+                Clear selection
+              </button>
+            )}
+            {filteredOptions.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-gray-500 text-center">
+                {emptyMessage}
+              </div>
+            ) : (
+              filteredOptions.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => handleSelect(option.id)}
+                  className={`w-full px-3 py-2 text-left text-sm hover:bg-blue-50 hover:text-blue-900 ${
+                    option.id === value ? 'bg-blue-100 text-blue-900' : 'text-gray-900'
+                  }`}
+                >
+                  {option.name}
+                  {option.code && <span className="text-gray-500"> ({option.code})</span>}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const UserManagement: React.FC = () => {
   const { profile } = useAuth();
@@ -575,50 +695,44 @@ const UserManagement: React.FC = () => {
                   </div>
                 )}
 
-                {/* --- UPDATED: Department selection for super admin --- */}
+                {/* --- UPDATED: Department selection with searchable dropdown --- */}
                 {profile?.role === 'super_admin' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                    <select
-                      {...form.register('department_id')}
-                      onChange={(e) => {
-                        form.setValue('department_id', e.target.value);
-                        // Reset study program when department changes
-                        form.setValue('study_program_id', '');
+                    <SearchableDropdown
+                      options={departments.map(dept => ({ id: dept.id, name: dept.name }))}
+                      value={form.watch('department_id') || ''}
+                      onChange={(value) => {
+                        form.setValue('department_id', value);
+                        form.setValue('study_program_id', ''); // Reset study program
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">Select Department</option>
-                      {departments.map((dept) => (
-                        <option key={dept.id} value={dept.id}>
-                          {dept.name}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Select Department"
+                      searchPlaceholder="Search departments..."
+                      emptyMessage="No departments found"
+                    />
                   </div>
                 )}
 
-                {/* --- UPDATED: Study program dropdown with proper filtering --- */}
+                {/* --- UPDATED: Study program with searchable dropdown --- */}
                 {(watchDepartmentId || profile?.role === 'department_admin') && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Study Program</label>
-                    <select
-                      {...form.register('study_program_id')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    <SearchableDropdown
+                      options={studyPrograms.map(program => ({ 
+                        id: program.id, 
+                        name: program.name, 
+                        code: program.code 
+                      }))}
+                      value={form.watch('study_program_id') || ''}
+                      onChange={(value) => form.setValue('study_program_id', value)}
+                      placeholder={!watchDepartmentId && profile?.role === 'super_admin' 
+                        ? 'Select Department First' 
+                        : 'Select Study Program'
+                      }
                       disabled={!watchDepartmentId && profile?.role === 'super_admin'}
-                    >
-                      <option value="">
-                        {!watchDepartmentId && profile?.role === 'super_admin' 
-                          ? 'Select Department First' 
-                          : 'Select Study Program'
-                        }
-                      </option>
-                      {studyPrograms.map((program) => (
-                        <option key={program.id} value={program.id}>
-                          {program.name} ({program.code})
-                        </option>
-                      ))}
-                    </select>
+                      searchPlaceholder="Search study programs..."
+                      emptyMessage="No study programs found"
+                    />
                     {!watchDepartmentId && profile?.role === 'super_admin' && (
                       <p className="mt-1 text-sm text-gray-500">Please select a department first to see available study programs</p>
                     )}
