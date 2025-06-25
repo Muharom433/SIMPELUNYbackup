@@ -17,6 +17,10 @@ import {
   ChevronDown,
   Zap,
   Building,
+  FileText,
+  Upload,
+  Check,
+  ExternalLink,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
@@ -381,326 +385,390 @@ const CheckOut: React.FC = () => {
   });
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-green-600 to-teal-600 rounded-xl p-6 text-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center space-x-3">
-              <Package className="h-8 w-8" />
-              <span>Equipment Check Out</span>
-            </h1>
-            <p className="mt-2 opacity-90">
-              Complete your equipment return and report any issues
-            </p>
-          </div>
-          <div className="hidden md:block text-right">
-            <div className="text-2xl font-bold">{approvedBookings.length}</div>
-            <div className="text-sm opacity-80">Approved Bookings</div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-50 to-teal-50">
+      {/* Header Section */}
+      <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 sticky top-0 z-40">
+        <div className="max-w-6xl mx-auto px-4 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <div className="p-3 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl shadow-lg">
+                <Package className="h-8 w-8 text-white" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+                  Equipment Check Out
+                </h1>
+                <p className="text-gray-600 mt-1">Complete your equipment return and report any issues</p>
+              </div>
+            </div>
+            <div className="hidden md:block">
+              <div className="text-right">
+                <div className="text-2xl font-bold text-gray-800">{approvedBookings.length}</div>
+                <div className="text-sm text-gray-500">Approved Bookings</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Check Out Form */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-6">Complete Equipment Return</h2>
-
-        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-          {/* Search and Select Booking */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Search Your Approved Booking *
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search by name, ID, room, or purpose..."
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setShowBookingDropdown(true);
-                }}
-                onFocus={() => setShowBookingDropdown(true)}
-                className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
-              />
-              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left Column - Booking Search */}
+          <div className="lg:col-span-1 space-y-6">
+            <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+              <div className="flex items-center space-x-3 mb-6">
+                <Search className="h-5 w-5 text-emerald-500" />
+                <h2 className="text-xl font-bold text-gray-800">Find Your Booking</h2>
+              </div>
               
-              {showBookingDropdown && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-80 overflow-y-auto">
-                  {loading ? (
-                    <div className="px-4 py-8 text-center">
-                      <RefreshCw className="h-6 w-6 animate-spin text-green-600 mx-auto mb-2" />
-                      <span className="text-gray-600">Loading bookings...</span>
-                    </div>
-                  ) : filteredBookings.length === 0 ? (
-                    <div className="px-4 py-8 text-center text-gray-500">
-                      <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                      <p>No approved bookings found</p>
-                      <p className="text-sm">Try a different search term</p>
-                    </div>
-                  ) : (
-                    filteredBookings.map((booking) => (
-                      <div
-                        key={booking.id}
-                        onClick={() => {
-                          form.setValue('booking_id', booking.id);
-                          setSearchTerm(`${booking.user?.full_name || booking.user_info?.full_name || 'Unknown'} - ${booking.room?.name || 'Unknown Room'}`);
-                          setShowBookingDropdown(false);
-                        }}
-                        className="px-4 py-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-3 mb-2">
-                              <div className="h-10 w-10 bg-gradient-to-r from-green-500 to-teal-500 rounded-full flex items-center justify-center">
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search by name, ID, room..."
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setShowBookingDropdown(true);
+                  }}
+                  onFocus={() => setShowBookingDropdown(true)}
+                  className="w-full pl-12 pr-4 py-4 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-transparent transition-all duration-200 placeholder-gray-400"
+                />
+                <ChevronDown className="absolute right-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                
+                {showBookingDropdown && (
+                  <div className="absolute z-20 w-full mt-2 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-2xl max-h-96 overflow-y-auto">
+                    {loading ? (
+                      <div className="flex flex-col items-center justify-center py-12">
+                        <RefreshCw className="h-8 w-8 animate-spin text-emerald-600 mb-3" />
+                        <span className="text-gray-600 font-medium">Loading bookings...</span>
+                      </div>
+                    ) : filteredBookings.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12">
+                        <Package className="h-12 w-12 text-gray-300 mb-3" />
+                        <p className="text-gray-500 font-medium">No approved bookings found</p>
+                        <p className="text-sm text-gray-400">Try a different search term</p>
+                      </div>
+                    ) : (
+                      <div className="p-2">
+                        {filteredBookings.map((booking) => (
+                          <div
+                            key={booking.id}
+                            onClick={() => {
+                              form.setValue('booking_id', booking.id);
+                              setSearchTerm(`${booking.user?.full_name || booking.user_info?.full_name || 'Unknown'} - ${booking.room?.name || 'Unknown Room'}`);
+                              setShowBookingDropdown(false);
+                            }}
+                            className="p-4 hover:bg-emerald-50 cursor-pointer rounded-xl border border-transparent hover:border-emerald-200 transition-all duration-200 mb-2 last:mb-0"
+                          >
+                            <div className="flex items-start space-x-3">
+                              <div className="h-10 w-10 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full flex items-center justify-center flex-shrink-0">
                                 <User className="h-5 w-5 text-white" />
                               </div>
-                              <div>
-                                <div className="font-medium text-gray-900">
+                              <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-gray-900 truncate">
                                   {booking.user?.full_name || booking.user_info?.full_name || 'Unknown User'}
                                 </div>
-                                <div className="text-sm text-gray-600">
+                                <div className="text-sm text-gray-600 mb-2">
                                   {booking.user?.identity_number || booking.user_info?.identity_number || 'No ID'}
                                 </div>
-                              </div>
-                            </div>
-                            
-                            <div className="grid grid-cols-2 gap-4 text-sm">
-                              <div className="flex items-center space-x-2">
-                                <Building className="h-4 w-4 text-gray-400" />
-                                <span>{booking.room?.name || 'Unknown Room'}</span>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <Package className="h-4 w-4 text-gray-400" />
-                                <span>{booking.equipment_requested?.length || 0} items</span>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <Calendar className="h-4 w-4 text-gray-400" />
-                                <span>{format(new Date(booking.start_time), 'MMM d, yyyy')}</span>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <Clock className="h-4 w-4 text-gray-400" />
-                                <span>{format(new Date(booking.start_time), 'h:mm a')} - {format(new Date(booking.end_time), 'h:mm a')}</span>
-                              </div>
-                            </div>
-
-                            {booking.equipment_requested && booking.equipment_requested.length > 0 && (
-                              <div className="mt-2">
-                                <div className="text-xs text-gray-500 mb-1">Equipment:</div>
-                                <div className="flex flex-wrap gap-1">
-                                  {booking.equipment_requested.slice(0, 3).map((item, index) => (
-                                    <span
-                                      key={index}
-                                      className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800"
-                                    >
-                                      {item}
-                                    </span>
-                                  ))}
-                                  {booking.equipment_requested.length > 3 && (
-                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                      +{booking.equipment_requested.length - 3} more
-                                    </span>
-                                  )}
+                                
+                                <div className="space-y-1">
+                                  <div className="flex items-center text-xs text-gray-500">
+                                    <Building className="h-3 w-3 mr-1" />
+                                    <span className="truncate">{booking.room?.name || 'Unknown Room'}</span>
+                                  </div>
+                                  <div className="flex items-center text-xs text-gray-500">
+                                    <Calendar className="h-3 w-3 mr-1" />
+                                    <span>{format(new Date(booking.start_time), 'MMM d, yyyy')}</span>
+                                  </div>
+                                  <div className="flex items-center text-xs text-gray-500">
+                                    <Package className="h-3 w-3 mr-1" />
+                                    <span>{booking.equipment_requested?.length || 0} items</span>
+                                  </div>
                                 </div>
                               </div>
-                            )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              {form.formState.errors.booking_id && (
+                <p className="mt-2 text-sm text-red-600 font-medium">
+                  {form.formState.errors.booking_id.message}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Right Column - Checkout Form */}
+          <div className="lg:col-span-2">
+            <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+              <div className="flex items-center space-x-3 mb-8">
+                <div className="p-2 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg">
+                  <CheckCircle className="h-5 w-5 text-white" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-800">Complete Equipment Return</h2>
+              </div>
+
+              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
+                {/* Selected Booking Details */}
+                {selectedBooking && (
+                  <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/50 rounded-2xl p-6">
+                    <div className="flex items-center space-x-3 mb-6">
+                      <CheckCircle className="h-6 w-6 text-emerald-600" />
+                      <h3 className="text-xl font-bold text-emerald-900">Selected Booking Details</h3>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                      <div className="space-y-3">
+                        <div>
+                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">User Information</span>
+                          <div className="mt-1">
+                            <div className="font-bold text-emerald-900">
+                              {selectedBooking.user?.full_name || selectedBooking.user_info?.full_name || 'Unknown User'}
+                            </div>
+                            <div className="text-emerald-700">
+                              {selectedBooking.user?.identity_number || selectedBooking.user_info?.identity_number || 'No ID'}
+                            </div>
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">Date & Time</span>
+                          <div className="mt-1">
+                            <div className="font-bold text-emerald-900">{format(new Date(selectedBooking.start_time), 'MMM d, yyyy')}</div>
+                            <div className="text-emerald-700">
+                              {format(new Date(selectedBooking.start_time), 'h:mm a')} - {format(new Date(selectedBooking.end_time), 'h:mm a')}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-            {form.formState.errors.booking_id && (
-              <p className="mt-1 text-sm text-red-600">
-                {form.formState.errors.booking_id.message}
-              </p>
-            )}
-          </div>
-
-          {/* Selected Booking Details */}
-          {selectedBooking && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <h3 className="text-lg font-medium text-green-900 mb-3">Selected Booking Details</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-green-700 font-medium">User:</span>
-                  <div className="text-green-800">
-                    {selectedBooking.user?.full_name || selectedBooking.user_info?.full_name || 'Unknown User'}
-                  </div>
-                  <div className="text-green-600">
-                    {selectedBooking.user?.identity_number || selectedBooking.user_info?.identity_number || 'No ID'}
-                  </div>
-                </div>
-                <div>
-                  <span className="text-green-700 font-medium">Location:</span>
-                  <div className="text-green-800">{selectedBooking.room?.name || 'Unknown Room'}</div>
-                  <div className="text-green-600">{selectedBooking.purpose || 'No purpose specified'}</div>
-                </div>
-                <div>
-                  <span className="text-green-700 font-medium">Date:</span>
-                  <div className="text-green-800">{format(new Date(selectedBooking.start_time), 'MMM d, yyyy')}</div>
-                </div>
-                <div>
-                  <span className="text-green-700 font-medium">Time:</span>
-                  <div className="text-green-800">
-                    {format(new Date(selectedBooking.start_time), 'h:mm a')} - {format(new Date(selectedBooking.end_time), 'h:mm a')}
-                  </div>
-                </div>
-              </div>
-              
-              {selectedBooking.equipment_requested && selectedBooking.equipment_requested.length > 0 && (
-                <div className="mt-4">
-                  <span className="text-green-700 font-medium">Requested Equipment:</span>
-                  <div className="mt-2 space-y-2">
-                    {selectedBooking.equipment_requested.map((item, index) => (
-                      <div key={index} className="flex items-center justify-between p-2 bg-white rounded border border-green-200">
-                        <div className="flex items-center space-x-3">
-                          <Zap className="h-4 w-4 text-green-600" />
-                          <div className="font-medium text-gray-900">{item}</div>
+                      
+                      <div className="space-y-3">
+                        <div>
+                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">Location</span>
+                          <div className="mt-1">
+                            <div className="font-bold text-emerald-900">{selectedBooking.room?.name || 'Unknown Room'}</div>
+                            <div className="text-emerald-700">{selectedBooking.room?.code || ''}</div>
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">Purpose</span>
+                          <div className="mt-1">
+                            <div className="font-bold text-emerald-900">{selectedBooking.purpose || 'No purpose specified'}</div>
+                          </div>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Issue Reporting Toggle */}
-          <div className="border-t border-gray-200 pt-6">
-            <div className="flex items-center space-x-3">
-              <input
-                {...form.register('has_issues')}
-                type="checkbox"
-                className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
-              />
-              <label className="text-sm font-medium text-gray-700">
-                Report an issue or problem
-              </label>
-            </div>
-            <p className="mt-1 text-sm text-gray-500">
-              Check this if you experienced any problems with the equipment or facilities
-            </p>
-          </div>
-
-          {/* Issue Report Form - Simplified */}
-          {showReportForm && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 space-y-4">
-              <div className="flex items-center space-x-2 mb-4">
-                <AlertTriangle className="h-5 w-5 text-yellow-600" />
-                <h3 className="text-lg font-medium text-yellow-900">Issue Report</h3>
-              </div>
-
-              {/* Issue Category */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Issue Category *
-                </label>
-                <select
-                  {...form.register('report_category')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
-                >
-                  <option value="equipment">Equipment Issues</option>
-                  <option value="room_condition">Room Condition</option>
-                  <option value="cleanliness">Cleanliness</option>
-                  <option value="safety">Safety</option>
-                  <option value="maintenance">Maintenance</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-
-              {/* Issue Description */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Issue Description *
-                </label>
-                <textarea
-                  {...form.register('report_description')}
-                  rows={4}
-                  placeholder="Please describe the issue in detail..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
-                />
-              </div>
-
-              {/* Photo Upload */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Attach Photos (Optional)
-                </label>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-center w-full">
-                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
-                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        {uploadingImage ? (
-                          <RefreshCw className="h-8 w-8 text-gray-400 animate-spin mb-2" />
-                        ) : (
-                          <Camera className="h-8 w-8 text-gray-400 mb-2" />
-                        )}
-                        <p className="mb-2 text-sm text-gray-500">
-                          <span className="font-semibold">Click to upload</span> or drag and drop
-                        </p>
-                        <p className="text-xs text-gray-500">PNG, JPG up to 5MB</p>
-                      </div>
-                      <input
-                        type="file"
-                        className="hidden"
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        disabled={uploadingImage}
-                      />
-                    </label>
-                  </div>
-
-                  {/* Uploaded Images */}
-                  {attachments.length > 0 && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      {attachments.map((attachment, index) => (
-                        <div key={index} className="relative group">
-                          <img
-                            src={attachment}
-                            alt={`Attachment ${index + 1}`}
-                            className="w-full h-24 object-cover rounded-lg border border-gray-200"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeAttachment(index)}
-                            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                      ))}
                     </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+                    
+                    {selectedBooking.equipment_requested && selectedBooking.equipment_requested.length > 0 && (
+                      <div>
+                        <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide mb-3 block">Requested Equipment</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {selectedBooking.equipment_requested.map((item, index) => (
+                            <div key={index} className="flex items-center p-3 bg-white/60 rounded-xl border border-emerald-200/50">
+                              <div className="h-8 w-8 bg-emerald-100 rounded-lg flex items-center justify-center mr-3">
+                                <Zap className="h-4 w-4 text-emerald-600" />
+                              </div>
+                              <div className="font-medium text-emerald-900">{item}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-          {/* Submit Button */}
-          <div className="flex space-x-3 pt-6">
-            <button
-              type="submit"
-              disabled={loading || !selectedBooking}
-              className="flex-1 flex items-center justify-center space-x-2 px-6 py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-            >
-              {loading ? (
-                <RefreshCw className="h-5 w-5 animate-spin" />
-              ) : (
-                <CheckCircle className="h-5 w-5" />
-              )}
-              <span>{loading ? 'Processing...' : 'Complete Check Out'}</span>
-            </button>
+                {/* Issue Reporting Toggle */}
+                <div className="border-t border-gray-200/50 pt-8">
+                  <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200/50 rounded-2xl p-6">
+                    <div className="flex items-start space-x-4">
+                      <input
+                        {...form.register('has_issues')}
+                        type="checkbox"
+                        className="h-5 w-5 text-yellow-600 focus:ring-yellow-500 border-gray-300 rounded mt-1 transition-all duration-200"
+                      />
+                      <div className="flex-1">
+                        <label className="text-lg font-semibold text-yellow-900 cursor-pointer">
+                          Report an issue or problem
+                        </label>
+                        <p className="mt-2 text-sm text-yellow-700">
+                          Check this if you experienced any problems with the equipment, room condition, or facilities during your booking.
+                        </p>
+                      </div>
+                      <AlertTriangle className="h-6 w-6 text-yellow-600 flex-shrink-0" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Issue Report Form */}
+                {showReportForm && (
+                  <div className="bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200/50 rounded-2xl p-6 space-y-6">
+                    <div className="flex items-center space-x-3 mb-6">
+                      <FileText className="h-6 w-6 text-orange-600" />
+                      <h3 className="text-xl font-bold text-orange-900">Issue Report Details</h3>
+                    </div>
+
+                    {/* Issue Category */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-3">
+                        Issue Category *
+                      </label>
+                      <select
+                        {...form.register('report_category')}
+                        className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-transparent transition-all duration-200"
+                      >
+                        <option value="equipment">Equipment Issues</option>
+                        <option value="room_condition">Room Condition</option>
+                        <option value="cleanliness">Cleanliness</option>
+                        <option value="safety">Safety</option>
+                        <option value="maintenance">Maintenance</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+
+                    {/* Issue Description */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-3">
+                        Issue Description *
+                      </label>
+                      <textarea
+                        {...form.register('report_description')}
+                        rows={4}
+                        placeholder="Please describe the issue in detail. Include what happened, when it occurred, and any relevant context..."
+                        className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-transparent transition-all duration-200 placeholder-gray-400"
+                      />
+                    </div>
+
+                    {/* Photo Upload */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-3">
+                        Attach Photos (Optional)
+                      </label>
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-center w-full">
+                          <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-gray-300/50 border-dashed rounded-xl cursor-pointer bg-gradient-to-b from-gray-50/50 to-white/50 hover:from-gray-100/50 hover:to-gray-50/50 transition-all duration-200">
+                            <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                              {uploadingImage ? (
+                                <div className="flex flex-col items-center">
+                                  <RefreshCw className="h-10 w-10 text-gray-400 animate-spin mb-3" />
+                                  <p className="text-sm text-gray-500 font-medium">Uploading image...</p>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col items-center">
+                                  <div className="p-3 bg-gray-100 rounded-full mb-3">
+                                    <Camera className="h-8 w-8 text-gray-400" />
+                                  </div>
+                                  <p className="mb-2 text-sm text-gray-600 font-semibold">
+                                    Click to upload or drag and drop
+                                  </p>
+                                  <p className="text-xs text-gray-500">PNG, JPG up to 5MB</p>
+                                </div>
+                              )}
+                            </div>
+                            <input
+                              type="file"
+                              className="hidden"
+                              accept="image/*"
+                              onChange={handleImageUpload}
+                              disabled={uploadingImage}
+                            />
+                          </label>
+                        </div>
+
+                        {/* Uploaded Images */}
+                        {attachments.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-semibold text-gray-700 mb-3">Uploaded Images ({attachments.length})</h4>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                              {attachments.map((attachment, index) => (
+                                <div key={index} className="relative group">
+                                  <img
+                                    src={attachment}
+                                    alt={`Attachment ${index + 1}`}
+                                    className="w-full h-24 object-cover rounded-xl border border-gray-200/50 shadow-sm"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => removeAttachment(index)}
+                                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-lg hover:bg-red-600 hover:scale-110"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 rounded-xl transition-all duration-200"></div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Submit Button */}
+                <div className="flex space-x-4 pt-8 border-t border-gray-200/50">
+                  <button
+                    type="submit"
+                    disabled={loading || !selectedBooking}
+                    className="flex-1 flex items-center justify-center space-x-3 px-8 py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-xl hover:from-emerald-700 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl disabled:hover:shadow-lg"
+                  >
+                    {loading ? (
+                      <>
+                        <RefreshCw className="h-5 w-5 animate-spin" />
+                        <span>Processing Checkout...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="h-5 w-5" />
+                        <span>Complete Equipment Return</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Additional Information */}
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-2xl p-6">
+                  <div className="flex items-start space-x-3">
+                    <div className="p-2 bg-blue-100 rounded-lg">
+                      <ExternalLink className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold text-blue-900 mb-2">What happens next?</h3>
+                      <ul className="space-y-2 text-sm text-blue-800">
+                        <li className="flex items-center space-x-2">
+                          <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                          <span>Your booking will be marked as completed</span>
+                        </li>
+                        <li className="flex items-center space-x-2">
+                          <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                          <span>Equipment will be checked and processed for return</span>
+                        </li>
+                        <li className="flex items-center space-x-2">
+                          <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                          <span>Any reported issues will be forwarded to the maintenance team</span>
+                        </li>
+                        <li className="flex items-center space-x-2">
+                          <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                          <span>You'll receive a confirmation notification</span>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </form>
+            </div>
           </div>
-        </form>
+        </div>
       </div>
 
       {/* Click outside to close dropdown */}
       {showBookingDropdown && (
         <div
-          className="fixed inset-0 z-5"
+          className="fixed inset-0 z-10"
           onClick={() => setShowBookingDropdown(false)}
         />
       )}
