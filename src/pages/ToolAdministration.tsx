@@ -21,6 +21,7 @@ const equipmentSchema = z.object({
   rooms_id: z.string().optional().nullable(),
   is_mandatory: z.boolean().optional(),
   is_available: z.boolean().optional(),
+  condition: z.enum(['GOOD', 'BROKEN', 'MAINTENANCE']).default('GOOD'),
   Spesification: z.string().optional(),
   quantity: z.number().min(0, 'Quantity cannot be negative'),
   unit: z.string().min(1, 'Unit is required (e.g., pcs, set)'),
@@ -47,17 +48,17 @@ const ToolAdministration: React.FC = () => {
 
     const form = useForm<EquipmentForm>({
         resolver: zodResolver(equipmentSchema),
-        defaultValues: { is_mandatory: false, is_available: true, quantity: 1 },
+        defaultValues: { is_mandatory: false, is_available: true, condition: 'GOOD', quantity: 1 },
     });
 
     const categories = [
-        { name: 'Audio Visual', icon: Camera, color: 'from-purple-500 to-pink-500', bgColor: 'bg-purple-50', textColor: 'text-purple-700' },
-        { name: 'Computing', icon: Cpu, color: 'from-blue-500 to-cyan-500', bgColor: 'bg-blue-50', textColor: 'text-blue-700' },
-        { name: 'Connectivity', icon: Wifi, color: 'from-green-500 to-emerald-500', bgColor: 'bg-green-50', textColor: 'text-green-700' },
-        { name: 'Power', icon: Zap, color: 'from-yellow-500 to-orange-500', bgColor: 'bg-yellow-50', textColor: 'text-yellow-700' },
-        { name: 'Laboratory', icon: FlaskConical, color: 'from-red-500 to-rose-500', bgColor: 'bg-red-50', textColor: 'text-red-700' },
-        { name: 'Furniture', icon: Armchair, color: 'from-indigo-500 to-purple-500', bgColor: 'bg-indigo-50', textColor: 'text-indigo-700' },
-        { name: 'Safety', icon: Shield, color: 'from-gray-500 to-slate-500', bgColor: 'bg-gray-50', textColor: 'text-gray-700' }
+        { name: 'Audio Visual', icon: Camera, color: 'from-violet-400 to-purple-400', bgColor: 'bg-violet-50', textColor: 'text-violet-600' },
+        { name: 'Computing', icon: Cpu, color: 'from-blue-400 to-indigo-400', bgColor: 'bg-blue-50', textColor: 'text-blue-600' },
+        { name: 'Connectivity', icon: Wifi, color: 'from-emerald-400 to-green-400', bgColor: 'bg-emerald-50', textColor: 'text-emerald-600' },
+        { name: 'Power', icon: Zap, color: 'from-amber-400 to-yellow-400', bgColor: 'bg-amber-50', textColor: 'text-amber-600' },
+        { name: 'Laboratory', icon: FlaskConical, color: 'from-rose-400 to-pink-400', bgColor: 'bg-rose-50', textColor: 'text-rose-600' },
+        { name: 'Furniture', icon: Armchair, color: 'from-slate-400 to-gray-400', bgColor: 'bg-slate-50', textColor: 'text-slate-600' },
+        { name: 'Safety', icon: Shield, color: 'from-orange-400 to-red-400', bgColor: 'bg-orange-50', textColor: 'text-orange-600' }
     ];
 
     useEffect(() => {
@@ -100,6 +101,7 @@ const ToolAdministration: React.FC = () => {
                 category: data.category,
                 is_mandatory: data.is_mandatory,
                 is_available: data.is_available,
+                condition: data.condition,
                 rooms_id: data.rooms_id || null,
                 Spesification: data.Spesification,
                 quantity: data.quantity,
@@ -138,6 +140,7 @@ const ToolAdministration: React.FC = () => {
             category: eq.category,
             is_mandatory: eq.is_mandatory,
             is_available: eq.is_available,
+            condition: eq.condition,
             rooms_id: eq.rooms_id,
             Spesification: eq.Spesification || '',
             quantity: eq.quantity,
@@ -172,34 +175,69 @@ const ToolAdministration: React.FC = () => {
         return categories.find(cat => cat.name === categoryName) || categories[0];
     };
 
-    const getStatusConfig = (is_available: boolean, is_mandatory: boolean) => {
+    const getConditionConfig = (condition: string) => {
+        switch (condition) {
+            case 'GOOD':
+                return {
+                    icon: CheckCircle,
+                    label: 'GOOD',
+                    className: 'bg-green-100 text-green-700 border border-green-200'
+                };
+            case 'BROKEN':
+                return {
+                    icon: XCircle,
+                    label: 'BROKEN',
+                    className: 'bg-red-100 text-red-700 border border-red-200'
+                };
+            case 'MAINTENANCE':
+                return {
+                    icon: AlertTriangle,
+                    label: 'MAINTENANCE',
+                    className: 'bg-yellow-100 text-yellow-700 border border-yellow-200'
+                };
+            default:
+                return {
+                    icon: AlertCircle,
+                    label: 'UNKNOWN',
+                    className: 'bg-gray-100 text-gray-700 border border-gray-200'
+                };
+        }
+    };
+
+    const getStatusConfig = (is_available: boolean) => {
         if (is_available) {
             return {
                 icon: CheckCircle,
                 label: 'AVAILABLE',
-                className: 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                className: 'bg-blue-50 text-blue-700 border border-blue-200'
             };
         } else {
             return {
                 icon: XCircle,
                 label: 'IN USE',
-                className: 'bg-red-100 text-red-800 border border-red-200'
+                className: 'bg-gray-100 text-gray-600 border border-gray-200'
             };
         }
     };
 
-    const getStatusChip = (is_available: boolean, is_mandatory: boolean = false) => {
-        const config = getStatusConfig(is_available, is_mandatory);
-        const StatusIcon = config.icon;
+    const getStatusChip = (is_available: boolean, condition: string, is_mandatory: boolean = false) => {
+        const conditionConfig = getConditionConfig(condition);
+        const statusConfig = getStatusConfig(is_available);
+        const ConditionIcon = conditionConfig.icon;
+        const StatusIcon = statusConfig.icon;
         
         return (
-            <div className="flex items-center gap-1">
-                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${config.className}`}>
+            <div className="flex flex-col gap-1">
+                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${conditionConfig.className}`}>
+                    <ConditionIcon className="h-3 w-3" />
+                    {conditionConfig.label}
+                </span>
+                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${statusConfig.className}`}>
                     <StatusIcon className="h-3 w-3" />
-                    {config.label}
+                    {statusConfig.label}
                 </span>
                 {is_mandatory && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
                         <Star className="h-3 w-3" />
                         REQUIRED
                     </span>
@@ -223,100 +261,97 @@ const ToolAdministration: React.FC = () => {
     return (
         <div className="space-y-8">
             {/* Header Section */}
-            <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl p-8 text-white relative overflow-hidden">
-                <div className="absolute inset-0 bg-black opacity-10"></div>
-                <div className="relative z-10 flex items-center justify-between">
+            <div className="bg-gradient-to-r from-slate-600 via-gray-700 to-slate-800 rounded-xl p-6 text-white">
+                <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-4xl font-bold flex items-center space-x-4 mb-2">
-                            <div className="p-3 bg-white bg-opacity-20 rounded-xl backdrop-blur-sm">
-                                <Wrench className="h-10 w-10" />
+                        <h1 className="text-3xl font-bold flex items-center space-x-3 mb-2">
+                            <div className="p-2 bg-white bg-opacity-15 rounded-lg">
+                                <Wrench className="h-8 w-8" />
                             </div>
-                            <span>Equipment Hub</span>
+                            <span>Equipment Management</span>
                         </h1>
-                        <p className="text-xl opacity-90">Manage your laboratory and classroom equipment</p>
-                        <div className="mt-4 flex items-center space-x-6">
-                            <div className="flex items-center space-x-2">
-                                <Package className="h-5 w-5 opacity-80" />
-                                <span className="text-sm">Total Items: {equipment.length}</span>
+                        <p className="text-lg opacity-90">Manage your laboratory and classroom equipment</p>
+                        <div className="mt-3 flex items-center space-x-4 text-sm">
+                            <div className="flex items-center space-x-2 opacity-80">
+                                <Package className="h-4 w-4" />
+                                <span>Total: {equipment.length}</span>
                             </div>
-                            <div className="flex items-center space-x-2">
-                                <CheckCircle className="h-5 w-5 opacity-80" />
-                                <span className="text-sm">Available: {equipment.filter(eq => eq.is_available).length}</span>
+                            <div className="flex items-center space-x-2 opacity-80">
+                                <CheckCircle className="h-4 w-4" />
+                                <span>Available: {equipment.filter(eq => eq.is_available).length}</span>
+                            </div>
+                            <div className="flex items-center space-x-2 opacity-80">
+                                <AlertTriangle className="h-4 w-4" />
+                                <span>Good Condition: {equipment.filter(eq => eq.condition === 'GOOD').length}</span>
                             </div>
                         </div>
                     </div>
-                    <div className="hidden lg:block">
-                        <div className="text-right">
-                            <div className="text-5xl font-bold opacity-80">{equipment.length}</div>
-                            <div className="text-lg opacity-70">Equipment</div>
-                        </div>
+                    <div className="hidden lg:block text-right">
+                        <div className="text-4xl font-bold opacity-90">{equipment.length}</div>
+                        <div className="text-sm opacity-70">Total Equipment</div>
                     </div>
                 </div>
             </div>
 
             {/* Filters Section */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-                <div className="flex flex-col lg:flex-row gap-6 items-center justify-between">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
                     <div className="relative flex-1 w-full max-w-md">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                         <input 
                             type="text" 
-                            placeholder="Search equipment by name or code..." 
+                            placeholder="Search equipment..." 
                             value={searchTerm} 
                             onChange={(e) => setSearchTerm(e.target.value)} 
-                            className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-0 transition-colors"
+                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                         />
                     </div>
                     
-                    <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
                         <div className="relative">
-                            <Layers className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
                             <select 
                                 value={categoryFilter} 
                                 onChange={(e) => setCategoryFilter(e.target.value)} 
-                                className="pl-10 pr-8 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-0 appearance-none bg-white min-w-[150px]"
+                                className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 appearance-none bg-white text-sm"
                             >
                                 <option value="all">All Categories</option>
                                 {categories.map(cat => (
                                     <option key={cat.name} value={cat.name}>{cat.name}</option>
                                 ))}
                             </select>
-                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" />
                         </div>
 
                         <div className="relative">
-                            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
                             <select 
                                 value={roomFilter} 
                                 onChange={(e) => setRoomFilter(e.target.value)} 
-                                className="pl-10 pr-8 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-0 appearance-none bg-white min-w-[150px]"
+                                className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 appearance-none bg-white text-sm"
                             >
                                 <option value="all">All Locations</option>
                                 {rooms.map(room => (
                                     <option key={room.id} value={room.id}>{room.name}</option>
                                 ))}
                             </select>
-                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" />
                         </div>
 
                         <button 
                             onClick={() => fetchEquipment()} 
-                            className="p-3 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors group"
+                            className="p-2 bg-gray-50 hover:bg-gray-100 border border-gray-300 rounded-lg transition-colors"
                             title="Refresh"
                         >
-                            <RefreshCw className={`h-5 w-5 text-gray-600 group-hover:text-gray-800 ${loading ? 'animate-spin' : ''}`} />
+                            <RefreshCw className={`h-4 w-4 text-gray-600 ${loading ? 'animate-spin' : ''}`} />
                         </button>
 
                         <button 
                             onClick={() => { 
                                 setEditingEquipment(null); 
-                                form.reset({ is_available: true, quantity: 1 }); 
+                                form.reset({ is_available: true, condition: 'GOOD', quantity: 1 }); 
                                 setShowModal(true); 
                             }} 
-                            className="flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
                         >
-                            <Plus className="h-5 w-5" />
-                            <span className="font-semibold">Add Equipment</span>
+                            <Plus className="h-4 w-4" />
+                            <span>Add Equipment</span>
                         </button>
                     </div>
                 </div>
@@ -350,34 +385,89 @@ const ToolAdministration: React.FC = () => {
                     const CategoryIcon = categoryConfig.icon;
                     
                     return (
-                        <div key={eq.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 group">
-                            <div className="p-6">
-                                <div className="flex justify-between items-start mb-4">
-                                    <div className={`p-3 rounded-xl bg-gradient-to-r ${categoryConfig.color} text-white shadow-lg`}>
-                                        <CategoryIcon className="h-6 w-6" />
+                        <div key={eq.id} className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200 group">
+                            <div className="p-4">
+                                <div className="flex justify-between items-start mb-3">
+                                    <div className={`p-2 rounded-lg bg-gradient-to-r ${categoryConfig.color} text-white`}>
+                                        <CategoryIcon className="h-5 w-5" />
                                     </div>
-                                    {getStatusChip(eq.is_available, eq.is_mandatory)}
+                                    {getStatusChip(eq.is_available, eq.condition, eq.is_mandatory)}
                                 </div>
                                 
-                                <h3 className="font-bold text-lg text-gray-900 mb-2 group-hover:text-indigo-600 transition-colors">
+                                <h3 className="font-semibold text-lg text-gray-900 mb-2 group-hover:text-blue-600 transition-colors">
                                     {eq.name}
                                 </h3>
                                 
-                                <div className="flex items-center gap-2 mb-4">
-                                    <Hash className="h-4 w-4 text-gray-400" />
-                                    <span className="text-sm font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded-md">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <Hash className="h-3 w-3 text-gray-400" />
+                                    <span className="text-xs font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded">
                                         {eq.code}
                                     </span>
                                 </div>
 
-                                <div className="space-y-3 text-sm">
-                                    <div className={`flex items-center gap-2 p-2 rounded-lg ${categoryConfig.bgColor}`}>
-                                        <Layers className="h-4 w-4 text-gray-500" />
-                                        <span className={`font-medium ${categoryConfig.textColor}`}>{eq.category}</span>
+                                <div className="space-y-2 text-sm">
+                                    <div className={`flex items-center gap-2 p-2 rounded ${categoryConfig.bgColor}`}>
+                                        <Layers className="h-3 w-3 text-gray-500" />
+                                        <span className={`font-medium ${categoryConfig.textColor} text-xs`}>{eq.category}</span>
                                     </div>
                                     
-                                    <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-50">
-                                        <MapPin className="h-4 w-4 text-gray-500" />
+                                    <div className="flex items-center gap-2 p-2 rounded bg-slate-50">
+                                        <MapPin className="h-3 w-3 text-gray-500" />
+                                        <span className="text-slate-700 font-medium text-xs">
+                                            {eq.rooms?.name || 'Unassigned'}
+                                        </span>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-2 p-2 rounded bg-blue-50">
+                                        <Package className="h-3 w-3 text-gray-500" />
+                                        <span className="text-blue-700 font-medium text-xs">
+                                            {eq.quantity} {eq.unit}
+                                        </span>
+                                    </div>
+
+                                    {eq.rooms?.department?.name && (
+                                        <div className="flex items-center gap-2 p-2 rounded bg-gray-50">
+                                            <Building className="h-3 w-3 text-gray-500" />
+                                            <span className="text-gray-600 font-medium text-xs">
+                                                {eq.rooms.department.name}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="px-4 pb-4">
+                                <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                                    <button 
+                                        onClick={() => setSelectedEquipment(eq)} 
+                                        className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium transition-colors text-sm"
+                                        title="View Details"
+                                    >
+                                        <Eye className="h-4 w-4" />
+                                        <span>View</span>
+                                    </button>
+                                    
+                                    <div className="flex items-center space-x-1">
+                                        <button 
+                                            onClick={() => handleEdit(eq)} 
+                                            className="p-2 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors"
+                                            title="Edit"
+                                        >
+                                            <Edit className="h-3 w-3" />
+                                        </button>
+                                        <button 
+                                            onClick={() => setShowDeleteConfirm(eq.id)} 
+                                            className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                                            title="Delete"
+                                        >
+                                            <Trash2 className="h-3 w-3" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}-4 w-4 text-gray-500" />
                                         <span className="text-blue-700 font-medium">
                                             {eq.rooms?.name || 'Unassigned'}
                                         </span>
@@ -552,6 +642,26 @@ const ToolAdministration: React.FC = () => {
                                 </div>
                             </div>
 
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-semibold text-gray-700">Condition *</label>
+                                    <select 
+                                        {...form.register('condition')} 
+                                        className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-0 transition-colors"
+                                    >
+                                        <option value="GOOD">Good Condition</option>
+                                        <option value="BROKEN">Broken</option>
+                                        <option value="MAINTENANCE">Under Maintenance</option>
+                                    </select>
+                                    {form.formState.errors.condition && (
+                                        <p className="text-red-500 text-sm flex items-center gap-1">
+                                            <AlertTriangle className="h-4 w-4" />
+                                            {form.formState.errors.condition.message}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+
                             <div className="space-y-2">
                                 <label className="block text-sm font-semibold text-gray-700">Specification</label>
                                 <textarea 
@@ -665,8 +775,35 @@ const ToolAdministration: React.FC = () => {
                                             </div>
                                             
                                             <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">Condition</span>
+                                                <div className="flex items-center gap-2">
+                                                    {(() => {
+                                                        const config = getConditionConfig(selectedEquipment.condition);
+                                                        const ConditionIcon = config.icon;
+                                                        return (
+                                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${config.className}`}>
+                                                                <ConditionIcon className="h-3 w-3" />
+                                                                {config.label}
+                                                            </span>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
                                                 <span className="text-sm font-semibold text-gray-600">Status</span>
-                                                {getStatusChip(selectedEquipment.is_available, selectedEquipment.is_mandatory)}
+                                                <div className="flex items-center gap-2">
+                                                    {(() => {
+                                                        const config = getStatusConfig(selectedEquipment.is_available);
+                                                        const StatusIcon = config.icon;
+                                                        return (
+                                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${config.className}`}>
+                                                                <StatusIcon className="h-3 w-3" />
+                                                                {config.label}
+                                                            </span>
+                                                        );
+                                                    })()}
+                                                </div>
                                             </div>
                                             
                                             <div className="flex justify-between items-center">
