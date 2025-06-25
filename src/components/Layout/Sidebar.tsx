@@ -460,7 +460,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
               <p className="text-base sm:text-lg font-bold text-gray-900 truncate">{user.full_name}</p>
               <p className="text-xs sm:text-sm text-gray-600 capitalize truncate">
                 {getText(
-                  user.role.replace('_', ' '), 
+                  user.role?.replace('_', ' ') || 'user', 
                   user.role === 'super_admin' ? 'Super Admin' :
                   user.role === 'department_admin' ? 'Admin Departemen' :
                   user.role === 'student' ? 'Mahasiswa' :
