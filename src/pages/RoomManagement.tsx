@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-    Building, Plus, Search, Edit, Trash2, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Zap, Tv2, Speaker, Presentation, Mic, AirVent, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench
+    Building, Plus, Search, Edit, Trash2, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -20,11 +20,10 @@ const roomSchema = z.object({
 });
 type RoomForm = z.infer<typeof roomSchema>;
 
-// MODIFIED: The Room type now includes its equipment directly
 interface RoomWithDetails extends Room {
     department: Department | null;
     status: 'In Use' | 'Scheduled' | 'Available' | 'Loading';
-    equipment: Equipment[]; // Each room will hold an array of its full equipment objects
+    equipment: Equipment[];
 }
 
 const RoomManagement: React.FC = () => {
@@ -39,6 +38,8 @@ const RoomManagement: React.FC = () => {
     const [showRoomDetail, setShowRoomDetail] = useState<RoomWithDetails | null>(null);
     const [roomSchedules, setRoomSchedules] = useState<LectureSchedule[]>([]);
     const [loadingSchedules, setLoadingSchedules] = useState(false);
+    const [selectedRoomEquipment, setSelectedRoomEquipment] = useState<Equipment[]>([]);
+    const [loadingEquipment, setLoadingEquipment] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState('all');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -66,23 +67,9 @@ const RoomManagement: React.FC = () => {
         try {
             const now = new Date();
             const todayDayName = format(now, 'EEEE', { locale: localeID });
-
-            const { data: roomsData, error: roomsError } = await supabase
-                .from('rooms')
-                .select(`
-                    *, 
-                    is_available, 
-                    department:departments(*),
-                    equipment:room_equipment(equipment(*))
-                `)
-                .order('name', { ascending: true });
-
+            
+            const { data: roomsData, error: roomsError } = await supabase.from('rooms').select(`*, is_available, department:departments(*)`).order('name', { ascending: true });
             if (roomsError) throw roomsError;
-
-            const processedRooms = roomsData.map(room => ({
-                ...room,
-                equipment: room.equipment.map((e: any) => e.equipment).filter(Boolean)
-            }));
 
             const { data: schedulesData, error: schedulesError } = await supabase.from('lecture_schedules').select('room, start_time, end_time, day').eq('day', todayDayName);
             if (schedulesError) throw schedulesError;
@@ -96,7 +83,7 @@ const RoomManagement: React.FC = () => {
                 }
             });
             
-            const roomsWithStatus = processedRooms.map(room => {
+            const roomsWithStatus = roomsData.map(room => {
                 const normalizedRoomName = normalizeRoomName(room.name);
                 const roomSchedules = scheduleMap.get(normalizedRoomName) || [];
                 let status: RoomWithDetails['status'] = 'Available';
@@ -111,7 +98,7 @@ const RoomManagement: React.FC = () => {
                     });
                     status = isCurrentlyInUse ? 'In Use' : 'Scheduled';
                 }
-                return { ...room, department: room.department, status };
+                return { ...room, department: room.department, status, equipment: [] }; // equipment will be fetched on demand
             });
 
             setAllRooms(roomsWithStatus as RoomWithDetails[]);
@@ -185,12 +172,27 @@ const RoomManagement: React.FC = () => {
     const fetchDepartments = async () => { try { const { data, error } = await supabase.from('departments').select('id, name').order('name'); if (error) throw error; setDepartments(data || []); } catch (error: any) { toast.error('Failed to load departments'); } };
     const fetchSchedulesForRoom = async (roomName: string, day: string) => { setLoadingSchedules(true); try { const dayToFetch = getIndonesianDay(day); const { data, error } = await supabase.from('lecture_schedules').select('*').eq('day', dayToFetch).eq('room', roomName).order('start_time'); if (error) throw error; setRoomSchedules(data || []); } catch (error: any) { toast.error("Failed to load schedule for this room."); } finally { setLoadingSchedules(false); } };
     
+    const fetchEquipmentForRoom = async (roomId: string) => {
+        setLoadingEquipment(true);
+        try {
+            const { data, error } = await supabase.from('equipment').select('*').eq('rooms_id', roomId);
+            if (error) throw error;
+            setSelectedRoomEquipment(data || []);
+        } catch (error: any) {
+            toast.error("Failed to load room's equipment.");
+            console.error("Error fetching equipment for room:", error);
+        } finally {
+            setLoadingEquipment(false);
+        }
+    };
+    
     useEffect(() => {
         if (showRoomDetail) {
             fetchSchedulesForRoom(showRoomDetail.name, searchDay);
+            fetchEquipmentForRoom(showRoomDetail.id);
         }
     }, [showRoomDetail, searchDay]);
-    
+
     const onSubmit = async (data: RoomForm) => { try { setLoading(true); const roomData = { name: data.name, code: data.code, capacity: data.capacity, department_id: data.department_id || null, }; if (editingRoom) { const { error } = await supabase.from('rooms').update(roomData).eq('id', editingRoom.id); if (error) throw error; toast.success('Room updated successfully!'); } else { const { error } = await supabase.from('rooms').insert(roomData); if (error) throw error; toast.success('Room created successfully!'); } setShowForm(false); setEditingRoom(null); form.reset(); handleManualRefresh(); } catch (error: any) { console.error('Error saving room:', error); toast.error(error.message || 'Failed to save room'); } finally { setLoading(false); } };
     const handleEdit = (room: RoomWithDetails) => { setEditingRoom(room); form.reset({ name: room.name, code: room.code, capacity: room.capacity, department_id: room.department_id, }); setShowForm(true); };
     const handleDelete = async (roomId: string) => { if (!confirm('Are you sure you want to delete this room?')) return; try { const { error } = await supabase.from('rooms').delete().eq('id', roomId); if (error) throw error; toast.success('Room deleted successfully!'); handleManualRefresh(); } catch (error: any) { console.error('Error deleting room:', error); toast.error(error.message || 'Failed to delete room'); } };
@@ -205,18 +207,6 @@ const RoomManagement: React.FC = () => {
 
     const getStatusColor = (status: RoomWithDetails['status']) => { switch (status) { case 'In Use': return 'bg-red-100 text-red-800'; case 'Scheduled': return 'bg-yellow-100 text-yellow-800'; case 'Available': return 'bg-green-100 text-green-800'; default: return 'bg-gray-100 text-gray-800'; } };
     
-    const getEquipmentConditionChip = (status: string | undefined) => {
-        switch (status) {
-            case 'broken':
-                return <span className="text-xs font-medium text-red-800 bg-red-100 px-2 py-0.5 rounded-full">BROKEN</span>;
-            case 'under_maintenance':
-                return <span className="text-xs font-medium text-yellow-800 bg-yellow-100 px-2 py-0.5 rounded-full">MAINTENANCE</span>;
-            case 'available':
-            default:
-                return <span className="text-xs font-medium text-green-800 bg-green-100 px-2 py-0.5 rounded-full">GOOD</span>;
-        }
-    };
-    
     if (loading) { return <div className="flex justify-center items-center h-screen"><RefreshCw className="h-12 w-12 animate-spin text-blue-600" /></div>; }
 
     return (
@@ -229,7 +219,7 @@ const RoomManagement: React.FC = () => {
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"> {viewMode === 'grid' ? ( <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"> {filteredRooms.map((room) => ( <div key={room.id} className="border border-gray-200 rounded-xl p-4 hover:shadow-lg transition-shadow group relative"> <div className={`absolute top-2 right-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(room.status)}`}>{room.status}</div> <div className="flex flex-col h-full"> <div className="flex-grow"> <h3 className="font-semibold text-gray-900 text-lg mt-8">{room.name}</h3> <p className="text-sm text-gray-600">{room.code}</p> <div className="flex items-center text-sm text-gray-600 mt-2"><Users className="h-4 w-4 mr-1"/><span>{room.capacity} seats</span></div> <div className="flex items-center text-sm text-gray-600"><MapPin className="h-4 w-4 mr-1"/><span>{room.department?.name || 'General'}</span></div> </div> <div className="flex items-center justify-end pt-4 mt-4 border-t border-gray-100 space-x-1"> <button onClick={() => setShowRoomDetail(room)} className="p-1 text-gray-500 hover:text-indigo-600"><Eye className="h-4 w-4" /></button> <button onClick={() => handleEdit(room)} className="p-1 text-gray-500 hover:text-blue-600"><Edit className="h-4 w-4" /></button> <button onClick={() => handleDelete(room.id)} className="p-1 text-gray-500 hover:text-red-600"><Trash2 className="h-4 w-4" /></button> </div> </div> </div> ))} </div> ) : ( <div className="space-y-3"> {filteredRooms.map((room) => ( <div key={room.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50"><div className="flex items-center space-x-4"><div className={`w-3 h-12 rounded-full ${getStatusColor(room.status).split(' ')[0]}`}></div><div><h3 className="font-semibold text-gray-900">{room.name}</h3><p className="text-sm text-gray-600">{room.code} • {room.department?.name || 'General'}</p></div></div><div className="flex items-center space-x-6"><div className="text-center"><div className="text-sm font-medium text-gray-900">{room.capacity}</div><div className="text-xs text-gray-500">Capacity</div></div><span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(room.status)}`}>{room.status}</span><div className="flex items-center space-x-2"><button onClick={() => setShowRoomDetail(room)} className="p-2 text-gray-600 hover:text-indigo-600"><Eye className="h-4 w-4" /></button><button onClick={() => handleEdit(room)} className="p-2 text-gray-600 hover:text-blue-600"><Edit className="h-4 w-4" /></button><button onClick={() => handleDelete(room.id)} className="p-2 text-gray-600 hover:text-red-600"><Trash2 className="h-4 w-4" /></button></div></div></div> ))} </div> )} {filteredRooms.length === 0 && !loading && (<div className="text-center py-12"><Building className="h-12 w-12 text-gray-400 mx-auto mb-4" /><h3 className="text-lg font-medium text-gray-900">No Rooms Found</h3><p className="text-gray-600">Try adjusting your filter criteria.</p></div>)}</div>
 
-            {showForm && ( <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9998] p-4"> <div className="bg-white rounded-xl shadow-xl max-w-lg w-full"> <div className="p-6"> <div className="flex items-center justify-between mb-6"> <h3 className="text-lg font-semibold text-gray-900">{editingRoom ? 'Edit Room' : 'Add New Room'}</h3> <button onClick={() => { setShowForm(false); setEditingRoom(null); form.reset(); }} className="text-gray-400 hover:text-gray-600"><X className="h-6 w-6" /></button> </div> <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4"> <div><label className="block text-sm font-medium text-gray-700">Name *</label><input {...form.register('name')} type="text" className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/>{form.formState.errors.name && <p className="text-red-500 text-xs mt-1">{form.formState.errors.name.message}</p>}</div> <div><label className="block text-sm font-medium text-gray-700">Code *</label><input {...form.register('code')} type="text" className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/>{form.formState.errors.code && <p className="text-red-500 text-xs mt-1">{form.formState.errors.code.message}</p>}</div> <div><label className="block text-sm font-medium text-gray-700">Capacity *</label><input {...form.register('capacity', {valueAsNumber: true})} type="number" className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/>{form.formState.errors.capacity && <p className="text-red-500 text-xs mt-1">{form.formState.errors.capacity.message}</p>}</div> <div><label className="block text-sm font-medium text-gray-700">Department</label><select {...form.register('department_id')} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"><option value="">No Department / General</option>{departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div> <div className="flex justify-end space-x-3 pt-4"><button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 border rounded-md">Cancel</button><button type="submit" disabled={loading} className="px-4 py-2 bg-blue-600 text-white rounded-md disabled:opacity-50">{loading ? 'Saving...' : 'Save Room'}</button></div> </form> </div> </div> </div> )}
+            {showForm && ( <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9998] p-4"><div className="bg-white rounded-xl shadow-xl max-w-lg w-full"><div className="p-6"><div className="flex items-center justify-between mb-6"><h3 className="text-lg font-semibold text-gray-900">{editingRoom ? 'Edit Room' : 'Add New Room'}</h3><button onClick={() => { setShowForm(false); setEditingRoom(null); form.reset(); }} className="text-gray-400 hover:text-gray-600"><X className="h-6 w-6" /></button></div><form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4"><div><label className="block text-sm font-medium text-gray-700">Name *</label><input {...form.register('name')} type="text" className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/>{form.formState.errors.name && <p className="text-red-500 text-xs mt-1">{form.formState.errors.name.message}</p>}</div><div><label className="block text-sm font-medium text-gray-700">Code *</label><input {...form.register('code')} type="text" className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/>{form.formState.errors.code && <p className="text-red-500 text-xs mt-1">{form.formState.errors.code.message}</p>}</div><div><label className="block text-sm font-medium text-gray-700">Capacity *</label><input {...form.register('capacity', {valueAsNumber: true})} type="number" className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/>{form.formState.errors.capacity && <p className="text-red-500 text-xs mt-1">{form.formState.errors.capacity.message}</p>}</div><div><label className="block text-sm font-medium text-gray-700">Department</label><select {...form.register('department_id')} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"><option value="">No Department / General</option>{departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div><div className="flex justify-end space-x-3 pt-4"><button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 border rounded-md">Cancel</button><button type="submit" disabled={loading} className="px-4 py-2 bg-blue-600 text-white rounded-md disabled:opacity-50">{loading ? 'Saving...' : 'Save Room'}</button></div></form></div></div></div> )}
 
             {showRoomDetail && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[9999] p-4">
@@ -238,7 +228,20 @@ const RoomManagement: React.FC = () => {
                         <div className="p-6 grid grid-cols-1 lg:grid-cols-5 gap-6 overflow-y-auto">
                             <div className="lg:col-span-2 space-y-6">
                                 <div><h3 className="text-lg font-semibold text-gray-800 mb-3">Room Information</h3><div className="grid grid-cols-2 gap-4 text-sm"><div className="bg-white p-3 rounded-lg border flex items-center space-x-3"><Hash className="h-5 w-5 text-gray-400"/><div><p className="text-gray-500">Code</p><p className="font-semibold text-gray-800">{showRoomDetail.code}</p></div></div><div className="bg-white p-3 rounded-lg border flex items-center space-x-3"><Users className="h-5 w-5 text-gray-400"/><div><p className="text-gray-500">Capacity</p><p className="font-semibold text-gray-800">{showRoomDetail.capacity} seats</p></div></div><div className={`bg-white p-3 rounded-lg border flex items-center space-x-3 col-span-2`}>{showRoomDetail.is_available ? <CheckCircle className="h-5 w-5 text-green-500"/> : <AlertCircle className="h-5 w-5 text-red-500"/>}<div><p className="text-gray-500">Official Booking Status</p><p className={`font-semibold ${showRoomDetail.is_available ? 'text-green-600' : 'text-red-600'}`}>{showRoomDetail.is_available ? 'FREE' : 'BOOKED'}</p></div></div></div></div>
-                                <div><h3 className="text-lg font-semibold text-gray-800 mb-3">Equipment in Room</h3><div className="space-y-2">{showRoomDetail.equipment.length > 0 ? (showRoomDetail.equipment.map((eq) => (<div key={eq.id} className="flex items-center justify-between p-3 bg-white rounded-lg border"><div><p className="font-medium text-gray-800">{eq.name}</p><p className="text-xs text-gray-500">{eq.code}</p></div>{getEquipmentConditionChip(eq.status)}</div>))) : (<p className="text-sm text-gray-500 text-center py-4">No equipment assigned to this room.</p>)}</div></div>
+                                <div>
+                                    <h3 className="text-lg font-semibold text-gray-800 mb-3">Equipment in Room</h3>
+                                    <div className="space-y-2">
+                                        {loadingEquipment ? (<div className="flex justify-center p-4"><RefreshCw className="h-5 w-5 animate-spin"/></div>)
+                                        : selectedRoomEquipment.length > 0 ? (
+                                            selectedRoomEquipment.map((eq) => (
+                                                <div key={eq.id} className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                                                    <div><p className="font-medium text-gray-800">{eq.name}</p><p className="text-xs text-gray-500">{eq.code}</p></div>
+                                                    {getEquipmentConditionChip(eq.status)}
+                                                </div>
+                                            ))
+                                        ) : (<p className="text-sm text-gray-500 text-center py-4">No equipment assigned to this room.</p>)}
+                                    </div>
+                                </div>
                             </div>
                             <div className="lg:col-span-3"><h3 className="text-lg font-semibold text-gray-800 mb-3">Schedule for {searchDay}</h3><div className="bg-white p-4 rounded-lg border h-full">{loadingSchedules ? <div className="flex justify-center items-center h-full"><RefreshCw className="animate-spin h-6 w-6 text-gray-500"/></div> : roomSchedules.length > 0 ? (<ul className="space-y-3">{roomSchedules.map(schedule => (<li key={schedule.id} className="p-4 bg-gray-50/80 rounded-lg border border-gray-200/80"><p className="font-semibold text-gray-900">{schedule.course_name}</p><div className="flex items-center space-x-4 text-sm text-gray-600 mt-1"><div className="flex items-center space-x-1.5"><Clock className="h-4 w-4"/><span>{schedule.start_time?.substring(0,5)} - {schedule.end_time?.substring(0,5)}</span></div><div className="flex items-center space-x-1.5"><Users className="h-4 w-4"/><span>{schedule.class}</span></div></div><p className="text-xs text-gray-500 mt-2">Prodi: {schedule.subject_study}</p></li>))}</ul>) : (<div className="flex flex-col justify-center items-center h-full text-center text-gray-500"><CalendarIcon className="h-10 w-10 mb-2"/><p className="font-medium">No schedules</p><p className="text-sm">This room is free on the selected day.</p></div>)}</div></div>
                         </div>
