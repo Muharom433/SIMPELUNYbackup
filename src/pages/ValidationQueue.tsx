@@ -6,28 +6,20 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { Booking, Room, User as UserType, Department } from '../types';
+import { Booking, Room, User as UserType, Department, Equipment } from '../types';
 import toast from 'react-hot-toast';
 import { format, isToday, isTomorrow, isThisWeek, isPast, parseISO, compareAsc, startOfDay, endOfDay } from 'date-fns';
 import { debounce } from 'lodash';
 
 // --- TYPE DEFINITIONS ---
-interface Equipment {
-    id: string;
-    name: string;
-    is_mandatory: boolean;
-}
-
 interface RoomWithEquipment extends Room {
     equipment: Equipment[];
 }
-
 interface BookingWithDetails extends Booking {
     user?: UserType;
     room?: RoomWithEquipment & { department?: Department };
     equipment_requested_details?: Equipment[];
 }
-
 interface Checkout {
     id: string;
     user_id: string;
@@ -40,13 +32,7 @@ interface Checkout {
     user?: UserType;
     booking?: BookingWithDetails;
     has_report?: boolean;
-    report?: {
-        id: string;
-        title: string;
-        description: string;
-        severity: 'minor' | 'major' | 'critical';
-        created_at: string;
-    };
+    report?: { id: string; title: string; description: string; severity: 'minor' | 'major' | 'critical'; created_at: string; };
 }
 
 // --- MAIN COMPONENT ---
@@ -92,7 +78,7 @@ const ValidationQueue: React.FC = () => {
         setActiveFiltersCount(count);
     }, [statusFilter, dateFilter, activeTab]);
 
-    const fetchPendingCheckouts = async () => {
+    const fetchPendingCheckouts = useCallback(async () => {
         try {
             if (!loading) setLoading(true);
             let query = supabase.from('checkouts')
@@ -105,7 +91,17 @@ const ValidationQueue: React.FC = () => {
             const { data: checkoutData, error: checkoutError } = await query.order('created_at', { ascending: false });
             if (checkoutError) throw checkoutError;
             
-            let processedData = (checkoutData || []).map(c => ({ ...c, booking: { ...c.booking, room: { ...c.booking.room, equipment: c.booking.room.equipment.map(e => e.equipment).filter(Boolean) } } }));
+            const allEquipmentIds = new Set<string>();
+            (checkoutData || []).forEach(c => { c.booking?.equipment_requested?.forEach(id => allEquipmentIds.add(id)); });
+
+            const equipmentDetailsMap = new Map<string, Equipment>();
+            if (allEquipmentIds.size > 0) {
+                const { data: equipmentData, error: equipmentError } = await supabase.from('equipment').select('*').in('id', Array.from(allEquipmentIds));
+                if (equipmentError) throw equipmentError;
+                equipmentData.forEach(eq => equipmentDetailsMap.set(eq.id, eq));
+            }
+
+            let processedData = (checkoutData || []).map(c => ({ ...c, booking: { ...c.booking, room: { ...c.booking.room, equipment: c.booking.room.equipment.map(e => e.equipment).filter(Boolean) }, equipment_requested_details: (c.booking?.equipment_requested || []).map(id => equipmentDetailsMap.get(id)).filter(Boolean) as Equipment[] } }));
             
             if (profile?.role === 'department_admin' && profile.department_id) {
                 processedData = processedData.filter(c => c.booking?.room?.department?.id === profile.department_id);
@@ -122,21 +118,16 @@ const ValidationQueue: React.FC = () => {
         } catch (err: any) {
             console.error('Error fetching pending checkouts:', err);
             toast.error(`Failed to load data: ${err.message}`);
-        } finally {
-            setLoading(false);
-        }
-    };
-    
-    useEffect(() => { fetchPendingCheckouts(); }, [profile, activeTab, statusFilter, dateFilter]);
+        } finally { setLoading(false); }
+    }, [profile, activeTab, statusFilter, dateFilter, loading]);
+
+    useEffect(() => { fetchPendingCheckouts(); }, [fetchPendingCheckouts]);
 
     const fetchCheckoutItemState = async (checkoutId: string) => {
         setIsDetailLoading(true);
         const { data, error } = await supabase.from('checkout_items').select('*').eq('checkout_id', checkoutId);
         
-        if (error) {
-            toast.error("Failed to load item verification status.");
-            setCheckedItems(new Set());
-            setConditionNotes({});
+        if (error) { toast.error("Failed to load item verification status."); setCheckedItems(new Set()); setConditionNotes({});
         } else {
             const checked = new Set<string>();
             const notes: Record<string, string> = {};
@@ -150,11 +141,7 @@ const ValidationQueue: React.FC = () => {
         setIsDetailLoading(false);
     };
 
-    useEffect(() => {
-        if (showDetailModal && selectedCheckoutId) {
-            fetchCheckoutItemState(selectedCheckoutId);
-        }
-    }, [showDetailModal, selectedCheckoutId]);
+    useEffect(() => { if (showDetailModal && selectedCheckoutId) { fetchCheckoutItemState(selectedCheckoutId); } }, [showDetailModal, selectedCheckoutId]);
 
     const handleCheckItem = async (checkoutId: string, equipmentId: string, isChecked: boolean) => {
         const tempCheckedItems = new Set(checkedItems);
@@ -177,10 +164,7 @@ const ValidationQueue: React.FC = () => {
         }
     }, 500), [checkedItems]);
 
-    const handleNoteChange = (equipmentId: string, note: string) => {
-        setConditionNotes(prev => ({...prev, [equipmentId]: note }));
-        if (selectedCheckoutId) { debouncedUpdateNote(selectedCheckoutId, equipmentId, note); }
-    };
+    const handleNoteChange = (equipmentId: string, note: string) => { setConditionNotes(prev => ({...prev, [equipmentId]: note })); if (selectedCheckoutId) { debouncedUpdateNote(selectedCheckoutId, equipmentId, note); } };
     
     const handleApproval = async (checkoutId: string) => {
         setProcessingIds(prev => new Set(prev).add(checkoutId));
@@ -262,41 +246,11 @@ const ValidationQueue: React.FC = () => {
                 : (filteredCheckouts.map((checkout) => { const priority = getCheckoutPriority(checkout); const PriorityIcon = getPriorityIcon(priority); return (<div key={checkout.id} className={`bg-white rounded-xl shadow-sm border p-4 md:p-6 hover:shadow-lg transition-all duration-200 ${getPriorityColor(priority, checkout.has_report)}`}><div className="flex items-start justify-between"><div className="flex-1"><div className="flex items-center space-x-4 mb-4"><div className={`flex-shrink-0 h-12 w-12 rounded-lg flex items-center justify-center ${getPriorityIconBgColor(priority, checkout.has_report)}`}><PriorityIcon className="h-6 w-6 text-white" /></div><div><h3 className="text-lg font-semibold text-gray-900">{checkout.booking?.purpose || 'Checkout'}</h3><div className="flex items-center space-x-2"><p className="text-sm text-gray-600 capitalize">{priority} Priority • Status: {checkout.status}</p>{checkout.has_report && (<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800"><Flag className="h-3 w-3 mr-1" />REPORTED</span>)}</div></div></div><div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4 text-sm"><div className="flex items-center space-x-3"><User className="h-4 w-4 text-gray-400 flex-shrink-0" /><div><p className="font-medium text-gray-800">{checkout.user?.full_name}</p><p className="text-xs text-gray-500">{checkout.user?.phone_number || `ID: ${checkout.user?.identity_number}`}</p></div></div><div className="flex items-center space-x-3"><Building className="h-4 w-4 text-gray-400 flex-shrink-0" /><div><p className="font-medium text-gray-800">{checkout.booking?.room?.name}</p><p className="text-xs text-gray-500">{checkout.booking?.room?.department?.name}</p></div></div><div className="flex items-center space-x-3"><Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" /><div><p className="font-medium text-gray-800">{format(new Date(checkout.checkout_date), 'MMM d, yy')}</p><p className="text-xs text-gray-500">Return by: {format(new Date(checkout.expected_return_date), 'MMM d, yy')}</p></div></div></div>{checkout.has_report && checkout.report && (<div className="mt-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg p-3"><div className="flex items-start space-x-3"><Flag className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" /><div><p className="font-medium text-yellow-800">{checkout.report.title}</p><p className="text-sm text-yellow-700 mt-1">{checkout.report.description}</p></div></div></div>)}</div><div className="flex items-center space-x-1 ml-4"><button onClick={() => { if(checkout.id) { setSelectedCheckoutId(checkout.id); setShowDetailModal(true); }}} className="p-2 text-gray-500 hover:bg-gray-100 rounded-md" title="View Details"><Eye className="h-4 w-4" /></button></div></div></div>); }))}
             </div>
             
-            {showDetailModal && selectedCheckoutId && (() => {
-                const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId);
-                if (!selectedCheckout) return null;
-                const roomEquipment = selectedCheckout.booking?.room?.equipment || [];
-                const requestedEquipmentIds = new Set(selectedCheckout.booking?.equipment_requested || []);
-                const mandatoryEquipment = roomEquipment.filter(eq => eq.is_mandatory);
-                const requestedOptionalEquipment = roomEquipment.filter(eq => !eq.is_mandatory && requestedEquipmentIds.has(eq.id));
-                const verificationList = [...mandatoryEquipment, ...requestedOptionalEquipment];
-                const allMandatoryChecked = mandatoryEquipment.every(eq => checkedItems.has(eq.id));
-                const isProcessing = processingIds.has(selectedCheckout.id);
-
-                return (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white p-6 rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"><div className="flex justify-between items-center pb-4 border-b border-gray-200"><div><h2 className="text-xl font-bold text-gray-900">Checkout Validation</h2></div><button onClick={() => setShowDetailModal(false)} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100"><X className="h-5 w-5"/></button></div>
-                        {isDetailLoading ? (<div className="flex justify-center items-center h-64"><RefreshCw className="h-6 w-6 animate-spin text-orange-600"/></div>) : (
-                            <div className="space-y-6 pt-5">
-                                <div><h4 className="text-base font-semibold text-gray-500 mb-2">User & Room</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center"><User className="h-6 w-6 text-blue-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.user?.full_name}</p><p className="text-sm text-gray-500">{selectedCheckout.user?.phone_number || `ID: ${selectedCheckout.user?.identity_number}`}</p></div></div><div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-green-100 rounded-full flex items-center justify-center"><Building className="h-6 w-6 text-green-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.booking?.room?.name}</p><p className="text-sm text-gray-500">{selectedCheckout.booking?.room?.department?.name}</p></div></div></div></div>
-                                {activeTab === 'room' && verificationList.length > 0 && (<div className="border rounded-xl p-4"><h4 className="text-base font-semibold text-gray-500 mb-3">Equipment Verification</h4>{!allMandatoryChecked && selectedCheckout.status === 'returned' && (<div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-3 rounded-md mb-4 flex items-center space-x-2"><AlertCircleIcon className="h-5 w-5" /><p className="font-bold">All mandatory items must be checked to approve.</p></div>)}<div className="space-y-3">{verificationList.map(eq => (<div key={eq.id} className="grid grid-cols-[auto,1fr,1fr] gap-x-4 items-center"><input type="checkbox" checked={checkedItems.has(eq.id)} onChange={(e) => handleCheckItem(selectedCheckout.id, eq.id, e.target.checked)} className="h-5 w-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500" /><label className="text-sm font-medium text-gray-800">{eq.name}{eq.is_mandatory && <span className="text-red-500 font-bold ml-1">*</span>}</label><input type="text" placeholder="Condition notes..." value={conditionNotes[eq.id] || ''} onChange={(e) => handleNoteChange(eq.id, e.target.value)} className="text-sm border border-gray-300 rounded-md px-2 py-1 w-full focus:ring-orange-500 focus:border-orange-500"/></div>))}</div></div>)}
-                                <div className="mt-8 flex justify-end items-center gap-x-3 border-t pt-4">
-                                    <button onClick={() => { setShowDetailModal(false); if(selectedCheckout.id) { setSelectedCheckoutId(selectedCheckout.id); setReportTitle(selectedCheckout.report?.title || ''); setReportDescription(selectedCheckout.report?.description || ''); setReportSeverity(selectedCheckout.report?.severity || 'minor'); setShowReportModal(true); }}} className="flex items-center space-x-2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200"><Flag className="h-4 w-4" /><span>{selectedCheckout.has_report ? 'Update Report' : 'Add Report'}</span></button>
-                                    {selectedCheckout.status === 'returned' && (<><button onClick={() => handleApproval(selectedCheckout.id)} disabled={isProcessing || !allMandatoryChecked} className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"><Check className="h-4 w-4" /><span>Approve Return</span></button><button onClick={() => { setShowDetailModal(false); setShowDeleteConfirm(selectedCheckout.id);}} disabled={isProcessing} className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"><X className="h-4 w-4" /><span>Reject Return</span></button></>)}
-                                </div>
-                            </div>
-                        )}
-                    </div></div>
-                );
-            })()}
+            {showDetailModal && selectedCheckoutId && (() => { const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId); if (!selectedCheckout) return null; const verificationList = selectedCheckout.booking?.equipment_requested_details || []; const mandatoryEquipment = verificationList.filter(eq => eq.is_mandatory); const allMandatoryChecked = mandatoryEquipment.every(eq => checkedItems.has(eq.id)); const isProcessing = processingIds.has(selectedCheckout.id); return (<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white p-6 rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"><div className="flex justify-between items-center pb-4 border-b border-gray-200"><div><h2 className="text-xl font-bold text-gray-900">Checkout Validation</h2></div><button onClick={() => setShowDetailModal(false)} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100"><X className="h-5 w-5"/></button></div>{isDetailLoading ? (<div className="flex justify-center items-center h-64"><RefreshCw className="h-6 w-6 animate-spin text-orange-600"/></div>) : (<div className="space-y-6 pt-5"><div><h4 className="text-base font-semibold text-gray-500 mb-2">User & Room</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center"><User className="h-6 w-6 text-blue-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.user?.full_name}</p><p className="text-sm text-gray-500">{selectedCheckout.user?.phone_number || `ID: ${selectedCheckout.user?.identity_number}`}</p></div></div><div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center space-x-4"><div className="flex-shrink-0 h-12 w-12 bg-green-100 rounded-full flex items-center justify-center"><Building className="h-6 w-6 text-green-600" /></div><div><p className="text-lg font-bold text-gray-900">{selectedCheckout.booking?.room?.name}</p><p className="text-sm text-gray-500">{selectedCheckout.booking?.room?.department?.name}</p></div></div></div></div>{activeTab === 'room' && verificationList.length > 0 && (<div className="border rounded-xl p-4"><h4 className="text-base font-semibold text-gray-500 mb-3">Equipment Verification</h4>{!allMandatoryChecked && selectedCheckout.status === 'returned' && (<div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-3 rounded-md mb-4 flex items-center space-x-2"><AlertCircleIcon className="h-5 w-5" /><p className="font-bold">All mandatory items must be checked to approve.</p></div>)}<div className="space-y-3">{verificationList.map(eq => (<div key={eq.id} className="grid grid-cols-[auto,1fr,1fr] gap-x-4 items-center"><input type="checkbox" checked={checkedItems.has(eq.id)} onChange={(e) => handleCheckItem(selectedCheckout.id, eq.id, e.target.checked)} className="h-5 w-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500" /><label className="text-sm font-medium text-gray-800">{eq.name}{eq.is_mandatory && <span className="text-red-500 font-bold ml-1">*</span>}</label><input type="text" placeholder="Condition notes..." value={conditionNotes[eq.id] || ''} onChange={(e) => handleNoteChange(eq.id, e.target.value)} className="text-sm border border-gray-300 rounded-md px-2 py-1 w-full focus:ring-orange-500 focus:border-orange-500"/></div>))}</div></div>)}<div className="mt-8 flex justify-end items-center gap-x-3 border-t pt-4"><button onClick={() => { setShowDetailModal(false); if(selectedCheckout.id) { setSelectedCheckoutId(selectedCheckout.id); setReportTitle(selectedCheckout.report?.title || ''); setReportDescription(selectedCheckout.report?.description || ''); setReportSeverity(selectedCheckout.report?.severity || 'minor'); setShowReportModal(true); }}} className="flex items-center space-x-2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200"><Flag className="h-4 w-4" /><span>{selectedCheckout.has_report ? 'Update Report' : 'Add Report'}</span></button>{selectedCheckout.status === 'returned' && (<><button onClick={() => handleApproval(selectedCheckout.id)} disabled={isProcessing || !allMandatoryChecked} className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"><Check className="h-4 w-4" /><span>Approve Return</span></button><button onClick={() => { setShowDetailModal(false); setShowDeleteConfirm(selectedCheckout.id);}} disabled={isProcessing} className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"><X className="h-4 w-4" /><span>Reject Return</span></button></>)}</div></div>)}</div></div>);})()}
             
             {showDeleteConfirm && (<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white rounded-lg p-6 max-w-sm w-full"><h3 className="text-lg font-bold">Confirm Rejection</h3><p className="text-sm text-gray-600 mt-2">Are you sure you want to reject this return?</p><p className="text-sm text-gray-700 mt-2 font-medium">This will delete the checkout record and restore the original booking.</p><div className="mt-6 flex justify-end space-x-3"><button onClick={() => setShowDeleteConfirm(null)} className="px-4 py-2 border rounded-lg">Cancel</button><button onClick={() => { if(showDeleteConfirm) handleReject(showDeleteConfirm); }} disabled={processingIds.has(showDeleteConfirm || '')} className="px-4 py-2 bg-red-600 text-white rounded-lg">{processingIds.has(showDeleteConfirm || '') ? 'Processing...' : 'Confirm Reject'}</button></div></div></div>)}
             
-            {showReportModal && selectedCheckoutId && (() => {
-                const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId);
-                if(!selectedCheckout) return null;
-                const isProcessing = processingIds.has(selectedCheckout.id);
-                return (<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"><div className="flex justify-between items-center pb-4 border-b border-gray-200"><h3 className="text-lg font-bold text-gray-900">{selectedCheckout.has_report ? 'Update Report' : 'Add Report'}</h3><button onClick={() => setShowReportModal(false)} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100"><X className="h-5 w-5"/></button></div><div className="space-y-4 mt-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">Report Title *</label><input type="text" value={reportTitle} onChange={(e) => setReportTitle(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Severity</label><select value={reportSeverity} onChange={(e) => setReportSeverity(e.target.value as any)} className="w-full px-3 py-2 border border-gray-300 rounded-lg"><option value="minor">Minor</option><option value="major">Major</option><option value="critical">Critical</option></select></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Description *</label><textarea value={reportDescription} onChange={(e) => setReportDescription(e.target.value)} rows={4} className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div></div><div className="mt-6 flex justify-end space-x-3 pt-4 border-t"><button onClick={() => setShowReportModal(false)} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg">Cancel</button><button onClick={handleAddReport} disabled={!reportTitle || !reportDescription || isProcessing} className="flex items-center justify-center space-x-2 px-4 py-2 bg-yellow-600 text-white rounded-lg disabled:opacity-50"><Flag className="h-4 w-4" /><span>{isProcessing ? 'Saving...' : (selectedCheckout.has_report ? 'Update Report' : 'Add Report')}</span></button></div></div></div>)
-            })()}
+            {showReportModal && selectedCheckoutId && (() => { const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId); if(!selectedCheckout) return null; const isProcessing = processingIds.has(selectedCheckout.id); return (<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"><div className="flex justify-between items-center pb-4 border-b border-gray-200"><h3 className="text-lg font-bold text-gray-900">{selectedCheckout.has_report ? 'Update Report' : 'Add Report'}</h3><button onClick={() => setShowReportModal(false)} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100"><X className="h-5 w-5"/></button></div><div className="space-y-4 mt-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">Report Title *</label><input type="text" value={reportTitle} onChange={(e) => setReportTitle(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Severity</label><select value={reportSeverity} onChange={(e) => setReportSeverity(e.target.value as any)} className="w-full px-3 py-2 border border-gray-300 rounded-lg"><option value="minor">Minor</option><option value="major">Major</option><option value="critical">Critical</option></select></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Description *</label><textarea value={reportDescription} onChange={(e) => setReportDescription(e.target.value)} rows={4} className="w-full px-3 py-2 border border-gray-300 rounded-lg"/></div></div><div className="mt-6 flex justify-end space-x-3 pt-4 border-t"><button onClick={() => setShowReportModal(false)} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg">Cancel</button><button onClick={handleAddReport} disabled={!reportTitle || !reportDescription || isProcessing} className="flex items-center justify-center space-x-2 px-4 py-2 bg-yellow-600 text-white rounded-lg disabled:opacity-50"><Flag className="h-4 w-4" /><span>{isProcessing ? 'Saving...' : (selectedCheckout.has_report ? 'Update Report' : 'Add Report')}</span></button></div></div></div>) })()}
         </div>
     );
 };
