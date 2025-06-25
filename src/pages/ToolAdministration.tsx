@@ -434,10 +434,8 @@ const ToolAdministration: React.FC = () => {
                                         </div>
                                     )}
                                 </div>
-                            </div>
 
-                            <div className="px-4 pb-4">
-                                <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                                <div className="flex items-center justify-between pt-3 mt-3 border-t border-gray-100">
                                     <button 
                                         onClick={() => setSelectedEquipment(eq)} 
                                         className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium transition-colors text-sm"
