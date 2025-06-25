@@ -1,5 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, Bell, LogOut, LogIn, Search, Settings, User as UserIcon, CheckSquare } from 'lucide-react';
+import { 
+  Menu, 
+  Bell, 
+  LogOut, 
+  LogIn, 
+  Search, 
+  Settings, 
+  User as UserIcon, 
+  CheckSquare,
+  Calendar,
+  Clock,
+  ChevronDown,
+  Sun,
+  Moon,
+  Sparkles,
+  Zap,
+  X
+} from 'lucide-react';
 import { User } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { useNavigate } from 'react-router-dom';
@@ -15,7 +32,15 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
   const [pendingBookingsCount, setPendingBookingsCount] = useState(0);
   const [pendingCheckoutsCount, setPendingCheckoutsCount] = useState(0);
   const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
   const navigate = useNavigate();
+
+  useEffect(() => {
+    // Update time every minute
+    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (user && (user.role === 'super_admin' || user.role === 'department_admin')) {
@@ -127,182 +152,318 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
 
   const totalNotifications = pendingBookingsCount + pendingCheckoutsCount;
 
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: false 
+    });
+  };
+
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+  };
+
+  const closeAllDropdowns = () => {
+    setShowNotificationsDropdown(false);
+    setShowUserDropdown(false);
+  };
+
   return (
-    <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-30">
-      <div className="flex items-center justify-between px-4 py-3">
-        <div className="flex items-center space-x-4">
-          <button
-            onClick={onMenuClick}
-            className="p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 lg:hidden transition-colors duration-200"
-          >
-            <Menu className="h-6 w-6" />
-          </button>
-          <div className="hidden sm:block">
-            <h1 className="text-xl font-semibold text-gray-900">
-              SIMPEL Kuliah
-            </h1>
-            <p className="text-sm text-gray-500">
-              {new Date().toLocaleDateString('en-US', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-              })}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-4">
-          {/* Search Bar */}
-          <div className="hidden md:flex relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search rooms, users, bookings..."
-              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-64"
-            />
+    <>
+      <header className="bg-white/80 backdrop-blur-sm border-b border-white/20 sticky top-0 z-30 shadow-lg">
+        <div className="flex items-center justify-between px-4 lg:px-6 py-4">
+          {/* Left Section */}
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={onMenuClick}
+              className="p-2.5 rounded-xl text-gray-600 hover:text-gray-900 hover:bg-white/60 lg:hidden transition-all duration-200 backdrop-blur-sm border border-gray-200/50"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            
+            <div className="hidden sm:block">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl shadow-lg">
+                  <Sparkles className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                    SIMPEL Kuliah
+                  </h1>
+                  <p className="text-sm text-gray-600 font-medium">
+                    Smart Campus Management
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {user && (
-            <>
-              {/* Notifications */}
-              <div className="relative">
-                <button 
-                  className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors duration-200"
-                  onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}
-                >
-                  <Bell className="h-5 w-5" />
-                  {totalNotifications > 0 && (
-                    <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 rounded-full flex items-center justify-center">
-                      <span className="text-xs text-white font-bold">
-                        {totalNotifications > 99 ? '99+' : totalNotifications}
-                      </span>
-                    </span>
-                  )}
-                </button>
+          {/* Center Section - Search */}
+          <div className="hidden md:flex flex-1 max-w-2xl mx-8">
+            <div className="relative w-full">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search rooms, users, bookings..."
+                className="w-full pl-12 pr-6 py-3 bg-white/50 border border-gray-200/50 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200 placeholder-gray-400 backdrop-blur-sm"
+              />
+              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                <kbd className="hidden lg:inline-flex items-center px-2 py-1 text-xs font-semibold text-gray-500 bg-gray-100/80 border border-gray-200/50 rounded">
+                  ⌘K
+                </kbd>
+              </div>
+            </div>
+          </div>
 
-                {/* Notifications Dropdown */}
-                {showNotificationsDropdown && (
-                  <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                    <div className="p-3 border-b border-gray-200">
-                      <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
-                    </div>
-                    <div className="max-h-96 overflow-y-auto">
-                      {totalNotifications === 0 ? (
-                        <div className="p-4 text-center text-gray-500">
-                          <Bell className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                          <p>No new notifications</p>
+          {/* Right Section */}
+          <div className="flex items-center space-x-2 lg:space-x-4">
+            {/* Time Display */}
+            <div className="hidden lg:flex items-center space-x-3 px-4 py-2 bg-gradient-to-r from-gray-50 to-blue-50 rounded-2xl border border-gray-200/50">
+              <Clock className="h-4 w-4 text-gray-500" />
+              <div className="text-right">
+                <div className="text-lg font-bold text-gray-800">{formatTime(currentTime)}</div>
+                <div className="text-xs text-gray-500 leading-none">{formatDate(currentTime).split(',')[0]}</div>
+              </div>
+            </div>
+
+            {user && (
+              <>
+                {/* Notifications */}
+                <div className="relative">
+                  <button 
+                    className="relative p-3 text-gray-600 hover:text-gray-900 hover:bg-white/60 rounded-2xl transition-all duration-200 backdrop-blur-sm border border-gray-200/50 hover:border-gray-300/50"
+                    onClick={() => {
+                      setShowNotificationsDropdown(!showNotificationsDropdown);
+                      setShowUserDropdown(false);
+                    }}
+                  >
+                    <Bell className="h-5 w-5" />
+                    {totalNotifications > 0 && (
+                      <div className="absolute -top-1 -right-1">
+                        <span className="flex h-5 w-5 items-center justify-center bg-gradient-to-r from-red-500 to-pink-500 rounded-full shadow-lg">
+                          <span className="text-xs text-white font-bold">
+                            {totalNotifications > 99 ? '99+' : totalNotifications}
+                          </span>
+                        </span>
+                        <span className="absolute inset-0 bg-gradient-to-r from-red-400 to-pink-400 rounded-full animate-ping opacity-30"></span>
+                      </div>
+                    )}
+                  </button>
+
+                  {/* Notifications Dropdown */}
+                  {showNotificationsDropdown && (
+                    <div className="absolute right-0 mt-3 w-96 bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/20 z-50 overflow-hidden">
+                      <div className="p-4 border-b border-gray-200/50 bg-gradient-to-r from-blue-50 to-indigo-50">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-lg font-bold text-gray-900">Notifications</h3>
+                          <button
+                            onClick={() => setShowNotificationsDropdown(false)}
+                            className="p-1 rounded-lg hover:bg-white/60 transition-colors duration-200"
+                          >
+                            <X className="h-4 w-4 text-gray-500" />
+                          </button>
                         </div>
-                      ) : (
-                        <div className="divide-y divide-gray-100">
-                          {pendingBookingsCount > 0 && (
-                            <div 
-                              className="p-3 hover:bg-gray-50 cursor-pointer"
-                              onClick={() => {
-                                navigate('/bookings');
-                                setShowNotificationsDropdown(false);
-                              }}
-                            >
-                              <div className="flex items-start">
-                                <div className="flex-shrink-0 bg-blue-100 rounded-md p-2">
-                                  <Bell className="h-5 w-5 text-blue-600" />
-                                </div>
-                                <div className="ml-3">
-                                  <p className="text-sm font-medium text-gray-900">
-                                    Pending Room Bookings
-                                  </p>
-                                  <p className="text-sm text-gray-500 mt-1">
-                                    {pendingBookingsCount} booking{pendingBookingsCount !== 1 ? 's' : ''} waiting for approval
-                                  </p>
+                      </div>
+                      
+                      <div className="max-h-96 overflow-y-auto">
+                        {totalNotifications === 0 ? (
+                          <div className="p-8 text-center">
+                            <div className="p-4 bg-gray-100/50 rounded-2xl w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                              <Bell className="h-8 w-8 text-gray-400" />
+                            </div>
+                            <p className="text-gray-500 font-medium">No new notifications</p>
+                            <p className="text-sm text-gray-400 mt-1">You're all caught up!</p>
+                          </div>
+                        ) : (
+                          <div className="p-2 space-y-2">
+                            {pendingBookingsCount > 0 && (
+                              <div 
+                                className="p-4 hover:bg-blue-50 cursor-pointer rounded-xl transition-all duration-200 border border-transparent hover:border-blue-200/50"
+                                onClick={() => {
+                                  navigate('/bookings');
+                                  setShowNotificationsDropdown(false);
+                                }}
+                              >
+                                <div className="flex items-start space-x-3">
+                                  <div className="p-2 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl shadow-lg">
+                                    <Calendar className="h-5 w-5 text-white" />
+                                  </div>
+                                  <div className="flex-1">
+                                    <p className="text-sm font-semibold text-gray-900">
+                                      Pending Room Bookings
+                                    </p>
+                                    <p className="text-sm text-gray-600 mt-1">
+                                      {pendingBookingsCount} booking{pendingBookingsCount !== 1 ? 's' : ''} waiting for approval
+                                    </p>
+                                    <div className="flex items-center mt-2">
+                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                        Action Required
+                                      </span>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          )}
-                          
-                          {pendingCheckoutsCount > 0 && (
-                            <div 
-                              className="p-3 hover:bg-gray-50 cursor-pointer"
-                              onClick={() => {
-                                navigate('/validation');
-                                setShowNotificationsDropdown(false);
-                              }}
-                            >
-                              <div className="flex items-start">
-                                <div className="flex-shrink-0 bg-green-100 rounded-md p-2">
-                                  <CheckSquare className="h-5 w-5 text-green-600" />
-                                </div>
-                                <div className="ml-3">
-                                  <p className="text-sm font-medium text-gray-900">
-                                    Pending Checkouts
-                                  </p>
-                                  <p className="text-sm text-gray-500 mt-1">
-                                    {pendingCheckoutsCount} checkout{pendingCheckoutsCount !== 1 ? 's' : ''} waiting for approval
-                                  </p>
+                            )}
+                            
+                            {pendingCheckoutsCount > 0 && (
+                              <div 
+                                className="p-4 hover:bg-emerald-50 cursor-pointer rounded-xl transition-all duration-200 border border-transparent hover:border-emerald-200/50"
+                                onClick={() => {
+                                  navigate('/validation');
+                                  setShowNotificationsDropdown(false);
+                                }}
+                              >
+                                <div className="flex items-start space-x-3">
+                                  <div className="p-2 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl shadow-lg">
+                                    <CheckSquare className="h-5 w-5 text-white" />
+                                  </div>
+                                  <div className="flex-1">
+                                    <p className="text-sm font-semibold text-gray-900">
+                                      Pending Checkouts
+                                    </p>
+                                    <p className="text-sm text-gray-600 mt-1">
+                                      {pendingCheckoutsCount} checkout{pendingCheckoutsCount !== 1 ? 's' : ''} waiting for approval
+                                    </p>
+                                    <div className="flex items-center mt-2">
+                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                                        Review Needed
+                                      </span>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          )}
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      
+                      {totalNotifications > 0 && (
+                        <div className="p-3 border-t border-gray-200/50 bg-gradient-to-r from-gray-50 to-blue-50">
+                          <button 
+                            className="w-full text-center text-sm text-blue-600 hover:text-blue-800 font-semibold transition-colors duration-200"
+                            onClick={() => setShowNotificationsDropdown(false)}
+                          >
+                            Mark all as read
+                          </button>
                         </div>
                       )}
                     </div>
-                    <div className="p-2 border-t border-gray-200 bg-gray-50">
-                      <button 
-                        className="w-full text-center text-xs text-blue-600 hover:text-blue-800 font-medium"
-                        onClick={() => setShowNotificationsDropdown(false)}
-                      >
-                        Close
-                      </button>
+                  )}
+                </div>
+
+                {/* Settings */}
+                <button className="p-3 text-gray-600 hover:text-gray-900 hover:bg-white/60 rounded-2xl transition-all duration-200 backdrop-blur-sm border border-gray-200/50 hover:border-gray-300/50">
+                  <Settings className="h-5 w-5" />
+                </button>
+
+                {/* User Menu */}
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setShowUserDropdown(!showUserDropdown);
+                      setShowNotificationsDropdown(false);
+                    }}
+                    className="flex items-center space-x-3 p-2 hover:bg-white/60 rounded-2xl transition-all duration-200 backdrop-blur-sm border border-gray-200/50 hover:border-gray-300/50"
+                  >
+                    <div className="hidden sm:block text-right">
+                      <p className="text-sm font-semibold text-gray-900">{user.full_name}</p>
+                      <p className="text-xs text-gray-500 capitalize">{user.role.replace('_', ' ')}</p>
                     </div>
-                  </div>
-                )}
-              </div>
+                    <div className="relative">
+                      <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl flex items-center justify-center shadow-lg">
+                        <UserIcon className="h-5 w-5 text-white" />
+                      </div>
+                      <div className="absolute -bottom-1 -right-1 h-4 w-4 bg-emerald-400 border-2 border-white rounded-full">
+                        <div className="h-full w-full bg-emerald-400 rounded-full animate-pulse"></div>
+                      </div>
+                    </div>
+                    <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${showUserDropdown ? 'rotate-180' : ''}`} />
+                  </button>
 
-              {/* Settings */}
-              <button className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors duration-200">
-                <Settings className="h-5 w-5" />
-              </button>
-
-              {/* User Menu */}
-              <div className="flex items-center space-x-3">
-                <div className="hidden sm:block text-right">
-                  <p className="text-sm font-medium text-gray-900">{user.full_name}</p>
-                  <p className="text-xs text-gray-500 capitalize">{user.role.replace('_', ' ')}</p>
+                  {/* User Dropdown */}
+                  {showUserDropdown && (
+                    <div className="absolute right-0 mt-3 w-64 bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/20 z-50 overflow-hidden">
+                      <div className="p-4 border-b border-gray-200/50 bg-gradient-to-r from-blue-50 to-indigo-50">
+                        <div className="flex items-center space-x-3">
+                          <div className="h-12 w-12 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl flex items-center justify-center shadow-lg">
+                            <UserIcon className="h-6 w-6 text-white" />
+                          </div>
+                          <div>
+                            <p className="font-semibold text-gray-900">{user.full_name}</p>
+                            <p className="text-sm text-gray-600 capitalize">{user.role.replace('_', ' ')}</p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="p-2">
+                        <button
+                          onClick={() => {
+                            navigate('/profile');
+                            setShowUserDropdown(false);
+                          }}
+                          className="w-full flex items-center space-x-3 p-3 text-left hover:bg-gray-50 rounded-xl transition-colors duration-200"
+                        >
+                          <UserIcon className="h-4 w-4 text-gray-500" />
+                          <span className="text-sm font-medium text-gray-700">View Profile</span>
+                        </button>
+                        
+                        <button
+                          onClick={() => {
+                            navigate('/settings');
+                            setShowUserDropdown(false);
+                          }}
+                          className="w-full flex items-center space-x-3 p-3 text-left hover:bg-gray-50 rounded-xl transition-colors duration-200"
+                        >
+                          <Settings className="h-4 w-4 text-gray-500" />
+                          <span className="text-sm font-medium text-gray-700">Settings</span>
+                        </button>
+                      </div>
+                      
+                      <div className="p-2 border-t border-gray-200/50">
+                        <button
+                          onClick={() => {
+                            onSignOut();
+                            setShowUserDropdown(false);
+                          }}
+                          className="w-full flex items-center space-x-3 p-3 text-left hover:bg-red-50 rounded-xl transition-colors duration-200 text-red-600 hover:text-red-700"
+                        >
+                          <LogOut className="h-4 w-4" />
+                          <span className="text-sm font-medium">Sign Out</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="h-8 w-8 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
-                  <UserIcon className="h-4 w-4 text-white" />
-                </div>
-              </div>
+              </>
+            )}
 
+            {!user && (
               <button
-                onClick={onSignOut}
-                className="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors duration-200"
+                onClick={onSignIn}
+                className="flex items-center space-x-2 px-6 py-3 text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-2xl transition-all duration-200 shadow-lg hover:shadow-xl"
               >
-                <LogOut className="h-4 w-4" />
-                <span className="hidden sm:inline">Sign Out</span>
+                <LogIn className="h-4 w-4" />
+                <span className="hidden sm:inline">Sign In</span>
               </button>
-            </>
-          )}
-
-          {!user && (
-            <button
-              onClick={onSignIn}
-              className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-md transition-all duration-200 shadow-sm hover:shadow-md"
-            >
-              <LogIn className="h-4 w-4" />
-              <span className="hidden sm:inline">Sign In</span>
-            </button>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
-      {/* Click outside to close dropdown */}
-      {showNotificationsDropdown && (
+      {/* Click outside to close dropdowns */}
+      {(showNotificationsDropdown || showUserDropdown) && (
         <div
-          className="fixed inset-0 z-40"
-          onClick={() => setShowNotificationsDropdown(false)}
+          className="fixed inset-0 z-20"
+          onClick={closeAllDropdowns}
         />
       )}
-    </header>
+    </>
   );
 };
 
