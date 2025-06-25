@@ -254,11 +254,11 @@ const ToolAdministration: React.FC = () => {
     return (
         <div className="space-y-8">
             {/* Header Section */}
-            <div className="bg-gradient-to-r from-slate-600 via-gray-700 to-slate-800 rounded-xl p-6 text-white">
+            <div className="bg-gradient-to-br from-blue-500 via-purple-500 to-indigo-600 rounded-xl p-6 text-white">
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-3xl font-bold flex items-center space-x-3 mb-2">
-                            <div className="p-2 bg-white bg-opacity-15 rounded-lg">
+                            <div className="p-2 bg-white bg-opacity-20 rounded-lg backdrop-blur-sm">
                                 <Wrench className="h-8 w-8" />
                             </div>
                             <span>Equipment Management</span>
@@ -460,7 +460,7 @@ const ToolAdministration: React.FC = () => {
             {showModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
-                        <div className="bg-gradient-to-r from-slate-600 to-gray-700 p-6 text-white">
+                        <div className="bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-600 p-6 text-white">
                             <div className="flex items-center justify-between">
                                 <h3 className="text-2xl font-bold flex items-center gap-3">
                                     <Wrench className="h-6 w-6" />
@@ -659,7 +659,7 @@ const ToolAdministration: React.FC = () => {
             {selectedEquipment && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-                        <div className="bg-gradient-to-r from-slate-600 to-gray-700 p-6 text-white">
+                        <div className="bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-600 p-6 text-white">
                             <div className="flex justify-between items-center">
                                 <div>
                                     <h2 className="text-3xl font-bold mb-2">{selectedEquipment.name}</h2>
