@@ -157,7 +157,6 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
         { icon: Calendar, label: 'Book Room', path: '/book', badge: null },
         { icon: Package, label: 'Tool Lending', path: '/tools', badge: null },
         { icon: CheckCircle, label: 'Check Out', path: '/checkout', badge: null },
-        { icon: BookOpen, label: 'My Bookings', path: '/my-bookings', badge: null },
       ];
     }
 
@@ -166,7 +165,6 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
       { icon: Calendar, label: 'Book Room', path: '/book', badge: null },
       { icon: Package, label: 'Tool Lending', path: '/tools', badge: null },
       { icon: CheckCircle, label: 'Check Out', path: '/checkout', badge: null },
-      { icon: BookOpen, label: 'My Bookings', path: '/my-bookings', badge: null },
       { icon: User, label: 'Profile', path: '/profile', badge: null },
     ];
 
