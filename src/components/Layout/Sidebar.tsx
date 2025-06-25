@@ -15,27 +15,16 @@ import {
   Clock,
   GraduationCap,
   Wrench,
-  Bell,
-  ClipboardList,
-  Shield,
-  Database,
-  TrendingUp,
+  ClipboardCheck,
   MapPin,
-  UserCheck,
   CalendarCheck,
-  BookCheck,
-  Zap,
   CheckSquare,
-  Flag,
-  Menu,
   X,
   ChevronRight,
   Sparkles,
   Home,
   PieChart,
-  Archive,
-  ClipboardCheck,
-  Briefcase,
+  Zap,
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -400,157 +389,157 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
   const menuItems = getMenuItems();
 
   return (
-    <>
-      {/* Mobile Overlay */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden"
+    <div 
+      className={`
+        fixed lg:relative 
+        inset-y-0 left-0 
+        w-80 
+        bg-white/95 backdrop-blur-sm 
+        border-r border-gray-200/50 
+        shadow-xl lg:shadow-none
+        transform transition-transform duration-300 ease-in-out
+        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        z-50 lg:z-auto
+        flex flex-col
+        h-full
+      `}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200/50 flex-shrink-0">
+        <div className="flex items-center space-x-3 min-w-0 flex-1">
+          <div className="p-2 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl shadow-lg flex-shrink-0">
+            <Sparkles className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent truncate">
+              SIMPEL Kuliah
+            </h2>
+            <p className="text-xs sm:text-sm text-gray-600 font-medium truncate">
+              {getText('Smart Campus Management', 'Sistem Manajemen Kampus Cerdas')}
+            </p>
+          </div>
+        </div>
+        <button
           onClick={onClose}
-        />
+          className="p-2 rounded-xl text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors duration-200 lg:hidden flex-shrink-0"
+          aria-label="Close sidebar"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      {/* User Info */}
+      {user && (
+        <div className="p-4 sm:p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200/50 flex-shrink-0">
+          <div className="flex items-center space-x-3 sm:space-x-4">
+            <div className="relative flex-shrink-0">
+              <div className="h-12 w-12 sm:h-14 sm:w-14 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center shadow-lg">
+                <User className="h-6 w-6 sm:h-7 sm:w-7 text-white" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 h-4 w-4 sm:h-5 sm:w-5 bg-emerald-400 border-2 border-white rounded-full">
+                <div className="h-full w-full bg-emerald-400 rounded-full animate-pulse"></div>
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-base sm:text-lg font-bold text-gray-900 truncate">{user.full_name}</p>
+              <p className="text-xs sm:text-sm text-gray-600 capitalize truncate">
+                {getText(
+                  user.role.replace('_', ' '), 
+                  user.role === 'super_admin' ? 'Super Admin' :
+                  user.role === 'department_admin' ? 'Admin Departemen' :
+                  user.role === 'student' ? 'Mahasiswa' :
+                  user.role === 'lecturer' ? 'Dosen' : user.role
+                )}
+              </p>
+              <div className="flex items-center mt-1">
+                <div className="h-2 w-2 bg-emerald-400 rounded-full mr-2 flex-shrink-0"></div>
+                <span className="text-xs text-emerald-600 font-medium">
+                  {getText('Online', 'Online')}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* Sidebar */}
-      <aside
-        className={`fixed left-0 top-0 z-50 h-full w-80 bg-white/95 backdrop-blur-sm border-r border-white/20 shadow-2xl transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:z-auto ${
-          isOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200/50">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl shadow-lg">
-              <Sparkles className="h-8 w-8 text-white" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                SIMPEL Kuliah
-              </h2>
-              <p className="text-sm text-gray-600 font-medium">
-                {getText('Smart Campus Management', 'Sistem Manajemen Kampus Cerdas')}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors duration-200 lg:hidden"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* User Info */}
-        {user && (
-          <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200/50">
-            <div className="flex items-center space-x-4">
-              <div className="relative">
-                <div className="h-14 w-14 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl flex items-center justify-center shadow-lg">
-                  <User className="h-7 w-7 text-white" />
-                </div>
-                <div className="absolute -bottom-1 -right-1 h-5 w-5 bg-emerald-400 border-2 border-white rounded-full">
-                  <div className="h-full w-full bg-emerald-400 rounded-full animate-pulse"></div>
-                </div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-lg font-bold text-gray-900 truncate">{user.full_name}</p>
-                <p className="text-sm text-gray-600 capitalize">
-                  {getText(
-                    user.role.replace('_', ' '), 
-                    user.role === 'super_admin' ? 'Super Admin' :
-                    user.role === 'department_admin' ? 'Admin Departemen' :
-                    user.role === 'student' ? 'Mahasiswa' :
-                    user.role === 'lecturer' ? 'Dosen' : user.role
-                  )}
-                </p>
-                <div className="flex items-center mt-1">
-                  <div className="h-2 w-2 bg-emerald-400 rounded-full mr-2"></div>
-                  <span className="text-xs text-emerald-600 font-medium">
-                    {getText('Online', 'Online')}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Navigation Menu */}
-        <nav className="flex-1 overflow-y-auto py-6">
-          <div className="px-4 space-y-2">
-            {menuItems.map((item, index) => {
-              const Icon = item.icon;
-              return (
-                <NavLink
-                  key={index}
-                  to={item.path}
-                  onClick={onClose}
-                  className={({ isActive }) =>
-                    `group flex items-center justify-between px-4 py-3.5 rounded-2xl font-medium transition-all duration-200 ${
-                      isActive
-                        ? 'bg-gradient-to-r text-white shadow-lg transform scale-[1.02]'
-                        : 'text-gray-700 hover:bg-white/60 hover:text-gray-900 hover:shadow-md hover:scale-[1.01]'
-                    } ${isActive ? item.color : ''}`
-                  }
-                >
-                  {({ isActive }) => (
-                    <>
-                      <div className="flex items-center space-x-4">
-                        <div className={`p-2.5 rounded-xl transition-all duration-200 ${
-                          isActive 
-                            ? 'bg-white/20 shadow-lg' 
-                            : 'bg-gray-100/50 group-hover:bg-white/80'
-                        }`}>
-                          <Icon className={`h-5 w-5 transition-colors duration-200 ${
-                            isActive ? 'text-white' : 'text-gray-600 group-hover:text-gray-800'
-                          }`} />
-                        </div>
-                        <span className="text-sm font-semibold truncate">
-                          {item.label}
-                        </span>
-                      </div>
-                      
-                      <div className="flex items-center space-x-2">
-                        {item.badge && (
-                          <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-full text-xs font-bold transition-all duration-200 ${
-                            isActive
-                              ? 'bg-white/20 text-white'
-                              : 'bg-red-100 text-red-600 group-hover:bg-red-200'
-                          }`}>
-                            {item.badge > 99 ? '99+' : item.badge}
-                          </span>
-                        )}
-                        
-                        <ChevronRight className={`h-4 w-4 transition-all duration-200 ${
-                          isActive 
-                            ? 'text-white/70 transform translate-x-1' 
-                            : 'text-gray-400 group-hover:text-gray-600 group-hover:transform group-hover:translate-x-1'
+      {/* Navigation Menu */}
+      <nav className="flex-1 overflow-y-auto py-4 sm:py-6">
+        <div className="px-3 sm:px-4 space-y-1 sm:space-y-2">
+          {menuItems.map((item, index) => {
+            const Icon = item.icon;
+            return (
+              <NavLink
+                key={index}
+                to={item.path}
+                onClick={onClose}
+                className={({ isActive }) =>
+                  `group flex items-center justify-between px-3 sm:px-4 py-3 sm:py-3.5 rounded-xl font-medium transition-all duration-200 ${
+                    isActive
+                      ? 'bg-gradient-to-r text-white shadow-lg transform scale-[1.02]'
+                      : 'text-gray-700 hover:bg-white/60 hover:text-gray-900 hover:shadow-md hover:scale-[1.01]'
+                  } ${isActive ? item.color : ''}`
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
+                      <div className={`p-2 sm:p-2.5 rounded-xl transition-all duration-200 flex-shrink-0 ${
+                        isActive 
+                          ? 'bg-white/20 shadow-lg' 
+                          : 'bg-gray-100/50 group-hover:bg-white/80'
+                      }`}>
+                        <Icon className={`h-4 w-4 sm:h-5 sm:w-5 transition-colors duration-200 ${
+                          isActive ? 'text-white' : 'text-gray-600 group-hover:text-gray-800'
                         }`} />
                       </div>
-                    </>
-                  )}
-                </NavLink>
-              );
-            })}
-          </div>
-        </nav>
-
-        {/* Footer */}
-        <div className="p-6 border-t border-gray-200/50 bg-gradient-to-r from-gray-50 to-blue-50">
-          <div className="text-center">
-            <p className="text-xs text-gray-500 mb-2">
-              {getText('Powered by', 'Didukung oleh')}
-            </p>
-            <div className="flex items-center justify-center space-x-2">
-              <Zap className="h-4 w-4 text-blue-500" />
-              <span className="text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                SIMPEL Technology
-              </span>
-            </div>
-            <p className="text-xs text-gray-400 mt-1">
-              {getText('Version 2.0.1', 'Versi 2.0.1')}
-            </p>
-          </div>
+                      <span className="text-sm font-semibold truncate">
+                        {item.label}
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2 flex-shrink-0">
+                      {item.badge && (
+                        <span className={`inline-flex items-center justify-center px-2 sm:px-2.5 py-1 rounded-full text-xs font-bold transition-all duration-200 ${
+                          isActive
+                            ? 'bg-white/20 text-white'
+                            : 'bg-red-100 text-red-600 group-hover:bg-red-200'
+                        }`}>
+                          {item.badge > 99 ? '99+' : item.badge}
+                        </span>
+                      )}
+                      
+                      <ChevronRight className={`h-4 w-4 transition-all duration-200 ${
+                        isActive 
+                          ? 'text-white/70 transform translate-x-1' 
+                          : 'text-gray-400 group-hover:text-gray-600 group-hover:transform group-hover:translate-x-1'
+                      }`} />
+                    </div>
+                  </>
+                )}
+              </NavLink>
+            );
+          })}
         </div>
-      </aside>
-    </>
+      </nav>
+
+      {/* Footer */}
+      <div className="p-4 sm:p-6 border-t border-gray-200/50 bg-gradient-to-r from-gray-50 to-blue-50 flex-shrink-0">
+        <div className="text-center">
+          <p className="text-xs text-gray-500 mb-2">
+            {getText('Powered by', 'Didukung oleh')}
+          </p>
+          <div className="flex items-center justify-center space-x-2">
+            <Zap className="h-4 w-4 text-blue-500 flex-shrink-0" />
+            <span className="text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+              SIMPEL Technology
+            </span>
+          </div>
+          <p className="text-xs text-gray-400 mt-1">
+            {getText('Version 2.0.1', 'Versi 2.0.1')}
+          </p>
+        </div>
+      </div>
+    </div>
   );
 };
 
