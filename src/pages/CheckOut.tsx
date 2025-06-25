@@ -281,8 +281,6 @@ const CheckOut: React.FC = () => {
         condition_on_checkout: 'good',
         condition_on_return: 'good',
         total_items: selectedBooking.equipment_requested?.length || 0,
-        // === TAMBAHKAN BARIS INI ===
-        equipment_back: selectedBooking.equipment_requested || [], // Salin data equipment ke kolom equipment_back
       };
 
       const { error: checkoutError } = await supabase
