@@ -28,7 +28,6 @@ import {
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
-import { useLanguage } from '../../contexts/LanguageContext';
 
 interface SidebarProps {
   user: UserType | null;
@@ -39,30 +38,6 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
   const [pendingBookingsCount, setPendingBookingsCount] = useState(0);
   const [pendingCheckoutsCount, setPendingCheckoutsCount] = useState(0);
-  
-  // Use language context
-  const { getText } = useLanguage();
-
-  // Close sidebar when clicking outside on mobile
-  useEffect(() => {
-    const handleOutsideClick = (event: MouseEvent) => {
-      if (isOpen && window.innerWidth < 1024) {
-        const target = event.target as Element;
-        const sidebar = document.getElementById('mobile-sidebar');
-        const menuButton = document.querySelector('[aria-label="Toggle menu"]');
-        
-        if (sidebar && !sidebar.contains(target) && !menuButton?.contains(target)) {
-          onClose();
-        }
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleOutsideClick);
-    }
-    
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [isOpen, onClose]);
 
   useEffect(() => {
     if (user && (user.role === 'super_admin' || user.role === 'department_admin')) {
