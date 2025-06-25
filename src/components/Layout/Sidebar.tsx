@@ -153,7 +153,6 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
     if (!user) {
       // Public/Non-logged student access
       return [
-        { icon: LayoutDashboard, label: 'Dashboard', path: '/', badge: null },
         { icon: Calendar, label: 'Book Room', path: '/book', badge: null },
         { icon: Package, label: 'Tool Lending', path: '/tools', badge: null },
         { icon: CheckCircle, label: 'Check Out', path: '/checkout', badge: null },
