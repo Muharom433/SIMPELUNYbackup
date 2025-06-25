@@ -4,9 +4,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
     Wrench, Plus, Search, Edit, Trash2, Eye, Package, AlertCircle, RefreshCw, X, 
-    QrCode, Building, Monitor, Wifi, Zap, FlaskConical, Armchair, Shield,
-    Camera, Headphones, Cpu, Router, Battery, Microscope, ChevronDown,
-    MapPin, Hash, Layers, CheckCircle, XCircle, Star, AlertTriangle
+    Camera, Cpu, Wifi, Zap, FlaskConical, Armchair, Shield,
+    MapPin, Hash, Layers, CheckCircle, XCircle, Star, AlertTriangle, Building
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -308,31 +307,27 @@ const ToolAdministration: React.FC = () => {
                     </div>
                     
                     <div className="flex items-center gap-2 flex-wrap">
-                        <div className="relative">
-                            <select 
-                                value={categoryFilter} 
-                                onChange={(e) => setCategoryFilter(e.target.value)} 
-                                className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 appearance-none bg-white text-sm"
-                            >
-                                <option value="all">All Categories</option>
-                                {categories.map(cat => (
-                                    <option key={cat.name} value={cat.name}>{cat.name}</option>
-                                ))}
-                            </select>
-                        </div>
+                        <select 
+                            value={categoryFilter} 
+                            onChange={(e) => setCategoryFilter(e.target.value)} 
+                            className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 appearance-none bg-white text-sm"
+                        >
+                            <option value="all">All Categories</option>
+                            {categories.map(cat => (
+                                <option key={cat.name} value={cat.name}>{cat.name}</option>
+                            ))}
+                        </select>
 
-                        <div className="relative">
-                            <select 
-                                value={roomFilter} 
-                                onChange={(e) => setRoomFilter(e.target.value)} 
-                                className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 appearance-none bg-white text-sm"
-                            >
-                                <option value="all">All Locations</option>
-                                {rooms.map(room => (
-                                    <option key={room.id} value={room.id}>{room.name}</option>
-                                ))}
-                            </select>
-                        </div>
+                        <select 
+                            value={roomFilter} 
+                            onChange={(e) => setRoomFilter(e.target.value)} 
+                            className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 appearance-none bg-white text-sm"
+                        >
+                            <option value="all">All Locations</option>
+                            {rooms.map(room => (
+                                <option key={room.id} value={room.id}>{room.name}</option>
+                            ))}
+                        </select>
 
                         <button 
                             onClick={() => fetchEquipment()} 
@@ -361,7 +356,7 @@ const ToolAdministration: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {loading && (
                     Array.from({ length: 8 }).map((_, index) => (
-                        <div key={index} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 animate-pulse">
+                        <div key={index} className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 animate-pulse">
                             <div className="h-4 bg-gray-200 rounded w-3/4 mb-3"></div>
                             <div className="h-3 bg-gray-200 rounded w-1/2 mb-4"></div>
                             <div className="space-y-2">
@@ -385,7 +380,7 @@ const ToolAdministration: React.FC = () => {
                     const CategoryIcon = categoryConfig.icon;
                     
                     return (
-                        <div key={eq.id} className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200 group">
+                        <div key={eq.id} className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200">
                             <div className="p-4">
                                 <div className="flex justify-between items-start mb-3">
                                     <div className={`p-2 rounded-lg bg-gradient-to-r ${categoryConfig.color} text-white`}>
@@ -394,7 +389,7 @@ const ToolAdministration: React.FC = () => {
                                     {getStatusChip(eq.is_available, eq.condition, eq.is_mandatory)}
                                 </div>
                                 
-                                <h3 className="font-semibold text-lg text-gray-900 mb-2 group-hover:text-blue-600 transition-colors">
+                                <h3 className="font-semibold text-lg text-gray-900 mb-2 hover:text-blue-600 transition-colors">
                                     {eq.name}
                                 </h3>
                                 
@@ -405,7 +400,7 @@ const ToolAdministration: React.FC = () => {
                                     </span>
                                 </div>
 
-                                <div className="space-y-2 text-sm">
+                                <div className="space-y-2 text-sm mb-4">
                                     <div className={`flex items-center gap-2 p-2 rounded ${categoryConfig.bgColor}`}>
                                         <Layers className="h-3 w-3 text-gray-500" />
                                         <span className={`font-medium ${categoryConfig.textColor} text-xs`}>{eq.category}</span>
@@ -435,7 +430,7 @@ const ToolAdministration: React.FC = () => {
                                     )}
                                 </div>
 
-                                <div className="flex items-center justify-between pt-3 mt-3 border-t border-gray-100">
+                                <div className="flex items-center justify-between pt-3 border-t border-gray-100">
                                     <button 
                                         onClick={() => setSelectedEquipment(eq)} 
                                         className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium transition-colors text-sm"
@@ -465,69 +460,14 @@ const ToolAdministration: React.FC = () => {
                             </div>
                         </div>
                     );
-                })}-4 w-4 text-gray-500" />
-                                        <span className="text-blue-700 font-medium">
-                                            {eq.rooms?.name || 'Unassigned'}
-                                        </span>
-                                    </div>
-                                    
-                                    <div className="flex items-center gap-2 p-2 rounded-lg bg-green-50">
-                                        <Package className="h-4 w-4 text-gray-500" />
-                                        <span className="text-green-700 font-semibold">
-                                            {eq.quantity} {eq.unit}
-                                        </span>
-                                    </div>
-
-                                    {eq.rooms?.department?.name && (
-                                        <div className="flex items-center gap-2 p-2 rounded-lg bg-purple-50">
-                                            <Building className="h-4 w-4 text-gray-500" />
-                                            <span className="text-purple-700 font-medium text-xs">
-                                                {eq.rooms.department.name}
-                                            </span>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="px-6 pb-6">
-                                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                                    <button 
-                                        onClick={() => setSelectedEquipment(eq)} 
-                                        className="flex items-center gap-2 text-indigo-600 hover:text-indigo-800 font-medium transition-colors"
-                                        title="View Details"
-                                    >
-                                        <Eye className="h-4 w-4" />
-                                        <span className="text-sm">View</span>
-                                    </button>
-                                    
-                                    <div className="flex items-center space-x-2">
-                                        <button 
-                                            onClick={() => handleEdit(eq)} 
-                                            className="p-2 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors"
-                                            title="Edit Equipment"
-                                        >
-                                            <Edit className="h-4 w-4" />
-                                        </button>
-                                        <button 
-                                            onClick={() => setShowDeleteConfirm(eq.id)} 
-                                            className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
-                                            title="Delete Equipment"
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    );
                 })}
             </div>
 
             {/* Add/Edit Modal */}
             {showModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
-                        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+                        <div className="bg-gradient-to-r from-slate-600 to-gray-700 p-6 text-white">
                             <div className="flex items-center justify-between">
                                 <h3 className="text-2xl font-bold flex items-center gap-3">
                                     <Wrench className="h-6 w-6" />
@@ -548,7 +488,7 @@ const ToolAdministration: React.FC = () => {
                                     <label className="block text-sm font-semibold text-gray-700">Equipment Name *</label>
                                     <input 
                                         {...form.register('name')} 
-                                        className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-0 transition-colors" 
+                                        className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors" 
                                         placeholder="Enter equipment name"
                                     />
                                     {form.formState.errors.name && (
@@ -563,7 +503,7 @@ const ToolAdministration: React.FC = () => {
                                     <label className="block text-sm font-semibold text-gray-700">Equipment Code *</label>
                                     <input 
                                         {...form.register('code')} 
-                                        className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-0 transition-colors font-mono" 
+                                        className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors font-mono" 
                                         placeholder="e.g. LAB-001"
                                     />
                                     {form.formState.errors.code && (
@@ -579,7 +519,7 @@ const ToolAdministration: React.FC = () => {
                                 <label className="block text-sm font-semibold text-gray-700">Category *</label>
                                 <select 
                                     {...form.register('category')} 
-                                    className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-0 transition-colors"
+                                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
                                 >
                                     <option value="">Select Category</option>
                                     {categories.map(cat => (
@@ -598,7 +538,7 @@ const ToolAdministration: React.FC = () => {
                                 <label className="block text-sm font-semibold text-gray-700">Room Location</label>
                                 <select 
                                     {...form.register('rooms_id')} 
-                                    className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-0 transition-colors"
+                                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
                                 >
                                     <option value="">Not Assigned</option>
                                     {rooms.map(room => (
@@ -613,7 +553,7 @@ const ToolAdministration: React.FC = () => {
                                     <input 
                                         type="number" 
                                         {...form.register('quantity', {valueAsNumber: true})} 
-                                        className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-0 transition-colors" 
+                                        className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors" 
                                         min="0"
                                     />
                                     {form.formState.errors.quantity && (
@@ -629,7 +569,7 @@ const ToolAdministration: React.FC = () => {
                                     <input 
                                         {...form.register('unit')} 
                                         placeholder="e.g. pcs, set, unit" 
-                                        className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-0 transition-colors" 
+                                        className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors" 
                                     />
                                     {form.formState.errors.unit && (
                                         <p className="text-red-500 text-sm flex items-center gap-1">
@@ -640,38 +580,36 @@ const ToolAdministration: React.FC = () => {
                                 </div>
                             </div>
 
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-700">Condition *</label>
-                                    <select 
-                                        {...form.register('condition')} 
-                                        className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-0 transition-colors"
-                                    >
-                                        <option value="GOOD">Good Condition</option>
-                                        <option value="BROKEN">Broken</option>
-                                        <option value="MAINTENANCE">Under Maintenance</option>
-                                    </select>
-                                    {form.formState.errors.condition && (
-                                        <p className="text-red-500 text-sm flex items-center gap-1">
-                                            <AlertTriangle className="h-4 w-4" />
-                                            {form.formState.errors.condition.message}
-                                        </p>
-                                    )}
-                                </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-semibold text-gray-700">Condition *</label>
+                                <select 
+                                    {...form.register('condition')} 
+                                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
+                                >
+                                    <option value="GOOD">Good Condition</option>
+                                    <option value="BROKEN">Broken</option>
+                                    <option value="MAINTENANCE">Under Maintenance</option>
+                                </select>
+                                {form.formState.errors.condition && (
+                                    <p className="text-red-500 text-sm flex items-center gap-1">
+                                        <AlertTriangle className="h-4 w-4" />
+                                        {form.formState.errors.condition.message}
+                                    </p>
+                                )}
                             </div>
 
                             <div className="space-y-2">
                                 <label className="block text-sm font-semibold text-gray-700">Specification</label>
                                 <textarea 
                                     {...form.register('Spesification')} 
-                                    className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-indigo-500 focus:ring-0 transition-colors" 
+                                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors" 
                                     rows={4}
                                     placeholder="Enter detailed specifications..."
                                 />
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="flex items-center p-4 bg-amber-50 rounded-xl border border-amber-200">
+                                <div className="flex items-center p-4 bg-amber-50 rounded-lg border border-amber-200">
                                     <input 
                                         {...form.register('is_mandatory')} 
                                         type="checkbox" 
@@ -683,7 +621,7 @@ const ToolAdministration: React.FC = () => {
                                     </div>
                                 </div>
                                 
-                                <div className="flex items-center p-4 bg-green-50 rounded-xl border border-green-200">
+                                <div className="flex items-center p-4 bg-green-50 rounded-lg border border-green-200">
                                     <input 
                                         {...form.register('is_available')} 
                                         type="checkbox" 
@@ -700,14 +638,14 @@ const ToolAdministration: React.FC = () => {
                                 <button 
                                     type="button" 
                                     onClick={() => setShowModal(false)} 
-                                    className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-semibold transition-colors"
+                                    className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
                                 >
                                     Cancel
                                 </button>
                                 <button 
                                     type="submit" 
                                     disabled={loading} 
-                                    className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 font-semibold transition-all shadow-lg"
+                                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-semibold transition-all shadow-lg"
                                 >
                                     {loading ? (
                                         <div className="flex items-center gap-2">
@@ -727,8 +665,8 @@ const ToolAdministration: React.FC = () => {
             {/* Equipment Detail Modal */}
             {selectedEquipment && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-                        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+                        <div className="bg-gradient-to-r from-slate-600 to-gray-700 p-6 text-white">
                             <div className="flex justify-between items-center">
                                 <div>
                                     <h2 className="text-3xl font-bold mb-2">{selectedEquipment.name}</h2>
@@ -739,7 +677,7 @@ const ToolAdministration: React.FC = () => {
                                 </div>
                                 <button 
                                     onClick={() => setSelectedEquipment(null)} 
-                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-xl transition-colors"
+                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
                                 >
                                     <X className="h-6 w-6" />
                                 </button>
@@ -752,10 +690,10 @@ const ToolAdministration: React.FC = () => {
                                 <div className="space-y-6">
                                     <div>
                                         <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                                            <Package className="h-5 w-5 text-indigo-600" />
+                                            <Package className="h-5 w-5 text-blue-600" />
                                             Equipment Details
                                         </h3>
-                                        <div className="bg-gray-50 rounded-2xl p-6 space-y-4">
+                                        <div className="bg-gray-50 rounded-lg p-6 space-y-4">
                                             <div className="flex justify-between items-center">
                                                 <span className="text-sm font-semibold text-gray-600">Category</span>
                                                 <div className="flex items-center gap-2">
@@ -848,10 +786,10 @@ const ToolAdministration: React.FC = () => {
                                 <div className="space-y-6">
                                     <div>
                                         <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                                            <FlaskConical className="h-5 w-5 text-indigo-600" />
+                                            <FlaskConical className="h-5 w-5 text-blue-600" />
                                             Specifications
                                         </h3>
-                                        <div className="bg-gray-50 rounded-2xl p-6 h-64 overflow-y-auto">
+                                        <div className="bg-gray-50 rounded-lg p-6 h-64 overflow-y-auto">
                                             {selectedEquipment.Spesification ? (
                                                 <div className="prose prose-sm max-w-none">
                                                     <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
@@ -871,7 +809,7 @@ const ToolAdministration: React.FC = () => {
                                     {/* Quick Actions */}
                                     <div>
                                         <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                                            <Wrench className="h-5 w-5 text-indigo-600" />
+                                            <Wrench className="h-5 w-5 text-blue-600" />
                                             Quick Actions
                                         </h3>
                                         <div className="grid grid-cols-2 gap-3">
@@ -880,7 +818,7 @@ const ToolAdministration: React.FC = () => {
                                                     setSelectedEquipment(null);
                                                     handleEdit(selectedEquipment);
                                                 }}
-                                                className="flex items-center justify-center gap-2 p-4 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-xl transition-colors"
+                                                className="flex items-center justify-center gap-2 p-4 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg transition-colors"
                                             >
                                                 <Edit className="h-5 w-5" />
                                                 <span className="font-semibold">Edit</span>
@@ -891,7 +829,7 @@ const ToolAdministration: React.FC = () => {
                                                     setSelectedEquipment(null);
                                                     setShowDeleteConfirm(selectedEquipment.id);
                                                 }}
-                                                className="flex items-center justify-center gap-2 p-4 bg-red-100 hover:bg-red-200 text-red-800 rounded-xl transition-colors"
+                                                className="flex items-center justify-center gap-2 p-4 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg transition-colors"
                                             >
                                                 <Trash2 className="h-5 w-5" />
                                                 <span className="font-semibold">Delete</span>
@@ -908,7 +846,7 @@ const ToolAdministration: React.FC = () => {
             {/* Delete Confirmation Modal */}
             {showDeleteConfirm && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
                         <div className="flex items-center mb-6">
                             <div className="flex-shrink-0 p-3 bg-red-100 rounded-full">
                                 <AlertCircle className="h-8 w-8 text-red-600" />
@@ -919,7 +857,7 @@ const ToolAdministration: React.FC = () => {
                             </div>
                         </div>
                         
-                        <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
                             <p className="text-sm text-red-800">
                                 Are you sure you want to delete this equipment? This action will permanently remove 
                                 the equipment from the system and may affect related booking records.
@@ -929,14 +867,14 @@ const ToolAdministration: React.FC = () => {
                         <div className="flex space-x-3">
                             <button 
                                 onClick={() => setShowDeleteConfirm(null)} 
-                                className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-semibold transition-colors"
+                                className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
                             >
                                 Cancel
                             </button>
                             <button 
                                 onClick={() => handleDelete(showDeleteConfirm)} 
                                 disabled={loading} 
-                                className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-50 font-semibold transition-colors shadow-lg"
+                                className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-semibold transition-colors shadow-lg"
                             >
                                 {loading ? (
                                     <div className="flex items-center justify-center gap-2">
