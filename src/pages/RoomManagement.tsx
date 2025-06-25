@@ -56,6 +56,18 @@ const RoomManagement: React.FC = () => {
     const form = useForm<RoomForm>({ resolver: zodResolver(roomSchema) });
     const normalizeRoomName = (name: string): string => name ? name.toLowerCase().replace(/[\s.&-]/g, '') : '';
 
+  const getEquipmentConditionChip = (status: string | undefined) => {
+    switch (status) {
+        case 'broken':
+            return <span className="text-xs font-medium text-red-800 bg-red-100 px-2 py-0.5 rounded-full">BROKEN</span>;
+        case 'under_maintenance':
+            return <span className="text-xs font-medium text-yellow-800 bg-yellow-100 px-2 py-0.5 rounded-full">MAINTENANCE</span>;
+        case 'available':
+        default:
+            return <span className="text-xs font-medium text-green-800 bg-green-100 px-2 py-0.5 rounded-full">GOOD</span>;
+    }
+};
+
     const refreshTodayStatus = useCallback(async (isManual = false) => {
         if (isRefreshing && isManual) return;
         if (!isManual) {
