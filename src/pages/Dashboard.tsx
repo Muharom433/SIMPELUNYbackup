@@ -116,6 +116,44 @@ const Dashboard: React.FC = () => {
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Hero Section */}
       <div className="relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden" style={{background: 'linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)'}}>
+        {/* Background Faded Circles */}
+        <div className="absolute inset-0">
+          {/* Large circle - top right */}
+          <div 
+            className="absolute -top-20 -right-20 w-96 h-96 rounded-full opacity-20"
+            style={{
+              background: 'linear-gradient(135deg, #e8d5c4, #daa06d)'
+            }}
+          ></div>
+          {/* Medium circle - center right */}
+          <div 
+            className="absolute top-1/3 -right-10 w-72 h-72 rounded-full opacity-15"
+            style={{
+              background: 'linear-gradient(135deg, #f0e6d6, #c4926b)'
+            }}
+          ></div>
+          {/* Small circle - bottom right */}
+          <div 
+            className="absolute bottom-10 right-10 w-48 h-48 rounded-full opacity-25"
+            style={{
+              background: 'linear-gradient(135deg, #e8d5c4, #b8956f)'
+            }}
+          ></div>
+          {/* Medium circle - top left */}
+          <div 
+            className="absolute -top-10 -left-16 w-64 h-64 rounded-full opacity-10"
+            style={{
+              background: 'linear-gradient(135deg, #f5f0ea, #daa06d)'
+            }}
+          ></div>
+          {/* Small circle - bottom left */}
+          <div 
+            className="absolute bottom-1/4 -left-8 w-40 h-40 rounded-full opacity-18"
+            style={{
+              background: 'linear-gradient(135deg, #f0e6d6, #c4926b)'
+            }}
+          ></div>
+        </div>
         {/* Animated Background Elements */}
         <div className="absolute inset-0">
           <div 
@@ -199,7 +237,7 @@ const Dashboard: React.FC = () => {
                 </div>
 
                 {/* Contact Info */}
-                <div className="flex items-center space-x-6 text-sm" style={{color: '#8b5a2b'}}>
+                <div className="flex items-center space-x-6 text-sm" style={{color: '#654321'}}>
                   <div className="flex items-center space-x-2">
                     <MapPin className="w-4 h-4" />
                     <span>Faculty of Vocational</span>
