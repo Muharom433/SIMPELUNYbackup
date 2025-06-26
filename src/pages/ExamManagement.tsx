@@ -537,7 +537,10 @@ const ExamManagement = () => {
             const subtitle = `JADWAL UAS ${selectedProgram.name.toUpperCase()} SEMESTER ${formData.semester.toUpperCase()} TAHUN AKADEMIK ${formData.academic_year}`; 
             doc.setFontSize(12); 
             doc.setFont('helvetica', 'bold'); 
-            doc.text(subtitle, pageWidth / 2, currentY, { align: 'center' }); 
+            const titleMaxWidth = pageWidth - 30; 
+            const titleLines = doc.splitTextToSize(subtitle, titleMaxWidth);
+            doc.text(titleLines, pageWidth / 2, currentY, { align: 'center' });
+            currentY += (titleLines.length * 5); // 5 units of space per line 
             currentY += 7; 
             const tableColumn = ["No.", "HARI", "TANGGAL", "SESI", "KODE MK", "MATA KULIAH", "SMT", "KLS", "MHS", "RUANG", "PENGAWAS"]; 
             const tableRows: any[] = []; 
