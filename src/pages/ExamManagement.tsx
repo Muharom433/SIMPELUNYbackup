@@ -712,57 +712,6 @@ const ExamManagement = () => {
                 </div>
             </div>
 
-            {/* Enhanced Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-4 text-white">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-blue-100 text-sm">Total Exams</p>
-                            <p className="text-2xl font-bold">{exams.length}</p>
-                        </div>
-                        <Calendar className="h-8 w-8 text-blue-200" />
-                    </div>
-                </div>
-                <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-xl p-4 text-white">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-green-100 text-sm">This Week</p>
-                            <p className="text-2xl font-bold">
-                                {exams.filter(exam => {
-                                    const examDate = new Date(exam.date);
-                                    const today = new Date();
-                                    const weekFromNow = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-                                    return examDate >= today && examDate <= weekFromNow;
-                                }).length}
-                            </p>
-                        </div>
-                        <Clock className="h-8 w-8 text-green-200" />
-                    </div>
-                </div>
-                <div className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-xl p-4 text-white">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-purple-100 text-sm">Take Home</p>
-                            <p className="text-2xl font-bold">
-                                {exams.filter(exam => exam.session === 'Take Home').length}
-                            </p>
-                        </div>
-                        <BookOpen className="h-8 w-8 text-purple-200" />
-                    </div>
-                </div>
-                <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl p-4 text-white">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-orange-100 text-sm">Study Programs</p>
-                            <p className="text-2xl font-bold">
-                                {new Set(exams.map(exam => exam.study_program_id)).size}
-                            </p>
-                        </div>
-                        <Building className="h-8 w-8 text-orange-200" />
-                    </div>
-                </div>
-            </div>
-
             {/* Enhanced Table */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="overflow-x-auto">
