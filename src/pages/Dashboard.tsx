@@ -457,14 +457,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                   ></iframe>
                 </div>
                 
-                <div className="mt-6 text-center">
-                  <h4 className="text-lg font-semibold text-gray-900 mb-2">
-                    Demo Penggunaan SIMPEL Kuliah
-                  </h4>
-                  <p className="text-gray-600">
-                    Tonton video tutorial lengkap tentang cara menggunakan fitur-fitur dalam sistem SIMPEL Kuliah
-                  </p>
-                </div>
                 
                 {/* Decorative elements */}
                 <div className="absolute -top-4 -right-4 w-20 h-20 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full opacity-20"></div>
