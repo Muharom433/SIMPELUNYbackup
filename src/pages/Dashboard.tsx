@@ -236,63 +236,63 @@ const Dashboard: React.FC = () => {
                       <img 
                         src="/src/assets/people.svg" 
                         alt="Graduate Student" 
-                        className="w-80 h-80 object-contain"
+                        className="w-full h-auto max-w-xs lg:max-w-md object-contain"
                         onError={(e) => {
                           // Fallback if image doesn't load
                           e.currentTarget.style.display = 'none';
                           e.currentTarget.nextElementSibling.style.display = 'flex';
                         }}
                       />
-                      <div className="w-80 h-80 flex items-center justify-center" style={{display: 'none'}}>
+                      <div className="w-full h-80 flex items-center justify-center" style={{display: 'none'}}>
                         <Users className="w-32 h-32 text-purple-400" />
                       </div>
                     </div>
                     
-                    {/* Building Text Bubble - Top Left */}
+                    {/* Building Text - Top Left */}
                     <div 
-                      className="absolute -top-8 -left-8 bg-white rounded-2xl p-4 shadow-xl border border-gray-100 z-20"
+                      className="absolute -top-12 -left-12 lg:-top-16 lg:-left-16 z-20"
                       style={{ animation: 'float 6s ease-in-out infinite' }}
                     >
-                      <div className="flex items-center space-x-3">
-                        <img 
-                          src="/src/assets/Build.png" 
-                          alt="Building Career" 
-                          className="w-24 h-auto"
-                          onError={(e) => {
-                            // Fallback text if image doesn't load
-                            e.currentTarget.style.display = 'none';
-                            e.currentTarget.nextElementSibling.style.display = 'block';
-                          }}
-                        />
-                        <span 
-                          className="text-lg font-bold text-purple-700"
-                          style={{display: 'none'}}
-                        >
+                      <img 
+                        src="/src/assets/Build.png" 
+                        alt="Building Career" 
+                        className="w-20 h-auto lg:w-28 drop-shadow-lg"
+                        onError={(e) => {
+                          // Fallback text if image doesn't load
+                          e.currentTarget.style.display = 'none';
+                          e.currentTarget.nextElementSibling.style.display = 'block';
+                        }}
+                      />
+                      <div 
+                        className="bg-white rounded-2xl p-3 shadow-xl border border-gray-100"
+                        style={{display: 'none'}}
+                      >
+                        <span className="text-base font-bold text-purple-700">
                           BUILDING CAREER
                         </span>
                       </div>
                     </div>
                     
-                    {/* Shaping Text Bubble - Bottom Right */}
+                    {/* Shaping Text - Bottom Right */}
                     <div 
-                      className="absolute -bottom-8 -right-8 bg-white rounded-2xl p-4 shadow-xl border border-gray-100 z-20"
+                      className="absolute -bottom-12 -right-12 lg:-bottom-16 lg:-right-16 z-20"
                       style={{ animation: 'float 6s ease-in-out infinite 3s' }}
                     >
-                      <div className="flex items-center space-x-3">
-                        <img 
-                          src="/src/assets/Shape.png" 
-                          alt="Shaping Future" 
-                          className="w-28 h-auto"
-                          onError={(e) => {
-                            // Fallback text if image doesn't load
-                            e.currentTarget.style.display = 'none';
-                            e.currentTarget.nextElementSibling.style.display = 'block';
-                          }}
-                        />
-                        <span 
-                          className="text-lg font-bold text-blue-700"
-                          style={{display: 'none'}}
-                        >
+                      <img 
+                        src="/src/assets/Shape.png" 
+                        alt="Shaping Future" 
+                        className="w-24 h-auto lg:w-32 drop-shadow-lg"
+                        onError={(e) => {
+                          // Fallback text if image doesn't load
+                          e.currentTarget.style.display = 'none';
+                          e.currentTarget.nextElementSibling.style.display = 'block';
+                        }}
+                      />
+                      <div 
+                        className="bg-white rounded-2xl p-3 shadow-xl border border-gray-100"
+                        style={{display: 'none'}}
+                      >
+                        <span className="text-base font-bold text-blue-700">
                           SHAPING FUTURE
                         </span>
                       </div>
@@ -300,22 +300,22 @@ const Dashboard: React.FC = () => {
 
                     {/* Available Rooms Bubble - Top Right */}
                     <div 
-                      className="absolute top-6 right-6 bg-white rounded-2xl p-4 shadow-lg z-20"
+                      className="absolute top-4 right-4 lg:top-6 lg:right-6 bg-white rounded-2xl p-3 lg:p-4 shadow-lg z-20"
                       style={{ animation: 'float 6s ease-in-out infinite 2s' }}
                     >
                       <div className="flex items-center space-x-2">
                         <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                        <span className="text-sm font-medium">18 Available</span>
+                        <span className="text-xs lg:text-sm font-medium">18 Available</span>
                       </div>
                     </div>
                     
                     {/* Rating Bubble - Bottom Left */}
                     <div 
-                      className="absolute bottom-6 left-6 bg-white rounded-2xl p-4 shadow-lg z-20"
+                      className="absolute bottom-4 left-4 lg:bottom-6 lg:left-6 bg-white rounded-2xl p-3 lg:p-4 shadow-lg z-20"
                       style={{ animation: 'float 6s ease-in-out infinite 4s' }}
                     >
                       <div className="text-center">
-                        <p className="text-2xl font-bold text-purple-700">4.8★</p>
+                        <p className="text-xl lg:text-2xl font-bold text-purple-700">4.8★</p>
                         <p className="text-xs text-gray-600">User Rating</p>
                       </div>
                     </div>
