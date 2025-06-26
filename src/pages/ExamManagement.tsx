@@ -711,12 +711,18 @@ const ExamManagement = () => {
             const uniqueCourses = new Set<string>();
             
             examsToPrint.forEach((exam) => {
+                // Create a unique key for each course and class combination
                 const uniqueKey = `${exam.course_code}-${exam.class}`;
+            
+                // Only add the row if this combination has not been seen before
                 if (!uniqueCourses.has(uniqueKey)) {
                     additionalInfoRows.push([
                         exam.course_code,
+                        exam.class,
+                        exam.inspector || '-',
                         exam.lecturer?.full_name || 'N/A'
                     ]);
+                    // Add the key to the set to mark it as processed
                     uniqueCourses.add(uniqueKey);
                 }
             });
