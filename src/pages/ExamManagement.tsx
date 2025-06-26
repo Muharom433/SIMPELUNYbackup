@@ -541,7 +541,7 @@ const ExamManagement = () => {
             const titleLines = doc.splitTextToSize(subtitle, titleMaxWidth);
             doc.text(titleLines, pageWidth / 2, currentY, { align: 'center' });
             currentY += (titleLines.length * 5); // 5 units of space per line 
-            currentY += 7; 
+            currentY += 5; 
             const tableColumn = ["No.", "HARI", "TANGGAL", "SESI", "KODE MK", "MATA KULIAH", "SMT", "KLS", "MHS", "RUANG", "PENGAWAS"]; 
             const tableRows: any[] = []; 
             examsToPrint.forEach((exam, index) => { 
