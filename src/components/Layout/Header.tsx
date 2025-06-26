@@ -12,7 +12,8 @@ import {
   ChevronDown,
   Sparkles,
   X,
-  Globe
+  Globe,
+  FileText
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -29,6 +30,7 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn }) => {
   const [pendingBookingsCount, setPendingBookingsCount] = useState(0);
   const [pendingCheckoutsCount, setPendingCheckoutsCount] = useState(0);
+  const [newReportsCount, setNewReportsCount] = useState(0);
   const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
@@ -55,6 +57,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
     if (user && (user.role === 'super_admin' || user.role === 'department_admin')) {
       fetchPendingBookingsCount();
       fetchPendingCheckoutsCount();
+      fetchNewReportsCount();
       
       const bookingSubscription = supabase
         .channel('pending-bookings')
@@ -78,7 +81,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
             event: '*', 
             schema: 'public', 
             table: 'checkouts',
-            filter: 'approved_by=is.null'
+            filter: 'status=eq.returned'
           }, 
           () => {
             fetchPendingCheckoutsCount();
@@ -86,9 +89,25 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
         )
         .subscribe();
 
+      const reportsSubscription = supabase
+        .channel('new-reports')
+        .on('postgres_changes', 
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'reports',
+            filter: 'status=eq.new'
+          }, 
+          () => {
+            fetchNewReportsCount();
+          }
+        )
+        .subscribe();
+
       return () => {
         bookingSubscription.unsubscribe();
         checkoutSubscription.unsubscribe();
+        reportsSubscription.unsubscribe();
       };
     }
   }, [user]);
@@ -127,7 +146,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
       let query = supabase
         .from('checkouts')
         .select('id', { count: 'exact', head: true })
-        .is('approved_by', null);
+        .eq('status', 'returned');
 
       if (user?.role === 'department_admin' && user.department_id) {
         const { data, error } = await supabase
@@ -138,7 +157,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
               room:rooms!inner(department_id)
             )
           `, { count: 'exact', head: true })
-          .is('approved_by', null)
+          .eq('status', 'returned')
           .eq('booking.room.department_id', user.department_id);
 
         if (error) throw error;
@@ -153,7 +172,36 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
     }
   };
 
-  const totalNotifications = pendingBookingsCount + pendingCheckoutsCount;
+  const fetchNewReportsCount = async () => {
+    try {
+      let query = supabase
+        .from('reports')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'new');
+
+      if (user?.role === 'department_admin' && user.department_id) {
+        const { data, error } = await supabase
+          .from('reports')
+          .select(`
+            id,
+            department_id
+          `, { count: 'exact', head: true })
+          .eq('status', 'new')
+          .eq('department_id', user.department_id);
+
+        if (error) throw error;
+        setNewReportsCount(data?.length || 0);
+      } else {
+        const { count, error } = await query;
+        if (error) throw error;
+        setNewReportsCount(count || 0);
+      }
+    } catch (error) {
+      console.error('Error fetching new reports count:', error);
+    }
+  };
+
+  const totalNotifications = pendingBookingsCount + pendingCheckoutsCount + newReportsCount;
 
   const changeLanguage = (lang: 'en' | 'id') => {
     setLanguage(lang);
@@ -395,6 +443,28 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                                   </p>
                                   <p className="text-sm text-gray-600">
                                     {pendingCheckoutsCount} {getText('checkout', 'pengembalian')} {getText('waiting for approval', 'menunggu persetujuan')}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {newReportsCount > 0 && (
+                            <div 
+                              className="p-4 hover:bg-orange-50 cursor-pointer rounded"
+                              onClick={() => {
+                                navigate('/reports');
+                                setShowNotificationsDropdown(false);
+                              }}
+                            >
+                              <div className="flex items-start space-x-3">
+                                <FileText className="h-5 w-5 text-orange-600 mt-1" />
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-900">
+                                    {getText('New Reports', 'Laporan Baru')}
+                                  </p>
+                                  <p className="text-sm text-gray-600">
+                                    {newReportsCount} {getText('new report', 'laporan baru')} {getText('requiring attention', 'memerlukan perhatian')}
                                   </p>
                                 </div>
                               </div>
