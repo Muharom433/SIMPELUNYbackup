@@ -102,6 +102,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: Clock, label: getText('Lecture Schedules', 'Jadwal Kuliah'), path: '/schedules' },
                 { icon: CalendarCheck, label: getText('Exam Management', 'Manajemen Ujian'), path: '/exams' },
                 { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' },
+               { icon: Wrench, label: getText('Tool Lending Administration', 'Administrasi Peminjaman Alat'), path: '/tool-lending-management' },
                 { icon: FileText, label: getText('Reports', 'Laporan'), path: '/reports' },
                 { icon: Settings, label: getText('System Settings', 'Pengaturan Sistem'), path: '/settings' },
             ];
