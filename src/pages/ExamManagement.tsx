@@ -713,11 +713,8 @@ const ExamManagement = () => {
             examsToPrint.forEach((exam) => {
                 const uniqueKey = `${exam.course_code}-${exam.class}`;
                 if (!uniqueCourses.has(uniqueKey)) {
-                    const inspectorName = exam.inspector || '-';
                     additionalInfoRows.push([
                         exam.course_code,
-                        exam.class,
-                        inspectorName,
                         exam.lecturer?.full_name || 'N/A'
                     ]);
                     uniqueCourses.add(uniqueKey);
