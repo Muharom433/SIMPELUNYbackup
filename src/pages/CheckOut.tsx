@@ -409,7 +409,7 @@ const CheckOut: React.FC = () => {
               </div>
               <div>
                 <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                  {getText('Equipment Check Out', 'Pengembalian Peralatan')}
+                  {getText('Equipment Form', 'Formulir Pengembalian')}
                 </h1>
                 <p className="text-gray-600 mt-1">
                   {getText('Complete your equipment return and report any issues', 'Selesaikan pengembalian peralatan dan laporkan masalah')}
