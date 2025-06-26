@@ -156,11 +156,12 @@ const Dashboard: React.FC = () => {
                     <span className="block bg-gradient-to-r from-yellow-400 to-orange-400 bg-clip-text text-transparent">
                       Vocational
                     </span>
-                    Room Booking
                   </h1>
+                  <h2 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-purple-100">
+                    Yogyakarta State University
+                  </h2>
                   <p className="text-lg sm:text-xl text-purple-100 leading-relaxed max-w-lg">
-                    Streamline your room bookings and equipment management with our advanced system. 
-                    Experience seamless scheduling and real-time availability.
+                    SIMPEL kuliah or Sistem Pelayanan kuliah is an Innovation to improve our services.
                   </p>
                 </div>
 
