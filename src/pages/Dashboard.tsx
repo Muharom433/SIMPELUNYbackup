@@ -289,11 +289,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
                 
 
-                {/* Success Rate */}
-                <div className="flex items-center space-x-2">
-                  <ArrowUp className="w-5 h-5 text-green-500" />
-                  <span className="text-green-600 font-semibold">98% Success Rate</span>
-                </div>
+            
 
                 {/* Contact Info */}
                 <div className="flex items-center space-x-6 text-sm" style={{color: '#654321'}}>
