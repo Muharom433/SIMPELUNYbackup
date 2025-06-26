@@ -1376,7 +1376,7 @@ const ExamManagement = () => {
                                 {/* Lecturer and Inspector */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Lecturer in Charge", "Dosen Pembimbing")} *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Lecturer in Charge", "Dosen Pengampu")} *</label>
                                         <Controller 
                                             name="lecturer_id" 
                                             control={form.control} 
@@ -1412,7 +1412,7 @@ const ExamManagement = () => {
                                     </div>
                                     
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Inspector (Pengawas)", "Pengawas")} *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Inspector", "Pengawas")} *</label>
                                         <Controller 
                                             name="inspector" 
                                             control={form.control} 
