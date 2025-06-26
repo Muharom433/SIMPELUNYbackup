@@ -287,31 +287,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                   </p>
                 </div>
 
-                {/* Stats Counters */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-white bg-opacity-20 backdrop-blur-sm rounded-2xl p-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="p-2 bg-green-500 rounded-xl">
-                        <CheckCircle className="w-6 h-6 text-white" />
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold" style={{color: '#2c1810'}}>1200+</p>
-                        <p className="text-xs lg:text-sm" style={{color: '#4a2c1a'}}>Bookings</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-white bg-opacity-20 backdrop-blur-sm rounded-2xl p-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="p-2 bg-blue-500 rounded-xl">
-                        <Clock className="w-6 h-6 text-white" />
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold" style={{color: '#2c1810'}}>{formatTime(currentTime)}</p>
-                        <p className="text-xs lg:text-sm" style={{color: '#4a2c1a'}}>Live Time</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                
 
                 {/* Success Rate */}
                 <div className="flex items-center space-x-2">
