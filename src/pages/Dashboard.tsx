@@ -472,7 +472,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             {quickActions.map((action, index) => (
               <button
                 key={index}
-                className={`group flex flex-col items-center space-y-4 p-6 border-2 border-gray-200 rounded-2xl hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 bg-white ${action.color}`}
+                onClick={() => {
+                  // Navigate to the specified path
+                  window.location.href = action.path;
+                }}
+                className={`group flex flex-col items-center space-y-4 p-6 border-2 border-gray-200 rounded-2xl hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 bg-white ${action.color} cursor-pointer`}
                 style={{ 
                   animationDelay: `${index * 100}ms`,
                 }}
@@ -488,7 +492,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
               </button>
             ))}
           </div>
-
           {/* Role-specific additional info */}
           {user && (
             <div className="mt-16 bg-white rounded-3xl p-8 shadow-xl border border-gray-200">
