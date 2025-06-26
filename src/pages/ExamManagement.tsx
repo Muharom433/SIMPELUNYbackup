@@ -366,25 +366,26 @@ const ExamManagement = () => {
         return days[date.getDay()]; 
     };
 
-    const handleSubmit = async (data: ExamFormData) => { 
-        try { 
-            setLoading(true); 
-            const day = getDayFromDate(data.date); 
-            const examData = { 
-                day, 
-                date: data.date, 
-                session: data.session, 
-                course_name: data.course_name, 
-                course_code: data.course_code, 
-                semester: data.semester, 
-                class: data.class, 
-                student_amount: data.student_amount, 
-                room_id: data.session === 'Take Home' ? null : data.room_id, 
-                lecturer_id: data.lecturer_id,
-                inspector: data.inspector,
-                department_id: profile.department_id, 
-                study_program_id: data.study_program_id, 
-            }; 
+    const handleSubmit = async (data: ExamFormData) => {
+    try {
+        setLoading(true);
+        const day = getDayFromDate(data.date);
+        const inspectorInfo = lecturers.find(l => l.id === data.inspector);
+        const examData = {
+            day,
+            date: data.date,
+            session: data.session,
+            course_name: data.course_name,
+            course_code: data.course_code,
+            semester: data.semester,
+            class: data.class,
+            student_amount: data.student_amount,
+            room_id: data.session === 'Take Home' ? null : data.room_id,
+            lecturer_id: data.lecturer_id, // This correctly saves the ID
+            inspector: inspectorInfo?.full_name || null, // This now saves the name
+            department_id: profile.department_id,
+            study_program_id: data.study_program_id,
+        };
             if (editingExam) { 
                 const { error } = await supabase 
                     .from('exams') 
