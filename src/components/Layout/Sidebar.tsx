@@ -71,7 +71,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
     const getMenuItems = () => {
         // This function now correctly uses getText from the useLanguage hook
         const publicItems = [
-            { icon: Home, label: getText('Dashboard', 'Dasbor'), path: '/'},
+            { icon: Home, label: getText('About SIMPEL', 'Tutorial SIMPEL'), path: '/'},
             { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book'},
             { icon: Package, label: getText('Tool Lending', 'Peminjaman Alat'), path: '/tools'},
             { icon: CheckCircle, label: getText('Check Out', 'Pengembalian'), path: '/checkout'},
