@@ -37,7 +37,9 @@ const examSchema = z.object({
   course_name: z.string().min(1, 'Course name is required'),
   course_code: z.string().min(1, 'Course code is required'),
   date: z.string().min(1, 'Date is required'),
-  session: z.string().min(1, 'Session is required'),
+  start_time: z.string().optional(),
+  end_time: z.string().optional(),
+  is_take_home: z.boolean().default(false),
   semester: z.number().min(1, 'Semester must be at least 1').max(8, 'Semester cannot exceed 8'),
   class: z.string().min(1, 'Class is required'),
   student_amount: z.number().min(0, 'Student amount cannot be negative'),
@@ -46,12 +48,37 @@ const examSchema = z.object({
   inspector: z.string().min(1, 'Inspector is required'),
   study_program_id: z.string().min(1, 'Study program is required'),
 }).superRefine((data, ctx) => {
-    if (data.session && data.session !== 'Take Home' && (!data.room_id || data.room_id === '')) {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['room_id'],
-            message: 'Room is required for this session type.',
-        });
+    // If not take home, start_time and end_time are required
+    if (!data.is_take_home) {
+        if (!data.start_time) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['start_time'],
+                message: 'Start time is required for scheduled exams.',
+            });
+        }
+        if (!data.end_time) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['end_time'],
+                message: 'End time is required for scheduled exams.',
+            });
+        }
+        if (data.start_time && data.end_time && data.start_time >= data.end_time) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['end_time'],
+                message: 'End time must be after start time.',
+            });
+        }
+        // Room required for scheduled exams
+        if (!data.room_id || data.room_id === '') {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['room_id'],
+                message: 'Room is required for scheduled exams.',
+            });
+        }
     }
 });
 
@@ -87,8 +114,8 @@ const ExamManagement = () => {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<any | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [dateFilter, setDateFilter] = useState('');
-    const [sessionFilter, setSessionFilter] = useState('all');
-    const [semesterFilter, setSessionSemester] = useState('all');
+    const [timeFilter, setTimeFilter] = useState('');
+    const [semesterFilter, setSemesterFilter] = useState('all');
     const [rooms, setRooms] = useState<any[]>([]);
     const [lecturers, setLecturers] = useState<any[]>([]);
     const [studyPrograms, setStudyPrograms] = useState<any[]>([]);
@@ -132,7 +159,9 @@ const ExamManagement = () => {
             course_name: '', 
             course_code: '', 
             date: format(new Date(), 'yyyy-MM-dd'), 
-            session: '', 
+            start_time: '', 
+            end_time: '', 
+            is_take_home: false,
             semester: 1, 
             class: '', 
             student_amount: 0, 
@@ -145,7 +174,9 @@ const ExamManagement = () => {
 
     const printForm = useForm<PrintFormData>({ resolver: zodResolver(printSchema) });
     const watchDate = form.watch('date');
-    const watchSession = form.watch('session');
+    const watchStartTime = form.watch('start_time');
+    const watchEndTime = form.watch('end_time');
+    const watchIsTakeHome = form.watch('is_take_home');
     const watchStudyProgramId = form.watch('study_program_id');
 
     useEffect(() => {
@@ -161,10 +192,10 @@ const ExamManagement = () => {
     }, [profile]);
 
     useEffect(() => { 
-        if (watchDate && watchSession) { 
-            fetchBookedRooms(watchDate, watchSession); 
+        if (watchDate && watchStartTime && watchEndTime && !watchIsTakeHome) { 
+            fetchBookedRooms(watchDate, watchStartTime, watchEndTime); 
         } 
-    }, [watchDate, watchSession]);
+    }, [watchDate, watchStartTime, watchEndTime, watchIsTakeHome]);
 
     useEffect(() => { 
         if (watchStudyProgramId) { 
@@ -335,17 +366,18 @@ const ExamManagement = () => {
         } 
     };
 
-    const fetchBookedRooms = async (date: string, session: string) => { 
-        if (session === 'Take Home') return; 
+    const fetchBookedRooms = async (date: string, startTime: string, endTime: string) => { 
         try { 
             const { data, error } = await supabase 
                 .from('exams') 
                 .select('room_id') 
                 .eq('date', date) 
-                .eq('session', session); 
+                .eq('is_take_home', false)
+                .or(`start_time.lte.${endTime},end_time.gte.${startTime}`); // Check for time overlap
+                
             if (error) throw error; 
-            const bookedRoomIds = data.map(exam => exam.room_id); 
-            setBookedRooms(prev => ({ ...prev, [session]: bookedRoomIds })); 
+            const bookedRoomIds = data.map(exam => exam.room_id).filter(Boolean); 
+            setBookedRooms(prev => ({ ...prev, [`${startTime}-${endTime}`]: bookedRoomIds })); 
         } catch (error: any) { 
             console.error('Error fetching booked rooms:', error); 
         } 
@@ -366,7 +398,6 @@ const ExamManagement = () => {
         return days[date.getDay()]; 
     };
 
-    // FIXED: Inspector handling - save name to inspector column
     const handleSubmit = async (data: ExamFormData) => {
         try {
             setLoading(true);
@@ -378,15 +409,17 @@ const ExamManagement = () => {
             const examData = {
                 day,
                 date: data.date,
-                session: data.session,
+                start_time: data.is_take_home ? null : data.start_time,
+                end_time: data.is_take_home ? null : data.end_time,
+                is_take_home: data.is_take_home,
                 course_name: data.course_name,
                 course_code: data.course_code,
                 semester: data.semester,
                 class: data.class,
                 student_amount: data.student_amount,
-                room_id: data.session === 'Take Home' ? null : data.room_id,
+                room_id: data.is_take_home ? null : data.room_id,
                 lecturer_id: data.lecturer_id,
-                inspector: inspectorInfo?.full_name || null, // Save inspector NAME to inspector column
+                inspector: inspectorInfo?.full_name || null,
                 department_id: profile.department_id,
                 study_program_id: data.study_program_id,
             };
@@ -406,7 +439,6 @@ const ExamManagement = () => {
                     .insert([examData]); 
                 if (error) throw error; 
                 toast.success('Exam created successfully'); 
-                // FIXED: Don't close modal or reset form after successful add
             } 
             
             fetchExams(); 
@@ -418,7 +450,6 @@ const ExamManagement = () => {
         } 
     };
 
-    // FIXED: Inspector handling in edit - find inspector by name to get ID for form
     const handleEdit = (exam: any) => {
         setEditingExam(exam);
         
@@ -429,13 +460,15 @@ const ExamManagement = () => {
             course_name: exam.course_name || '',
             course_code: exam.course_code,
             date: exam.date,
-            session: exam.session,
+            start_time: exam.start_time || '',
+            end_time: exam.end_time || '',
+            is_take_home: exam.is_take_home || false,
             semester: exam.semester,
             class: exam.class,
             student_amount: exam.student_amount,
             room_id: exam.room_id || '',
             lecturer_id: exam.lecturer_id,
-            inspector: inspectorUser?.id || '', // Use inspector ID for form
+            inspector: inspectorUser?.id || '',
             study_program_id: exam.study_program_id,
         });
         setShowModal(true);
@@ -466,16 +499,21 @@ const ExamManagement = () => {
             exam.class.toLowerCase().includes(searchTerm.toLowerCase()) || 
             (exam.department?.name && exam.department.name.toLowerCase().includes(searchTerm.toLowerCase())); 
         const matchesDate = !dateFilter || exam.date === dateFilter; 
-        const matchesSession = sessionFilter === 'all' || exam.session === sessionFilter; 
+        const matchesTime = !timeFilter || (exam.start_time && exam.start_time.includes(timeFilter));
         const matchesSemester = semesterFilter === 'all' || exam.semester.toString() === semesterFilter; 
-        return matchesSearch && matchesDate && matchesSession && matchesSemester; 
+        return matchesSearch && matchesDate && matchesTime && matchesSemester; 
     });
 
     const getAvailableRooms = () => { 
-        if (!watchSession || watchSession === 'Take Home') return rooms; 
+        if (watchIsTakeHome) return rooms; 
+        
+        if (!watchStartTime || !watchEndTime) return rooms;
+        
         const currentRoomId = editingExam?.room_id; 
+        const timeSlotKey = `${watchStartTime}-${watchEndTime}`;
+        
         return rooms.filter(room => { 
-            const isBooked = bookedRooms[watchSession]?.includes(room.id); 
+            const isBooked = bookedRooms[timeSlotKey]?.includes(room.id); 
             return !isBooked || room.id === currentRoomId; 
         }); 
     };
@@ -542,22 +580,22 @@ const ExamManagement = () => {
             doc.text(titleLines, pageWidth / 2, currentY, { align: 'center' });
             currentY += (titleLines.length * 5); 
             currentY += 5; 
-            const tableColumn = ["No.", "HARI", "TANGGAL", "SESI", "KODE MK", "MATA KULIAH", "SMT", "KLS", "MHS", "RUANG", "PENGAWAS"]; 
+            const tableColumn = ["No.", "HARI", "TANGGAL", "WAKTU", "KODE MK", "MATA KULIAH", "SMT", "KLS", "MHS", "RUANG", "PENGAWAS"]; 
             const tableRows: any[] = []; 
             examsToPrint.forEach((exam, index) => { 
-                // FIXED: Get inspector name directly from inspector column
                 const inspectorName = exam.inspector || '-';
+                const timeDisplay = exam.is_take_home ? 'Take Home' : (exam.start_time && exam.end_time ? `${exam.start_time}-${exam.end_time}` : '-');
                 tableRows.push([ 
                     index + 1, 
                     exam.day, 
                     format(parseISO(exam.date), 'dd-MM-yyyy'), 
-                    exam.session.replace(/Session \d+ \((.*)\)/, '$1'), 
+                    timeDisplay,
                     exam.course_code, 
                     exam.course_name, 
                     exam.semester, 
                     exam.class, 
                     exam.student_amount, 
-                    exam.room?.name || 'Take Home',
+                    exam.is_take_home ? 'Take Home' : (exam.room?.name || '-'),
                     inspectorName,
                 ]); 
             }); 
@@ -570,6 +608,7 @@ const ExamManagement = () => {
                 headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' }, 
                 columnStyles: { 
                     0: { halign: 'center', cellWidth: 8 }, 
+                    3: { halign: 'center' },
                     4: { halign: 'center' }, 
                     6: { halign: 'center' }, 
                     7: { halign: 'center' }, 
@@ -585,7 +624,7 @@ const ExamManagement = () => {
             examsToPrint.forEach((exam) => {
                 const uniqueKey = `${exam.course_code}-${exam.class}`;
                 if (!uniqueCourses.has(uniqueKey)) {
-                    const inspectorName = exam.inspector || '-'; // Use inspector column directly
+                    const inspectorName = exam.inspector || '-';
                     additionalInfoRows.push([
                         exam.course_code,
                         exam.class,
@@ -687,24 +726,19 @@ const ExamManagement = () => {
                             </div>
                             <div className="relative">
                                 <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                <select 
-                                    value={sessionFilter} 
-                                    onChange={(e) => setSessionFilter(e.target.value)} 
-                                    className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 appearance-none bg-white min-w-[160px]" 
-                                >
-                                    <option value="all">All Sessions</option> 
-                                    <option value="Session 1 (7:30-9:30)">Session 1 (7:30-9:30)</option> 
-                                    <option value="Session 2 (9:45-11:45)">Session 2 (9:45-11:45)</option> 
-                                    <option value="Session 3 (12:30-14:30)">Session 3 (12:30-14:30)</option> 
-                                    <option value="Session 4 (14:45-16:45)">Session 4 (14:45-16:45)</option> 
-                                    <option value="Take Home">Take Home</option>
-                                </select>
+                                <input
+                                    type="time"
+                                    value={timeFilter}
+                                    onChange={(e) => setTimeFilter(e.target.value)}
+                                    placeholder="Filter by time"
+                                    className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 min-w-[140px]"
+                                />
                             </div>
                             <div className="relative">
                                 <GraduationCap className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                                 <select 
                                     value={semesterFilter} 
-                                    onChange={(e) => setSessionSemester(e.target.value)} 
+                                    onChange={(e) => setSemesterFilter(e.target.value)} 
                                     className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 appearance-none bg-white min-w-[140px]" 
                                 >
                                     <option value="all">All Semesters</option> 
@@ -742,7 +776,9 @@ const ExamManagement = () => {
                                         course_name: '', 
                                         course_code: '', 
                                         date: format(new Date(), 'yyyy-MM-dd'), 
-                                        session: '', 
+                                        start_time: '', 
+                                        end_time: '', 
+                                        is_take_home: false,
                                         semester: 1, 
                                         class: '', 
                                         student_amount: 0, 
@@ -786,7 +822,7 @@ const ExamManagement = () => {
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                     <div className="flex items-center space-x-1">
                                         <Calendar className="h-4 w-4" />
-                                        <span>Date & Session</span>
+                                        <span>Date & Time</span>
                                     </div>
                                 </th> 
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
@@ -848,7 +884,6 @@ const ExamManagement = () => {
                                 </tr>
                             ) : (
                                 filteredExams.map((exam) => {
-                                    // FIXED: Display inspector name directly from inspector column
                                     const inspectorName = exam.inspector || 'Not assigned';
                                     
                                     return (
@@ -878,9 +913,15 @@ const ExamManagement = () => {
                                                 <div>
                                                     <div className="text-sm font-medium text-gray-900">{format(parseISO(exam.date), 'MMM d, yyyy')}</div>
                                                     <div className="text-sm text-gray-600">{exam.day}</div>
-                                                    <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full inline-block mt-1">
-                                                        {exam.session}
-                                                    </div>
+                                                    {exam.is_take_home ? (
+                                                        <div className="text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded-full inline-block mt-1">
+                                                            Take Home Exam
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full inline-block mt-1">
+                                                            {exam.start_time && exam.end_time ? `${exam.start_time} - ${exam.end_time}` : 'Time not set'}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
@@ -891,7 +932,7 @@ const ExamManagement = () => {
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div>
-                                                    {exam.session === 'Take Home' ? (
+                                                    {exam.is_take_home ? (
                                                         <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                                                             <BookOpen className="h-3 w-3 mr-1" />
                                                             Take Home Exam
@@ -973,7 +1014,6 @@ const ExamManagement = () => {
     if (isSuperAdmin) {
         pageContent = (
             <div className="space-y-6">
-                {/* FIXED: More attractive header with gradient colors */}
                 <div className="bg-gradient-to-br from-indigo-600 via-purple-600 to-blue-700 rounded-xl p-6 text-white shadow-lg">
                     <div className="flex justify-between items-center">
                         <div>
@@ -1048,7 +1088,7 @@ const ExamManagement = () => {
         <>
             {pageContent}
 
-            {/* FIXED: Compact Modal Form - Removed excessive sections and made it more streamlined */}
+            {/* Modal Form - Updated with time fields and take home checkbox */}
             {showModal && isDepartmentAdmin && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -1094,8 +1134,8 @@ const ExamManagement = () => {
                                     </div>
                                 </div>
 
-                                {/* Schedule Information */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Schedule Information - Updated with time fields */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
                                         <input 
@@ -1107,23 +1147,55 @@ const ExamManagement = () => {
                                             <p className="mt-1 text-sm text-red-600">{form.formState.errors.date.message}</p>
                                         )}
                                     </div>
+                                    
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Session *</label>
-                                        <select 
-                                            {...form.register('session')} 
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
-                                        >
-                                            <option value="">Select Session</option>
-                                            <option value="Session 1 (7:30-9:30)">Session 1 (7:30-9:30)</option>
-                                            <option value="Session 2 (9:45-11:45)">Session 2 (9:45-11:45)</option>
-                                            <option value="Session 3 (12:30-14:30)">Session 3 (12:30-14:30)</option>
-                                            <option value="Session 4 (14:45-16:45)">Session 4 (14:45-16:45)</option>
-                                            <option value="Take Home">Take Home</option>
-                                        </select>
-                                        {form.formState.errors.session && (
-                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.session.message}</p>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Start Time {!watchIsTakeHome && '*'}
+                                        </label>
+                                        <input 
+                                            {...form.register('start_time')} 
+                                            type="time" 
+                                            disabled={watchIsTakeHome}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" 
+                                        />
+                                        {form.formState.errors.start_time && (
+                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.start_time.message}</p>
                                         )}
                                     </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            End Time {!watchIsTakeHome && '*'}
+                                        </label>
+                                        <input 
+                                            {...form.register('end_time')} 
+                                            type="time" 
+                                            disabled={watchIsTakeHome}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" 
+                                        />
+                                        {form.formState.errors.end_time && (
+                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.end_time.message}</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Take Home Checkbox */}
+                                <div className="flex items-center space-x-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <input 
+                                        {...form.register('is_take_home')} 
+                                        type="checkbox" 
+                                        id="is_take_home"
+                                        className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" 
+                                    />
+                                    <label htmlFor="is_take_home" className="text-sm font-medium text-blue-900 flex items-center space-x-2">
+                                        <BookOpen className="h-4 w-4" />
+                                        <span>This is a Take Home Exam</span>
+                                    </label>
+                                    {watchIsTakeHome && (
+                                        <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
+                                            No time schedule or room required
+                                        </span>
+                                    )}
                                 </div>
 
                                 {/* Class Information */}
@@ -1250,14 +1322,13 @@ const ExamManagement = () => {
                                     
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Inspector (Pengawas) *</label>
-                                        {/* FIXED: Inspector dropdown now saves ID correctly */}
                                         <Controller 
                                             name="inspector" 
                                             control={form.control} 
                                             render={({ field }) => { 
                                                 const options = filteredLecturers.map(l => ({ 
-                                                    value: l.id, // Use ID as value
-                                                    label: l.full_name // Display name as label
+                                                    value: l.id,
+                                                    label: l.full_name
                                                 })); 
                                                 const currentValue = options.find(o => o.value === field.value); 
                                                 return ( 
@@ -1265,7 +1336,7 @@ const ExamManagement = () => {
                                                         {...field} 
                                                         options={options} 
                                                         value={currentValue} 
-                                                        onChange={val => field.onChange(val?.value)} // Save ID
+                                                        onChange={val => field.onChange(val?.value)} 
                                                         placeholder="Search or select inspector..." 
                                                         isClearable 
                                                         noOptionsMessage={() => watchStudyProgramId ? 'No lecturers found' : 'Select a study program first'} 
@@ -1286,11 +1357,11 @@ const ExamManagement = () => {
                                     </div>
                                 </div>
 
-                                {/* Room Assignment */}
+                                {/* Room Assignment - Updated */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Room {watchSession !== 'Take Home' && '*'}
-                                        {watchSession === 'Take Home' && (
+                                        Room {!watchIsTakeHome && '*'}
+                                        {watchIsTakeHome && (
                                             <span className="text-gray-500 text-sm ml-2">(Not required for Take Home exams)</span>
                                         )}
                                     </label>
@@ -1309,15 +1380,15 @@ const ExamManagement = () => {
                                                     options={roomOptions} 
                                                     value={selectedValue} 
                                                     onChange={option => field.onChange(option ? option.value : '')} 
-                                                    isDisabled={watchSession === 'Take Home'} 
-                                                    placeholder={watchSession === 'Take Home' ? 'No room needed for Take Home exam' : 'Search or select room...'} 
+                                                    isDisabled={watchIsTakeHome} 
+                                                    placeholder={watchIsTakeHome ? 'No room needed for Take Home exam' : 'Search or select room...'} 
                                                     isClearable 
                                                     styles={{
                                                         control: (provided) => ({
                                                             ...provided,
                                                             minHeight: '42px',
                                                             borderColor: '#d1d5db',
-                                                            backgroundColor: watchSession === 'Take Home' ? '#f9fafb' : 'white',
+                                                            backgroundColor: watchIsTakeHome ? '#f9fafb' : 'white',
                                                         }),
                                                     }}
                                                 /> 
@@ -1327,9 +1398,9 @@ const ExamManagement = () => {
                                     {form.formState.errors.room_id && (
                                         <p className="mt-1 text-sm text-red-600">{form.formState.errors.room_id.message}</p>
                                     )}
-                                    {watchSession && watchSession !== 'Take Home' && (
+                                    {!watchIsTakeHome && watchStartTime && watchEndTime && (
                                         <p className="mt-2 text-sm text-gray-600">
-                                            💡 Only available rooms for the selected date and session are shown
+                                            💡 Only available rooms for the selected date and time are shown
                                         </p>
                                     )}
                                 </div>
