@@ -16,33 +16,72 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
-    const { getText } = useLanguage(); // <-- The fix is applied here
+    const { getText } = useLanguage();
     const [pendingBookingsCount, setPendingBookingsCount] = useState(0);
     const [pendingCheckoutsCount, setPendingCheckoutsCount] = useState(0);
+    const [newReportsCount, setNewReportsCount] = useState(0);
 
     useEffect(() => {
         if (user && (user.role === 'super_admin' || user.role === 'department_admin')) {
             const fetchPendingCounts = () => {
                 fetchPendingBookingsCount();
                 fetchPendingCheckoutsCount();
+                fetchNewReportsCount();
             };
             fetchPendingCounts();
         
-            const bookingSubscription = supabase.channel('sidebar-pending-bookings').on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: 'status=eq.pending' }, fetchPendingBookingsCount).subscribe();
-            const checkoutSubscription = supabase.channel('sidebar-pending-checkouts').on('postgres_changes', { event: '*', schema: 'public', table: 'checkouts', filter: 'status=eq.returned' }, fetchPendingCheckoutsCount).subscribe();
+            const bookingSubscription = supabase
+                .channel('sidebar-pending-bookings')
+                .on('postgres_changes', { 
+                    event: '*', 
+                    schema: 'public', 
+                    table: 'bookings', 
+                    filter: 'status=eq.pending' 
+                }, fetchPendingBookingsCount)
+                .subscribe();
+
+            const checkoutSubscription = supabase
+                .channel('sidebar-pending-checkouts')
+                .on('postgres_changes', { 
+                    event: '*', 
+                    schema: 'public', 
+                    table: 'checkouts', 
+                    filter: 'status=eq.returned' 
+                }, fetchPendingCheckoutsCount)
+                .subscribe();
+
+            const reportsSubscription = supabase
+                .channel('sidebar-new-reports')
+                .on('postgres_changes', { 
+                    event: '*', 
+                    schema: 'public', 
+                    table: 'reports', 
+                    filter: 'status=eq.new' 
+                }, fetchNewReportsCount)
+                .subscribe();
 
             return () => {
                 bookingSubscription.unsubscribe();
                 checkoutSubscription.unsubscribe();
+                reportsSubscription.unsubscribe();
             };
         }
     }, [user]);
 
     const fetchPendingBookingsCount = async () => {
         try {
-            let query = supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('status', 'pending');
+            let query = supabase
+                .from('bookings')
+                .select('id', { count: 'exact', head: true })
+                .eq('status', 'pending');
+
             if (user?.role === 'department_admin' && user.department_id) {
-                const { count, error } = await supabase.from('bookings').select(`id, room:rooms!inner(department_id)`, { count: 'exact', head: true }).eq('status', 'pending').eq('room.department_id', user.department_id);
+                const { count, error } = await supabase
+                    .from('bookings')
+                    .select(`id, room:rooms!inner(department_id)`, { count: 'exact', head: true })
+                    .eq('status', 'pending')
+                    .eq('room.department_id', user.department_id);
+                
                 if (error) throw error;
                 setPendingBookingsCount(count || 0);
             } else {
@@ -50,14 +89,25 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 if (error) throw error;
                 setPendingBookingsCount(count || 0);
             }
-        } catch (error) { console.error('Error fetching pending bookings count:', error); }
+        } catch (error) { 
+            console.error('Error fetching pending bookings count:', error); 
+        }
     };
 
     const fetchPendingCheckoutsCount = async () => {
         try {
-            let query = supabase.from('checkouts').select('id', { count: 'exact', head: true }).eq('status', 'returned');
-             if (user?.role === 'department_admin' && user.department_id) {
-                const { count, error } = await supabase.from('checkouts').select(`id, booking:bookings!inner(room:rooms!inner(department_id))`, { count: 'exact', head: true }).eq('status', 'returned').eq('booking.room.department_id', user.department_id);
+            let query = supabase
+                .from('checkouts')
+                .select('id', { count: 'exact', head: true })
+                .eq('status', 'returned');
+
+            if (user?.role === 'department_admin' && user.department_id) {
+                const { count, error } = await supabase
+                    .from('checkouts')
+                    .select(`id, booking:bookings!inner(room:rooms!inner(department_id))`, { count: 'exact', head: true })
+                    .eq('status', 'returned')
+                    .eq('booking.room.department_id', user.department_id);
+                
                 if (error) throw error;
                 setPendingCheckoutsCount(count || 0);
             } else {
@@ -65,7 +115,35 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 if (error) throw error;
                 setPendingCheckoutsCount(count || 0);
             }
-        } catch (error) { console.error('Error fetching pending checkouts count:', error); }
+        } catch (error) { 
+            console.error('Error fetching pending checkouts count:', error); 
+        }
+    };
+
+    const fetchNewReportsCount = async () => {
+        try {
+            let query = supabase
+                .from('reports')
+                .select('id', { count: 'exact', head: true })
+                .eq('status', 'new');
+
+            if (user?.role === 'department_admin' && user.department_id) {
+                const { count, error } = await supabase
+                    .from('reports')
+                    .select(`id, department_id`, { count: 'exact', head: true })
+                    .eq('status', 'new')
+                    .eq('department_id', user.department_id);
+                
+                if (error) throw error;
+                setNewReportsCount(count || 0);
+            } else {
+                const { count, error } = await query;
+                if (error) throw error;
+                setNewReportsCount(count || 0);
+            }
+        } catch (error) { 
+            console.error('Error fetching new reports count:', error); 
+        }
     };
 
     const getMenuItems = () => {
@@ -86,6 +164,9 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: PieChart, label: getText('Dashboard', 'Dasbor'), path: '/' },
                 { icon: CalendarCheck, label: getText('Exam Management', 'Jadwal UAS'), path: '/exams' },
                 { icon: Users, label: getText('User Management', 'Data Dosen/Mahasiswa'), path: '/users' },
+                { icon: Calendar, label: getText('Booking Management', 'Manajemen Pemesanan'), path: '/bookings', badge: pendingBookingsCount > 0 ? pendingBookingsCount : null },
+                { icon: ClipboardCheck, label: getText('Validation Queue', 'Antrian Validasi'), path: '/validation', badge: pendingCheckoutsCount > 0 ? pendingCheckoutsCount : null },
+                { icon: FileText, label: getText('Reports', 'Laporan'), path: '/reports', badge: newReportsCount > 0 ? newReportsCount : null },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/profile' },
             ];
         }
@@ -102,8 +183,8 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: Clock, label: getText('Lecture Schedules', 'Jadwal Kuliah'), path: '/schedules' },
                 { icon: CalendarCheck, label: getText('Exam Management', 'Manajemen Ujian'), path: '/exams' },
                 { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' },
-               { icon: Wrench, label: getText('Tool Lending Administration', 'Administrasi Peminjaman Alat'), path: '/tool-lending-management' },
-                { icon: FileText, label: getText('Reports', 'Laporan'), path: '/reports' },
+                { icon: Wrench, label: getText('Tool Lending Administration', 'Administrasi Peminjaman Alat'), path: '/tool-lending-management' },
+                { icon: FileText, label: getText('Reports', 'Laporan'), path: '/reports', badge: newReportsCount > 0 ? newReportsCount : null },
                 { icon: Settings, label: getText('System Settings', 'Pengaturan Sistem'), path: '/settings' },
             ];
         }
