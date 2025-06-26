@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { LanguageProvider } from './contexts/LanguageContext'; // Add this import
+import { LanguageProvider } from './contexts/LanguageContext';
 import Layout from './components/Layout/Layout';
 import AuthForm from './components/Auth/AuthForm';
 import Dashboard from './pages/Dashboard';
@@ -16,6 +16,7 @@ import CheckoutValidation from './pages/CheckoutValidation';
 import LectureSchedules from './pages/LectureSchedules';
 import ExamManagement from './pages/ExamManagement';
 import ToolAdministration from './pages/ToolAdministration';
+import ToolLending from './pages/ToolLending'; // Import the new ToolLending component
 import Reports from './pages/Reports';
 import SystemSettings from './pages/SystemSettings';
 import { useAuth } from './hooks/useAuth';
@@ -25,7 +26,7 @@ function App() {
 
   if (loading) {
     return (
-      <LanguageProvider> {/* Wrap the loading screen too */}
+      <LanguageProvider>
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
@@ -37,7 +38,7 @@ function App() {
   }
 
   return (
-    <LanguageProvider> {/* Wrap the entire router */}
+    <LanguageProvider>
       <Router>
         <Routes>
           <Route path="/auth" element={<AuthForm />} />
@@ -46,8 +47,8 @@ function App() {
             <Route path="book" element={<BookRoom />} />
             <Route path="checkout" element={<CheckOut />} />
             
-            {/* Student/Public Routes */}
-            <Route path="tools" element={<div className="p-6">Tool Lending Service - Coming Soon</div>} />
+            {/* Public/Student Routes */}
+            <Route path="tools" element={<ToolLending />} /> {/* Updated route */}
             <Route path="my-bookings" element={<div className="p-6">My Bookings - Coming Soon</div>} />
             <Route path="profile" element={<div className="p-6">Profile Management - Coming Soon</div>} />
             
