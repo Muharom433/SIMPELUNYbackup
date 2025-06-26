@@ -718,9 +718,7 @@ const ExamManagement = () => {
                 if (!uniqueCourses.has(uniqueKey)) {
                     additionalInfoRows.push([
                         exam.course_code,
-                        exam.class,
-                        exam.inspector || '-',
-                        exam.lecturer?.full_name || 'N/A'
+                        exam.lecturer?.full_name
                     ]);
                     // Add the key to the set to mark it as processed
                     uniqueCourses.add(uniqueKey);
