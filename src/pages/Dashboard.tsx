@@ -165,37 +165,7 @@ const Dashboard: React.FC = () => {
                   </p>
                 </div>
 
-                {/* Stats Cards in Hero */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-2xl p-4 lg:p-6 border border-white border-opacity-20">
-                    <div className="flex items-center space-x-3">
-                      <div className="bg-green-500 p-2 rounded-xl">
-                        <CheckCircle className="w-5 h-5 lg:w-6 lg:h-6 text-white" />
-                      </div>
-                      <div>
-                        <p className="text-xl lg:text-2xl font-bold">1200+</p>
-                        <p className="text-xs lg:text-sm text-purple-200">Bookings</p>
-                      </div>
-                    </div>
-                    <div className="mt-3 flex items-center text-green-400 text-sm">
-                      <ArrowUp className="w-4 h-4 mr-1" />
-                      <span>98% Success Rate</span>
-                    </div>
-                  </div>
-                  <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-2xl p-4 lg:p-6 border border-white border-opacity-20">
-                    <div className="flex items-center space-x-3">
-                      <div className="bg-blue-500 p-2 rounded-xl">
-                        <Clock className="w-5 h-5 lg:w-6 lg:h-6 text-white" />
-                      </div>
-                      <div>
-                        <p className="text-xl lg:text-2xl font-bold">{formatTime(currentTime)}</p>
-                        <p className="text-xs lg:text-sm text-purple-200">Live Time</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* CTA Buttons - REMOVED */}
+                
 
                 {/* Contact Info */}
                 <div className="flex items-center space-x-6 text-sm text-purple-200">
