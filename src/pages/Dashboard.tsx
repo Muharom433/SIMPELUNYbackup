@@ -116,41 +116,56 @@ const Dashboard: React.FC = () => {
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Hero Section */}
       <div className="relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden" style={{background: 'linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)'}}>
-        {/* Background Faded Circles */}
+        {/* Background Faded Abstract Shapes */}
         <div className="absolute inset-0">
-          {/* Large circle - top right */}
+          {/* Large abstract shape - top right */}
           <div 
-            className="absolute -top-20 -right-20 w-96 h-96 rounded-full opacity-20"
+            className="absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full opacity-60"
             style={{
-              background: 'linear-gradient(135deg, #e8d5c4, #daa06d)'
+              background: 'radial-gradient(circle at 30% 30%, #daa06d 0%, #e8d5c4 40%, transparent 70%)'
             }}
           ></div>
-          {/* Medium circle - center right */}
+          {/* Medium oval shape - center right */}
           <div 
-            className="absolute top-1/3 -right-10 w-72 h-72 rounded-full opacity-15"
+            className="absolute top-1/4 -right-20 w-[400px] h-[300px] rounded-full opacity-50"
             style={{
-              background: 'linear-gradient(135deg, #f0e6d6, #c4926b)'
+              background: 'radial-gradient(ellipse at 20% 40%, #c4926b 0%, #f0e6d6 50%, transparent 80%)',
+              transform: 'rotate(25deg)'
             }}
           ></div>
-          {/* Small circle - bottom right */}
+          {/* Abstract blob - bottom right */}
           <div 
-            className="absolute bottom-10 right-10 w-48 h-48 rounded-full opacity-25"
+            className="absolute bottom-0 right-0 w-[350px] h-[350px] opacity-55"
             style={{
-              background: 'linear-gradient(135deg, #e8d5c4, #b8956f)'
+              background: 'radial-gradient(circle at 40% 60%, #b8956f 0%, #e8d5c4 60%, transparent 85%)',
+              borderRadius: '60% 40% 70% 30%'
             }}
           ></div>
-          {/* Medium circle - top left */}
+          {/* Flowing shape - top left */}
           <div 
-            className="absolute -top-10 -left-16 w-64 h-64 rounded-full opacity-10"
+            className="absolute -top-20 -left-32 w-[450px] h-[300px] opacity-45"
             style={{
-              background: 'linear-gradient(135deg, #f5f0ea, #daa06d)'
+              background: 'radial-gradient(ellipse at 70% 50%, #daa06d 0%, #f5f0ea 45%, transparent 75%)',
+              borderRadius: '40% 60% 50% 80%',
+              transform: 'rotate(-15deg)'
             }}
           ></div>
-          {/* Small circle - bottom left */}
+          {/* Curved shape - bottom left */}
           <div 
-            className="absolute bottom-1/4 -left-8 w-40 h-40 rounded-full opacity-18"
+            className="absolute bottom-10 -left-24 w-[300px] h-[200px] opacity-40"
             style={{
-              background: 'linear-gradient(135deg, #f0e6d6, #c4926b)'
+              background: 'radial-gradient(ellipse at 60% 30%, #c4926b 0%, #f0e6d6 55%, transparent 80%)',
+              borderRadius: '70% 30% 40% 60%',
+              transform: 'rotate(20deg)'
+            }}
+          ></div>
+          {/* Extra flowing element - center */}
+          <div 
+            className="absolute top-1/2 left-1/4 w-[250px] h-[400px] opacity-30"
+            style={{
+              background: 'linear-gradient(135deg, #e8d5c4 0%, #f5f0ea 50%, transparent 100%)',
+              borderRadius: '50% 80% 30% 70%',
+              transform: 'rotate(45deg)'
             }}
           ></div>
         </div>
