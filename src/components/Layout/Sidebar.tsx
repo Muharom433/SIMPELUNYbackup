@@ -83,7 +83,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
 
         if (user.role === 'department_admin') {
             return [
-                { icon: PieChart, label: getText('Department Analytics', 'Analitik Departemen'), path: '/' },
+                { icon: PieChart, label: getText('Dashboard', 'Dasbor'), path: '/' },
                 { icon: CalendarCheck, label: getText('Exam Management', 'Jadwal UAS'), path: '/exams' },
                 { icon: Users, label: getText('User Management', 'Data Dosen/Mahasiswa'), path: '/users' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/profile' },
