@@ -599,19 +599,23 @@ const ExamManagement = () => {
             let newFinalY = finalY;
             // Only add the second table if there is data for it
             if (additionalInfoRows.length > 0) {
-                autoTable(doc, {
-                head: [additionalInfoColumn],
-                body: additionalInfoRows,
-                startY: finalY + 10,
-                theme: 'grid',
-                tableWidth: 100, // <--- ADD THIS LINE
-                styles: { fontSize: 8, cellPadding: 1.5, valign: 'middle' },
-                headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' },
-                columnStyles: {
-                    0: { halign: 'center', cellWidth: 25 },
-                    1: { halign: 'center', cellWidth: 15 },
-                }
-            });
+                 let subheadingY = finalY + 10; // Position it below the first table
+                  doc.setFontSize(6);
+                  doc.setFont('helvetica', 'bold');
+                  doc.text("Daftar Dosen Pengawas", 14, subheadingY); 
+                  autoTable(doc, {
+                      head: [additionalInfoColumn],
+                      body: additionalInfoRows,
+                      startY: subheadingY + 2,
+                              theme: 'grid',
+                              tableWidth: 100, // <--- ADD THIS LINE
+                              styles: { fontSize: 8, cellPadding: 1.5, valign: 'middle' },
+                              headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' },
+                              columnStyles: {
+                                  0: { halign: 'center', cellWidth: 25 },
+                                  1: { halign: 'center', cellWidth: 15 },
+                              }
+                          });
                 newFinalY = (doc as any).lastAutoTable.finalY; // Update the final Y position
             }
             // --- MODIFIED CODE ---
