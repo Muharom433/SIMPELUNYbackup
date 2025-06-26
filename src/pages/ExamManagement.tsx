@@ -366,26 +366,28 @@ const ExamManagement = () => {
         return days[date.getDay()]; 
     };
 
+    // FIXED: Inspector handling - save by ID, display by name
     const handleSubmit = async (data: ExamFormData) => {
-    try {
-        setLoading(true);
-        const day = getDayFromDate(data.date);
-        const inspectorInfo = lecturers.find(l => l.id === data.inspector);
-        const examData = {
-            day,
-            date: data.date,
-            session: data.session,
-            course_name: data.course_name,
-            course_code: data.course_code,
-            semester: data.semester,
-            class: data.class,
-            student_amount: data.student_amount,
-            room_id: data.session === 'Take Home' ? null : data.room_id,
-            lecturer_id: data.lecturer_id, // This correctly saves the ID
-            inspector: inspectorInfo?.full_name || null, // This now saves the name
-            department_id: profile.department_id,
-            study_program_id: data.study_program_id,
-        };
+        try {
+            setLoading(true);
+            const day = getDayFromDate(data.date);
+            
+            const examData = {
+                day,
+                date: data.date,
+                session: data.session,
+                course_name: data.course_name,
+                course_code: data.course_code,
+                semester: data.semester,
+                class: data.class,
+                student_amount: data.student_amount,
+                room_id: data.session === 'Take Home' ? null : data.room_id,
+                lecturer_id: data.lecturer_id,
+                inspector_id: data.inspector, // Save inspector ID
+                department_id: profile.department_id,
+                study_program_id: data.study_program_id,
+            };
+            
             if (editingExam) { 
                 const { error } = await supabase 
                     .from('exams') 
@@ -393,28 +395,17 @@ const ExamManagement = () => {
                     .eq('id', editingExam.id); 
                 if (error) throw error; 
                 toast.success('Exam updated successfully'); 
+                setShowModal(false);
+                setEditingExam(null); 
             } else { 
                 const { error } = await supabase 
                     .from('exams') 
                     .insert([examData]); 
                 if (error) throw error; 
                 toast.success('Exam created successfully'); 
+                // FIXED: Don't close modal or reset form after successful add
             } 
-            setShowModal(false);
-            form.reset({ 
-                course_name: '', 
-                course_code: '', 
-                date: format(new Date(), 'yyyy-MM-dd'), 
-                session: '', 
-                semester: 1, 
-                class: '', 
-                student_amount: 0, 
-                room_id: '', 
-                lecturer_id: '',
-                inspector: '',
-                study_program_id: '', 
-            });
-            setEditingExam(null); 
+            
             fetchExams(); 
         } catch (error: any) { 
             console.error('Error saving exam:', error); 
@@ -424,25 +415,25 @@ const ExamManagement = () => {
         } 
     };
 
+    // FIXED: Inspector handling in edit
     const handleEdit = (exam: any) => {
-    setEditingExam(exam);
-    const inspectorUser = lecturers.find(l => l.full_name === exam.inspector);
-
-    form.reset({
-        course_name: exam.course_name || '',
-        course_code: exam.course_code,
-        date: exam.date,
-        session: exam.session,
-        semester: exam.semester,
-        class: exam.class,
-        student_amount: exam.student_amount,
-        room_id: exam.room_id || '',
-        lecturer_id: exam.lecturer_id,
-        inspector: inspectorUser?.id || '', // Set the form value to the ID
-        study_program_id: exam.study_program_id,
-    });
-    setShowModal(true);
-};
+        setEditingExam(exam);
+        
+        form.reset({
+            course_name: exam.course_name || '',
+            course_code: exam.course_code,
+            date: exam.date,
+            session: exam.session,
+            semester: exam.semester,
+            class: exam.class,
+            student_amount: exam.student_amount,
+            room_id: exam.room_id || '',
+            lecturer_id: exam.lecturer_id,
+            inspector: exam.inspector_id || '', // Use inspector_id from database
+            study_program_id: exam.study_program_id,
+        });
+        setShowModal(true);
+    };
 
     const handleDelete = async (id: string) => { 
         try { 
@@ -543,11 +534,13 @@ const ExamManagement = () => {
             const titleMaxWidth = pageWidth - 30; 
             const titleLines = doc.splitTextToSize(subtitle, titleMaxWidth);
             doc.text(titleLines, pageWidth / 2, currentY, { align: 'center' });
-            currentY += (titleLines.length * 5); // 5 units of space per line 
+            currentY += (titleLines.length * 5); 
             currentY += 5; 
             const tableColumn = ["No.", "HARI", "TANGGAL", "SESI", "KODE MK", "MATA KULIAH", "SMT", "KLS", "MHS", "RUANG", "PENGAWAS"]; 
             const tableRows: any[] = []; 
             examsToPrint.forEach((exam, index) => { 
+                // FIXED: Get inspector name from inspector_id
+                const inspectorName = lecturers.find(l => l.id === exam.inspector_id)?.full_name || '-';
                 tableRows.push([ 
                     index + 1, 
                     exam.day, 
@@ -559,7 +552,7 @@ const ExamManagement = () => {
                     exam.class, 
                     exam.student_amount, 
                     exam.room?.name || 'Take Home',
-                    exam.inspector || '-',
+                    inspectorName,
                 ]); 
             }); 
             autoTable(doc, { 
@@ -577,53 +570,51 @@ const ExamManagement = () => {
                     8: { halign: 'center' } 
                 } 
             }); 
-          // --- START: ADD THIS NEW CODE ---
-          const additionalInfoColumn = ["KODE MK", "KELAS", "Dosen Pengawas", "Dosen Pengampu MK"];
-          const additionalInfoRows: any[] = [];
-          
-          // Create a set to track unique combinations of course code and class to avoid duplicates
-          const uniqueCourses = new Set<string>();
-          
-          examsToPrint.forEach((exam) => {
-              const uniqueKey = `${exam.course_code}-${exam.class}`;
-              if (!uniqueCourses.has(uniqueKey)) {
-                  additionalInfoRows.push([
-                      exam.course_code,
-                      exam.class,
-                      exam.inspector || '-', // Dosen Pengawas
-                      exam.lecturer?.full_name || 'N/A' // Dosen Pengampu MK
-                  ]);
-                  uniqueCourses.add(uniqueKey);
-              }
-          });
-          // --- END: ADD THIS NEW CODE ---
+            
+            const additionalInfoColumn = ["KODE MK", "KELAS", "Dosen Pengawas", "Dosen Pengampu MK"];
+            const additionalInfoRows: any[] = [];
+            
+            const uniqueCourses = new Set<string>();
+            
+            examsToPrint.forEach((exam) => {
+                const uniqueKey = `${exam.course_code}-${exam.class}`;
+                if (!uniqueCourses.has(uniqueKey)) {
+                    const inspectorName = lecturers.find(l => l.id === exam.inspector_id)?.full_name || '-';
+                    additionalInfoRows.push([
+                        exam.course_code,
+                        exam.class,
+                        inspectorName,
+                        exam.lecturer?.full_name || 'N/A'
+                    ]);
+                    uniqueCourses.add(uniqueKey);
+                }
+            });
+            
             const finalY = (doc as any).lastAutoTable.finalY || 100;
-            // --- START: REPLACE THE OLD SIGNATURE BLOCK WITH THIS ---
             let newFinalY = finalY;
-            // Only add the second table if there is data for it
+            
             if (additionalInfoRows.length > 0) {
-                let subheadingY = finalY + 10; // Position it below the first table
+                let subheadingY = finalY + 10;
                 doc.setFontSize(12);
                 doc.setFont('helvetica', 'bold');
-                doc.text("Daftar Dosen Pengawas", 14, subheadingY); // 14 is the left margin
-                // --- END: ADD THIS NEW CODE ---
+                doc.text("Daftar Dosen Pengawas", 14, subheadingY);
             
                 autoTable(doc, {
                     head: [additionalInfoColumn],
                     body: additionalInfoRows,
                     startY: subheadingY + 5,
                     theme: 'grid',
-                    tableWidth: 100, // <--- ADD THIS LINE
+                    tableWidth: 100,
                     styles: { fontSize: 8, cellPadding: 1.5, valign: 'middle' },
                     headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' },
                     columnStyles: {
                         0: { halign: 'center', cellWidth: 25 },
                         1: { halign: 'center', cellWidth: 15 },
                     }
-            });
-                newFinalY = (doc as any).lastAutoTable.finalY; // Update the final Y position
+                });
+                newFinalY = (doc as any).lastAutoTable.finalY;
             }
-            // --- MODIFIED CODE ---
+            
             const signatureX = 140;
             const signatureY = newFinalY + 10;
             const signatureMaxWidth = 60;
@@ -639,7 +630,7 @@ const ExamManagement = () => {
             doc.text(nameLines, signatureX, nameY);
             
             const nameBlockHeight = (nameLines.length * doc.getLineHeight()) / doc.internal.scaleFactor;
-            const nipY = nameY + nameBlockHeight + 1; // Position NIP directly after the name
+            const nipY = nameY + nameBlockHeight + 1;
             doc.setFont('helvetica', 'normal');
             doc.text(`NIP. ${departmentHead.identity_number}`, signatureX, nipY);
             doc.save(`Jadwal_UAS_${selectedProgram.code}_${formData.semester}.pdf`);
@@ -850,116 +841,121 @@ const ExamManagement = () => {
                                     </td>
                                 </tr>
                             ) : (
-                                filteredExams.map((exam) => (
-                                    <tr key={exam.id} className="hover:bg-gray-50 transition-colors duration-200">
-                                        {isSuperAdmin && (
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <div className="flex items-center">
-                                                    <div className="h-8 w-8 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-lg flex items-center justify-center">
-                                                        <Building className="h-4 w-4 text-white" />
-                                                    </div>
-                                                    <div className="ml-3">
-                                                        <div className="text-sm font-medium text-gray-900">{exam.department?.name || 'N/A'}</div>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                        )}
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div>
-                                                <div className="text-sm font-semibold text-gray-900">{exam.course_name || 'N/A'}</div>
-                                                <div className="text-sm text-gray-600 font-mono">{exam.course_code}</div>
-                                                <div className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full inline-block mt-1">
-                                                    {exam.study_program?.name}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div>
-                                                <div className="text-sm font-medium text-gray-900">{format(parseISO(exam.date), 'MMM d, yyyy')}</div>
-                                                <div className="text-sm text-gray-600">{exam.day}</div>
-                                                <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full inline-block mt-1">
-                                                    {exam.session}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div>
-                                                <div className="text-sm font-medium text-gray-900">Class {exam.class}</div>
-                                                <div className="text-sm text-gray-600">Semester {exam.semester}</div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div>
-                                                {exam.session === 'Take Home' ? (
-                                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                                        <BookOpen className="h-3 w-3 mr-1" />
-                                                        Take Home Exam
-                                                    </span>
-                                                ) : (
+                                filteredExams.map((exam) => {
+                                    // FIXED: Get inspector name from inspector_id
+                                    const inspectorName = lecturers.find(l => l.id === exam.inspector_id)?.full_name || 'Not assigned';
+                                    
+                                    return (
+                                        <tr key={exam.id} className="hover:bg-gray-50 transition-colors duration-200">
+                                            {isSuperAdmin && (
+                                                <td className="px-6 py-4 whitespace-nowrap">
                                                     <div className="flex items-center">
-                                                        <div className="h-8 w-8 bg-gradient-to-r from-green-500 to-teal-500 rounded-lg flex items-center justify-center">
-                                                            <MapPin className="h-4 w-4 text-white" />
+                                                        <div className="h-8 w-8 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-lg flex items-center justify-center">
+                                                            <Building className="h-4 w-4 text-white" />
                                                         </div>
                                                         <div className="ml-3">
-                                                            <div className="text-sm font-medium text-gray-900">{exam.room?.name || 'N/A'}</div>
-                                                            <div className="text-sm text-gray-600">{exam.room?.code || 'N/A'}</div>
+                                                            <div className="text-sm font-medium text-gray-900">{exam.department?.name || 'N/A'}</div>
                                                         </div>
                                                     </div>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="flex items-center">
-                                                <div className="h-8 w-8 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
-                                                    <User className="h-4 w-4 text-white" />
-                                                </div>
-                                                <div className="ml-3">
-                                                    <div className="text-sm font-medium text-gray-900">{exam.lecturer?.full_name || 'Unknown'}</div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="flex items-center">
-                                                <div className="h-8 w-8 bg-gradient-to-r from-orange-500 to-red-500 rounded-full flex items-center justify-center">
-                                                    <Eye className="h-4 w-4 text-white" />
-                                                </div>
-                                                <div className="ml-3">
-                                                    <div className="text-sm font-medium text-gray-900">{exam.inspector || 'Not assigned'}</div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="flex items-center">
-                                                <div className="h-8 w-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
-                                                    <Users className="h-4 w-4 text-white" />
-                                                </div>
-                                                <div className="ml-3">
-                                                    <span className="text-sm font-medium text-gray-900">{exam.student_amount}</span>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        {isDepartmentAdmin && (
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                <div className="flex items-center justify-end space-x-2">
-                                                    <button 
-                                                        onClick={() => handleEdit(exam)} 
-                                                        className="text-blue-600 hover:text-blue-900 p-2 rounded-lg hover:bg-blue-50 transition-all duration-200"
-                                                        title="Edit exam"
-                                                    >
-                                                        <Edit className="h-4 w-4" />
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => setShowDeleteConfirm(exam.id)} 
-                                                        className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
-                                                        title="Delete exam"
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </button>
+                                                </td>
+                                            )}
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div>
+                                                    <div className="text-sm font-semibold text-gray-900">{exam.course_name || 'N/A'}</div>
+                                                    <div className="text-sm text-gray-600 font-mono">{exam.course_code}</div>
+                                                    <div className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full inline-block mt-1">
+                                                        {exam.study_program?.name}
+                                                    </div>
                                                 </div>
                                             </td>
-                                        )}
-                                    </tr>
-                                ))
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div>
+                                                    <div className="text-sm font-medium text-gray-900">{format(parseISO(exam.date), 'MMM d, yyyy')}</div>
+                                                    <div className="text-sm text-gray-600">{exam.day}</div>
+                                                    <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full inline-block mt-1">
+                                                        {exam.session}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div>
+                                                    <div className="text-sm font-medium text-gray-900">Class {exam.class}</div>
+                                                    <div className="text-sm text-gray-600">Semester {exam.semester}</div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div>
+                                                    {exam.session === 'Take Home' ? (
+                                                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                                            <BookOpen className="h-3 w-3 mr-1" />
+                                                            Take Home Exam
+                                                        </span>
+                                                    ) : (
+                                                        <div className="flex items-center">
+                                                            <div className="h-8 w-8 bg-gradient-to-r from-green-500 to-teal-500 rounded-lg flex items-center justify-center">
+                                                                <MapPin className="h-4 w-4 text-white" />
+                                                            </div>
+                                                            <div className="ml-3">
+                                                                <div className="text-sm font-medium text-gray-900">{exam.room?.name || 'N/A'}</div>
+                                                                <div className="text-sm text-gray-600">{exam.room?.code || 'N/A'}</div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div className="flex items-center">
+                                                    <div className="h-8 w-8 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
+                                                        <User className="h-4 w-4 text-white" />
+                                                    </div>
+                                                    <div className="ml-3">
+                                                        <div className="text-sm font-medium text-gray-900">{exam.lecturer?.full_name || 'Unknown'}</div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div className="flex items-center">
+                                                    <div className="h-8 w-8 bg-gradient-to-r from-orange-500 to-red-500 rounded-full flex items-center justify-center">
+                                                        <Eye className="h-4 w-4 text-white" />
+                                                    </div>
+                                                    <div className="ml-3">
+                                                        <div className="text-sm font-medium text-gray-900">{inspectorName}</div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div className="flex items-center">
+                                                    <div className="h-8 w-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
+                                                        <Users className="h-4 w-4 text-white" />
+                                                    </div>
+                                                    <div className="ml-3">
+                                                        <span className="text-sm font-medium text-gray-900">{exam.student_amount}</span>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            {isDepartmentAdmin && (
+                                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                    <div className="flex items-center justify-end space-x-2">
+                                                        <button 
+                                                            onClick={() => handleEdit(exam)} 
+                                                            className="text-blue-600 hover:text-blue-900 p-2 rounded-lg hover:bg-blue-50 transition-all duration-200"
+                                                            title="Edit exam"
+                                                        >
+                                                            <Edit className="h-4 w-4" />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => setShowDeleteConfirm(exam.id)} 
+                                                            className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
+                                                            title="Delete exam"
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            )}
+                                        </tr>
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>
@@ -971,23 +967,24 @@ const ExamManagement = () => {
     if (isSuperAdmin) {
         pageContent = (
             <div className="space-y-6">
-                <div className="bg-gradient-to-r from-slate-600 to-slate-800 rounded-xl p-6 text-white">
+                {/* FIXED: More attractive header with gradient colors */}
+                <div className="bg-gradient-to-br from-indigo-600 via-purple-600 to-blue-700 rounded-xl p-6 text-white shadow-lg">
                     <div className="flex justify-between items-center">
                         <div>
                             <h1 className="text-3xl font-bold flex items-center space-x-3">
                                 <Shield className="h-8 w-8" /> 
-                                <span>Admin Dashboard</span>
+                                <span>Super Admin Dashboard</span>
                             </h1>
                             <p className="mt-2 opacity-90">Manage system-wide exam settings and view all schedules.</p>
                         </div>
                         <div className="text-center">
                             <button 
                                 onClick={handleModeChange} 
-                                className={`p-3 rounded-full transition-all duration-300 ${examModeEnabled ? 'bg-green-500 hover:bg-green-600 shadow-lg' : 'bg-red-500 hover:bg-red-600 shadow-lg'}`}
+                                className={`p-3 rounded-full transition-all duration-300 ${examModeEnabled ? 'bg-emerald-500 hover:bg-emerald-600 shadow-lg' : 'bg-red-500 hover:bg-red-600 shadow-lg'}`}
                             >
                                 {examModeEnabled ? <Power className="h-7 w-7 text-white" /> : <PowerOff className="h-7 w-7 text-white" />}
                             </button>
-                            <p className={`mt-2 text-sm font-bold ${examModeEnabled ? 'text-green-300' : 'text-red-300'}`}>
+                            <p className={`mt-2 text-sm font-bold ${examModeEnabled ? 'text-emerald-200' : 'text-red-200'}`}>
                                 Exam Mode: {examModeEnabled ? 'ENABLED' : 'DISABLED'}
                             </p>
                         </div>
@@ -1045,7 +1042,7 @@ const ExamManagement = () => {
         <>
             {pageContent}
 
-            {/* Enhanced Add/Edit Modal */}
+            {/* FIXED: Compact Modal Form - Removed excessive sections and made it more streamlined */}
             {showModal && isDepartmentAdmin && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -1062,368 +1059,277 @@ const ExamManagement = () => {
                                     <X className="h-6 w-6" /> 
                                 </button>
                             </div>
-                            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-                                {/* Course Information Section */}
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-                                        <BookOpen className="h-5 w-5 text-blue-600" />
-                                        <span>Course Information</span>
-                                    </h4>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">Course Name *</label>
-                                            <input 
-                                                {...form.register('course_name')} 
-                                                type="text" 
-                                                placeholder="e.g., Database Systems" 
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200" 
-                                            />
-                                            {form.formState.errors.course_name && (
-                                                <p className="mt-1 text-sm text-red-600">{form.formState.errors.course_name.message}</p>
-                                            )}
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">Course Code *</label>
-                                            <input 
-                                                {...form.register('course_code')} 
-                                                type="text" 
-                                                placeholder="e.g., CS301" 
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200" 
-                                            />
-                                            {form.formState.errors.course_code && (
-                                                <p className="mt-1 text-sm text-red-600">{form.formState.errors.course_code.message}</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Schedule Information Section */}
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-                                        <Clock className="h-5 w-5 text-green-600" />
-                                        <span>Schedule Information</span>
-                                    </h4>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">Date *</label>
-                                            <input 
-                                                {...form.register('date')} 
-                                                type="date" 
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200" 
-                                            />
-                                            {form.formState.errors.date && (
-                                                <p className="mt-1 text-sm text-red-600">{form.formState.errors.date.message}</p>
-                                            )}
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">Session *</label>
-                                            <select 
-                                                {...form.register('session')} 
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200" 
-                                            >
-                                                <option value="">Select Session</option>
-                                                <option value="Session 1 (7:30-9:30)">Session 1 (7:30-9:30)</option>
-                                                <option value="Session 2 (9:45-11:45)">Session 2 (9:45-11:45)</option>
-                                                <option value="Session 3 (12:30-14:30)">Session 3 (12:30-14:30)</option>
-                                                <option value="Session 4 (14:45-16:45)">Session 4 (14:45-16:45)</option>
-                                                <option value="Take Home">Take Home</option>
-                                            </select>
-                                            {form.formState.errors.session && (
-                                                <p className="mt-1 text-sm text-red-600">{form.formState.errors.session.message}</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Class Information Section */}
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-                                        <GraduationCap className="h-5 w-5 text-purple-600" />
-                                        <span>Class Information</span>
-                                    </h4>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">Semester (1-8) *</label>
-                                            <input 
-                                                {...form.register('semester', { 
-                                                    valueAsNumber: true, 
-                                                    onChange: (e) => { 
-                                                        const value = parseInt(e.target.value); 
-                                                        if (value < 1) e.target.value = '1'; 
-                                                        if (value > 8) e.target.value = '8'; 
-                                                    } 
-                                                })} 
-                                                type="number" 
-                                                min="1" 
-                                                max="8" 
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200" 
-                                            />
-                                            {form.formState.errors.semester && (
-                                                <p className="mt-1 text-sm text-red-600">{form.formState.errors.semester.message}</p>
-                                            )}
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">Class *</label>
-                                            <input 
-                                                {...form.register('class')} 
-                                                type="text" 
-                                                placeholder="e.g., A, B, C, etc." 
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200" 
-                                            />
-                                            {form.formState.errors.class && (
-                                                <p className="mt-1 text-sm text-red-600">{form.formState.errors.class.message}</p>
-                                            )}
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">Student Amount *</label>
-                                            <input 
-                                                {...form.register('student_amount', { valueAsNumber: true })} 
-                                                type="number" 
-                                                min="0" 
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200" 
-                                            />
-                                            {form.formState.errors.student_amount && (
-                                                <p className="mt-1 text-sm text-red-600">{form.formState.errors.student_amount.message}</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Program and Staff Section */}
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-                                        <Users className="h-5 w-5 text-indigo-600" />
-                                        <span>Program & Staff</span>
-                                    </h4>
-                                    <div className="grid grid-cols-1 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">Study Program *</label>
-                                            <Controller 
-                                                name="study_program_id" 
-                                                control={form.control} 
-                                                render={({ field }) => { 
-                                                    const options = studyPrograms.map(p => ({ 
-                                                        ...p, 
-                                                        value: p.id, 
-                                                        label: p.name, 
-                                                    })); 
-                                                    const currentValue = options.find(o => o.value === field.value); 
-                                                    return ( 
-                                                        <Select 
-                                                            {...field} 
-                                                            options={options} 
-                                                            value={currentValue} 
-                                                            onChange={option => field.onChange(option ? option.value : '')} 
-                                                            placeholder="Search or select study program..." 
-                                                            isClearable 
-                                                            formatOptionLabel={program => ( 
-                                                                <div className="flex items-center space-x-2"> 
-                                                                    <Building className="h-4 w-4 text-gray-400" />
-                                                                    <span>{program.name}</span> 
-                                                                    <span className="text-gray-500 text-sm">({program.code})</span> 
-                                                                </div> 
-                                                            )}
-                                                            styles={{
-                                                                control: (provided) => ({
-                                                                    ...provided,
-                                                                    minHeight: '42px',
-                                                                    borderColor: '#d1d5db',
-                                                                    '&:hover': {
-                                                                        borderColor: '#9ca3af',
-                                                                    },
-                                                                    '&:focus-within': {
-                                                                        borderColor: '#3b82f6',
-                                                                        boxShadow: '0 0 0 2px rgba(59, 130, 246, 0.5)',
-                                                                    },
-                                                                }),
-                                                            }}
-                                                        /> 
-                                                    ); 
-                                                }} 
-                                            />
-                                            {form.formState.errors.study_program_id && (
-                                                <p className="mt-1 text-sm text-red-600">{form.formState.errors.study_program_id.message}</p>
-                                            )}
-                                        </div>
-                                        
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-2">Lecturer in Charge *</label>
-                                                <Controller 
-                                                    name="lecturer_id" 
-                                                    control={form.control} 
-                                                    render={({ field }) => { 
-                                                        const options = filteredLecturers.map(l => ({ 
-                                                            value: l.id, 
-                                                            label: l.full_name 
-                                                        })); 
-                                                        const currentValue = options.find(o => o.value === field.value); 
-                                                        return ( 
-                                                            <Select 
-                                                                {...field} 
-                                                                options={options} 
-                                                                value={currentValue} 
-                                                                onChange={val => field.onChange(val?.value)} 
-                                                                placeholder="Search or select lecturer..." 
-                                                                isClearable 
-                                                                noOptionsMessage={() => watchStudyProgramId ? 'No lecturers found' : 'Select a study program first'} 
-                                                                formatOptionLabel={lecturer => ( 
-                                                                    <div className="flex items-center space-x-2"> 
-                                                                        <User className="h-4 w-4 text-gray-400" />
-                                                                        <span>{lecturer.label}</span> 
-                                                                    </div> 
-                                                                )}
-                                                                styles={{
-                                                                    control: (provided) => ({
-                                                                        ...provided,
-                                                                        minHeight: '42px',
-                                                                        borderColor: '#d1d5db',
-                                                                        '&:hover': {
-                                                                            borderColor: '#9ca3af',
-                                                                        },
-                                                                        '&:focus-within': {
-                                                                            borderColor: '#3b82f6',
-                                                                            boxShadow: '0 0 0 2px rgba(59, 130, 246, 0.5)',
-                                                                        },
-                                                                    }),
-                                                                }}
-                                                            /> 
-                                                        ) 
-                                                    }} 
-                                                />
-                                                {form.formState.errors.lecturer_id && (
-                                                    <p className="mt-1 text-sm text-red-600">{form.formState.errors.lecturer_id.message}</p>
-                                                )}
-                                            </div>
-                                            
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-2">Inspector (Pengawas) *</label>
-                                                <Controller 
-                                                    name="inspector" 
-                                                    control={form.control} 
-                                                    render={({ field }) => { 
-                                                        const options = filteredLecturers.map(l => ({ 
-                                                            value: l.full_name, 
-                                                            label: l.full_name 
-                                                        })); 
-                                                        const currentValue = options.find(o => o.value === field.value); 
-                                                        return ( 
-                                                            <Select 
-                                                                {...field} 
-                                                                options={options} 
-                                                                value={currentValue} 
-                                                                onChange={val => field.onChange(val?.value)} 
-                                                                placeholder="Search or select inspector..." 
-                                                                isClearable 
-                                                                noOptionsMessage={() => watchStudyProgramId ? 'No lecturers found' : 'Select a study program first'} 
-                                                                formatOptionLabel={inspector => ( 
-                                                                    <div className="flex items-center space-x-2"> 
-                                                                        <Eye className="h-4 w-4 text-gray-400" />
-                                                                        <span>{inspector.label}</span> 
-                                                                    </div> 
-                                                                )}
-                                                                styles={{
-                                                                    control: (provided) => ({
-                                                                        ...provided,
-                                                                        minHeight: '42px',
-                                                                        borderColor: '#d1d5db',
-                                                                        '&:hover': {
-                                                                            borderColor: '#9ca3af',
-                                                                        },
-                                                                        '&:focus-within': {
-                                                                            borderColor: '#3b82f6',
-                                                                            boxShadow: '0 0 0 2px rgba(59, 130, 246, 0.5)',
-                                                                        },
-                                                                    }),
-                                                                }}
-                                                            /> 
-                                                        ) 
-                                                    }} 
-                                                />
-                                                {form.formState.errors.inspector && (
-                                                    <p className="mt-1 text-sm text-red-600">{form.formState.errors.inspector.message}</p>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Room Section */}
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-                                        <MapPin className="h-5 w-5 text-red-600" />
-                                        <span>Room Assignment</span>
-                                    </h4>
+                            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+                                {/* Course Information */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            Room {watchSession !== 'Take Home' && '*'}
-                                            {watchSession === 'Take Home' && (
-                                                <span className="text-gray-500 text-sm ml-2">(Not required for Take Home exams)</span>
-                                            )}
-                                        </label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Course Name *</label>
+                                        <input 
+                                            {...form.register('course_name')} 
+                                            type="text" 
+                                            placeholder="e.g., Database Systems" 
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                        />
+                                        {form.formState.errors.course_name && (
+                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.course_name.message}</p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Course Code *</label>
+                                        <input 
+                                            {...form.register('course_code')} 
+                                            type="text" 
+                                            placeholder="e.g., CS301" 
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                        />
+                                        {form.formState.errors.course_code && (
+                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.course_code.message}</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Schedule Information */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+                                        <input 
+                                            {...form.register('date')} 
+                                            type="date" 
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                        />
+                                        {form.formState.errors.date && (
+                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.date.message}</p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Session *</label>
+                                        <select 
+                                            {...form.register('session')} 
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                        >
+                                            <option value="">Select Session</option>
+                                            <option value="Session 1 (7:30-9:30)">Session 1 (7:30-9:30)</option>
+                                            <option value="Session 2 (9:45-11:45)">Session 2 (9:45-11:45)</option>
+                                            <option value="Session 3 (12:30-14:30)">Session 3 (12:30-14:30)</option>
+                                            <option value="Session 4 (14:45-16:45)">Session 4 (14:45-16:45)</option>
+                                            <option value="Take Home">Take Home</option>
+                                        </select>
+                                        {form.formState.errors.session && (
+                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.session.message}</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Class Information */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Semester (1-8) *</label>
+                                        <input 
+                                            {...form.register('semester', { 
+                                                valueAsNumber: true, 
+                                                onChange: (e) => { 
+                                                    const value = parseInt(e.target.value); 
+                                                    if (value < 1) e.target.value = '1'; 
+                                                    if (value > 8) e.target.value = '8'; 
+                                                } 
+                                            })} 
+                                            type="number" 
+                                            min="1" 
+                                            max="8" 
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                        />
+                                        {form.formState.errors.semester && (
+                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.semester.message}</p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Class *</label>
+                                        <input 
+                                            {...form.register('class')} 
+                                            type="text" 
+                                            placeholder="e.g., A, B, C" 
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                        />
+                                        {form.formState.errors.class && (
+                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.class.message}</p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Student Amount *</label>
+                                        <input 
+                                            {...form.register('student_amount', { valueAsNumber: true })} 
+                                            type="number" 
+                                            min="0" 
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                        />
+                                        {form.formState.errors.student_amount && (
+                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.student_amount.message}</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Study Program */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Study Program *</label>
+                                    <Controller 
+                                        name="study_program_id" 
+                                        control={form.control} 
+                                        render={({ field }) => { 
+                                            const options = studyPrograms.map(p => ({ 
+                                                value: p.id, 
+                                                label: `${p.name} (${p.code})`, 
+                                            })); 
+                                            const currentValue = options.find(o => o.value === field.value); 
+                                            return ( 
+                                                <Select 
+                                                    {...field} 
+                                                    options={options} 
+                                                    value={currentValue} 
+                                                    onChange={option => field.onChange(option ? option.value : '')} 
+                                                    placeholder="Search or select study program..." 
+                                                    isClearable 
+                                                    styles={{
+                                                        control: (provided) => ({
+                                                            ...provided,
+                                                            minHeight: '42px',
+                                                            borderColor: '#d1d5db',
+                                                        }),
+                                                    }}
+                                                /> 
+                                            ); 
+                                        }} 
+                                    />
+                                    {form.formState.errors.study_program_id && (
+                                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.study_program_id.message}</p>
+                                    )}
+                                </div>
+                                        
+                                {/* Lecturer and Inspector */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Lecturer in Charge *</label>
                                         <Controller 
-                                            name="room_id" 
+                                            name="lecturer_id" 
                                             control={form.control} 
                                             render={({ field }) => { 
-                                                const roomOptions = getAvailableRooms().map(r => ({ 
-                                                    ...r, 
-                                                    value: r.id, 
-                                                    label: r.name 
+                                                const options = filteredLecturers.map(l => ({ 
+                                                    value: l.id, 
+                                                    label: l.full_name 
                                                 })); 
-                                                const selectedValue = roomOptions.find(o => o.value === field.value); 
+                                                const currentValue = options.find(o => o.value === field.value); 
                                                 return ( 
                                                     <Select 
                                                         {...field} 
-                                                        options={roomOptions} 
-                                                        value={selectedValue} 
-                                                        onChange={option => field.onChange(option ? option.value : '')} 
-                                                        isDisabled={watchSession === 'Take Home'} 
-                                                        placeholder={watchSession === 'Take Home' ? 'No room needed for Take Home exam' : 'Search or select room...'} 
+                                                        options={options} 
+                                                        value={currentValue} 
+                                                        onChange={val => field.onChange(val?.value)} 
+                                                        placeholder="Search or select lecturer..." 
                                                         isClearable 
-                                                        formatOptionLabel={room => ( 
-                                                            <div className="flex items-center justify-between"> 
-                                                                <div className="flex items-center space-x-2">
-                                                                    <MapPin className="h-4 w-4 text-gray-400" />
-                                                                    <span>{room.name}</span> 
-                                                                    <span className="text-gray-500 text-sm">({room.code})</span> 
-                                                                </div>
-                                                                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                                                                    Cap: {room.capacity}
-                                                                </span>
-                                                            </div> 
-                                                        )}
+                                                        noOptionsMessage={() => watchStudyProgramId ? 'No lecturers found' : 'Select a study program first'} 
                                                         styles={{
                                                             control: (provided) => ({
                                                                 ...provided,
                                                                 minHeight: '42px',
                                                                 borderColor: '#d1d5db',
-                                                                backgroundColor: watchSession === 'Take Home' ? '#f9fafb' : 'white',
-                                                                '&:hover': {
-                                                                    borderColor: '#9ca3af',
-                                                                },
-                                                                '&:focus-within': {
-                                                                    borderColor: '#3b82f6',
-                                                                    boxShadow: '0 0 0 2px rgba(59, 130, 246, 0.5)',
-                                                                },
                                                             }),
                                                         }}
                                                     /> 
-                                                ); 
-                                            }}
+                                                ) 
+                                            }} 
                                         />
-                                        {form.formState.errors.room_id && (
-                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.room_id.message}</p>
+                                        {form.formState.errors.lecturer_id && (
+                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.lecturer_id.message}</p>
                                         )}
-                                        {watchSession && watchSession !== 'Take Home' && (
-                                            <p className="mt-2 text-sm text-gray-600">
-                                                💡 Only available rooms for the selected date and session are shown
-                                            </p>
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Inspector (Pengawas) *</label>
+                                        {/* FIXED: Inspector dropdown now saves ID correctly */}
+                                        <Controller 
+                                            name="inspector" 
+                                            control={form.control} 
+                                            render={({ field }) => { 
+                                                const options = filteredLecturers.map(l => ({ 
+                                                    value: l.id, // Use ID as value
+                                                    label: l.full_name // Display name as label
+                                                })); 
+                                                const currentValue = options.find(o => o.value === field.value); 
+                                                return ( 
+                                                    <Select 
+                                                        {...field} 
+                                                        options={options} 
+                                                        value={currentValue} 
+                                                        onChange={val => field.onChange(val?.value)} // Save ID
+                                                        placeholder="Search or select inspector..." 
+                                                        isClearable 
+                                                        noOptionsMessage={() => watchStudyProgramId ? 'No lecturers found' : 'Select a study program first'} 
+                                                        styles={{
+                                                            control: (provided) => ({
+                                                                ...provided,
+                                                                minHeight: '42px',
+                                                                borderColor: '#d1d5db',
+                                                            }),
+                                                        }}
+                                                    /> 
+                                                ) 
+                                            }} 
+                                        />
+                                        {form.formState.errors.inspector && (
+                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.inspector.message}</p>
                                         )}
                                     </div>
                                 </div>
 
+                                {/* Room Assignment */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Room {watchSession !== 'Take Home' && '*'}
+                                        {watchSession === 'Take Home' && (
+                                            <span className="text-gray-500 text-sm ml-2">(Not required for Take Home exams)</span>
+                                        )}
+                                    </label>
+                                    <Controller 
+                                        name="room_id" 
+                                        control={form.control} 
+                                        render={({ field }) => { 
+                                            const roomOptions = getAvailableRooms().map(r => ({ 
+                                                value: r.id, 
+                                                label: `${r.name} (${r.code}) - Cap: ${r.capacity}` 
+                                            })); 
+                                            const selectedValue = roomOptions.find(o => o.value === field.value); 
+                                            return ( 
+                                                <Select 
+                                                    {...field} 
+                                                    options={roomOptions} 
+                                                    value={selectedValue} 
+                                                    onChange={option => field.onChange(option ? option.value : '')} 
+                                                    isDisabled={watchSession === 'Take Home'} 
+                                                    placeholder={watchSession === 'Take Home' ? 'No room needed for Take Home exam' : 'Search or select room...'} 
+                                                    isClearable 
+                                                    styles={{
+                                                        control: (provided) => ({
+                                                            ...provided,
+                                                            minHeight: '42px',
+                                                            borderColor: '#d1d5db',
+                                                            backgroundColor: watchSession === 'Take Home' ? '#f9fafb' : 'white',
+                                                        }),
+                                                    }}
+                                                /> 
+                                            ); 
+                                        }}
+                                    />
+                                    {form.formState.errors.room_id && (
+                                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.room_id.message}</p>
+                                    )}
+                                    {watchSession && watchSession !== 'Take Home' && (
+                                        <p className="mt-2 text-sm text-gray-600">
+                                            💡 Only available rooms for the selected date and session are shown
+                                        </p>
+                                    )}
+                                </div>
+
                                 {/* Action Buttons */}
-                                <div className="flex space-x-3 pt-6 border-t border-gray-200">
+                                <div className="flex space-x-3 pt-4 border-t border-gray-200">
                                     <button 
                                         type="button" 
                                         onClick={() => setShowModal(false)} 
@@ -1587,7 +1493,7 @@ const ExamManagement = () => {
                                         {...printForm.register('academic_year')} 
                                         type="text" 
                                         placeholder="e.g. 2024/2025" 
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200" 
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
                                     />
                                     {printForm.formState.errors.academic_year && (
                                         <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.academic_year.message}</p>
