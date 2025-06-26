@@ -134,7 +134,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     });
   };
 
-  const getQuickActions = () => {
+   const getQuickActions = () => {
     if (!user) {
       return [
         { icon: Home, label: 'Dashboard', path: '/', color: 'text-blue-600 bg-blue-50 hover:bg-blue-100', description: 'View system overview' },
