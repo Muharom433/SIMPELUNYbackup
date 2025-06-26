@@ -597,17 +597,18 @@ const ExamManagement = () => {
             // Only add the second table if there is data for it
             if (additionalInfoRows.length > 0) {
                 autoTable(doc, {
-                    head: [additionalInfoColumn],
-                    body: additionalInfoRows,
-                    startY: finalY + 10, // Start 10 units below the first table
-                    theme: 'grid',
-                    styles: { fontSize: 8, cellPadding: 1.5, valign: 'middle' },
-                    headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' },
-                    columnStyles: {
-                        0: { halign: 'center', cellWidth: 25 },
-                        1: { halign: 'center', cellWidth: 15 },
-                    }
-                });
+                head: [additionalInfoColumn],
+                body: additionalInfoRows,
+                startY: finalY + 10,
+                theme: 'grid',
+                tableWidth: 100, // <--- ADD THIS LINE
+                styles: { fontSize: 8, cellPadding: 1.5, valign: 'middle' },
+                headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' },
+                columnStyles: {
+                    0: { halign: 'center', cellWidth: 25 },
+                    1: { halign: 'center', cellWidth: 15 },
+                }
+            });
                 newFinalY = (doc as any).lastAutoTable.finalY; // Update the final Y position
             }
             
