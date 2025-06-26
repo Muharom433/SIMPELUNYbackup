@@ -50,7 +50,6 @@ function App() {
             
             {/* Public/Student Routes */}
             <Route path="tools" element={<ToolLending />} /> {/* Updated route */}
-            <Route path="my-bookings" element={<div className="p-6">My Bookings - Coming Soon</div>} />
             <Route path="profile" element={<div className="p-6">Profile Management - Coming Soon</div>} />
             
             {/* Department Admin Routes */}
