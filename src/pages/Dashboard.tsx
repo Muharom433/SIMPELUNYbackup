@@ -457,6 +457,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                   ></iframe>
                 </div>
                 
+                <div className="mt-6 text-center">
+                  <h4 className="text-lg font-semibold text-gray-900 mb-2">
+                    Tutorial
+                  </h4>
                 
                 {/* Decorative elements */}
                 <div className="absolute -top-4 -right-4 w-20 h-20 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full opacity-20"></div>
