@@ -17,6 +17,7 @@ import LectureSchedules from './pages/LectureSchedules';
 import ExamManagement from './pages/ExamManagement';
 import ToolAdministration from './pages/ToolAdministration';
 import ToolLending from './pages/ToolLending'; // Import the new ToolLending component
+import ToolLending from './pages/ToolLendingManagement';
 import Reports from './pages/Reports';
 import SystemSettings from './pages/SystemSettings';
 import { useAuth } from './hooks/useAuth';
