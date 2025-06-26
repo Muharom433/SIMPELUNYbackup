@@ -179,6 +179,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: MapPin, label: getText('Departments', 'Departemen'), path: '/departments' },
                 { icon: GraduationCap, label: getText('Study Programs', 'Program Studi'), path: '/study-programs' },
                 { icon: Calendar, label: getText('Booking Management', 'Manajemen Pemesanan'), path: '/bookings', badge: pendingBookingsCount > 0 ? pendingBookingsCount : null },
+              { icon: HandHelping, label: getText('Tool Lending Administration', 'Administrasi Peminjaman Alat'), path: '/tool-lending-management' },
                 { icon: ClipboardCheck, label: getText('Validation Queue', 'Antrian Validasi'), path: '/validation', badge: pendingCheckoutsCount > 0 ? pendingCheckoutsCount : null },
                 { icon: Clock, label: getText('Lecture Schedules', 'Jadwal Kuliah'), path: '/schedules' },
                 { icon: CalendarCheck, label: getText('Exam Management', 'Manajemen Ujian'), path: '/exams' },
