@@ -92,7 +92,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
 
         if (user.role === 'super_admin') {
             return [
-                { icon: BarChart3, label: getText('System Analytics', 'Analitik Sistem'), path: '/' },
+                { icon: BarChart3, label: getText('About SIMPEL', 'Tutor SIMPEL'), path: '/' },
                 { icon: Building, label: getText('Room Management', 'Manajemen Ruangan'), path: '/rooms' },
                 { icon: Users, label: getText('User Management', 'Manajemen Pengguna'), path: '/users' },
                 { icon: MapPin, label: getText('Departments', 'Departemen'), path: '/departments' },
