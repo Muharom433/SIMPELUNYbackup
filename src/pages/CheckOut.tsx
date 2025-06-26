@@ -708,7 +708,7 @@ const CheckOut: React.FC = () => {
                 </button>
                 
                 {showRecordDropdown && (
-                  <div className="absolute z-50 w-full mt-2 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-2xl max-h-96 overflow-y-auto">
+                  <div className="absolute z-60 w-full mt-2 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-2xl max-h-96 overflow-y-auto">
                     {loading ? (
                       <div className="flex flex-col items-center justify-center py-12">
                         <RefreshCw className="h-8 w-8 animate-spin text-emerald-600 mb-3" />
@@ -1217,7 +1217,7 @@ const CheckOut: React.FC = () => {
       {/* Click outside to close dropdown */}
       {showRecordDropdown && (
         <div
-          className="fixed inset-0 z-40"
+          className="fixed inset-0 z-30"
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
