@@ -1,3 +1,28 @@
+import React, { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import {
+  Package,
+  Search,
+  CheckCircle,
+  AlertTriangle,
+  Camera,
+  X,
+  User,
+  Calendar,
+  Clock,
+  MapPin,
+  RefreshCw,
+  ChevronDown,
+  Zap,
+  Building,
+  FileText,
+  Upload,
+  Check,
+  ExternalLink,
+  Wrench,
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -5,7 +30,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 
 const checkoutSchema = z.object({
   record_id: z.string().min(1, 'Please select a booking or lending record to check out'),
-  record_type: z.enum(['booking', 'lending_tool']).optional(),
+  record_type: z.enum(['booking', 'lending_tool']),
   has_issues: z.boolean(),
   // Report fields (conditional)
   report_category: z.enum(['equipment', 'room_condition', 'cleanliness', 'safety', 'maintenance', 'other']).optional(),
@@ -560,33 +585,7 @@ const CheckOut: React.FC = () => {
     }
   });
 
-  const handleRecordSelect = (record: CombinedRecord) => {
-    console.log('🎯 SELECTING RECORD:', {
-      id: record.id,
-      type: record.record_type,
-      user: record.user?.full_name || (record.record_type === 'booking' ? (record as BookingWithDetails).user_info?.full_name : ''),
-    });
-
-    try {
-      // Update form
-      form.setValue('record_id', record.id);
-      form.setValue('record_type', record.record_type);
-      
-      // Update local state
-      setSelectedRecord(record);
-      setSearchTerm(getDisplayName(record));
-      setShowRecordDropdown(false);
-      
-      console.log('✅ RECORD SELECTED SUCCESSFULLY:', {
-        formRecordId: form.getValues('record_id'),
-        formRecordType: form.getValues('record_type'),
-        selectedRecord: record.id
-      });
-      
-    } catch (error) {
-      console.error('❌ ERROR SELECTING RECORD:', error);
-    }
-  };
+  const getCategoryText = (category: string) => {
     switch (category) {
       case 'equipment': return getText('Equipment Issues', 'Masalah Peralatan');
       case 'room_condition': return getText('Room Condition', 'Kondisi Ruangan');
@@ -713,15 +712,18 @@ const CheckOut: React.FC = () => {
                     ) : (
                       <div className="p-2">
                         {filteredRecords.map((record) => (
-                          <button
+                          <div
                             key={record.id}
-                            type="button"
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              handleRecordSelect(record);
+                              console.log('Record clicked:', record.id, record.record_type);
+                              form.setValue('record_id', record.id);
+                              form.setValue('record_type', record.record_type);
+                              setSearchTerm(getDisplayName(record));
+                              setShowRecordDropdown(false);
                             }}
-                            className="w-full text-left p-4 hover:bg-emerald-50 cursor-pointer rounded-xl border border-transparent hover:border-emerald-200 transition-all duration-200 mb-2 last:mb-0 active:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            className="p-4 hover:bg-emerald-50 cursor-pointer rounded-xl border border-transparent hover:border-emerald-200 transition-all duration-200 mb-2 last:mb-0 active:bg-emerald-100"
                           >
                             <div className="flex items-start space-x-3">
                               <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${
@@ -788,7 +790,7 @@ const CheckOut: React.FC = () => {
                                 </div>
                               </div>
                             </div>
-                          </button>
+                          </div>
                         ))}
                       </div>
                     )}
@@ -1115,68 +1117,6 @@ const CheckOut: React.FC = () => {
 
                 {/* Submit Button */}
                 <div className="flex space-x-4 pt-8 border-t border-gray-200/50">
-                  {/* Debug Info */}
-                  <div className="w-full mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm">
-                    <div className="font-semibold text-blue-800 mb-2">🔍 Debug Information:</div>
-                    <div className="grid grid-cols-2 gap-2 text-blue-700">
-                      <div>Loading: <span className="font-mono">{loading ? '✅ Yes' : '❌ No'}</span></div>
-                      <div>Selected Record: <span className="font-mono">{selectedRecord ? '✅ Yes' : '❌ No'}</span></div>
-                      <div>Record ID: <span className="font-mono">{watchRecordId || '❌ None'}</span></div>
-                      <div>Record Type: <span className="font-mono">{selectedRecord?.record_type || '❌ None'}</span></div>
-                      <div>Button Status: <span className="font-mono">{!loading && selectedRecord ? '✅ Enabled' : '❌ Disabled'}</span></div>
-                      <div>Total Records: <span className="font-mono">{allRecords.length}</span></div>
-                    </div>
-                    
-                    {/* Test Buttons */}
-                    <div className="mt-3 flex space-x-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          console.log('🚀 MANUAL TEST - Current State:', {
-                            loading,
-                            selectedRecord,
-                            watchRecordId,
-                            allRecords: allRecords.length,
-                            formValues: form.getValues()
-                          });
-                        }}
-                        className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-                      >
-                        Log Current State
-                      </button>
-                      
-                      {allRecords.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const firstRecord = allRecords[0];
-                            console.log('🧪 FORCE SELECT FIRST RECORD:', firstRecord);
-                            form.setValue('record_id', firstRecord.id);
-                            form.setValue('record_type', firstRecord.record_type);
-                            setSearchTerm(getDisplayName(firstRecord));
-                            setShowRecordDropdown(false);
-                          }}
-                          className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
-                        >
-                          Force Select First
-                        </button>
-                      )}
-                      
-                      <button
-                        type="button"
-                        onClick={() => {
-                          form.reset();
-                          setSelectedRecord(null);
-                          setSearchTerm('');
-                          console.log('🔄 RESET FORM');
-                        }}
-                        className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
-                      >
-                        Reset Form
-                      </button>
-                    </div>
-                  </div>
-                  
                   <button
                     type="submit"
                     disabled={loading || !selectedRecord}
@@ -1249,4 +1189,3 @@ const CheckOut: React.FC = () => {
 };
 
 export default CheckOut;
-                                
