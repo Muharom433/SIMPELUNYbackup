@@ -66,16 +66,42 @@ const ToolLending: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        if (watchIdentityNumber && watchIdentityNumber.length >= 5) {
-            const existingUser = existingUsers.find(user => user.identity_number === watchIdentityNumber);
-            if (existingUser) {
-                form.setValue('full_name', existingUser.full_name);
-                if (existingUser.phone_number) form.setValue('phone_number', existingUser.phone_number);
-                if (existingUser.email) form.setValue('email', existingUser.email);
-                toast.success(getText('Data automatically filled!', 'Data otomatis terisi!'));
-            }
+        if (watchIdentityNumber && watchIdentityNumber.length >= 5 && !profile) {
+            // Find existing user by identity number
+            const findExistingUser = async () => {
+                try {
+                    const { data: existingUser, error } = await supabase
+                        .from('users')
+                        .select('id, full_name, phone_number, email, identity_number')
+                        .eq('identity_number', watchIdentityNumber)
+                        .maybeSingle();
+
+                    if (error && error.code !== 'PGRST116') {
+                        console.error('Error checking existing user:', error);
+                        return;
+                    }
+
+                    if (existingUser) {
+                        // Auto-fill form with existing user data
+                        form.setValue('full_name', existingUser.full_name);
+                        if (existingUser.phone_number) {
+                            form.setValue('phone_number', existingUser.phone_number);
+                        }
+                        if (existingUser.email && !existingUser.email.includes('@student.edu')) {
+                            form.setValue('email', existingUser.email);
+                        }
+                        toast.success(getText('Data automatically filled from existing record!', 'Data otomatis terisi dari data yang sudah ada!'));
+                    }
+                } catch (error) {
+                    console.error('Error fetching user data:', error);
+                }
+            };
+
+            // Debounce the API call
+            const timeoutId = setTimeout(findExistingUser, 500);
+            return () => clearTimeout(timeoutId);
         }
-    }, [watchIdentityNumber, existingUsers, form, getText]);
+    }, [watchIdentityNumber, profile, form, getText]);
 
     const fetchAvailableEquipment = async () => {
         try {
@@ -100,16 +126,19 @@ const ToolLending: React.FC = () => {
 
     const fetchExistingUsers = async () => {
         try {
+            // Only fetch a limited number of recent users for dropdown suggestions
             const { data, error } = await supabase
                 .from('users')
                 .select('id, identity_number, full_name, email, phone_number')
                 .eq('role', 'student')
-                .order('full_name');
+                .order('updated_at', { ascending: false })
+                .limit(50); // Limit to recent 50 users for performance
 
             if (error) throw error;
             setExistingUsers(data || []);
         } catch (error) {
-            console.error('Error fetching users:', error);
+            console.error('Error fetching users for dropdown:', error);
+            // Don't show error to user as this is just for convenience
         }
     };
 
@@ -167,18 +196,74 @@ const ToolLending: React.FC = () => {
             const equipmentIds = selectedEquipment.map(item => item.equipment.id);
             const quantities = selectedEquipment.map(item => item.quantity);
 
-            // Create lending record
+            let userId = profile?.id || null;
+
+            // If user is not logged in, handle user creation/finding (SAME LOGIC AS BOOKROOM)
+            if (!profile) {
+                // Check if user already exists
+                const { data: existingUser, error: userCheckError } = await supabase
+                    .from('users')
+                    .select('id')
+                    .eq('identity_number', data.identity_number)
+                    .maybeSingle();
+
+                if (userCheckError && userCheckError.code !== 'PGRST116') {
+                    throw userCheckError;
+                }
+
+                if (existingUser) {
+                    // User exists, use their ID
+                    userId = existingUser.id;
+                    
+                    // Update their information if provided
+                    const { error: updateError } = await supabase
+                        .from('users')
+                        .update({
+                            full_name: data.full_name,
+                            phone_number: data.phone_number,
+                            email: data.email || `${data.identity_number}@student.edu`,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', existingUser.id);
+
+                    if (updateError) {
+                        console.warn('Error updating user data:', updateError);
+                    }
+                } else {
+                    // User doesn't exist, create new user
+                    const { data: newUser, error: createUserError } = await supabase
+                        .from('users')
+                        .insert({
+                            username: data.identity_number,
+                            email: data.email || `${data.identity_number}@student.edu`,
+                            full_name: data.full_name,
+                            identity_number: data.identity_number,
+                            phone_number: data.phone_number,
+                            role: 'student',
+                            password: 'password123' // Default password
+                        })
+                        .select('id')
+                        .single();
+
+                    if (createUserError) {
+                        throw createUserError; // Don't proceed if user creation fails
+                    }
+                    
+                    userId = newUser.id;
+                }
+            }
+
+            // MUST HAVE userId at this point
+            if (!userId) {
+                throw new Error('Unable to create or find user');
+            }
+
+            // Create lending record with userId (NO user_info)
             const lendingData = {
                 date: new Date(data.date).toISOString(),
                 id_equipment: equipmentIds,
                 qty: quantities,
-                id_user: profile?.id || null,
-                user_info: profile ? null : {
-                    full_name: data.full_name,
-                    identity_number: data.identity_number,
-                    phone_number: data.phone_number,
-                    email: data.email || `${data.identity_number}@student.edu`,
-                }
+                id_user: userId // ALWAYS use id_user, never user_info
             };
 
             const { error: lendingError } = await supabase
