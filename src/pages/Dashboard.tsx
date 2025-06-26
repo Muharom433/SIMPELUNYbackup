@@ -459,7 +459,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 
                 <div className="mt-6 text-center">
                   <h4 className="text-lg font-semibold text-gray-900 mb-2">
-                    Tutorial
+                    Tutorial Akses SIMPEL
                   </h4>
                 </div>
                 
