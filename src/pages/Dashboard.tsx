@@ -223,35 +223,85 @@ const Dashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Right Content - Building Image */}
+              {/* Right Content - People Image with Text Bubbles */}
               <div className="relative">
                 <div 
                   className="relative transform transition-transform duration-1000"
                   style={{ transform: `translateY(${scrollY * 0.1}px) rotateY(${scrollY * 0.02}deg)` }}
                 >
-                  {/* Building Image */}
-                  <div className="relative bg-gradient-to-br from-gray-100 to-gray-300 rounded-3xl overflow-hidden shadow-2xl">
-                    <div className="aspect-w-4 aspect-h-5 flex items-center justify-center bg-gradient-to-br from-blue-100 to-purple-100">
-                      {/* You can replace this with actual image */}
+                  {/* Main Container */}
+                  <div className="relative flex items-center justify-center min-h-[500px]">
+                    {/* People Image */}
+                    <div className="relative z-10">
                       <img 
-                        src="/src/assets/gedungFV.png" 
-                        alt="Faculty of Vocational Building" 
-                        className="w-full h-full object-cover"
+                        src="/src/assets/people.svg" 
+                        alt="Graduate Student" 
+                        className="w-80 h-80 object-contain"
                         onError={(e) => {
                           // Fallback if image doesn't load
                           e.currentTarget.style.display = 'none';
                           e.currentTarget.nextElementSibling.style.display = 'flex';
                         }}
                       />
-                      <div className="w-full h-full flex items-center justify-center" style={{display: 'none'}}>
-                        <Building className="w-32 h-32 text-purple-400" />
+                      <div className="w-80 h-80 flex items-center justify-center" style={{display: 'none'}}>
+                        <Users className="w-32 h-32 text-purple-400" />
                       </div>
                     </div>
                     
-                    {/* Floating elements */}
+                    {/* Building Text Bubble - Top Left */}
                     <div 
-                      className="absolute top-6 right-6 bg-white rounded-2xl p-4 shadow-lg"
+                      className="absolute -top-8 -left-8 bg-white rounded-2xl p-4 shadow-xl border border-gray-100 z-20"
                       style={{ animation: 'float 6s ease-in-out infinite' }}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <img 
+                          src="/src/assets/Build.png" 
+                          alt="Building Career" 
+                          className="w-24 h-auto"
+                          onError={(e) => {
+                            // Fallback text if image doesn't load
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.nextElementSibling.style.display = 'block';
+                          }}
+                        />
+                        <span 
+                          className="text-lg font-bold text-purple-700"
+                          style={{display: 'none'}}
+                        >
+                          BUILDING CAREER
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* Shaping Text Bubble - Bottom Right */}
+                    <div 
+                      className="absolute -bottom-8 -right-8 bg-white rounded-2xl p-4 shadow-xl border border-gray-100 z-20"
+                      style={{ animation: 'float 6s ease-in-out infinite 3s' }}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <img 
+                          src="/src/assets/Shape.png" 
+                          alt="Shaping Future" 
+                          className="w-28 h-auto"
+                          onError={(e) => {
+                            // Fallback text if image doesn't load
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.nextElementSibling.style.display = 'block';
+                          }}
+                        />
+                        <span 
+                          className="text-lg font-bold text-blue-700"
+                          style={{display: 'none'}}
+                        >
+                          SHAPING FUTURE
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Available Rooms Bubble - Top Right */}
+                    <div 
+                      className="absolute top-6 right-6 bg-white rounded-2xl p-4 shadow-lg z-20"
+                      style={{ animation: 'float 6s ease-in-out infinite 2s' }}
                     >
                       <div className="flex items-center space-x-2">
                         <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
@@ -259,9 +309,10 @@ const Dashboard: React.FC = () => {
                       </div>
                     </div>
                     
+                    {/* Rating Bubble - Bottom Left */}
                     <div 
-                      className="absolute bottom-6 left-6 bg-white rounded-2xl p-4 shadow-lg"
-                      style={{ animation: 'float 6s ease-in-out infinite 3s' }}
+                      className="absolute bottom-6 left-6 bg-white rounded-2xl p-4 shadow-lg z-20"
+                      style={{ animation: 'float 6s ease-in-out infinite 4s' }}
                     >
                       <div className="text-center">
                         <p className="text-2xl font-bold text-purple-700">4.8★</p>
