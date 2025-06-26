@@ -436,7 +436,7 @@ const CheckOut: React.FC = () => {
               <div className="flex items-center space-x-3 mb-6">
                 <Search className="h-5 w-5 text-emerald-500" />
                 <h2 className="text-xl font-bold text-gray-800">
-                  {getText('Find Your Booking', 'Cari Pemesanan Anda')}
+                  {getText('Find Your Booking', 'Cari Pesanan Anda')}
                 </h2>
               </div>
               
