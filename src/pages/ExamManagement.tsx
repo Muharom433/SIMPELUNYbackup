@@ -608,7 +608,7 @@ const ExamManagement = () => {
                 autoTable(doc, {
                     head: [additionalInfoColumn],
                     body: additionalInfoRows,
-                    startY: subheadingY + 2,
+                    startY: subheadingY + 5,
                     theme: 'grid',
                     tableWidth: 100, // <--- ADD THIS LINE
                     styles: { fontSize: 8, cellPadding: 1.5, valign: 'middle' },
