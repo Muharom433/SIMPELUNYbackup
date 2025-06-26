@@ -431,98 +431,39 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 
                 <div className="space-y-6 text-gray-600 leading-relaxed">
                   <div>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-3 flex items-center">
-                      <Target className="w-5 h-5 mr-2 text-blue-600" />
-                      Deskripsi
-                    </h3>
+                    
                     <p className="text-lg">
                       SIMPEL Kuliah (Sistem Pelayanan Kuliah) adalah platform inovatif yang dirancang khusus untuk mengoptimalkan pengelolaan fasilitas kampus di Fakultas Vokasi UNY. Sistem ini menyediakan solusi terintegrasi untuk pemesanan ruangan, peminjaman peralatan, dan manajemen jadwal secara digital.
                     </p>
-                  </div>
-                  
-                  <div>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-3 flex items-center">
-                      <BookOpen className="w-5 h-5 mr-2 text-green-600" />
-                      Latar Belakang
-                    </h3>
-                    <p>
-                      Dengan semakin berkembangnya kebutuhan digitalisasi di dunia pendidikan, Fakultas Vokasi UNY memerlukan sistem yang dapat mengatasi kompleksitas pengelolaan fasilitas kampus. Sistem manual yang selama ini digunakan seringkali menimbulkan konflik jadwal dan ketidakefisienan dalam penggunaan sumber daya.
-                    </p>
-                  </div>
-                  
-                  <div>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-3 flex items-center">
-                      <Lightbulb className="w-5 h-5 mr-2 text-amber-600" />
-                      Tujuan
-                    </h3>
-                    <ul className="space-y-2">
-                      <li className="flex items-start">
-                        <CheckCircle className="w-5 h-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                        Meningkatkan efisiensi pengelolaan fasilitas kampus
-                      </li>
-                      <li className="flex items-start">
-                        <CheckCircle className="w-5 h-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                        Mengurangi konflik jadwal dan tumpang tindih penggunaan ruangan
-                      </li>
-                      <li className="flex items-start">
-                        <CheckCircle className="w-5 h-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                        Memberikan transparansi dalam proses pemesanan dan peminjaman
-                      </li>
-                      <li className="flex items-start">
-                        <CheckCircle className="w-5 h-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                        Meningkatkan kualitas pelayanan kepada civitas akademika
-                      </li>
-                    </ul>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Right Content - Video Player */}
+            {/* Right Content - YouTube Video */}
             <div className="relative">
               <div className="relative bg-gradient-to-br from-gray-100 to-gray-200 rounded-3xl p-8 shadow-2xl">
-                <div className="aspect-video rounded-2xl overflow-hidden shadow-xl bg-gray-900 relative group cursor-pointer">
-                  {/* Video Thumbnail/Placeholder */}
-                  <div className="absolute inset-0 bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center">
-                    <div className="text-center text-white space-y-4">
-                      <div className="w-20 h-20 bg-white bg-opacity-20 rounded-full flex items-center justify-center mx-auto group-hover:scale-110 transition-transform duration-300">
-                        <Play className="w-8 h-8 text-white ml-1" />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-bold">SIMPEL Kuliah Demo</h3>
-                        <p className="text-blue-200 text-sm">Click to watch on YouTube</p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Play Button Overlay */}
-                  <div className="absolute inset-0 bg-black bg-opacity-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-                    <div className="w-24 h-24 bg-red-600 rounded-full flex items-center justify-center shadow-2xl transform group-hover:scale-110 transition-transform duration-300">
-                      <Play className="w-10 h-10 text-white ml-1" />
-                    </div>
-                  </div>
-                  
-                  {/* Click Handler */}
-                  <div 
-                    className="absolute inset-0 cursor-pointer"
-                    onClick={() => window.open('https://youtu.be/XEKLS4gYdTU?feature=shared', '_blank')}
-                  ></div>
+                <div className="aspect-video rounded-2xl overflow-hidden shadow-xl">
+                  <iframe
+                    width="100%"
+                    height="100%"
+                    src="https://youtu.be/FThMmRz2Y-w?si=Ehvuru-gD1d8WxOW"
+                    title="SIMPEL Kuliah Demo Video"
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    allowFullScreen
+                    className="rounded-2xl"
+                  ></iframe>
                 </div>
                 
                 <div className="mt-6 text-center">
                   <h4 className="text-lg font-semibold text-gray-900 mb-2">
                     Demo Penggunaan SIMPEL Kuliah
                   </h4>
-                  <p className="text-gray-600 mb-4">
+                  <p className="text-gray-600">
                     Tonton video tutorial lengkap tentang cara menggunakan fitur-fitur dalam sistem SIMPEL Kuliah
                   </p>
-                  <button 
-                    onClick={() => window.open('https://youtu.be/XEKLS4gYdTU?feature=shared', '_blank')}
-                    className="inline-flex items-center px-6 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors duration-300 font-semibold"
-                  >
-                    <Play className="w-5 h-5 mr-2" />
-                    Watch on YouTube
-                  </button>
                 </div>
                 
                 {/* Decorative elements */}
