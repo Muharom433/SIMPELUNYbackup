@@ -17,7 +17,7 @@ import LectureSchedules from './pages/LectureSchedules';
 import ExamManagement from './pages/ExamManagement';
 import ToolAdministration from './pages/ToolAdministration';
 import ToolLending from './pages/ToolLending'; // Import the new ToolLending component
-import ToolLending from './pages/ToolLendingManagement';
+import ToolLendingManagement from './pages/ToolLendingManagement';
 import Reports from './pages/Reports';
 import SystemSettings from './pages/SystemSettings';
 import { useAuth } from './hooks/useAuth';
@@ -62,6 +62,7 @@ function App() {
             <Route path="exams" element={<ExamManagement />} />
             
             {/* Super Admin Routes */}
+            <Route path="tool-lending-management" element={<RoomManagement />} />
             <Route path="rooms" element={<RoomManagement />} />
             <Route path="users" element={<UserManagement />} />
             <Route path="departments" element={<DepartmentManagement />} />
