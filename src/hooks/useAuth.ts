@@ -4,6 +4,7 @@ import { User } from '../types';
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<User | null>(null); // Add profile state
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -15,6 +16,7 @@ export function useAuth() {
           try {
             const parsedUser = JSON.parse(cachedUser);
             setUser(parsedUser);
+            setProfile(parsedUser); // Set both user and profile
           } catch (error) {
             console.error('Error parsing cached user:', error);
             localStorage.removeItem('faculty_user');
@@ -65,10 +67,14 @@ export function useAuth() {
         identity_number: userData.identity_number,
         role: userData.role,
         department_id: userData.department_id,
-        username: username // Add username to the user object
+        username: username,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       };
 
       setUser(authenticatedUser);
+      setProfile(authenticatedUser); // Set both user and profile
+      
       // Cache user in localStorage
       localStorage.setItem('faculty_user', JSON.stringify(authenticatedUser));
 
@@ -172,6 +178,7 @@ export function useAuth() {
   const signOut = async () => {
     try {
       setUser(null);
+      setProfile(null); // Clear both user and profile
       localStorage.removeItem('faculty_user');
       
       // Clear the user context in the database
@@ -190,6 +197,7 @@ export function useAuth() {
 
   return {
     user,
+    profile, // Now properly exported
     loading,
     signIn,
     signUp,
