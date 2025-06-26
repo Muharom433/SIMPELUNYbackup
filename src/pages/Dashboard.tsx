@@ -115,25 +115,25 @@ const Dashboard: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Hero Section */}
-      <div className="relative bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800 overflow-hidden">
+      <div className="relative bg-gradient-to-br from-stone-200 via-amber-100 to-yellow-100 overflow-hidden">
         {/* Animated Background Elements */}
         <div className="absolute inset-0">
           <div 
-            className="absolute top-20 left-10 w-72 h-72 bg-purple-400 rounded-full mix-blend-multiply filter blur-xl opacity-20"
+            className="absolute top-20 left-10 w-72 h-72 bg-amber-200 rounded-full mix-blend-multiply filter blur-xl opacity-20"
             style={{ 
               transform: `translateY(${scrollY * 0.5}px)`,
               animation: 'blob 7s infinite'
             }}
           ></div>
           <div 
-            className="absolute top-40 right-10 w-72 h-72 bg-indigo-400 rounded-full mix-blend-multiply filter blur-xl opacity-20"
+            className="absolute top-40 right-10 w-72 h-72 bg-orange-200 rounded-full mix-blend-multiply filter blur-xl opacity-20"
             style={{ 
               transform: `translateY(${scrollY * 0.3}px)`,
               animation: 'blob 7s infinite 2s'
             }}
           ></div>
           <div 
-            className="absolute bottom-20 left-20 w-72 h-72 bg-pink-400 rounded-full mix-blend-multiply filter blur-xl opacity-20"
+            className="absolute bottom-20 left-20 w-72 h-72 bg-yellow-200 rounded-full mix-blend-multiply filter blur-xl opacity-20"
             style={{ 
               transform: `translateY(${scrollY * 0.4}px)`,
               animation: 'blob 7s infinite 4s'
@@ -145,22 +145,22 @@ const Dashboard: React.FC = () => {
           <div className="max-w-7xl mx-auto">
             <div className="grid lg:grid-cols-2 gap-8 items-center">
               {/* Left Content */}
-              <div className="text-white space-y-6">
+              <div className="text-stone-800 space-y-6">
                 <div className="space-y-4">
-                  <div className="inline-flex items-center px-4 py-2 bg-white bg-opacity-10 backdrop-blur-sm rounded-full text-sm font-medium">
-                    <Star className="w-4 h-4 mr-2 text-yellow-400" />
+                  <div className="inline-flex items-center px-4 py-2 bg-white bg-opacity-20 backdrop-blur-sm rounded-full text-sm font-medium">
+                    <Star className="w-4 h-4 mr-2 text-amber-700" />
                     Best Faculty Management System
                   </div>
                   <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold leading-tight">
                     Faculty of 
-                    <span className="block bg-gradient-to-r from-yellow-400 to-orange-400 bg-clip-text text-transparent">
+                    <span className="block bg-gradient-to-r from-amber-700 to-yellow-700 bg-clip-text text-transparent">
                       Vocational
                     </span>
                   </h1>
-                  <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold text-purple-100">
+                  <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold text-stone-700">
                     Yogyakarta State University
                   </h2>
-                  <p className="text-sm sm:text-base lg:text-lg text-purple-100 leading-relaxed max-w-lg">
+                  <p className="text-sm sm:text-base lg:text-lg text-stone-600 leading-relaxed max-w-lg">
                     SIMPEL kuliah or Sistem Pelayanan kuliah is an Innovation to improve our services.
                   </p>
                 </div>
@@ -174,7 +174,7 @@ const Dashboard: React.FC = () => {
                       </div>
                       <div>
                         <p className="text-xl lg:text-2xl font-bold">1200+</p>
-                        <p className="text-xs lg:text-sm text-purple-200">Bookings</p>
+                        <p className="text-xs lg:text-sm text-stone-600">Bookings</p>
                       </div>
                     </div>
                     <div className="mt-3 flex items-center text-green-400 text-sm">
@@ -189,16 +189,14 @@ const Dashboard: React.FC = () => {
                       </div>
                       <div>
                         <p className="text-xl lg:text-2xl font-bold">{formatTime(currentTime)}</p>
-                        <p className="text-xs lg:text-sm text-purple-200">Live Time</p>
+                        <p className="text-xs lg:text-sm text-stone-600">Live Time</p>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* CTA Buttons - REMOVED */}
-
                 {/* Contact Info */}
-                <div className="flex items-center space-x-6 text-sm text-purple-200">
+                <div className="flex items-center space-x-6 text-sm text-stone-500">
                   <div className="flex items-center space-x-2">
                     <MapPin className="w-4 h-4" />
                     <span>Faculty of Vocational</span>
@@ -231,7 +229,7 @@ const Dashboard: React.FC = () => {
                         }}
                       />
                       <div className="w-full h-80 flex items-center justify-center" style={{display: 'none'}}>
-                        <Users className="w-32 h-32 text-purple-400" />
+                        <Users className="w-32 h-32 text-amber-400" />
                       </div>
                     </div>
                     
@@ -254,7 +252,7 @@ const Dashboard: React.FC = () => {
                         className="bg-white rounded-2xl p-3 shadow-xl border border-gray-100"
                         style={{display: 'none'}}
                       >
-                        <span className="text-base font-bold text-purple-700">
+                        <span className="text-base font-bold text-amber-700">
                           BUILDING CAREER
                         </span>
                       </div>
@@ -279,7 +277,7 @@ const Dashboard: React.FC = () => {
                         className="bg-white rounded-2xl p-3 shadow-xl border border-gray-100"
                         style={{display: 'none'}}
                       >
-                        <span className="text-base font-bold text-blue-700">
+                        <span className="text-base font-bold text-orange-700">
                           SHAPING FUTURE
                         </span>
                       </div>
@@ -296,13 +294,13 @@ const Dashboard: React.FC = () => {
       <div className="py-24 bg-white">
         <div className="max-w-7xl mx-auto px-6 sm:px-12 lg:px-16">
           <div className="text-center space-y-4 mb-16">
-            <div className="inline-flex items-center px-4 py-2 bg-purple-100 text-purple-700 rounded-full text-sm font-medium">
+            <div className="inline-flex items-center px-4 py-2 bg-amber-100 text-amber-700 rounded-full text-sm font-medium">
               <Zap className="w-4 h-4 mr-2" />
               Our Features
             </div>
             <h2 className="text-4xl lg:text-5xl font-bold text-gray-900">
               Everything You Need for
-              <span className="block text-purple-600">Smart Room Management</span>
+              <span className="block text-amber-600">Smart Room Management</span>
             </h2>
           </div>
 
@@ -324,12 +322,12 @@ const Dashboard: React.FC = () => {
                 icon: Smartphone,
                 title: 'Mobile Ready',
                 description: 'Fully responsive design that works perfectly on all devices and platforms.',
-                color: 'bg-gradient-to-br from-purple-500 to-purple-600'
+                color: 'bg-gradient-to-br from-amber-500 to-amber-600'
               }
             ].map((feature, index) => (
               <div 
                 key={index}
-                className="group bg-white rounded-3xl p-8 shadow-lg hover:shadow-2xl transition-all duration-500 border border-gray-100 hover:border-purple-200 transform hover:-translate-y-2"
+                className="group bg-white rounded-3xl p-8 shadow-lg hover:shadow-2xl transition-all duration-500 border border-gray-100 hover:border-amber-200 transform hover:-translate-y-2"
               >
                 <div className={`${feature.color} w-16 h-16 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300`}>
                   <feature.icon className="w-8 h-8 text-white" />
@@ -343,7 +341,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Stats Dashboard Section */}
-      <div className="py-24 bg-gradient-to-br from-purple-50 to-indigo-50">
+      <div className="py-24 bg-gradient-to-br from-amber-50 to-yellow-50">
         <div className="max-w-7xl mx-auto px-6 sm:px-12 lg:px-16">
           <div className="text-center space-y-4 mb-16">
             <h2 className="text-4xl lg:text-5xl font-bold text-gray-900">
@@ -359,7 +357,7 @@ const Dashboard: React.FC = () => {
                 value: stats.availableRooms,
                 subtitle: 'Ready for booking',
                 icon: Building,
-                color: 'bg-gradient-to-r from-purple-500 to-purple-600',
+                color: 'bg-gradient-to-r from-amber-500 to-amber-600',
                 change: '+5%',
                 trend: 'up',
               },
@@ -386,7 +384,7 @@ const Dashboard: React.FC = () => {
                 value: stats.totalUsers,
                 subtitle: 'Registered users',
                 icon: Users,
-                color: 'bg-gradient-to-r from-indigo-500 to-indigo-600',
+                color: 'bg-gradient-to-r from-yellow-500 to-yellow-600',
                 change: '+15%',
                 trend: 'up',
               },
@@ -424,7 +422,7 @@ const Dashboard: React.FC = () => {
               {[
                 { icon: Calendar, label: 'Book Room', color: 'text-blue-600 bg-blue-50 hover:bg-blue-100' },
                 { icon: Package, label: 'Borrow Equipment', color: 'text-green-600 bg-green-50 hover:bg-green-100' },
-                { icon: CheckCircle, label: 'Check Out', color: 'text-purple-600 bg-purple-50 hover:bg-purple-100' },
+                { icon: CheckCircle, label: 'Check Out', color: 'text-amber-600 bg-amber-50 hover:bg-amber-100' },
                 { icon: BarChart3, label: 'View Reports', color: 'text-orange-600 bg-orange-50 hover:bg-orange-100' },
               ].map((action, index) => (
                 <button
@@ -443,10 +441,10 @@ const Dashboard: React.FC = () => {
       {/* Recent Activity Section */}
       <div className="py-24 bg-white">
         <div className="max-w-7xl mx-auto px-6 sm:px-12 lg:px-16">
-          <div className="bg-gradient-to-br from-gray-50 to-purple-50 rounded-3xl p-12 border border-gray-200">
+          <div className="bg-gradient-to-br from-gray-50 to-amber-50 rounded-3xl p-12 border border-gray-200">
             <div className="flex items-center justify-between mb-8">
               <h2 className="text-3xl font-bold text-gray-900">Recent Activity</h2>
-              <button className="text-purple-600 hover:text-purple-700 font-semibold flex items-center space-x-2 bg-white px-6 py-3 rounded-xl shadow-sm hover:shadow-md transition-all">
+              <button className="text-amber-600 hover:text-amber-700 font-semibold flex items-center space-x-2 bg-white px-6 py-3 rounded-xl shadow-sm hover:shadow-md transition-all">
                 <Eye className="h-5 w-5" />
                 <span>View All</span>
               </button>
@@ -488,15 +486,15 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Footer CTA */}
-      <div className="bg-gradient-to-r from-purple-600 via-purple-700 to-indigo-800 py-16">
+      <div className="bg-gradient-to-r from-amber-600 via-amber-700 to-orange-800 py-16">
         <div className="max-w-4xl mx-auto text-center px-6">
           <h2 className="text-4xl font-bold text-white mb-4">
             Ready to Transform Your Faculty Management?
           </h2>
-          <p className="text-xl text-purple-100 mb-8">
+          <p className="text-xl text-amber-100 mb-8">
             Join hundreds of satisfied users who trust our platform for their daily operations.
           </p>
-          <button className="bg-white text-purple-700 px-12 py-4 rounded-2xl font-bold text-lg hover:bg-gray-100 transition-all duration-300 transform hover:scale-105 shadow-xl">
+          <button className="bg-white text-amber-700 px-12 py-4 rounded-2xl font-bold text-lg hover:bg-gray-100 transition-all duration-300 transform hover:scale-105 shadow-xl">
             Get Started Today
           </button>
         </div>
