@@ -116,18 +116,18 @@ const Dashboard: React.FC = () => {
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Hero Section */}
       <div className="relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden" style={{background: 'linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)'}}>
-        {/* Background Faded Abstract Shapes */}
+        {/* Background Faded Abstract Shapes with Glassmorphism */}
         <div className="absolute inset-0">
           {/* Large abstract shape - top right */}
           <div 
-            className="absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full opacity-60"
+            className="absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full opacity-60 backdrop-blur-xl filter blur-sm"
             style={{
               background: 'radial-gradient(circle at 30% 30%, #daa06d 0%, #e8d5c4 40%, transparent 70%)'
             }}
           ></div>
           {/* Medium oval shape - center right */}
           <div 
-            className="absolute top-1/4 -right-20 w-[400px] h-[300px] rounded-full opacity-50"
+            className="absolute top-1/4 -right-20 w-[400px] h-[300px] rounded-full opacity-50 backdrop-blur-lg filter blur-md"
             style={{
               background: 'radial-gradient(ellipse at 20% 40%, #c4926b 0%, #f0e6d6 50%, transparent 80%)',
               transform: 'rotate(25deg)'
@@ -135,7 +135,7 @@ const Dashboard: React.FC = () => {
           ></div>
           {/* Abstract blob - bottom right */}
           <div 
-            className="absolute bottom-0 right-0 w-[350px] h-[350px] opacity-55"
+            className="absolute bottom-0 right-0 w-[350px] h-[350px] opacity-55 backdrop-blur-lg filter blur-sm"
             style={{
               background: 'radial-gradient(circle at 40% 60%, #b8956f 0%, #e8d5c4 60%, transparent 85%)',
               borderRadius: '60% 40% 70% 30%'
@@ -143,7 +143,7 @@ const Dashboard: React.FC = () => {
           ></div>
           {/* Flowing shape - top left */}
           <div 
-            className="absolute -top-20 -left-32 w-[450px] h-[300px] opacity-45"
+            className="absolute -top-20 -left-32 w-[450px] h-[300px] opacity-45 backdrop-blur-xl filter blur-lg"
             style={{
               background: 'radial-gradient(ellipse at 70% 50%, #daa06d 0%, #f5f0ea 45%, transparent 75%)',
               borderRadius: '40% 60% 50% 80%',
@@ -152,7 +152,7 @@ const Dashboard: React.FC = () => {
           ></div>
           {/* Curved shape - bottom left */}
           <div 
-            className="absolute bottom-10 -left-24 w-[300px] h-[200px] opacity-40"
+            className="absolute bottom-10 -left-24 w-[300px] h-[200px] opacity-40 backdrop-blur-md filter blur-md"
             style={{
               background: 'radial-gradient(ellipse at 60% 30%, #c4926b 0%, #f0e6d6 55%, transparent 80%)',
               borderRadius: '70% 30% 40% 60%',
@@ -161,7 +161,7 @@ const Dashboard: React.FC = () => {
           ></div>
           {/* Extra flowing element - center */}
           <div 
-            className="absolute top-1/2 left-1/4 w-[250px] h-[400px] opacity-30"
+            className="absolute top-1/2 left-1/4 w-[250px] h-[400px] opacity-30 backdrop-blur-lg filter blur-xl"
             style={{
               background: 'linear-gradient(135deg, #e8d5c4 0%, #f5f0ea 50%, transparent 100%)',
               borderRadius: '50% 80% 30% 70%',
