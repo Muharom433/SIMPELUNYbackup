@@ -442,36 +442,6 @@ const CheckOut: React.FC = () => {
           console.log('Lending tool status updated to completed');
         }
 
-        // Update equipment quantities (return them to stock)
-        if (lendingTool.id_equipment && lendingTool.qty) {
-          for (let i = 0; i < lendingTool.id_equipment.length; i++) {
-            const equipmentId = lendingTool.id_equipment[i];
-            const borrowedQty = lendingTool.qty[i];
-            
-            // Get current equipment data
-            const { data: currentEquipment, error: getError } = await supabase
-              .from('equipment')
-              .select('quantity')
-              .eq('id', equipmentId)
-              .single();
-
-            if (!getError && currentEquipment) {
-              const newQuantity = currentEquipment.quantity + borrowedQty;
-              
-              const { error: updateError } = await supabase
-                .from('equipment')
-                .update({ 
-                  quantity: newQuantity,
-                  is_available: newQuantity > 0
-                })
-                .eq('id', equipmentId);
-
-              if (updateError) {
-                console.error('Error updating equipment quantity:', updateError);
-              }
-            }
-          }
-        }
 
       } else {
         // Handle booking checkout (existing logic)
