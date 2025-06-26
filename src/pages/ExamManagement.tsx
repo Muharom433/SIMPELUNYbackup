@@ -1,120 +1,4 @@
-<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Lecturer in Charge *", "Dosen Pengampu *")}</label>
-                                        <Controller 
-                                            name="lecturer_id" 
-                                            control={form.control} 
-                                            render={({ field }) => { 
-                                                const options = filteredLecturers.map(l => ({ 
-                                                    value: l.id, 
-                                                    label: l.full_name 
-                                                })); 
-                                                const currentValue = options.find(o => o.value === field.value); 
-                                                return ( 
-                                                    <Select 
-                                                        {...field} 
-                                                        options={options} 
-                                                        value={currentValue} 
-                                                        onChange={val => field.onChange(val?.value)} 
-                                                        placeholder={getText("Search or select lecturer...", "Cari atau pilih dosen...")} 
-                                                        isClearable 
-                                                        noOptionsMessage={() => watchStudyProgramId ? getText('No lecturers found', 'Tidak ada dosen ditemukan') : getText('Select a study program first', 'Pilih program studi terlebih dahulu')} 
-                                                        styles={{
-                                                            control: (provided) => ({
-                                                                ...provided,
-                                                                minHeight: '42px',
-                                                                borderColor: '#d1d5db',
-                                                            }),
-                                                        }}
-                                                    /> 
-                                                ) 
-                                            }} 
-                                        />
-                                        {form.formState.errors.lecturer_id && (
-                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.lecturer_id.message}</p>
-                                        )}
-                                    </div>
-                                    
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Inspector (Pengawas) *", "Pengawas *")}</label>
-                                        <Controller 
-                                            name="inspector" 
-                                            control={form.control} 
-                                            render={({ field }) => { 
-                                                const options = filteredLecturers.map(l => ({ 
-                                                    value: l.id,
-                                                    label: l.full_name
-                                                })); 
-                                                const currentValue = options.find(o => o.value === field.value); 
-                                                return ( 
-                                                    <Select 
-                                                        {...field} 
-                                                        options={options} 
-                                                        value={currentValue} 
-                                                        onChange={val => field.onChange(val?.value)} 
-                                                        placeholder={getText("Search or select inspector...", "Cari atau pilih pengawas...")} 
-                                                        isClearable 
-                                                        noOptionsMessage={() => watchStudyProgramId ? getText('No lecturers found', 'Tidak ada dosen ditemukan') : getText('Select a study program first', 'Pilih program studi terlebih dahulu')} 
-                                                        styles={{
-                                                            control: (provided) => ({
-                                                                ...provided,
-                                                                minHeight: '42px',
-                                                                borderColor: '#d1d5db',
-                                                            }),
-                                                        }}
-                                                    /> 
-                                                ) 
-                                            }} 
-                                        />
-                                        {form.formState.errors.inspector && (
-                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.inspector.message}</p>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Room Assignment - Updated */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {getText("Room", "Ruangan")} {!watchIsTakeHome && '*'}
-                                        {watchIsTakeHome && (
-                                            <span className="text-gray-500 text-sm ml-2">({getText("Not required for Take Home exams", "Tidak diperlukan untuk ujian Take Home")})</span>
-                                        )}
-                                    </label>
-                                    <Controller 
-                                        name="room_id" 
-                                        control={form.control} 
-                                        render={({ field }) => { 
-                                            const roomOptions = getAvailableRooms().map(r => ({ 
-                                                value: r.id, 
-                                                label: `${r.name} (${r.code}) - ${getText("Cap:", "Kapasitas:")} ${r.capacity}` 
-                                            })); 
-                                            const selectedValue = roomOptions.find(o => o.value === field.value); 
-                                            return ( 
-                                                <Select 
-                                                    {...field} 
-                                                    options={roomOptions} 
-                                                    value={selectedValue} 
-                                                    onChange={option => field.onChange(option ? option.value : '')} 
-                                                    isDisabled={watchIsTakeHome} 
-                                                    placeholder={watchIsTakeHome ? getText('No room needed for Take Home exam', 'Tidak perlu ruangan untuk ujian Take Home') : getText('Search or select room...', 'Cari atau pilih ruangan...')} 
-                                                    isClearable 
-                                                    styles={{
-                                                        control: (provided) => ({
-                                                            ...provided,
-                                                            minHeight: '42px',
-                                                            borderColor: '#d1d5db',
-                                                            backgroundColor: watchIsTakeHome ? '#f9fafb' : 'white',
-                                                        }),
-                                                    }}
-                                                /> 
-                                            ); 
-                                        }}
-                                    />
-                                    {form.formState.errors.room_id && (
-                                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.room_id.message}</p>
-                                    )}
-                                    {!watchIsTakeHome && watchStartTime && watchEndTime && watchDate && (
-                                        <p className="mt-2 text-sm text-gray-600">import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -245,54 +129,56 @@ const ExamManagement = () => {
     const [showClearConfirm, setShowClearConfirm] = useState(false);
     const [printSelectedDepartment, setPrintSelectedDepartment] = useState<string>('');
 
-    const examSchema = z.object({
-        course_name: z.string().min(1, getText('Course name is required', 'Nama mata kuliah harus diisi')),
-        course_code: z.string().min(1, getText('Course code is required', 'Kode mata kuliah harus diisi')),
-        date: z.string().min(1, getText('Date is required', 'Tanggal harus diisi')),
-        start_time: z.string().optional(),
-        end_time: z.string().optional(),
-        is_take_home: z.boolean().default(false),
-        semester: z.number().min(1, getText('Semester must be at least 1', 'Semester minimal 1')).max(8, getText('Semester cannot exceed 8', 'Semester maksimal 8')),
-        class: z.string().min(1, getText('Class is required', 'Kelas harus diisi')),
-        student_amount: z.number().min(0, getText('Student amount cannot be negative', 'Jumlah mahasiswa tidak boleh negatif')),
-        room_id: z.string().optional(),
-        lecturer_id: z.string().min(1, getText('Lecturer is required', 'Dosen harus dipilih')),
-        inspector: z.string().min(1, getText('Inspector is required', 'Pengawas harus dipilih')),
-        study_program_id: z.string().min(1, getText('Study program is required', 'Program studi harus dipilih')),
-    }).superRefine((data, ctx) => {
-        // If not take home, start_time and end_time are required
-        if (!data.is_take_home) {
-            if (!data.start_time) {
-                ctx.addIssue({
-                    code: z.ZodIssueCode.custom,
-                    path: ['start_time'],
-                    message: getText('Start time is required for scheduled exams.', 'Waktu mulai diperlukan untuk ujian terjadwal.'),
-                });
+    const examSchema = useMemo(() => {
+        return z.object({
+            course_name: z.string().min(1, getText('Course name is required', 'Nama mata kuliah harus diisi')),
+            course_code: z.string().min(1, getText('Course code is required', 'Kode mata kuliah harus diisi')),
+            date: z.string().min(1, getText('Date is required', 'Tanggal harus diisi')),
+            start_time: z.string().optional(),
+            end_time: z.string().optional(),
+            is_take_home: z.boolean().default(false),
+            semester: z.number().min(1, getText('Semester must be at least 1', 'Semester minimal 1')).max(8, getText('Semester cannot exceed 8', 'Semester maksimal 8')),
+            class: z.string().min(1, getText('Class is required', 'Kelas harus diisi')),
+            student_amount: z.number().min(0, getText('Student amount cannot be negative', 'Jumlah mahasiswa tidak boleh negatif')),
+            room_id: z.string().optional(),
+            lecturer_id: z.string().min(1, getText('Lecturer is required', 'Dosen harus dipilih')),
+            inspector: z.string().min(1, getText('Inspector is required', 'Pengawas harus dipilih')),
+            study_program_id: z.string().min(1, getText('Study program is required', 'Program studi harus dipilih')),
+        }).superRefine((data, ctx) => {
+            // If not take home, start_time and end_time are required
+            if (!data.is_take_home) {
+                if (!data.start_time) {
+                    ctx.addIssue({
+                        code: z.ZodIssueCode.custom,
+                        path: ['start_time'],
+                        message: getText('Start time is required for scheduled exams.', 'Waktu mulai diperlukan untuk ujian terjadwal.'),
+                    });
+                }
+                if (!data.end_time) {
+                    ctx.addIssue({
+                        code: z.ZodIssueCode.custom,
+                        path: ['end_time'],
+                        message: getText('End time is required for scheduled exams.', 'Waktu selesai diperlukan untuk ujian terjadwal.'),
+                    });
+                }
+                if (data.start_time && data.end_time && data.start_time >= data.end_time) {
+                    ctx.addIssue({
+                        code: z.ZodIssueCode.custom,
+                        path: ['end_time'],
+                        message: getText('End time must be after start time.', 'Waktu selesai harus setelah waktu mulai.'),
+                    });
+                }
+                // Room required for scheduled exams
+                if (!data.room_id || data.room_id === '') {
+                    ctx.addIssue({
+                        code: z.ZodIssueCode.custom,
+                        path: ['room_id'],
+                        message: getText('Room is required for scheduled exams.', 'Ruangan diperlukan untuk ujian terjadwal.'),
+                    });
+                }
             }
-            if (!data.end_time) {
-                ctx.addIssue({
-                    code: z.ZodIssueCode.custom,
-                    path: ['end_time'],
-                    message: getText('End time is required for scheduled exams.', 'Waktu selesai diperlukan untuk ujian terjadwal.'),
-                });
-            }
-            if (data.start_time && data.end_time && data.start_time >= data.end_time) {
-                ctx.addIssue({
-                    code: z.ZodIssueCode.custom,
-                    path: ['end_time'],
-                    message: getText('End time must be after start time.', 'Waktu selesai harus setelah waktu mulai.'),
-                });
-            }
-            // Room required for scheduled exams
-            if (!data.room_id || data.room_id === '') {
-                ctx.addIssue({
-                    code: z.ZodIssueCode.custom,
-                    path: ['room_id'],
-                    message: getText('Room is required for scheduled exams.', 'Ruangan diperlukan untuk ujian terjadwal.'),
-                });
-            }
-        }
-    });
+        });
+    }, [getText]);
 
     const form = useForm<ExamFormData>({ 
         resolver: zodResolver(examSchema), 
@@ -312,6 +198,11 @@ const ExamManagement = () => {
             study_program_id: '', 
         }, 
     });
+
+    // Effect to update form resolver when schema changes
+    useEffect(() => {
+        form.clearErrors();
+    }, [examSchema, form]);
 
     const printForm = useForm<PrintFormData>({ resolver: zodResolver(printSchema) });
     const watchDate = form.watch('date');
