@@ -704,8 +704,6 @@ const ExamManagement = () => {
             
             const additionalInfoColumn = [
                 getText("COURSE CODE", "KODE MK"), 
-                getText("CLASS", "KELAS"), 
-                getText("Supervisor", "Dosen Pengawas"), 
                 getText("Lecturer", "Dosen Pengampu MK")
             ];
             const additionalInfoRows: any[] = [];
@@ -733,7 +731,7 @@ const ExamManagement = () => {
                 let subheadingY = finalY + 10;
                 doc.setFontSize(12);
                 doc.setFont('helvetica', 'bold');
-                doc.text(getText("Supervisor List", "Daftar Dosen Pengawas"), 14, subheadingY);
+                doc.text(getText("In Charge Lecture List", "Daftar Dosen Pengampu Mata Kuliah"), 14, subheadingY);
             
                 autoTable(doc, {
                     head: [additionalInfoColumn],
