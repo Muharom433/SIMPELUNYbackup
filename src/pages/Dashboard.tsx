@@ -115,26 +115,29 @@ const Dashboard: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Hero Section */}
-      <div className="relative bg-gradient-to-br from-stone-200 via-amber-100 to-yellow-100 overflow-hidden">
+      <div className="relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden" style={{background: 'linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)'}}>
         {/* Animated Background Elements */}
         <div className="absolute inset-0">
           <div 
-            className="absolute top-20 left-10 w-72 h-72 bg-amber-200 rounded-full mix-blend-multiply filter blur-xl opacity-20"
+            className="absolute top-20 left-10 w-72 h-72 rounded-full mix-blend-multiply filter blur-xl opacity-20"
             style={{ 
+              background: '#daa06d',
               transform: `translateY(${scrollY * 0.5}px)`,
               animation: 'blob 7s infinite'
             }}
           ></div>
           <div 
-            className="absolute top-40 right-10 w-72 h-72 bg-orange-200 rounded-full mix-blend-multiply filter blur-xl opacity-20"
+            className="absolute top-40 right-10 w-72 h-72 rounded-full mix-blend-multiply filter blur-xl opacity-20"
             style={{ 
+              background: '#c4926b',
               transform: `translateY(${scrollY * 0.3}px)`,
               animation: 'blob 7s infinite 2s'
             }}
           ></div>
           <div 
-            className="absolute bottom-20 left-20 w-72 h-72 bg-yellow-200 rounded-full mix-blend-multiply filter blur-xl opacity-20"
+            className="absolute bottom-20 left-20 w-72 h-72 rounded-full mix-blend-multiply filter blur-xl opacity-20"
             style={{ 
+              background: '#b8956f',
               transform: `translateY(${scrollY * 0.4}px)`,
               animation: 'blob 7s infinite 4s'
             }}
@@ -145,22 +148,22 @@ const Dashboard: React.FC = () => {
           <div className="max-w-7xl mx-auto">
             <div className="grid lg:grid-cols-2 gap-8 items-center">
               {/* Left Content */}
-              <div className="text-stone-800 space-y-6">
+              <div className="space-y-6" style={{color: '#5d3a1a'}}>
                 <div className="space-y-4">
-                  <div className="inline-flex items-center px-4 py-2 bg-white bg-opacity-20 backdrop-blur-sm rounded-full text-sm font-medium">
-                    <Star className="w-4 h-4 mr-2 text-amber-700" />
+                  <div className="inline-flex items-center px-4 py-2 bg-white bg-opacity-30 backdrop-blur-sm rounded-full text-sm font-medium">
+                    <Star className="w-4 h-4 mr-2" style={{color: '#8b5a2b'}} />
                     Best Faculty Management System
                   </div>
                   <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold leading-tight">
                     Faculty of 
-                    <span className="block bg-gradient-to-r from-amber-700 to-yellow-700 bg-clip-text text-transparent">
+                    <span className="block bg-clip-text text-transparent" style={{background: 'linear-gradient(to right, #8b5a2b, #5d3a1a)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'}}>
                       Vocational
                     </span>
                   </h1>
-                  <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold text-stone-700">
+                  <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold" style={{color: '#6b4423'}}>
                     Yogyakarta State University
                   </h2>
-                  <p className="text-sm sm:text-base lg:text-lg text-stone-600 leading-relaxed max-w-lg">
+                  <p className="text-sm sm:text-base lg:text-lg leading-relaxed max-w-lg" style={{color: '#7a4f2a'}}>
                     SIMPEL kuliah or Sistem Pelayanan kuliah is an Innovation to improve our services.
                   </p>
                 </div>
@@ -174,7 +177,7 @@ const Dashboard: React.FC = () => {
                       </div>
                       <div>
                         <p className="text-xl lg:text-2xl font-bold">1200+</p>
-                        <p className="text-xs lg:text-sm text-stone-600">Bookings</p>
+                        <p className="text-xs lg:text-sm" style={{color: '#7a4f2a'}}>Bookings</p>
                       </div>
                     </div>
                     <div className="mt-3 flex items-center text-green-400 text-sm">
@@ -189,14 +192,14 @@ const Dashboard: React.FC = () => {
                       </div>
                       <div>
                         <p className="text-xl lg:text-2xl font-bold">{formatTime(currentTime)}</p>
-                        <p className="text-xs lg:text-sm text-stone-600">Live Time</p>
+                        <p className="text-xs lg:text-sm" style={{color: '#7a4f2a'}}>Live Time</p>
                       </div>
                     </div>
                   </div>
                 </div>
 
                 {/* Contact Info */}
-                <div className="flex items-center space-x-6 text-sm text-stone-500">
+                <div className="flex items-center space-x-6 text-sm" style={{color: '#8b5a2b'}}>
                   <div className="flex items-center space-x-2">
                     <MapPin className="w-4 h-4" />
                     <span>Faculty of Vocational</span>
@@ -341,7 +344,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Stats Dashboard Section */}
-      <div className="py-24 bg-gradient-to-br from-amber-50 to-yellow-50">
+      <div className="py-24" style={{background: 'linear-gradient(to bottom right, #f9f7f4, #f0e6d6)'}}>
         <div className="max-w-7xl mx-auto px-6 sm:px-12 lg:px-16">
           <div className="text-center space-y-4 mb-16">
             <h2 className="text-4xl lg:text-5xl font-bold text-gray-900">
