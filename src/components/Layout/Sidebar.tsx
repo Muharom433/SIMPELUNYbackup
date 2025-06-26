@@ -86,8 +86,6 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: PieChart, label: getText('Department Analytics', 'Analitik Departemen'), path: '/department-analytics' },
                 { icon: CalendarCheck, label: getText('Exam Management', 'Manajemen Ujian'), path: '/exams' },
                 { icon: BookOpen, label: getText('Department Bookings', 'Pemesanan Departemen'), path: '/department-bookings', badge: pendingBookingsCount > 0 ? pendingBookingsCount : null },
-                { icon: ClipboardCheck, label: getText('Validation Queue', 'Antrian Validasi'), path: '/validation', badge: pendingCheckoutsCount > 0 ? pendingCheckoutsCount : null },
-                { icon: Wrench, label: getText('Equipment Management', 'Manajemen Peralatan'), path: '/department-equipment' },
                 { icon: Users, label: getText('User Management', 'Manajemen Pengguna'), path: '/users' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/profile' },
             ];
