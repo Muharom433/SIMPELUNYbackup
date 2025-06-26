@@ -25,6 +25,7 @@ import {
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const checkoutSchema = z.object({
   booking_id: z.string().min(1, 'Please select a booking to check out'),
@@ -74,6 +75,7 @@ interface BookingWithDetails {
 }
 
 const CheckOut: React.FC = () => {
+  const { getText } = useLanguage();
   const [approvedBookings, setApprovedBookings] = useState<BookingWithDetails[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -208,7 +210,7 @@ const CheckOut: React.FC = () => {
       setApprovedBookings(bookingsWithDetails);
     } catch (error) {
       console.error('Error fetching approved bookings:', error);
-      toast.error('Failed to load approved bookings');
+      toast.error(getText('Failed to load approved bookings', 'Gagal memuat pemesanan yang disetujui'));
     } finally {
       setLoading(false);
     }
@@ -220,13 +222,13 @@ const CheckOut: React.FC = () => {
 
     // Validate file type
     if (!file.type.startsWith('image/')) {
-      toast.error('Please select an image file');
+      toast.error(getText('Please select an image file', 'Silakan pilih file gambar'));
       return;
     }
 
     // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image size must be less than 5MB');
+      toast.error(getText('Image size must be less than 5MB', 'Ukuran gambar harus kurang dari 5MB'));
       return;
     }
 
@@ -244,13 +246,13 @@ const CheckOut: React.FC = () => {
         const newAttachments = [...attachments, base64String];
         setAttachments(newAttachments);
         form.setValue('attachments', newAttachments);
-        toast.success('Image uploaded successfully');
+        toast.success(getText('Image uploaded successfully', 'Gambar berhasil diunggah'));
       };
       reader.readAsDataURL(file);
       
     } catch (error) {
       console.error('Error uploading image:', error);
-      toast.error('Failed to upload image');
+      toast.error(getText('Failed to upload image', 'Gagal mengunggah gambar'));
     } finally {
       setUploadingImage(false);
     }
@@ -267,13 +269,12 @@ const CheckOut: React.FC = () => {
       setLoading(true);
 
       if (!selectedBooking) {
-        toast.error('Please select a booking to check out');
+        toast.error(getText('Please select a booking to check out', 'Silakan pilih pemesanan untuk check out'));
         return;
       }
 
       console.log('Processing checkout for booking:', selectedBooking.id);
 
-      // Create checkout record
       // Create checkout record
       const checkoutData = {
         user_id: selectedBooking.user_id,
@@ -310,7 +311,7 @@ const CheckOut: React.FC = () => {
       if (bookingUpdateError) {
         console.error('Error updating booking status:', bookingUpdateError);
         // Don't throw error here as checkout was successful
-        toast.error('Checkout completed but failed to update booking status');
+        toast.error(getText('Checkout completed but failed to update booking status', 'Checkout selesai tapi gagal memperbarui status pemesanan'));
       } else {
         console.log('Booking status updated to completed');
       }
@@ -341,13 +342,13 @@ const CheckOut: React.FC = () => {
 
         if (reportError) {
           console.error('Error creating report:', reportError);
-          toast.error('Checkout completed but failed to submit report');
+          toast.error(getText('Checkout completed but failed to submit report', 'Checkout selesai tapi gagal mengirim laporan'));
         } else {
           console.log('Issue report created successfully');
-          toast.success('Checkout completed and issue reported successfully!');
+          toast.success(getText('Checkout completed and issue reported successfully!', 'Checkout selesai dan masalah berhasil dilaporkan!'));
         }
       } else {
-        toast.success('Checkout completed successfully!');
+        toast.success(getText('Checkout completed successfully!', 'Checkout berhasil diselesaikan!'));
       }
 
       // Reset form and refresh data
@@ -365,7 +366,7 @@ const CheckOut: React.FC = () => {
 
     } catch (error: any) {
       console.error('Error processing checkout:', error);
-      toast.error(error.message || 'Failed to process checkout');
+      toast.error(error.message || getText('Failed to process checkout', 'Gagal memproses checkout'));
     } finally {
       setLoading(false);
     }
@@ -384,6 +385,18 @@ const CheckOut: React.FC = () => {
     );
   });
 
+  const getCategoryText = (category: string) => {
+    switch (category) {
+      case 'equipment': return getText('Equipment Issues', 'Masalah Peralatan');
+      case 'room_condition': return getText('Room Condition', 'Kondisi Ruangan');
+      case 'cleanliness': return getText('Cleanliness', 'Kebersihan');
+      case 'safety': return getText('Safety', 'Keamanan');
+      case 'maintenance': return getText('Maintenance', 'Pemeliharaan');
+      case 'other': return getText('Other', 'Lainnya');
+      default: return category;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-50 to-teal-50">
       {/* Header Section */}
@@ -396,15 +409,19 @@ const CheckOut: React.FC = () => {
               </div>
               <div>
                 <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                  Equipment Check Out
+                  {getText('Equipment Check Out', 'Pengembalian Peralatan')}
                 </h1>
-                <p className="text-gray-600 mt-1">Complete your equipment return and report any issues</p>
+                <p className="text-gray-600 mt-1">
+                  {getText('Complete your equipment return and report any issues', 'Selesaikan pengembalian peralatan dan laporkan masalah')}
+                </p>
               </div>
             </div>
             <div className="hidden md:block">
               <div className="text-right">
                 <div className="text-2xl font-bold text-gray-800">{approvedBookings.length}</div>
-                <div className="text-sm text-gray-500">Approved Bookings</div>
+                <div className="text-sm text-gray-500">
+                  {getText('Approved Bookings', 'Pemesanan Disetujui')}
+                </div>
               </div>
             </div>
           </div>
@@ -418,14 +435,16 @@ const CheckOut: React.FC = () => {
             <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
               <div className="flex items-center space-x-3 mb-6">
                 <Search className="h-5 w-5 text-emerald-500" />
-                <h2 className="text-xl font-bold text-gray-800">Find Your Booking</h2>
+                <h2 className="text-xl font-bold text-gray-800">
+                  {getText('Find Your Booking', 'Cari Pemesanan Anda')}
+                </h2>
               </div>
               
               <div className="relative">
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search by name, ID, room..."
+                  placeholder={getText('Search by name, ID, room...', 'Cari berdasarkan nama, ID, ruangan...')}
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
@@ -441,13 +460,19 @@ const CheckOut: React.FC = () => {
                     {loading ? (
                       <div className="flex flex-col items-center justify-center py-12">
                         <RefreshCw className="h-8 w-8 animate-spin text-emerald-600 mb-3" />
-                        <span className="text-gray-600 font-medium">Loading bookings...</span>
+                        <span className="text-gray-600 font-medium">
+                          {getText('Loading bookings...', 'Memuat pemesanan...')}
+                        </span>
                       </div>
                     ) : filteredBookings.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-12">
                         <Package className="h-12 w-12 text-gray-300 mb-3" />
-                        <p className="text-gray-500 font-medium">No approved bookings found</p>
-                        <p className="text-sm text-gray-400">Try a different search term</p>
+                        <p className="text-gray-500 font-medium">
+                          {getText('No approved bookings found', 'Tidak ada pemesanan yang disetujui')}
+                        </p>
+                        <p className="text-sm text-gray-400">
+                          {getText('Try a different search term', 'Coba kata kunci pencarian lain')}
+                        </p>
                       </div>
                     ) : (
                       <div className="p-2">
@@ -467,16 +492,16 @@ const CheckOut: React.FC = () => {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="font-semibold text-gray-900 truncate">
-                                  {booking.user?.full_name || booking.user_info?.full_name || 'Unknown User'}
+                                  {booking.user?.full_name || booking.user_info?.full_name || getText('Unknown User', 'Pengguna Tidak Dikenal')}
                                 </div>
                                 <div className="text-sm text-gray-600 mb-2">
-                                  {booking.user?.identity_number || booking.user_info?.identity_number || 'No ID'}
+                                  {booking.user?.identity_number || booking.user_info?.identity_number || getText('No ID', 'Tidak Ada ID')}
                                 </div>
                                 
                                 <div className="space-y-1">
                                   <div className="flex items-center text-xs text-gray-500">
                                     <Building className="h-3 w-3 mr-1" />
-                                    <span className="truncate">{booking.room?.name || 'Unknown Room'}</span>
+                                    <span className="truncate">{booking.room?.name || getText('Unknown Room', 'Ruangan Tidak Dikenal')}</span>
                                   </div>
                                   <div className="flex items-center text-xs text-gray-500">
                                     <Calendar className="h-3 w-3 mr-1" />
@@ -484,7 +509,7 @@ const CheckOut: React.FC = () => {
                                   </div>
                                   <div className="flex items-center text-xs text-gray-500">
                                     <Package className="h-3 w-3 mr-1" />
-                                    <span>{booking.equipment_requested?.length || 0} items</span>
+                                    <span>{booking.equipment_requested?.length || 0} {getText('items', 'item')}</span>
                                   </div>
                                 </div>
                               </div>
@@ -511,7 +536,9 @@ const CheckOut: React.FC = () => {
                 <div className="p-2 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg">
                   <CheckCircle className="h-5 w-5 text-white" />
                 </div>
-                <h2 className="text-2xl font-bold text-gray-800">Complete Equipment Return</h2>
+                <h2 className="text-2xl font-bold text-gray-800">
+                  {getText('Complete Equipment Return', 'Selesaikan Pengembalian Peralatan')}
+                </h2>
               </div>
 
               <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
@@ -520,24 +547,30 @@ const CheckOut: React.FC = () => {
                   <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/50 rounded-2xl p-6">
                     <div className="flex items-center space-x-3 mb-6">
                       <CheckCircle className="h-6 w-6 text-emerald-600" />
-                      <h3 className="text-xl font-bold text-emerald-900">Selected Booking Details</h3>
+                      <h3 className="text-xl font-bold text-emerald-900">
+                        {getText('Selected Booking Details', 'Detail Pemesanan Terpilih')}
+                      </h3>
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                       <div className="space-y-3">
                         <div>
-                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">User Information</span>
+                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">
+                            {getText('User Information', 'Informasi Pengguna')}
+                          </span>
                           <div className="mt-1">
                             <div className="font-bold text-emerald-900">
-                              {selectedBooking.user?.full_name || selectedBooking.user_info?.full_name || 'Unknown User'}
+                              {selectedBooking.user?.full_name || selectedBooking.user_info?.full_name || getText('Unknown User', 'Pengguna Tidak Dikenal')}
                             </div>
                             <div className="text-emerald-700">
-                              {selectedBooking.user?.identity_number || selectedBooking.user_info?.identity_number || 'No ID'}
+                              {selectedBooking.user?.identity_number || selectedBooking.user_info?.identity_number || getText('No ID', 'Tidak Ada ID')}
                             </div>
                           </div>
                         </div>
                         <div>
-                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">Date & Time</span>
+                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">
+                            {getText('Date & Time', 'Tanggal & Waktu')}
+                          </span>
                           <div className="mt-1">
                             <div className="font-bold text-emerald-900">{format(new Date(selectedBooking.start_time), 'MMM d, yyyy')}</div>
                             <div className="text-emerald-700">
@@ -549,16 +582,20 @@ const CheckOut: React.FC = () => {
                       
                       <div className="space-y-3">
                         <div>
-                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">Location</span>
+                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">
+                            {getText('Location', 'Lokasi')}
+                          </span>
                           <div className="mt-1">
-                            <div className="font-bold text-emerald-900">{selectedBooking.room?.name || 'Unknown Room'}</div>
+                            <div className="font-bold text-emerald-900">{selectedBooking.room?.name || getText('Unknown Room', 'Ruangan Tidak Dikenal')}</div>
                             <div className="text-emerald-700">{selectedBooking.room?.code || ''}</div>
                           </div>
                         </div>
                         <div>
-                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">Purpose</span>
+                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">
+                            {getText('Purpose', 'Tujuan')}
+                          </span>
                           <div className="mt-1">
-                            <div className="font-bold text-emerald-900">{selectedBooking.purpose || 'No purpose specified'}</div>
+                            <div className="font-bold text-emerald-900">{selectedBooking.purpose || getText('No purpose specified', 'Tidak ada tujuan yang ditentukan')}</div>
                           </div>
                         </div>
                       </div>
@@ -566,7 +603,9 @@ const CheckOut: React.FC = () => {
                     
                     {selectedBooking.equipment_requested && selectedBooking.equipment_requested.length > 0 && (
                       <div>
-                        <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide mb-3 block">Requested Equipment</span>
+                        <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide mb-3 block">
+                          {getText('Requested Equipment', 'Peralatan yang Diminta')}
+                        </span>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {selectedBooking.equipment_requested.map((item, index) => (
                             <div key={index} className="flex items-center p-3 bg-white/60 rounded-xl border border-emerald-200/50">
@@ -593,10 +632,10 @@ const CheckOut: React.FC = () => {
                       />
                       <div className="flex-1">
                         <label className="text-lg font-semibold text-yellow-900 cursor-pointer">
-                          Report an issue or problem
+                          {getText('Report an issue or problem', 'Laporkan masalah atau kendala')}
                         </label>
                         <p className="mt-2 text-sm text-yellow-700">
-                          Check this if you experienced any problems with the equipment, room condition, or facilities during your booking.
+                          {getText('Check this if you experienced any problems with the equipment, room condition, or facilities during your booking.', 'Centang ini jika Anda mengalami masalah dengan peralatan, kondisi ruangan, atau fasilitas selama pemesanan.')}
                         </p>
                       </div>
                       <AlertTriangle className="h-6 w-6 text-yellow-600 flex-shrink-0" />
@@ -609,36 +648,38 @@ const CheckOut: React.FC = () => {
                   <div className="bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200/50 rounded-2xl p-6 space-y-6">
                     <div className="flex items-center space-x-3 mb-6">
                       <FileText className="h-6 w-6 text-orange-600" />
-                      <h3 className="text-xl font-bold text-orange-900">Issue Report Details</h3>
+                      <h3 className="text-xl font-bold text-orange-900">
+                        {getText('Issue Report Details', 'Detail Laporan Masalah')}
+                      </h3>
                     </div>
 
                     {/* Issue Category */}
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-3">
-                        Issue Category *
+                        {getText('Issue Category', 'Kategori Masalah')} *
                       </label>
                       <select
                         {...form.register('report_category')}
                         className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-transparent transition-all duration-200"
                       >
-                        <option value="equipment">Equipment Issues</option>
-                        <option value="room_condition">Room Condition</option>
-                        <option value="cleanliness">Cleanliness</option>
-                        <option value="safety">Safety</option>
-                        <option value="maintenance">Maintenance</option>
-                        <option value="other">Other</option>
+                        <option value="equipment">{getCategoryText('equipment')}</option>
+                        <option value="room_condition">{getCategoryText('room_condition')}</option>
+                        <option value="cleanliness">{getCategoryText('cleanliness')}</option>
+                        <option value="safety">{getCategoryText('safety')}</option>
+                        <option value="maintenance">{getCategoryText('maintenance')}</option>
+                        <option value="other">{getCategoryText('other')}</option>
                       </select>
                     </div>
 
                     {/* Issue Description */}
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-3">
-                        Issue Description *
+                        {getText('Issue Description', 'Deskripsi Masalah')} *
                       </label>
                       <textarea
                         {...form.register('report_description')}
                         rows={4}
-                        placeholder="Please describe the issue in detail. Include what happened, when it occurred, and any relevant context..."
+                        placeholder={getText('Please describe the issue in detail. Include what happened, when it occurred, and any relevant context...', 'Harap jelaskan masalah secara detail. Sertakan apa yang terjadi, kapan terjadi, dan konteks yang relevan...')}
                         className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-transparent transition-all duration-200 placeholder-gray-400"
                       />
                     </div>
@@ -646,7 +687,7 @@ const CheckOut: React.FC = () => {
                     {/* Photo Upload */}
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-3">
-                        Attach Photos (Optional)
+                        {getText('Attach Photos (Optional)', 'Lampirkan Foto (Opsional)')}
                       </label>
                       <div className="space-y-4">
                         <div className="flex items-center justify-center w-full">
@@ -655,7 +696,9 @@ const CheckOut: React.FC = () => {
                               {uploadingImage ? (
                                 <div className="flex flex-col items-center">
                                   <RefreshCw className="h-10 w-10 text-gray-400 animate-spin mb-3" />
-                                  <p className="text-sm text-gray-500 font-medium">Uploading image...</p>
+                                  <p className="text-sm text-gray-500 font-medium">
+                                    {getText('Uploading image...', 'Mengunggah gambar...')}
+                                  </p>
                                 </div>
                               ) : (
                                 <div className="flex flex-col items-center">
@@ -663,9 +706,11 @@ const CheckOut: React.FC = () => {
                                     <Camera className="h-8 w-8 text-gray-400" />
                                   </div>
                                   <p className="mb-2 text-sm text-gray-600 font-semibold">
-                                    Click to upload or drag and drop
+                                    {getText('Click to upload or drag and drop', 'Klik untuk mengunggah atau seret dan lepas')}
                                   </p>
-                                  <p className="text-xs text-gray-500">PNG, JPG up to 5MB</p>
+                                  <p className="text-xs text-gray-500">
+                                    {getText('PNG, JPG up to 5MB', 'PNG, JPG hingga 5MB')}
+                                  </p>
                                 </div>
                               )}
                             </div>
@@ -682,7 +727,9 @@ const CheckOut: React.FC = () => {
                         {/* Uploaded Images */}
                         {attachments.length > 0 && (
                           <div>
-                            <h4 className="text-sm font-semibold text-gray-700 mb-3">Uploaded Images ({attachments.length})</h4>
+                            <h4 className="text-sm font-semibold text-gray-700 mb-3">
+                              {getText('Uploaded Images', 'Gambar yang Diunggah')} ({attachments.length})
+                            </h4>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                               {attachments.map((attachment, index) => (
                                 <div key={index} className="relative group">
@@ -719,12 +766,12 @@ const CheckOut: React.FC = () => {
                     {loading ? (
                       <>
                         <RefreshCw className="h-5 w-5 animate-spin" />
-                        <span>Processing Checkout...</span>
+                        <span>{getText('Processing Checkout...', 'Memproses Checkout...')}</span>
                       </>
                     ) : (
                       <>
                         <CheckCircle className="h-5 w-5" />
-                        <span>Check Out</span>
+                        <span>{getText('Check Out', 'Check Out')}</span>
                       </>
                     )}
                   </button>
@@ -737,23 +784,25 @@ const CheckOut: React.FC = () => {
                       <ExternalLink className="h-5 w-5 text-blue-600" />
                     </div>
                     <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-blue-900 mb-2">What happens next?</h3>
+                      <h3 className="text-lg font-semibold text-blue-900 mb-2">
+                        {getText('What happens next?', 'Apa yang terjadi selanjutnya?')}
+                      </h3>
                       <ul className="space-y-2 text-sm text-blue-800">
                         <li className="flex items-center space-x-2">
                           <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                          <span>Your booking will be marked as completed</span>
+                          <span>{getText('Your booking will be marked as completed', 'Pemesanan Anda akan ditandai sebagai selesai')}</span>
                         </li>
                         <li className="flex items-center space-x-2">
                           <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                          <span>Equipment will be checked and processed for return</span>
+                          <span>{getText('Equipment will be checked and processed for return', 'Peralatan akan diperiksa dan diproses untuk dikembalikan')}</span>
                         </li>
                         <li className="flex items-center space-x-2">
                           <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                          <span>Any reported issues will be forwarded to the maintenance team</span>
+                          <span>{getText('Any reported issues will be forwarded to the maintenance team', 'Masalah yang dilaporkan akan diteruskan ke tim pemeliharaan')}</span>
                         </li>
                         <li className="flex items-center space-x-2">
                           <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                          <span>You'll receive a confirmation notification</span>
+                          <span>{getText("You'll receive a confirmation notification", 'Anda akan menerima notifikasi konfirmasi')}</span>
                         </li>
                       </ul>
                     </div>
