@@ -133,9 +133,11 @@ const CheckOut: React.FC = () => {
   useEffect(() => {
     if (watchRecordId) {
       const record = allRecords.find(r => r.id === watchRecordId);
+      console.log('Record found for ID:', watchRecordId, record);
       setSelectedRecord(record || null);
       if (record) {
         form.setValue('record_type', record.record_type);
+        console.log('Set record type:', record.record_type);
       }
     }
   }, [watchRecordId, allRecords, form]);
@@ -301,6 +303,7 @@ const CheckOut: React.FC = () => {
 
       // Combine both types of records
       const combinedRecords = [...bookingsWithDetails, ...lendingToolsWithDetails];
+      console.log('Combined records:', combinedRecords.length, combinedRecords);
       setAllRecords(combinedRecords);
 
     } catch (error) {
@@ -609,9 +612,9 @@ const CheckOut: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-50 to-teal-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-50 to-teal-50 relative">
       {/* Header Section */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 sticky top-0 z-40">
+      <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 sticky top-0 z-30">
         <div className="max-w-6xl mx-auto px-4 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -642,8 +645,8 @@ const CheckOut: React.FC = () => {
       <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Left Column - Record Search */}
-          <div className="lg:col-span-1 space-y-6">
-            <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+          <div className="lg:col-span-1 space-y-6 relative z-20">
+            <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 relative">
               <div className="flex items-center space-x-3 mb-6">
                 <Search className="h-5 w-5 text-emerald-500" />
                 <h2 className="text-xl font-bold text-gray-800">
@@ -652,7 +655,7 @@ const CheckOut: React.FC = () => {
               </div>
               
               <div className="relative">
-                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 z-10" />
                 <input
                   type="text"
                   placeholder={getText('Search by name, ID, room, equipment...', 'Cari berdasarkan nama, ID, ruangan, peralatan...')}
@@ -662,12 +665,18 @@ const CheckOut: React.FC = () => {
                     setShowRecordDropdown(true);
                   }}
                   onFocus={() => setShowRecordDropdown(true)}
-                  className="w-full pl-12 pr-4 py-4 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-transparent transition-all duration-200 placeholder-gray-400"
+                  className="w-full pl-12 pr-4 py-4 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-transparent transition-all duration-200 placeholder-gray-400 relative z-10"
                 />
-                <ChevronDown className="absolute right-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <button
+                  type="button"
+                  onClick={() => setShowRecordDropdown(!showRecordDropdown)}
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 z-10"
+                >
+                  <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${showRecordDropdown ? 'rotate-180' : ''}`} />
+                </button>
                 
                 {showRecordDropdown && (
-                  <div className="absolute z-20 w-full mt-2 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-2xl max-h-96 overflow-y-auto">
+                  <div className="absolute z-50 w-full mt-2 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-2xl max-h-96 overflow-y-auto">
                     {loading ? (
                       <div className="flex flex-col items-center justify-center py-12">
                         <RefreshCw className="h-8 w-8 animate-spin text-emerald-600 mb-3" />
@@ -679,23 +688,42 @@ const CheckOut: React.FC = () => {
                       <div className="flex flex-col items-center justify-center py-12">
                         <Package className="h-12 w-12 text-gray-300 mb-3" />
                         <p className="text-gray-500 font-medium">
-                          {getText('No active records found', 'Tidak ada data aktif')}
+                          {allRecords.length === 0 
+                            ? getText('No active records available', 'Tidak ada data aktif tersedia')
+                            : getText('No records match your search', 'Tidak ada data yang cocok dengan pencarian')
+                          }
                         </p>
                         <p className="text-sm text-gray-400">
-                          {getText('Try a different search term', 'Coba kata kunci pencarian lain')}
+                          {allRecords.length === 0 
+                            ? getText('Please check if there are approved bookings or borrowed tools', 'Silakan periksa apakah ada pemesanan yang disetujui atau alat yang dipinjam')
+                            : getText('Try a different search term', 'Coba kata kunci pencarian lain')
+                          }
                         </p>
+                        {allRecords.length === 0 && (
+                          <button
+                            onClick={fetchAllRecords}
+                            className="mt-4 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors duration-200 flex items-center space-x-2"
+                          >
+                            <RefreshCw className="h-4 w-4" />
+                            <span>{getText('Refresh Data', 'Refresh Data')}</span>
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <div className="p-2">
                         {filteredRecords.map((record) => (
                           <div
                             key={record.id}
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              console.log('Record clicked:', record.id, record.record_type);
                               form.setValue('record_id', record.id);
+                              form.setValue('record_type', record.record_type);
                               setSearchTerm(getDisplayName(record));
                               setShowRecordDropdown(false);
                             }}
-                            className="p-4 hover:bg-emerald-50 cursor-pointer rounded-xl border border-transparent hover:border-emerald-200 transition-all duration-200 mb-2 last:mb-0"
+                            className="p-4 hover:bg-emerald-50 cursor-pointer rounded-xl border border-transparent hover:border-emerald-200 transition-all duration-200 mb-2 last:mb-0 active:bg-emerald-100"
                           >
                             <div className="flex items-start space-x-3">
                               <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${
@@ -778,7 +806,7 @@ const CheckOut: React.FC = () => {
           </div>
 
           {/* Right Column - Checkout Form */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 relative z-10">
             <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
               <div className="flex items-center space-x-3 mb-8">
                 <div className="p-2 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg">
@@ -1148,8 +1176,12 @@ const CheckOut: React.FC = () => {
       {/* Click outside to close dropdown */}
       {showRecordDropdown && (
         <div
-          className="fixed inset-0 z-10"
-          onClick={() => setShowRecordDropdown(false)}
+          className="fixed inset-0 z-40 bg-black/10"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setShowRecordDropdown(false);
+          }}
         />
       )}
     </div>
