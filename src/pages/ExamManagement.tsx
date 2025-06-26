@@ -571,6 +571,26 @@ const ExamManagement = () => {
                     8: { halign: 'center' } 
                 } 
             }); 
+          // --- START: ADD THIS NEW CODE ---
+const additionalInfoColumn = ["KODE MK", "KELAS", "Dosen Pengawas", "Dosen Pengampu MK"];
+const additionalInfoRows: any[] = [];
+
+// Create a set to track unique combinations of course code and class to avoid duplicates
+const uniqueCourses = new Set<string>();
+
+examsToPrint.forEach((exam) => {
+    const uniqueKey = `${exam.course_code}-${exam.class}`;
+    if (!uniqueCourses.has(uniqueKey)) {
+        additionalInfoRows.push([
+            exam.course_code,
+            exam.class,
+            exam.inspector || '-', // Dosen Pengawas
+            exam.lecturer?.full_name || 'N/A' // Dosen Pengampu MK
+        ]);
+        uniqueCourses.add(uniqueKey);
+    }
+});
+// --- END: ADD THIS NEW CODE ---
             const finalY = (doc as any).lastAutoTable.finalY || 100;
             const signatureX = 140; 
             const signatureY = finalY + 10; 
