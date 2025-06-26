@@ -28,6 +28,8 @@ const userSchema = z.object({
   full_name: z.string().min(2, 'Full name must be at least 2 characters'),
   identity_number: z.string().min(5, 'Identity number must be at least 5 characters'),
   role: z.enum(['super_admin', 'department_admin', 'lecturer', 'student']),
+  department_id: z.string().optional().nullable(),
+  study_program_id: z.string().optional().nullable(),
   password: z.string().min(6, 'Password must be at least 6 characters').optional(),
 });
 
@@ -41,13 +43,28 @@ interface User {
   identity_number: string;
   role: string;
   department_id?: string;
+  study_program_id?: string;
   created_at: string;
   updated_at: string;
+}
+
+interface Department {
+  id: string;
+  name: string;
+}
+
+interface StudyProgram {
+  id: string;
+  name: string;
+  code: string;
+  department_id: string;
 }
 
 const UserManagement: React.FC = () => {
   const { profile } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [studyPrograms, setStudyPrograms] = useState<StudyProgram[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -61,16 +78,36 @@ const UserManagement: React.FC = () => {
     },
   });
 
+  const watchRole = form.watch('role');
+  const watchDepartmentId = form.watch('department_id');
+
   useEffect(() => {
     if (profile) {
       fetchUsers();
+      fetchDepartments();
+      fetchStudyPrograms();
     }
   }, [profile]);
+
+  // Fetch study programs when department changes
+  useEffect(() => {
+    if (watchDepartmentId) {
+      fetchStudyProgramsByDepartment(watchDepartmentId);
+    } else if (profile?.role === 'super_admin') {
+      // Reset study programs when no department selected for super admin
+      setStudyPrograms([]);
+      form.setValue('study_program_id', '');
+    }
+  }, [watchDepartmentId]);
 
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      let query = supabase.from('users').select('*');
+      let query = supabase.from('users').select(`
+        *,
+        department:departments(name),
+        study_program:study_programs(name, code)
+      `);
       
       if (profile?.role === 'super_admin') {
         // Super admin sees all users
@@ -89,6 +126,68 @@ const UserManagement: React.FC = () => {
       toast.error('Failed to load users');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchDepartments = async () => {
+    try {
+      let query = supabase.from('departments').select('id, name');
+      
+      if (profile?.role === 'department_admin' && profile.department_id) {
+        query = query.eq('id', profile.department_id);
+      }
+      
+      const { data, error } = await query;
+      if (error) throw error;
+      setDepartments(data || []);
+    } catch (error: any) {
+      console.error('Error fetching departments:', error);
+      toast.error('Failed to load departments');
+    }
+  };
+
+  const fetchStudyPrograms = async () => {
+    try {
+      let query = supabase.from('study_programs').select('*');
+      
+      // For department admin, always filter by their department
+      if (profile?.role === 'department_admin' && profile.department_id) {
+        query = query.eq('department_id', profile.department_id);
+      }
+      // For super admin, don't load all study programs initially
+      else if (profile?.role === 'super_admin') {
+        return; // Don't load all study programs initially
+      }
+      
+      const { data, error } = await query;
+      if (error) throw error;
+      setStudyPrograms(data || []);
+    } catch (error: any) {
+      console.error('Error fetching study programs:', error);
+      toast.error('Failed to load study programs');
+    }
+  };
+
+  // Fetch study programs by department
+  const fetchStudyProgramsByDepartment = async (departmentId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('study_programs')
+        .select('*')
+        .eq('department_id', departmentId);
+      
+      if (error) throw error;
+      setStudyPrograms(data || []);
+      
+      // Reset study program selection if current selection is not in the new department
+      const currentStudyProgramId = form.getValues('study_program_id');
+      const isCurrentProgramInDepartment = data?.some(program => program.id === currentStudyProgramId);
+      if (!isCurrentProgramInDepartment) {
+        form.setValue('study_program_id', '');
+      }
+    } catch (error: any) {
+      console.error('Error fetching study programs by department:', error);
+      toast.error('Failed to load study programs');
     }
   };
 
