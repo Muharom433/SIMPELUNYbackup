@@ -273,9 +273,9 @@ const Dashboard: React.FC = () => {
                       </div>
                     </div>
                     
-                    {/* Shaping Text - Bottom Right Corner (2x bigger) */}
+                    {/* Shaping Text - Bottom Right Corner (2x bigger and further right) */}
                     <div 
-                      className="absolute bottom-8 right-4 lg:bottom-12 lg:right-8 z-20"
+                      className="absolute bottom-8 -right-8 lg:bottom-12 lg:-right-16 z-20"
                       style={{ animation: 'float 6s ease-in-out infinite 3s' }}
                     >
                       <img 
