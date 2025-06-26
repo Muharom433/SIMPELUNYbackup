@@ -195,12 +195,23 @@ const UserManagement: React.FC = () => {
     try {
       setLoading(true);
 
+      // Set department_id for department admin
+      if (profile?.role === 'department_admin' && profile.department_id) {
+        data.department_id = profile.department_id;
+        // Department admin can only create lecturers and students
+        if (!['lecturer', 'student'].includes(data.role)) {
+          data.role = 'student';
+        }
+      }
+
       const userData = {
         username: data.username,
         email: data.email,
         full_name: data.full_name,
         identity_number: data.identity_number,
         role: data.role,
+        department_id: data.department_id || null,
+        study_program_id: data.study_program_id || null,
       };
 
       if (editingUser) {
@@ -264,7 +275,15 @@ const UserManagement: React.FC = () => {
       full_name: user.full_name,
       identity_number: user.identity_number,
       role: user.role as any,
+      department_id: user.department_id || undefined,
+      study_program_id: user.study_program_id || undefined,
     });
+    
+    // Load study programs for the user's department
+    if (user.department_id) {
+      fetchStudyProgramsByDepartment(user.department_id);
+    }
+    
     setShowModal(true);
   };
 
@@ -371,7 +390,16 @@ const UserManagement: React.FC = () => {
             <button
               onClick={() => {
                 setEditingUser(null);
-                form.reset({ role: 'student' });
+                form.reset({
+                  role: 'student',
+                  department_id: profile?.role === 'department_admin' ? profile.department_id : ''
+                });
+                // Load study programs for department admin
+                if (profile?.role === 'department_admin' && profile.department_id) {
+                  fetchStudyProgramsByDepartment(profile.department_id);
+                } else {
+                  setStudyPrograms([]); // Clear study programs for super admin
+                }
                 setShowModal(true);
               }}
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
@@ -399,6 +427,9 @@ const UserManagement: React.FC = () => {
                   Email
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Department
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Created
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -409,7 +440,7 @@ const UserManagement: React.FC = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center">
+                  <td colSpan={6} className="px-6 py-12 text-center">
                     <div className="flex items-center justify-center">
                       <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mr-2" />
                       <span className="text-gray-600">Loading users...</span>
@@ -418,7 +449,7 @@ const UserManagement: React.FC = () => {
                 </tr>
               ) : filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center">
+                  <td colSpan={6} className="px-6 py-12 text-center">
                     <div className="text-gray-500">
                       <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                       <p className="text-lg font-medium mb-2">No users found</p>
@@ -445,7 +476,7 @@ const UserManagement: React.FC = () => {
                         {getRoleDisplayName(user.role)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {user.email}
+                        {(user as any).department?.name || 'N/A'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {format(new Date(user.created_at), 'MMM d, yyyy')}
@@ -499,6 +530,11 @@ const UserManagement: React.FC = () => {
               </div>
 
               <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+                {/* Debug info - remove this after testing */}
+                <div className="text-xs text-gray-500 border p-2 rounded">
+                  Debug: Profile role: {profile?.role} | Departments: {departments.length} | Study Programs: {studyPrograms.length} | Selected Dept: {watchDepartmentId}
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Username *</label>
                   <input
@@ -566,6 +602,77 @@ const UserManagement: React.FC = () => {
                     <p className="mt-1 text-sm text-red-600">{form.formState.errors.role.message}</p>
                   )}
                 </div>
+
+                {/* Department selection - ALWAYS show for super admin */}
+                {profile?.role === 'super_admin' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Department <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      {...form.register('department_id')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      onChange={(e) => {
+                        form.setValue('department_id', e.target.value);
+                        form.setValue('study_program_id', ''); // Reset study program
+                      }}
+                    >
+                      <option value="">Select Department</option>
+                      {departments.map((dept) => (
+                        <option key={dept.id} value={dept.id}>
+                          {dept.name}
+                        </option>
+                      ))}
+                    </select>
+                    {form.formState.errors.department_id && (
+                      <p className="mt-1 text-sm text-red-600">{form.formState.errors.department_id.message}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Department display for department admin */}
+                {profile?.role === 'department_admin' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                    <input
+                      type="text"
+                      value={departments.find(d => d.id === profile.department_id)?.name || 'Loading...'}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
+                      disabled
+                    />
+                    <p className="mt-1 text-sm text-gray-500">Department is automatically set based on your role</p>
+                  </div>
+                )}
+
+                {/* Study program selection - show when department is selected OR for department admin */}
+                {((profile?.role === 'super_admin' && watchDepartmentId) || profile?.role === 'department_admin') && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Study Program</label>
+                    <select
+                      {...form.register('study_program_id')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select Study Program (Optional)</option>
+                      {studyPrograms.map((program) => (
+                        <option key={program.id} value={program.id}>
+                          {program.name} ({program.code})
+                        </option>
+                      ))}
+                    </select>
+                    {form.formState.errors.study_program_id && (
+                      <p className="mt-1 text-sm text-red-600">{form.formState.errors.study_program_id.message}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Message for super admin when no department selected */}
+                {profile?.role === 'super_admin' && !watchDepartmentId && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <p className="text-sm text-blue-700">
+                      💡 Select a department first to see available study programs
+                    </p>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
