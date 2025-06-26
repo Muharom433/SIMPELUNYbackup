@@ -600,7 +600,7 @@ const ExamManagement = () => {
             // Only add the second table if there is data for it
             if (additionalInfoRows.length > 0) {
                 let subheadingY = finalY + 10; // Position it below the first table
-                doc.setFontSize(6);
+                doc.setFontSize(12);
                 doc.setFont('helvetica', 'bold');
                 doc.text("Daftar Dosen Pengawas", 14, subheadingY); // 14 is the left margin
                 // --- END: ADD THIS NEW CODE ---
