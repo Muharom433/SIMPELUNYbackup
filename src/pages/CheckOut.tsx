@@ -317,12 +317,7 @@ const CheckOut: React.FC = () => {
     }
   };
 
-  const handleOutsideClick = (e: React.MouseEvent) => {
-    // Only close if clicking on the input area itself, not on dropdown items
-    if (e.target === e.currentTarget) {
-      setShowRecordDropdown(false);
-    }
-  };
+  const handleRecordSelect = (record: CombinedRecord, event?: React.MouseEvent) => {
     if (event) {
       event.preventDefault();
       event.stopPropagation();
@@ -1225,8 +1220,6 @@ const CheckOut: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* No more overlay - using onBlur instead */}
     </div>
   );
 };
