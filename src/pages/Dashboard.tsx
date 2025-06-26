@@ -431,10 +431,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 
                 <div className="space-y-6 text-gray-600 leading-relaxed">
                   <div>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-3 flex items-center">
-                      <Target className="w-5 h-5 mr-2 text-blue-600" />
-                      Deskripsi
-                    </h3>
+                    
                     <p className="text-lg">
                       SIMPEL Kuliah (Sistem Pelayanan Kuliah) adalah platform inovatif yang dirancang khusus untuk mengoptimalkan pengelolaan fasilitas kampus di Fakultas Vokasi UNY. Sistem ini menyediakan solusi terintegrasi untuk pemesanan ruangan, peminjaman peralatan, dan manajemen jadwal secara digital.
                     </p>
