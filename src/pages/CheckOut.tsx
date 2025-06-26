@@ -96,7 +96,6 @@ interface LendingToolWithDetails {
     name: string;
     code: string;
     category: string;
-    quantity: number;
   }>;
   record_type: 'lending_tool';
 }
