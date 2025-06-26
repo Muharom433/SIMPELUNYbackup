@@ -1,161 +1,172 @@
 import { useState, useEffect } from 'react';
-import { User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { User } from '../types';
 
 export function useAuth() {
-  const [user, setUser] = useState<SupabaseUser | null>(null);
-  const [profile, setProfile] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is already logged in (from localStorage)
-    const savedUser = localStorage.getItem('faculty_user');
-    if (savedUser) {
+    // Check for existing session
+    const checkSession = async () => {
       try {
-        const userData = JSON.parse(savedUser);
-        setProfile(userData);
-        setUser({ id: userData.id, email: userData.email } as SupabaseUser);
-        // Set the user context in the database
-        supabase.rpc('set_current_user', { user_id: userData.id });
+        const { data: sessionData } = await supabase.auth.getSession();
+        
+        if (sessionData.session?.user?.id) {
+          // Session exists, fetch user profile
+          const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', sessionData.session.user.id)
+            .single();
+
+          if (error) {
+            console.error('Error fetching user data:', error);
+            setUser(null);
+          } else {
+            setUser(data);
+          }
+        } else {
+          setUser(null);
+        }
       } catch (error) {
-        console.error('Error parsing saved user:', error);
-        localStorage.removeItem('faculty_user');
+        console.error('Session check error:', error);
+        setUser(null);
+      } finally {
+        setLoading(false);
       }
-    }
-    setLoading(false);
+    };
+
+    // Subscribe to auth state changes
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === 'SIGNED_IN' && session?.user) {
+          // Fetch user profile on sign in
+          const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+          if (error) {
+            console.error('Error fetching user data:', error);
+            setUser(null);
+          } else {
+            setUser(data);
+          }
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+        }
+      }
+    );
+
+    checkSession();
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (username: string, password: string) => {
     try {
-      setLoading(true);
-      
-      // Use our custom authentication function
-      const { data, error } = await supabase.rpc('authenticate_user', {
-        input_username: username,
-        input_password: password
+      // First try direct email sign in if username is an email
+      if (username.includes('@')) {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: username,
+          password: password,
+        });
+
+        if (!error) {
+          return { data, error: null };
+        }
+      }
+
+      // If the above fails or username is not an email, try to find user by username
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id, email')
+        .eq('username', username)
+        .single();
+
+      if (userError) {
+        return { data: null, error: { message: 'Invalid username or password' } };
+      }
+
+      // Use email from user record to sign in
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: userData.email,
+        password: password,
       });
 
       if (error) {
-        console.error('Authentication error:', error);
-        return { error: { message: 'Authentication failed' } };
+        return { data: null, error: { message: 'Invalid username or password' } };
       }
 
-      if (!data || data.length === 0 || !data[0].success) {
-        return { error: { message: data?.[0]?.message || 'Invalid username or password' } };
-      }
-
-      const userData = data[0];
-      const userProfile: User = {
-        id: userData.user_id,
-        email: userData.email,
-        full_name: userData.full_name,
-        identity_number: userData.identity_number,
-        role: userData.role as 'student' | 'department_admin' | 'super_admin',
-        department_id: userData.department_id,
-        phone_number: userData.phone_number,
-        username: username, // We know the username from input
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      // Save user data
-      setProfile(userProfile);
-      setUser({ id: userData.user_id, email: userData.email } as SupabaseUser);
-      
-      // Save to localStorage for persistence
-      localStorage.setItem('faculty_user', JSON.stringify(userProfile));
-
-      return { data: { user: userProfile }, error: null };
+      return { data, error: null };
     } catch (error) {
       console.error('Sign in error:', error);
-      return { error: { message: 'An error occurred during sign in' } };
-    } finally {
-      setLoading(false);
+      return { data: null, error: { message: 'An error occurred during sign in' } };
     }
   };
 
-  const signUp = async (username: string, password: string, userData: {
-    full_name: string;
-    identity_number: string;
-    phone_number?: string;
-    department_id?: string;
-  }) => {
+  const signUp = async (
+    username: string, 
+    password: string, 
+    userData: {
+      full_name: string;
+      identity_number: string;
+      phone_number: string;
+    }
+  ) => {
     try {
-      setLoading(true);
+      // Generate a default email if needed
+      const email = `${username}@faculty.edu`;
 
-      // Check if username already exists
-      const { data: existingUser } = await supabase
-        .from('users')
-        .select('username')
-        .eq('username', username)
-        .maybeSingle();
-
-      if (existingUser) {
-        return { error: { message: 'Username already exists' } };
-      }
-
-      // Check if identity number already exists
-      const { data: existingIdentity } = await supabase
-        .from('users')
-        .select('identity_number')
-        .eq('identity_number', userData.identity_number)
-        .maybeSingle();
-
-      if (existingIdentity) {
-        return { error: { message: 'Identity number already exists' } };
-      }
-
-      // Create new user with encrypted password
-      const newUserId = crypto.randomUUID();
-      const { data, error } = await supabase
-        .from('users')
-        .insert({
-          id: newUserId,
-          username: username,
-          email: `${username}@faculty.edu`, // Generate email from username
-          full_name: userData.full_name,
-          identity_number: userData.identity_number,
-          phone_number: userData.phone_number || null,
-          department_id: userData.department_id || null,
-          role: 'student',
-          password: password // This will be encrypted by the database trigger
-        })
-        .select()
-        .single();
+      // Create auth user first
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
 
       if (error) {
-        console.error('Sign up error:', error);
-        return { error: { message: error.message } };
+        return { data: null, error };
       }
 
-      return { data: { user: data }, error: null };
+      if (!data.user) {
+        return { data: null, error: { message: 'User creation failed' } };
+      }
+
+      // Create user profile in users table
+      const { error: profileError } = await supabase.from('users').insert({
+        id: data.user.id,
+        username,
+        email,
+        full_name: userData.full_name,
+        identity_number: userData.identity_number,
+        phone_number: userData.phone_number,
+        role: 'student', // Default role
+        password: 'password_hash_placeholder', // This is just a placeholder, actual auth is handled by Supabase Auth
+      });
+
+      if (profileError) {
+        // If profile creation fails, we should try to clean up the auth user
+        await supabase.auth.admin.deleteUser(data.user.id);
+        return { data: null, error: profileError };
+      }
+
+      return { data, error: null };
     } catch (error) {
       console.error('Sign up error:', error);
-      return { error: { message: 'An error occurred during sign up' } };
-    } finally {
-      setLoading(false);
+      return { data: null, error: { message: 'An error occurred during sign up' } };
     }
   };
 
   const signOut = async () => {
-    setUser(null);
-    setProfile(null);
-    localStorage.removeItem('faculty_user');
-    
-    // Clear the user context in the database
-    try {
-      await supabase.rpc('set_current_user', { user_id: null });
-    } catch (error) {
-      console.error('Error clearing user context:', error);
-    }
-    
-    return { error: null };
+    await supabase.auth.signOut();
   };
 
   return {
     user,
-    profile,
     loading,
     signIn,
     signUp,
