@@ -21,6 +21,7 @@ import {
   Upload,
   Check,
   ExternalLink,
+  Wrench,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
@@ -28,7 +29,8 @@ import { format } from 'date-fns';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const checkoutSchema = z.object({
-  booking_id: z.string().min(1, 'Please select a booking to check out'),
+  record_id: z.string().min(1, 'Please select a booking or lending record to check out'),
+  record_type: z.enum(['booking', 'lending_tool']),
   has_issues: z.boolean(),
   // Report fields (conditional)
   report_category: z.enum(['equipment', 'room_condition', 'cleanliness', 'safety', 'maintenance', 'other']).optional(),
@@ -72,15 +74,42 @@ interface BookingWithDetails {
       name: string;
     };
   };
+  record_type: 'booking';
 }
+
+interface LendingToolWithDetails {
+  id: string;
+  id_user: string;
+  date: string;
+  id_equipment: string[];
+  qty: number[];
+  status: string;
+  created_at: string;
+  user?: {
+    id: string;
+    full_name: string;
+    identity_number: string;
+    email: string;
+  };
+  equipment_details?: Array<{
+    id: string;
+    name: string;
+    code: string;
+    category: string;
+    quantity: number;
+  }>;
+  record_type: 'lending_tool';
+}
+
+type CombinedRecord = BookingWithDetails | LendingToolWithDetails;
 
 const CheckOut: React.FC = () => {
   const { getText } = useLanguage();
-  const [approvedBookings, setApprovedBookings] = useState<BookingWithDetails[]>([]);
+  const [allRecords, setAllRecords] = useState<CombinedRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showBookingDropdown, setShowBookingDropdown] = useState(false);
-  const [selectedBooking, setSelectedBooking] = useState<BookingWithDetails | null>(null);
+  const [showRecordDropdown, setShowRecordDropdown] = useState(false);
+  const [selectedRecord, setSelectedRecord] = useState<CombinedRecord | null>(null);
   const [showReportForm, setShowReportForm] = useState(false);
   const [attachments, setAttachments] = useState<string[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -95,18 +124,21 @@ const CheckOut: React.FC = () => {
   });
 
   const watchHasIssues = form.watch('has_issues');
-  const watchBookingId = form.watch('booking_id');
+  const watchRecordId = form.watch('record_id');
 
   useEffect(() => {
-    fetchApprovedBookings();
+    fetchAllRecords();
   }, []);
 
   useEffect(() => {
-    if (watchBookingId) {
-      const booking = approvedBookings.find(b => b.id === watchBookingId);
-      setSelectedBooking(booking || null);
+    if (watchRecordId) {
+      const record = allRecords.find(r => r.id === watchRecordId);
+      setSelectedRecord(record || null);
+      if (record) {
+        form.setValue('record_type', record.record_type);
+      }
     }
-  }, [watchBookingId, approvedBookings]);
+  }, [watchRecordId, allRecords, form]);
 
   useEffect(() => {
     setShowReportForm(watchHasIssues);
@@ -118,13 +150,13 @@ const CheckOut: React.FC = () => {
     }
   }, [watchHasIssues, form]);
 
-  const fetchApprovedBookings = async () => {
+  const fetchAllRecords = async () => {
     try {
       setLoading(true);
       
-      console.log('Fetching approved bookings...');
+      console.log('Fetching approved bookings and borrowing tools...');
       
-      // Get approved bookings
+      // Fetch approved bookings
       const { data: bookingsData, error: bookingsError } = await supabase
         .from('bookings')
         .select('*')
@@ -136,16 +168,24 @@ const CheckOut: React.FC = () => {
         throw bookingsError;
       }
 
-      console.log('Approved bookings found:', bookingsData?.length || 0);
+      // Fetch lending tools with status 'borrow'
+      const { data: lendingToolsData, error: lendingToolsError } = await supabase
+        .from('lending_tool')
+        .select('*')
+        .eq('status', 'borrow')
+        .order('created_at', { ascending: false });
 
-      if (!bookingsData || bookingsData.length === 0) {
-        setApprovedBookings([]);
-        return;
+      if (lendingToolsError) {
+        console.error('Error fetching lending tools:', lendingToolsError);
+        throw lendingToolsError;
       }
 
-      // Fetch related data for each booking
+      console.log('Approved bookings found:', bookingsData?.length || 0);
+      console.log('Borrowing tools found:', lendingToolsData?.length || 0);
+
+      // Process bookings
       const bookingsWithDetails = await Promise.all(
-        bookingsData.map(async (booking) => {
+        (bookingsData || []).map(async (booking) => {
           let user = null;
           let room = null;
 
@@ -202,15 +242,70 @@ const CheckOut: React.FC = () => {
           return {
             ...booking,
             user,
-            room
+            room,
+            record_type: 'booking' as const
           };
         })
       );
 
-      setApprovedBookings(bookingsWithDetails);
+      // Process lending tools
+      const lendingToolsWithDetails = await Promise.all(
+        (lendingToolsData || []).map(async (lendingTool) => {
+          let user = null;
+          let equipment_details = [];
+
+          // Fetch user data
+          if (lendingTool.id_user) {
+            try {
+              const { data: userData, error: userError } = await supabase
+                .from('users')
+                .select('id, full_name, identity_number, email')
+                .eq('id', lendingTool.id_user)
+                .maybeSingle();
+              
+              if (!userError && userData) {
+                user = userData;
+              }
+            } catch (error) {
+              console.log('User not found for lending tool:', lendingTool.id);
+            }
+          }
+
+          // Fetch equipment details
+          if (lendingTool.id_equipment && Array.isArray(lendingTool.id_equipment)) {
+            try {
+              const { data: equipmentData, error: equipmentError } = await supabase
+                .from('equipment')
+                .select('id, name, code, category, quantity')
+                .in('id', lendingTool.id_equipment);
+              
+              if (!equipmentError && equipmentData) {
+                equipment_details = equipmentData.map((eq, index) => ({
+                  ...eq,
+                  borrowed_quantity: lendingTool.qty[index] || 1
+                }));
+              }
+            } catch (error) {
+              console.log('Equipment not found for lending tool:', lendingTool.id);
+            }
+          }
+
+          return {
+            ...lendingTool,
+            user,
+            equipment_details,
+            record_type: 'lending_tool' as const
+          };
+        })
+      );
+
+      // Combine both types of records
+      const combinedRecords = [...bookingsWithDetails, ...lendingToolsWithDetails];
+      setAllRecords(combinedRecords);
+
     } catch (error) {
-      console.error('Error fetching approved bookings:', error);
-      toast.error(getText('Failed to load approved bookings', 'Gagal memuat pemesanan yang disetujui'));
+      console.error('Error fetching records:', error);
+      toast.error(getText('Failed to load records', 'Gagal memuat data'));
     } finally {
       setLoading(false);
     }
@@ -268,52 +363,132 @@ const CheckOut: React.FC = () => {
     try {
       setLoading(true);
 
-      if (!selectedBooking) {
-        toast.error(getText('Please select a booking to check out', 'Silakan pilih pemesanan untuk check out'));
+      if (!selectedRecord) {
+        toast.error(getText('Please select a record to check out', 'Silakan pilih data untuk check out'));
         return;
       }
 
-      console.log('Processing checkout for booking:', selectedBooking.id);
+      console.log('Processing checkout for record:', selectedRecord.id, 'Type:', selectedRecord.record_type);
 
-      // Create checkout record
-      const checkoutData = {
-        user_id: selectedBooking.user_id,
-        booking_id: data.booking_id,
-        checkout_date: new Date().toISOString(),
-        expected_return_date: selectedBooking.end_time,
-        status: 'returned', // Mark as returned immediately since this is a return process
-        actual_return_date: new Date().toISOString(),
-        condition_on_checkout: 'good',
-        condition_on_return: 'good',
-        total_items: selectedBooking.equipment_requested?.length || 0,
-      };
+      if (selectedRecord.record_type === 'lending_tool') {
+        // Handle lending tool checkout
+        const lendingTool = selectedRecord as LendingToolWithDetails;
+        
+        // Create checkout record for lending tool
+        const checkoutData = {
+          user_id: lendingTool.id_user,
+          lendingTool_id: lendingTool.id, // Foreign key to lending_tool
+          checkout_date: new Date().toISOString(),
+          expected_return_date: lendingTool.date,
+          status: 'returned',
+          actual_return_date: new Date().toISOString(),
+          condition_on_checkout: 'good',
+          condition_on_return: 'good',
+          total_items: lendingTool.equipment_details?.length || 0,
+          type: 'things' // Set type to 'things' for lending tools
+        };
 
-      const { error: checkoutError } = await supabase
-        .from('checkouts')
-        .insert(checkoutData);
+        const { error: checkoutError } = await supabase
+          .from('checkouts')
+          .insert(checkoutData);
 
-      if (checkoutError) {
-        console.error('Error creating checkout:', checkoutError);
-        throw checkoutError;
-      }
+        if (checkoutError) {
+          console.error('Error creating checkout for lending tool:', checkoutError);
+          throw checkoutError;
+        }
 
-      console.log('Checkout record created successfully');
+        console.log('Checkout record created successfully for lending tool');
 
-      // Update booking status to completed
-      const { error: bookingUpdateError } = await supabase
-        .from('bookings')
-        .update({ 
-          status: 'completed',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', data.booking_id);
+        // Update lending tool status to 'completed'
+        const { error: lendingUpdateError } = await supabase
+          .from('lending_tool')
+          .update({ 
+            status: 'completed',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', lendingTool.id);
 
-      if (bookingUpdateError) {
-        console.error('Error updating booking status:', bookingUpdateError);
-        // Don't throw error here as checkout was successful
-        toast.error(getText('Checkout completed but failed to update booking status', 'Checkout selesai tapi gagal memperbarui status pemesanan'));
+        if (lendingUpdateError) {
+          console.error('Error updating lending tool status:', lendingUpdateError);
+          toast.error(getText('Checkout completed but failed to update lending tool status', 'Checkout selesai tapi gagal memperbarui status peminjaman alat'));
+        } else {
+          console.log('Lending tool status updated to completed');
+        }
+
+        // Update equipment quantities (return them to stock)
+        if (lendingTool.id_equipment && lendingTool.qty) {
+          for (let i = 0; i < lendingTool.id_equipment.length; i++) {
+            const equipmentId = lendingTool.id_equipment[i];
+            const borrowedQty = lendingTool.qty[i];
+            
+            // Get current equipment data
+            const { data: currentEquipment, error: getError } = await supabase
+              .from('equipment')
+              .select('quantity')
+              .eq('id', equipmentId)
+              .single();
+
+            if (!getError && currentEquipment) {
+              const newQuantity = currentEquipment.quantity + borrowedQty;
+              
+              const { error: updateError } = await supabase
+                .from('equipment')
+                .update({ 
+                  quantity: newQuantity,
+                  is_available: newQuantity > 0
+                })
+                .eq('id', equipmentId);
+
+              if (updateError) {
+                console.error('Error updating equipment quantity:', updateError);
+              }
+            }
+          }
+        }
+
       } else {
-        console.log('Booking status updated to completed');
+        // Handle booking checkout (existing logic)
+        const booking = selectedRecord as BookingWithDetails;
+        
+        // Create checkout record for booking
+        const checkoutData = {
+          user_id: booking.user_id,
+          booking_id: booking.id,
+          checkout_date: new Date().toISOString(),
+          expected_return_date: booking.end_time,
+          status: 'returned',
+          actual_return_date: new Date().toISOString(),
+          condition_on_checkout: 'good',
+          condition_on_return: 'good',
+          total_items: booking.equipment_requested?.length || 0,
+        };
+
+        const { error: checkoutError } = await supabase
+          .from('checkouts')
+          .insert(checkoutData);
+
+        if (checkoutError) {
+          console.error('Error creating checkout for booking:', checkoutError);
+          throw checkoutError;
+        }
+
+        console.log('Checkout record created successfully for booking');
+
+        // Update booking status to completed
+        const { error: bookingUpdateError } = await supabase
+          .from('bookings')
+          .update({ 
+            status: 'completed',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', booking.id);
+
+        if (bookingUpdateError) {
+          console.error('Error updating booking status:', bookingUpdateError);
+          toast.error(getText('Checkout completed but failed to update booking status', 'Checkout selesai tapi gagal memperbarui status pemesanan'));
+        } else {
+          console.log('Booking status updated to completed');
+        }
       }
 
       // If there are issues, create a report
@@ -321,17 +496,25 @@ const CheckOut: React.FC = () => {
         console.log('Creating issue report...');
         
         const reportData = {
-          reporter_id: selectedBooking.user_id,
-          reporter_name: selectedBooking.user?.full_name || selectedBooking.user_info?.full_name,
-          reporter_email: selectedBooking.user?.email || selectedBooking.user_info?.email,
-          reporter_phone: selectedBooking.user_info?.phone_number,
+          reporter_id: selectedRecord.record_type === 'lending_tool' 
+            ? (selectedRecord as LendingToolWithDetails).id_user 
+            : (selectedRecord as BookingWithDetails).user_id,
+          reporter_name: selectedRecord.user?.full_name || 'Unknown User',
+          reporter_email: selectedRecord.user?.email || 'unknown@email.com',
+          reporter_phone: selectedRecord.record_type === 'booking' 
+            ? (selectedRecord as BookingWithDetails).user_info?.phone_number 
+            : undefined,
           is_anonymous: false,
           category: data.report_category,
-          priority: 'medium', // Default to medium priority
+          priority: 'medium',
           title: `Issue with ${data.report_category?.replace('_', ' ')}`,
           description: data.report_description,
-          location: selectedBooking.room?.name,
-          room_id: selectedBooking.room_id,
+          location: selectedRecord.record_type === 'booking' 
+            ? (selectedRecord as BookingWithDetails).room?.name 
+            : 'Equipment Area',
+          room_id: selectedRecord.record_type === 'booking' 
+            ? (selectedRecord as BookingWithDetails).room_id 
+            : null,
           status: 'new',
           attachments: attachments,
         };
@@ -357,12 +540,12 @@ const CheckOut: React.FC = () => {
         report_category: 'equipment',
         attachments: [],
       });
-      setSelectedBooking(null);
+      setSelectedRecord(null);
       setAttachments([]);
       setSearchTerm('');
       
-      // Refresh the bookings list to remove the completed booking
-      await fetchApprovedBookings();
+      // Refresh the records list
+      await fetchAllRecords();
 
     } catch (error: any) {
       console.error('Error processing checkout:', error);
@@ -372,17 +555,31 @@ const CheckOut: React.FC = () => {
     }
   };
 
-  const filteredBookings = approvedBookings.filter(booking => {
+  const filteredRecords = allRecords.filter(record => {
     const searchLower = searchTerm.toLowerCase();
-    return (
-      (booking.user?.full_name && booking.user.full_name.toLowerCase().includes(searchLower)) ||
-      (booking.user?.identity_number && booking.user.identity_number.toLowerCase().includes(searchLower)) ||
-      (booking.user_info?.full_name && booking.user_info.full_name.toLowerCase().includes(searchLower)) ||
-      (booking.user_info?.identity_number && booking.user_info.identity_number.toLowerCase().includes(searchLower)) ||
-      (booking.purpose && booking.purpose.toLowerCase().includes(searchLower)) ||
-      (booking.room?.name && booking.room.name.toLowerCase().includes(searchLower)) ||
-      (booking.room?.code && booking.room.code.toLowerCase().includes(searchLower))
-    );
+    
+    if (record.record_type === 'booking') {
+      const booking = record as BookingWithDetails;
+      return (
+        (booking.user?.full_name && booking.user.full_name.toLowerCase().includes(searchLower)) ||
+        (booking.user?.identity_number && booking.user.identity_number.toLowerCase().includes(searchLower)) ||
+        (booking.user_info?.full_name && booking.user_info.full_name.toLowerCase().includes(searchLower)) ||
+        (booking.user_info?.identity_number && booking.user_info.identity_number.toLowerCase().includes(searchLower)) ||
+        (booking.purpose && booking.purpose.toLowerCase().includes(searchLower)) ||
+        (booking.room?.name && booking.room.name.toLowerCase().includes(searchLower)) ||
+        (booking.room?.code && booking.room.code.toLowerCase().includes(searchLower))
+      );
+    } else {
+      const lendingTool = record as LendingToolWithDetails;
+      return (
+        (lendingTool.user?.full_name && lendingTool.user.full_name.toLowerCase().includes(searchLower)) ||
+        (lendingTool.user?.identity_number && lendingTool.user.identity_number.toLowerCase().includes(searchLower)) ||
+        (lendingTool.equipment_details && lendingTool.equipment_details.some(eq => 
+          eq.name.toLowerCase().includes(searchLower) || 
+          eq.code.toLowerCase().includes(searchLower)
+        ))
+      );
+    }
   });
 
   const getCategoryText = (category: string) => {
@@ -394,6 +591,20 @@ const CheckOut: React.FC = () => {
       case 'maintenance': return getText('Maintenance', 'Pemeliharaan');
       case 'other': return getText('Other', 'Lainnya');
       default: return category;
+    }
+  };
+
+  const getDisplayName = (record: CombinedRecord) => {
+    if (record.record_type === 'booking') {
+      const booking = record as BookingWithDetails;
+      const userName = booking.user?.full_name || booking.user_info?.full_name || getText('Unknown User', 'Pengguna Tidak Dikenal');
+      const roomName = booking.room?.name || getText('Unknown Room', 'Ruangan Tidak Dikenal');
+      return `${userName} - ${roomName}`;
+    } else {
+      const lendingTool = record as LendingToolWithDetails;
+      const userName = lendingTool.user?.full_name || getText('Unknown User', 'Pengguna Tidak Dikenal');
+      const equipmentCount = lendingTool.equipment_details?.length || 0;
+      return `${userName} - ${equipmentCount} ${getText('Equipment(s)', 'Peralatan')}`;
     }
   };
 
@@ -409,18 +620,18 @@ const CheckOut: React.FC = () => {
               </div>
               <div>
                 <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                  {getText('Equipment Form', 'Formulir Pengembalian')}
+                  {getText('Return & Check Out', 'Pengembalian & Check Out')}
                 </h1>
                 <p className="text-gray-600 mt-1">
-                  {getText('Complete your equipment return and report any issues', 'Selesaikan pengembalian peralatan dan laporkan masalah')}
+                  {getText('Complete your return and report any issues', 'Selesaikan pengembalian dan laporkan masalah')}
                 </p>
               </div>
             </div>
             <div className="hidden md:block">
               <div className="text-right">
-                <div className="text-2xl font-bold text-gray-800">{approvedBookings.length}</div>
+                <div className="text-2xl font-bold text-gray-800">{allRecords.length}</div>
                 <div className="text-sm text-gray-500">
-                  {getText('Approved Bookings', 'Pemesanan Disetujui')}
+                  {getText('Active Records', 'Data Aktif')}
                 </div>
               </div>
             </div>
@@ -430,13 +641,13 @@ const CheckOut: React.FC = () => {
 
       <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column - Booking Search */}
+          {/* Left Column - Record Search */}
           <div className="lg:col-span-1 space-y-6">
             <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
               <div className="flex items-center space-x-3 mb-6">
                 <Search className="h-5 w-5 text-emerald-500" />
                 <h2 className="text-xl font-bold text-gray-800">
-                  {getText('Find Your Booking', 'Cari Pesanan Anda')}
+                  {getText('Find Your Record', 'Cari Data Anda')}
                 </h2>
               </div>
               
@@ -444,31 +655,31 @@ const CheckOut: React.FC = () => {
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <input
                   type="text"
-                  placeholder={getText('Search by name, ID, room...', 'Cari berdasarkan nama, ID, ruangan...')}
+                  placeholder={getText('Search by name, ID, room, equipment...', 'Cari berdasarkan nama, ID, ruangan, peralatan...')}
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
-                    setShowBookingDropdown(true);
+                    setShowRecordDropdown(true);
                   }}
-                  onFocus={() => setShowBookingDropdown(true)}
+                  onFocus={() => setShowRecordDropdown(true)}
                   className="w-full pl-12 pr-4 py-4 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-transparent transition-all duration-200 placeholder-gray-400"
                 />
                 <ChevronDown className="absolute right-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 
-                {showBookingDropdown && (
+                {showRecordDropdown && (
                   <div className="absolute z-20 w-full mt-2 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-2xl max-h-96 overflow-y-auto">
                     {loading ? (
                       <div className="flex flex-col items-center justify-center py-12">
                         <RefreshCw className="h-8 w-8 animate-spin text-emerald-600 mb-3" />
                         <span className="text-gray-600 font-medium">
-                          {getText('Loading bookings...', 'Memuat pemesanan...')}
+                          {getText('Loading records...', 'Memuat data...')}
                         </span>
                       </div>
-                    ) : filteredBookings.length === 0 ? (
+                    ) : filteredRecords.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-12">
                         <Package className="h-12 w-12 text-gray-300 mb-3" />
                         <p className="text-gray-500 font-medium">
-                          {getText('No approved bookings found', 'Tidak ada pemesanan yang disetujui')}
+                          {getText('No active records found', 'Tidak ada data aktif')}
                         </p>
                         <p className="text-sm text-gray-400">
                           {getText('Try a different search term', 'Coba kata kunci pencarian lain')}
@@ -476,41 +687,78 @@ const CheckOut: React.FC = () => {
                       </div>
                     ) : (
                       <div className="p-2">
-                        {filteredBookings.map((booking) => (
+                        {filteredRecords.map((record) => (
                           <div
-                            key={booking.id}
+                            key={record.id}
                             onClick={() => {
-                              form.setValue('booking_id', booking.id);
-                              setSearchTerm(`${booking.user?.full_name || booking.user_info?.full_name || 'Unknown'} - ${booking.room?.name || 'Unknown Room'}`);
-                              setShowBookingDropdown(false);
+                              form.setValue('record_id', record.id);
+                              setSearchTerm(getDisplayName(record));
+                              setShowRecordDropdown(false);
                             }}
                             className="p-4 hover:bg-emerald-50 cursor-pointer rounded-xl border border-transparent hover:border-emerald-200 transition-all duration-200 mb-2 last:mb-0"
                           >
                             <div className="flex items-start space-x-3">
-                              <div className="h-10 w-10 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full flex items-center justify-center flex-shrink-0">
-                                <User className="h-5 w-5 text-white" />
+                              <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                record.record_type === 'booking' 
+                                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500' 
+                                  : 'bg-gradient-to-r from-purple-500 to-indigo-500'
+                              }`}>
+                                {record.record_type === 'booking' ? (
+                                  <Building className="h-5 w-5 text-white" />
+                                ) : (
+                                  <Wrench className="h-5 w-5 text-white" />
+                                )}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="font-semibold text-gray-900 truncate">
-                                  {booking.user?.full_name || booking.user_info?.full_name || getText('Unknown User', 'Pengguna Tidak Dikenal')}
+                                  {record.user?.full_name || 
+                                   (record.record_type === 'booking' ? (record as BookingWithDetails).user_info?.full_name : '') || 
+                                   getText('Unknown User', 'Pengguna Tidak Dikenal')}
                                 </div>
                                 <div className="text-sm text-gray-600 mb-2">
-                                  {booking.user?.identity_number || booking.user_info?.identity_number || getText('No ID', 'Tidak Ada ID')}
+                                  {record.user?.identity_number || 
+                                   (record.record_type === 'booking' ? (record as BookingWithDetails).user_info?.identity_number : '') || 
+                                   getText('No ID', 'Tidak Ada ID')}
                                 </div>
                                 
                                 <div className="space-y-1">
                                   <div className="flex items-center text-xs text-gray-500">
-                                    <Building className="h-3 w-3 mr-1" />
-                                    <span className="truncate">{booking.room?.name || getText('Unknown Room', 'Ruangan Tidak Dikenal')}</span>
+                                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                      record.record_type === 'booking' 
+                                        ? 'bg-emerald-100 text-emerald-800' 
+                                        : 'bg-purple-100 text-purple-800'
+                                    }`}>
+                                      {record.record_type === 'booking' ? getText('Room Booking', 'Pemesanan Ruangan') : getText('Tool Lending', 'Peminjaman Alat')}
+                                    </span>
                                   </div>
-                                  <div className="flex items-center text-xs text-gray-500">
-                                    <Calendar className="h-3 w-3 mr-1" />
-                                    <span>{format(new Date(booking.start_time), 'MMM d, yyyy')}</span>
-                                  </div>
-                                  <div className="flex items-center text-xs text-gray-500">
-                                    <Package className="h-3 w-3 mr-1" />
-                                    <span>{booking.equipment_requested?.length || 0} {getText('items', 'item')}</span>
-                                  </div>
+                                  
+                                  {record.record_type === 'booking' ? (
+                                    <>
+                                      <div className="flex items-center text-xs text-gray-500">
+                                        <Building className="h-3 w-3 mr-1" />
+                                        <span className="truncate">{(record as BookingWithDetails).room?.name || getText('Unknown Room', 'Ruangan Tidak Dikenal')}</span>
+                                      </div>
+                                      <div className="flex items-center text-xs text-gray-500">
+                                        <Calendar className="h-3 w-3 mr-1" />
+                                        <span>{format(new Date((record as BookingWithDetails).start_time), 'MMM d, yyyy')}</span>
+                                      </div>
+                                      <div className="flex items-center text-xs text-gray-500">
+                                        <Package className="h-3 w-3 mr-1" />
+                                        <span>{(record as BookingWithDetails).equipment_requested?.length || 0} {getText('items', 'item')}</span>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div className="flex items-center text-xs text-gray-500">
+                                        <Wrench className="h-3 w-3 mr-1" />
+                                        <span>{(record as LendingToolWithDetails).equipment_details?.length || 0} {getText('equipment(s)', 'peralatan')}</span>
+                                      </div>
+                                      <div className="flex items-center text-xs text-gray-500">
+                                        <Calendar className="h-3 w-3 mr-1" />
+                                        <span>{format(new Date((record as LendingToolWithDetails).date), 'MMM d, yyyy')}</span>
+                                      </div>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -521,9 +769,9 @@ const CheckOut: React.FC = () => {
                   </div>
                 )}
               </div>
-              {form.formState.errors.booking_id && (
+              {form.formState.errors.record_id && (
                 <p className="mt-2 text-sm text-red-600 font-medium">
-                  {form.formState.errors.booking_id.message}
+                  {form.formState.errors.record_id.message}
                 </p>
               )}
             </div>
@@ -537,86 +785,169 @@ const CheckOut: React.FC = () => {
                   <CheckCircle className="h-5 w-5 text-white" />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-800">
-                  {getText('Complete Equipment Return', 'Selesaikan Pengembalian Peralatan')}
+                  {getText('Complete Return Process', 'Selesaikan Proses Pengembalian')}
                 </h2>
               </div>
 
               <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
-                {/* Selected Booking Details */}
-                {selectedBooking && (
-                  <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/50 rounded-2xl p-6">
+                {/* Selected Record Details */}
+                {selectedRecord && (
+                  <div className={`border rounded-2xl p-6 ${
+                    selectedRecord.record_type === 'booking' 
+                      ? 'bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-200/50' 
+                      : 'bg-gradient-to-r from-purple-50 to-indigo-50 border-purple-200/50'
+                  }`}>
                     <div className="flex items-center space-x-3 mb-6">
-                      <CheckCircle className="h-6 w-6 text-emerald-600" />
-                      <h3 className="text-xl font-bold text-emerald-900">
-                        {getText('Selected Booking Details', 'Detail Pemesanan Terpilih')}
+                      {selectedRecord.record_type === 'booking' ? (
+                        <Building className="h-6 w-6 text-emerald-600" />
+                      ) : (
+                        <Wrench className="h-6 w-6 text-purple-600" />
+                      )}
+                      <h3 className={`text-xl font-bold ${
+                        selectedRecord.record_type === 'booking' ? 'text-emerald-900' : 'text-purple-900'
+                      }`}>
+                        {selectedRecord.record_type === 'booking' 
+                          ? getText('Room Booking Details', 'Detail Pemesanan Ruangan')
+                          : getText('Tool Lending Details', 'Detail Peminjaman Alat')
+                        }
                       </h3>
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                       <div className="space-y-3">
                         <div>
-                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">
+                          <span className={`text-sm font-semibold uppercase tracking-wide ${
+                            selectedRecord.record_type === 'booking' ? 'text-emerald-700' : 'text-purple-700'
+                          }`}>
                             {getText('User Information', 'Informasi Pengguna')}
                           </span>
                           <div className="mt-1">
-                            <div className="font-bold text-emerald-900">
-                              {selectedBooking.user?.full_name || selectedBooking.user_info?.full_name || getText('Unknown User', 'Pengguna Tidak Dikenal')}
+                            <div className={`font-bold ${
+                              selectedRecord.record_type === 'booking' ? 'text-emerald-900' : 'text-purple-900'
+                            }`}>
+                              {selectedRecord.user?.full_name || 
+                               (selectedRecord.record_type === 'booking' ? (selectedRecord as BookingWithDetails).user_info?.full_name : '') || 
+                               getText('Unknown User', 'Pengguna Tidak Dikenal')}
                             </div>
-                            <div className="text-emerald-700">
-                              {selectedBooking.user?.identity_number || selectedBooking.user_info?.identity_number || getText('No ID', 'Tidak Ada ID')}
+                            <div className={selectedRecord.record_type === 'booking' ? 'text-emerald-700' : 'text-purple-700'}>
+                              {selectedRecord.user?.identity_number || 
+                               (selectedRecord.record_type === 'booking' ? (selectedRecord as BookingWithDetails).user_info?.identity_number : '') || 
+                               getText('No ID', 'Tidak Ada ID')}
                             </div>
                           </div>
                         </div>
                         <div>
-                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">
+                          <span className={`text-sm font-semibold uppercase tracking-wide ${
+                            selectedRecord.record_type === 'booking' ? 'text-emerald-700' : 'text-purple-700'
+                          }`}>
                             {getText('Date & Time', 'Tanggal & Waktu')}
                           </span>
                           <div className="mt-1">
-                            <div className="font-bold text-emerald-900">{format(new Date(selectedBooking.start_time), 'MMM d, yyyy')}</div>
-                            <div className="text-emerald-700">
-                              {format(new Date(selectedBooking.start_time), 'h:mm a')} - {format(new Date(selectedBooking.end_time), 'h:mm a')}
-                            </div>
+                            {selectedRecord.record_type === 'booking' ? (
+                              <>
+                                <div className="font-bold text-emerald-900">
+                                  {format(new Date((selectedRecord as BookingWithDetails).start_time), 'MMM d, yyyy')}
+                                </div>
+                                <div className="text-emerald-700">
+                                  {format(new Date((selectedRecord as BookingWithDetails).start_time), 'h:mm a')} - {format(new Date((selectedRecord as BookingWithDetails).end_time), 'h:mm a')}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="font-bold text-purple-900">
+                                {format(new Date((selectedRecord as LendingToolWithDetails).date), 'MMM d, yyyy h:mm a')}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
                       
                       <div className="space-y-3">
-                        <div>
-                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">
-                            {getText('Location', 'Lokasi')}
-                          </span>
-                          <div className="mt-1">
-                            <div className="font-bold text-emerald-900">{selectedBooking.room?.name || getText('Unknown Room', 'Ruangan Tidak Dikenal')}</div>
-                            <div className="text-emerald-700">{selectedBooking.room?.code || ''}</div>
+                        {selectedRecord.record_type === 'booking' ? (
+                          <>
+                            <div>
+                              <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">
+                                {getText('Location', 'Lokasi')}
+                              </span>
+                              <div className="mt-1">
+                                <div className="font-bold text-emerald-900">
+                                  {(selectedRecord as BookingWithDetails).room?.name || getText('Unknown Room', 'Ruangan Tidak Dikenal')}
+                                </div>
+                                <div className="text-emerald-700">
+                                  {(selectedRecord as BookingWithDetails).room?.code || ''}
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">
+                                {getText('Purpose', 'Tujuan')}
+                              </span>
+                              <div className="mt-1">
+                                <div className="font-bold text-emerald-900">
+                                  {(selectedRecord as BookingWithDetails).purpose || getText('No purpose specified', 'Tidak ada tujuan yang ditentukan')}
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <div>
+                            <span className="text-sm font-semibold text-purple-700 uppercase tracking-wide">
+                              {getText('Status', 'Status')}
+                            </span>
+                            <div className="mt-1">
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+                                {getText('Currently Borrowed', 'Sedang Dipinjam')}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                        <div>
-                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">
-                            {getText('Purpose', 'Tujuan')}
-                          </span>
-                          <div className="mt-1">
-                            <div className="font-bold text-emerald-900">{selectedBooking.purpose || getText('No purpose specified', 'Tidak ada tujuan yang ditentukan')}</div>
-                          </div>
-                        </div>
+                        )}
                       </div>
                     </div>
                     
-                    {selectedBooking.equipment_requested && selectedBooking.equipment_requested.length > 0 && (
-                      <div>
-                        <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide mb-3 block">
-                          {getText('Requested Equipment', 'Peralatan yang Diminta')}
-                        </span>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {selectedBooking.equipment_requested.map((item, index) => (
-                            <div key={index} className="flex items-center p-3 bg-white/60 rounded-xl border border-emerald-200/50">
-                              <div className="h-8 w-8 bg-emerald-100 rounded-lg flex items-center justify-center mr-3">
-                                <Zap className="h-4 w-4 text-emerald-600" />
+                    {/* Equipment/Items Display */}
+                    {selectedRecord.record_type === 'booking' ? (
+                      (selectedRecord as BookingWithDetails).equipment_requested && (selectedRecord as BookingWithDetails).equipment_requested.length > 0 && (
+                        <div>
+                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide mb-3 block">
+                            {getText('Requested Equipment', 'Peralatan yang Diminta')}
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {(selectedRecord as BookingWithDetails).equipment_requested.map((item, index) => (
+                              <div key={index} className="flex items-center p-3 bg-white/60 rounded-xl border border-emerald-200/50">
+                                <div className="h-8 w-8 bg-emerald-100 rounded-lg flex items-center justify-center mr-3">
+                                  <Zap className="h-4 w-4 text-emerald-600" />
+                                </div>
+                                <div className="font-medium text-emerald-900">{item}</div>
                               </div>
-                              <div className="font-medium text-emerald-900">{item}</div>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
-                      </div>
+                      )
+                    ) : (
+                      (selectedRecord as LendingToolWithDetails).equipment_details && (selectedRecord as LendingToolWithDetails).equipment_details.length > 0 && (
+                        <div>
+                          <span className="text-sm font-semibold text-purple-700 uppercase tracking-wide mb-3 block">
+                            {getText('Borrowed Equipment', 'Peralatan yang Dipinjam')}
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {(selectedRecord as LendingToolWithDetails).equipment_details.map((equipment, index) => (
+                              <div key={equipment.id} className="flex items-center justify-between p-3 bg-white/60 rounded-xl border border-purple-200/50">
+                                <div className="flex items-center">
+                                  <div className="h-8 w-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
+                                    <Wrench className="h-4 w-4 text-purple-600" />
+                                  </div>
+                                  <div>
+                                    <div className="font-medium text-purple-900">{equipment.name}</div>
+                                    <div className="text-sm text-purple-700">{equipment.code}</div>
+                                  </div>
+                                </div>
+                                <div className="text-sm font-semibold text-purple-800">
+                                  Qty: {(selectedRecord as LendingToolWithDetails).qty[index] || 1}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
                     )}
                   </div>
                 )}
@@ -635,7 +966,7 @@ const CheckOut: React.FC = () => {
                           {getText('Report an issue or problem', 'Laporkan masalah atau kendala')}
                         </label>
                         <p className="mt-2 text-sm text-yellow-700">
-                          {getText('Check this if you experienced any problems with the equipment, room condition, or facilities during your booking.', 'Centang ini jika Anda mengalami masalah dengan peralatan, kondisi ruangan, atau fasilitas selama pemesanan.')}
+                          {getText('Check this if you experienced any problems with the equipment, room condition, or facilities.', 'Centang ini jika Anda mengalami masalah dengan peralatan, kondisi ruangan, atau fasilitas.')}
                         </p>
                       </div>
                       <AlertTriangle className="h-6 w-6 text-yellow-600 flex-shrink-0" />
@@ -760,18 +1091,18 @@ const CheckOut: React.FC = () => {
                 <div className="flex space-x-4 pt-8 border-t border-gray-200/50">
                   <button
                     type="submit"
-                    disabled={loading || !selectedBooking}
+                    disabled={loading || !selectedRecord}
                     className="flex-1 flex items-center justify-center space-x-3 px-8 py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-xl hover:from-emerald-700 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl disabled:hover:shadow-lg"
                   >
                     {loading ? (
                       <>
                         <RefreshCw className="h-5 w-5 animate-spin" />
-                        <span>{getText('Processing Checkout...', 'Memproses Checkout...')}</span>
+                        <span>{getText('Processing Return...', 'Memproses Pengembalian...')}</span>
                       </>
                     ) : (
                       <>
                         <CheckCircle className="h-5 w-5" />
-                        <span>{getText('Check Out', 'Check Out')}</span>
+                        <span>{getText('Complete Return', 'Selesaikan Pengembalian')}</span>
                       </>
                     )}
                   </button>
@@ -790,11 +1121,11 @@ const CheckOut: React.FC = () => {
                       <ul className="space-y-2 text-sm text-blue-800">
                         <li className="flex items-center space-x-2">
                           <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                          <span>{getText('Your booking will be marked as completed', 'Pemesanan Anda akan ditandai sebagai selesai')}</span>
+                          <span>{getText('Your record will be marked as completed', 'Data Anda akan ditandai sebagai selesai')}</span>
                         </li>
                         <li className="flex items-center space-x-2">
                           <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                          <span>{getText('Equipment will be checked and processed for return', 'Peralatan akan diperiksa dan diproses untuk dikembalikan')}</span>
+                          <span>{getText('Equipment will be checked and returned to inventory', 'Peralatan akan diperiksa dan dikembalikan ke inventaris')}</span>
                         </li>
                         <li className="flex items-center space-x-2">
                           <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
@@ -815,10 +1146,10 @@ const CheckOut: React.FC = () => {
       </div>
 
       {/* Click outside to close dropdown */}
-      {showBookingDropdown && (
+      {showRecordDropdown && (
         <div
           className="fixed inset-0 z-10"
-          onClick={() => setShowBookingDropdown(false)}
+          onClick={() => setShowRecordDropdown(false)}
         />
       )}
     </div>
