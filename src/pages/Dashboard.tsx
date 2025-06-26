@@ -116,6 +116,33 @@ const Dashboard: React.FC = () => {
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Hero Section */}
       <div className="relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden" style={{background: 'linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)'}}>
+        {/* Background Diagonal Shapes */}
+        <div className="absolute inset-0">
+          {/* Main diagonal shape */}
+          <div 
+            className="absolute top-0 right-0 w-full h-full opacity-30"
+            style={{
+              background: 'linear-gradient(to bottom right, #e8d5c4, #daa06d)',
+              clipPath: 'polygon(40% 0%, 100% 0%, 100% 100%, 0% 100%)'
+            }}
+          ></div>
+          {/* Secondary diagonal shape for depth */}
+          <div 
+            className="absolute top-0 right-0 w-4/5 h-full opacity-20"
+            style={{
+              background: 'linear-gradient(to bottom right, #f0e6d6, #c4926b)',
+              clipPath: 'polygon(60% 0%, 100% 0%, 100% 100%, 20% 100%)'
+            }}
+          ></div>
+          {/* Light accent shape */}
+          <div 
+            className="absolute top-0 right-0 w-2/3 h-full opacity-15"
+            style={{
+              background: 'linear-gradient(to bottom right, #f5f0ea, #b8956f)',
+              clipPath: 'polygon(75% 0%, 100% 0%, 100% 100%, 40% 100%)'
+            }}
+          ></div>
+        </div>
         {/* Animated Background Elements */}
         <div className="absolute inset-0">
           <div 
@@ -199,7 +226,7 @@ const Dashboard: React.FC = () => {
                 </div>
 
                 {/* Contact Info */}
-                <div className="flex items-center space-x-6 text-sm" style={{color: '#8b5a2b'}}>
+                <div className="flex items-center space-x-6 text-sm" style={{color: '#654321'}}>
                   <div className="flex items-center space-x-2">
                     <MapPin className="w-4 h-4" />
                     <span>Faculty of Vocational</span>
