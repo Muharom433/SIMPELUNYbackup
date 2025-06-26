@@ -117,6 +117,7 @@ const CheckOut: React.FC = () => {
   const form = useForm<CheckoutForm>({
     resolver: zodResolver(checkoutSchema),
     defaultValues: {
+      record_id: '',
       has_issues: false,
       report_category: 'equipment',
       attachments: [],
@@ -139,6 +140,8 @@ const CheckOut: React.FC = () => {
         form.setValue('record_type', record.record_type);
         console.log('Set record type:', record.record_type);
       }
+    } else {
+      setSelectedRecord(null);
     }
   }, [watchRecordId, allRecords, form]);
 
@@ -312,6 +315,27 @@ const CheckOut: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRecordSelect = (record: CombinedRecord, event?: React.MouseEvent) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    
+    console.log('Record selected:', record.id, record.record_type);
+    
+    // Set form values
+    form.setValue('record_id', record.id);
+    form.setValue('record_type', record.record_type);
+    
+    // Update UI state
+    setSelectedRecord(record);
+    setSearchTerm(getDisplayName(record));
+    setShowRecordDropdown(false);
+    
+    // Clear any validation errors
+    form.clearErrors('record_id');
   };
 
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -539,6 +563,7 @@ const CheckOut: React.FC = () => {
 
       // Reset form and refresh data
       form.reset({
+        record_id: '',
         has_issues: false,
         report_category: 'equipment',
         attachments: [],
@@ -611,6 +636,9 @@ const CheckOut: React.FC = () => {
     }
   };
 
+  // Check if submit button should be enabled
+  const isSubmitEnabled = selectedRecord && watchRecordId && !loading;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-50 to-teal-50 relative">
       {/* Header Section */}
@@ -662,6 +690,10 @@ const CheckOut: React.FC = () => {
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
+                    if (e.target.value === '') {
+                      form.setValue('record_id', '');
+                      setSelectedRecord(null);
+                    }
                     setShowRecordDropdown(true);
                   }}
                   onFocus={() => setShowRecordDropdown(true)}
@@ -712,18 +744,11 @@ const CheckOut: React.FC = () => {
                     ) : (
                       <div className="p-2">
                         {filteredRecords.map((record) => (
-                          <div
+                          <button
                             key={record.id}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              console.log('Record clicked:', record.id, record.record_type);
-                              form.setValue('record_id', record.id);
-                              form.setValue('record_type', record.record_type);
-                              setSearchTerm(getDisplayName(record));
-                              setShowRecordDropdown(false);
-                            }}
-                            className="p-4 hover:bg-emerald-50 cursor-pointer rounded-xl border border-transparent hover:border-emerald-200 transition-all duration-200 mb-2 last:mb-0 active:bg-emerald-100"
+                            type="button"
+                            onClick={(e) => handleRecordSelect(record, e)}
+                            className="w-full text-left p-4 hover:bg-emerald-50 cursor-pointer rounded-xl border border-transparent hover:border-emerald-200 transition-all duration-200 mb-2 last:mb-0 active:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                           >
                             <div className="flex items-start space-x-3">
                               <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${
@@ -790,7 +815,7 @@ const CheckOut: React.FC = () => {
                                 </div>
                               </div>
                             </div>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     )}
@@ -1119,8 +1144,12 @@ const CheckOut: React.FC = () => {
                 <div className="flex space-x-4 pt-8 border-t border-gray-200/50">
                   <button
                     type="submit"
-                    disabled={loading || !selectedRecord}
-                    className="flex-1 flex items-center justify-center space-x-3 px-8 py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-xl hover:from-emerald-700 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl disabled:hover:shadow-lg"
+                    disabled={!isSubmitEnabled}
+                    className={`flex-1 flex items-center justify-center space-x-3 px-8 py-4 font-semibold rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:ring-offset-2 transition-all duration-200 shadow-lg ${
+                      isSubmitEnabled
+                        ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 hover:shadow-xl cursor-pointer'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
                   >
                     {loading ? (
                       <>
@@ -1135,6 +1164,18 @@ const CheckOut: React.FC = () => {
                     )}
                   </button>
                 </div>
+
+                {/* Helper Text for Submit Button */}
+                {!selectedRecord && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <div className="flex items-center space-x-2">
+                      <Search className="h-5 w-5 text-blue-600" />
+                      <p className="text-sm text-blue-800 font-medium">
+                        {getText('Please select a record from the dropdown above to enable the submit button', 'Silakan pilih data dari dropdown di atas untuk mengaktifkan tombol submit')}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Additional Information */}
                 <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-2xl p-6">
@@ -1176,7 +1217,7 @@ const CheckOut: React.FC = () => {
       {/* Click outside to close dropdown */}
       {showRecordDropdown && (
         <div
-          className="fixed inset-0 z-40 bg-black/10"
+          className="fixed inset-0 z-40"
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
