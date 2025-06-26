@@ -594,7 +594,6 @@ const ExamManagement = () => {
             const finalY = (doc as any).lastAutoTable.finalY || 100;
             // --- START: REPLACE THE OLD SIGNATURE BLOCK WITH THIS ---
             let newFinalY = finalY;
-            
             // Only add the second table if there is data for it
             if (additionalInfoRows.length > 0) {
                 autoTable(doc, {
