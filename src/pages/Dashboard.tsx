@@ -248,15 +248,15 @@ const Dashboard: React.FC = () => {
                       </div>
                     </div>
                     
-                    {/* Building Text - Top Left Corner (closer to image) */}
+                    {/* Building Text - Top Left Corner (closer and bigger) */}
                     <div 
-                      className="absolute top-8 left-4 lg:top-12 lg:left-8 z-20"
+                      className="absolute top-4 left-8 lg:top-6 lg:left-12 z-20"
                       style={{ animation: 'float 6s ease-in-out infinite' }}
                     >
                       <img 
                         src="/src/assets/Build.png" 
                         alt="Building Career" 
-                        className="w-20 h-auto lg:w-24 drop-shadow-lg"
+                        className="w-28 h-auto lg:w-36 drop-shadow-lg"
                         onError={(e) => {
                           // Fallback text if image doesn't load
                           e.currentTarget.style.display = 'none';
@@ -273,7 +273,7 @@ const Dashboard: React.FC = () => {
                       </div>
                     </div>
                     
-                    {/* Shaping Text - Bottom Right Corner (closer to image) */}
+                    {/* Shaping Text - Bottom Right Corner (bigger) */}
                     <div 
                       className="absolute bottom-8 right-4 lg:bottom-12 lg:right-8 z-20"
                       style={{ animation: 'float 6s ease-in-out infinite 3s' }}
@@ -281,7 +281,7 @@ const Dashboard: React.FC = () => {
                       <img 
                         src="/src/assets/Shape.png" 
                         alt="Shaping Future" 
-                        className="w-24 h-auto lg:w-28 drop-shadow-lg"
+                        className="w-32 h-auto lg:w-40 drop-shadow-lg"
                         onError={(e) => {
                           // Fallback text if image doesn't load
                           e.currentTarget.style.display = 'none';
