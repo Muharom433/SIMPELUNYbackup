@@ -173,7 +173,7 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
 };
 
 const UserManagement: React.FC = () => {
-  const { profile } = useAuth();
+  const { user } = useAuth();
   const [users, setUsers] = useState<UserWithDepartment[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [studyPrograms, setStudyPrograms] = useState<any[]>([]);
