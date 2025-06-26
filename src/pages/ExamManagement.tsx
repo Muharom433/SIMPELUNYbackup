@@ -739,7 +739,7 @@ const ExamManagement = () => {
                     body: additionalInfoRows,
                     startY: subheadingY + 5,
                     theme: 'grid',
-                    tableWidth: 100,
+                    tableWidth: 200,
                     styles: { fontSize: 8, cellPadding: 1.5, valign: 'middle' },
                     headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' },
                     columnStyles: {
