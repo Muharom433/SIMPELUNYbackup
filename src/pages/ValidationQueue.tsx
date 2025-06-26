@@ -19,6 +19,7 @@ interface Equipment {
     category?: string;
     quantity?: number;
     is_mandatory: boolean;
+    borrowed_quantity?: number;
 }
 
 interface RoomWithEquipment extends Room {
@@ -96,6 +97,7 @@ const ValidationQueue: React.FC = () => {
     const [activeFiltersCount, setActiveFiltersCount] = useState(0);
     const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
     const [conditionNotes, setConditionNotes] = useState<Record<string, string>>({});
+    const [returnedQuantities, setReturnedQuantities] = useState<Record<string, number>>({});
     const [isDetailLoading, setIsDetailLoading] = useState(false);
     const [requestedEquipmentDetails, setRequestedEquipmentDetails] = useState<Equipment[]>([]);
 
@@ -284,15 +286,19 @@ const ValidationQueue: React.FC = () => {
             toast.error("Failed to load item verification status.");
             setCheckedItems(new Set());
             setConditionNotes({});
+            setReturnedQuantities({});
         } else {
             const checked = new Set<string>();
             const notes: Record<string, string> = {};
+            const quantities: Record<string, number> = {};
             data.forEach(item => {
                 checked.add(item.equipment_id);
                 if (item.condition_notes) { notes[item.equipment_id] = item.condition_notes; }
+                if (item.quantity) { quantities[item.equipment_id] = item.quantity; }
             });
             setCheckedItems(checked);
             setConditionNotes(notes);
+            setReturnedQuantities(quantities);
         }
         setIsDetailLoading(false);
     };
@@ -341,16 +347,24 @@ const ValidationQueue: React.FC = () => {
         setCheckedItems(tempCheckedItems);
 
         if (isChecked) {
+            // For equipment checkouts, use the returned quantity, otherwise default to 1
+            const quantity = activeTab === 'equipment' ? (returnedQuantities[equipmentId] || 1) : 1;
+            
             const { error } = await supabase.from('checkout_items').upsert({ 
                 checkout_id: checkoutId, 
                 equipment_id: equipmentId, 
                 condition_notes: conditionNotes[equipmentId] || null, 
-                quantity: 1 
+                quantity: quantity
             }, { onConflict: 'checkout_id, equipment_id' });
             
             if (error) { 
                 toast.error(`Failed to save check status.`); 
                 setCheckedItems(prev => { const s = new Set(prev); s.delete(equipmentId); return s; }); 
+            } else {
+                // Update equipment quantity immediately when checked
+                if (activeTab === 'equipment') {
+                    await updateEquipmentQuantity(equipmentId, quantity);
+                }
             }
         } else {
             const { error } = await supabase.from('checkout_items').delete().match({ 
@@ -361,7 +375,42 @@ const ValidationQueue: React.FC = () => {
             if (error) { 
                 toast.error(`Failed to save uncheck status.`); 
                 setCheckedItems(prev => { const s = new Set(prev); s.add(equipmentId); return s; }); 
+            } else {
+                // Revert equipment quantity when unchecked
+                if (activeTab === 'equipment') {
+                    const quantity = returnedQuantities[equipmentId] || 1;
+                    await updateEquipmentQuantity(equipmentId, -quantity);
+                }
             }
+        }
+    };
+
+    const updateEquipmentQuantity = async (equipmentId: string, quantityChange: number) => {
+        try {
+            const { data: currentEquipment, error: getError } = await supabase
+                .from('equipment')
+                .select('quantity')
+                .eq('id', equipmentId)
+                .single();
+
+            if (!getError && currentEquipment) {
+                const newQuantity = currentEquipment.quantity + quantityChange;
+                
+                const { error: updateError } = await supabase
+                    .from('equipment')
+                    .update({ 
+                        quantity: newQuantity,
+                        is_available: newQuantity > 0
+                    })
+                    .eq('id', equipmentId);
+
+                if (updateError) {
+                    console.error('Error updating equipment quantity:', updateError);
+                    toast.error('Failed to update equipment quantity');
+                }
+            }
+        } catch (error) {
+            console.error('Error updating equipment quantity:', error);
         }
     };
     
@@ -375,9 +424,26 @@ const ValidationQueue: React.FC = () => {
         }
     }, 500), [checkedItems]);
 
+    const debouncedUpdateQuantity = useCallback(debounce(async (checkoutId: string, equipmentId: string, quantity: number) => {
+        if (checkedItems.has(equipmentId)) {
+            const { error } = await supabase.from('checkout_items').update({ quantity: quantity }).match({ 
+                checkout_id: checkoutId, 
+                equipment_id: equipmentId 
+            });
+            if (error) toast.error(`Failed to save quantity.`);
+        }
+    }, 500), [checkedItems]);
+
     const handleNoteChange = (equipmentId: string, note: string) => {
         setConditionNotes(prev => ({...prev, [equipmentId]: note }));
         if (selectedCheckoutId) { debouncedUpdateNote(selectedCheckoutId, equipmentId, note); }
+    };
+
+    const handleQuantityChange = (equipmentId: string, quantity: number) => {
+        setReturnedQuantities(prev => ({...prev, [equipmentId]: quantity }));
+        if (selectedCheckoutId && checkedItems.has(equipmentId)) { 
+            debouncedUpdateQuantity(selectedCheckoutId, equipmentId, quantity); 
+        }
     };
     
     const handleApproval = async (checkoutId: string) => {
@@ -405,7 +471,7 @@ const ValidationQueue: React.FC = () => {
                 
                 if (roomError) console.error('Error updating room availability:', roomError);
             } else {
-                // For equipment checkouts - update lending tool and equipment quantities
+                // For equipment checkouts - update lending tool status
                 if (!checkout.lendingTool) throw new Error('Lending tool data missing');
                 
                 const { error: lendingUpdateError } = await supabase
@@ -420,35 +486,8 @@ const ValidationQueue: React.FC = () => {
                     console.error('Error updating lending tool status:', lendingUpdateError);
                 }
 
-                // Return equipment to inventory
-                if (checkout.lendingTool.id_equipment && checkout.lendingTool.qty) {
-                    for (let i = 0; i < checkout.lendingTool.id_equipment.length; i++) {
-                        const equipmentId = checkout.lendingTool.id_equipment[i];
-                        const borrowedQty = checkout.lendingTool.qty[i];
-                        
-                        const { data: currentEquipment, error: getError } = await supabase
-                            .from('equipment')
-                            .select('quantity')
-                            .eq('id', equipmentId)
-                            .single();
-
-                        if (!getError && currentEquipment) {
-                            const newQuantity = currentEquipment.quantity + borrowedQty;
-                            
-                            const { error: updateError } = await supabase
-                                .from('equipment')
-                                .update({ 
-                                    quantity: newQuantity,
-                                    is_available: newQuantity > 0
-                                })
-                                .eq('id', equipmentId);
-
-                            if (updateError) {
-                                console.error('Error updating equipment quantity:', updateError);
-                            }
-                        }
-                    }
-                }
+                // Equipment quantities are already updated when items are checked
+                // No need to update again here
             }
             
             toast.success('Checkout approved successfully!');
@@ -486,6 +525,18 @@ const ValidationQueue: React.FC = () => {
                 }).eq('id', lendingToolId);
                 
                 if (lendingError) throw lendingError;
+
+                // Revert equipment quantities for checked items
+                const checkoutItems = await supabase
+                    .from('checkout_items')
+                    .select('*')
+                    .eq('checkout_id', checkoutId);
+
+                if (checkoutItems.data) {
+                    for (const item of checkoutItems.data) {
+                        await updateEquipmentQuantity(item.equipment_id, -item.quantity);
+                    }
+                }
             }
             
             const { error: checkoutError } = await supabase.from('checkouts').delete().eq('id', checkoutId);
@@ -875,7 +926,7 @@ const ValidationQueue: React.FC = () => {
 
                 return (
                     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white p-6 rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+                        <div className="bg-white p-6 rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
                             <div className="flex justify-between items-center pb-4 border-b border-gray-200">
                                 <div>
                                     <h2 className="text-xl font-bold text-gray-900">Checkout Validation</h2>
@@ -956,28 +1007,63 @@ const ValidationQueue: React.FC = () => {
                                             )}
                                             
                                             <div className="space-y-3">
-                                                {verificationList.map(eq => (
-                                                    <div key={eq.id} className="grid grid-cols-[auto,1fr,1fr] gap-x-4 items-center">
-                                                        <input 
-                                                            type="checkbox" 
-                                                            checked={checkedItems.has(eq.id)} 
-                                                            onChange={(e) => handleCheckItem(selectedCheckout.id, eq.id, e.target.checked)} 
-                                                            className="h-5 w-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
-                                                        />
-                                                        <label className="text-sm font-medium text-gray-800">
-                                                            {eq.name}
-                                                            {eq.code && <span className="text-gray-500 ml-1">({eq.code})</span>}
-                                                            {eq.is_mandatory && <span className="text-red-500 font-bold ml-1">*</span>}
-                                                        </label>
-                                                        <input 
-                                                            type="text" 
-                                                            placeholder="Condition notes..." 
-                                                            value={conditionNotes[eq.id] || ''} 
-                                                            onChange={(e) => handleNoteChange(eq.id, e.target.value)} 
-                                                            className="text-sm border border-gray-300 rounded-md px-2 py-1 w-full focus:ring-orange-500 focus:border-orange-500"
-                                                        />
-                                                    </div>
-                                                ))}
+                                                {verificationList.map(eq => {
+                                                    // Get borrowed quantity for equipment checkouts
+                                                    const borrowedQty = activeTab === 'equipment' 
+                                                        ? selectedCheckout.lendingTool?.equipment_details?.find(ed => ed.id === eq.id)?.borrowed_quantity || 1
+                                                        : 1;
+                                                    
+                                                    return (
+                                                        <div key={eq.id} className="grid grid-cols-[auto,1fr,auto,1fr] gap-x-4 items-center">
+                                                            <input 
+                                                                type="checkbox" 
+                                                                checked={checkedItems.has(eq.id)} 
+                                                                onChange={(e) => handleCheckItem(selectedCheckout.id, eq.id, e.target.checked)} 
+                                                                className="h-5 w-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
+                                                            />
+                                                            <label className="text-sm font-medium text-gray-800">
+                                                                {eq.name}
+                                                                {eq.code && <span className="text-gray-500 ml-1">({eq.code})</span>}
+                                                                {eq.is_mandatory && <span className="text-red-500 font-bold ml-1">*</span>}
+                                                                {activeTab === 'equipment' && (
+                                                                    <span className="text-blue-600 ml-2 text-xs font-medium">
+                                                                        Borrowed: {borrowedQty}
+                                                                    </span>
+                                                                )}
+                                                            </label>
+                                                            
+                                                            {activeTab === 'equipment' ? (
+                                                                <input 
+                                                                    type="number" 
+                                                                    min="0"
+                                                                    max={borrowedQty}
+                                                                    placeholder="Qty returned ?" 
+                                                                    value={returnedQuantities[eq.id] || ''} 
+                                                                    onChange={(e) => handleQuantityChange(eq.id, parseInt(e.target.value) || 0)} 
+                                                                    className="text-sm border border-gray-300 rounded-md px-2 py-1 w-24 focus:ring-orange-500 focus:border-orange-500"
+                                                                />
+                                                            ) : (
+                                                                <input 
+                                                                    type="text" 
+                                                                    placeholder="Condition notes..." 
+                                                                    value={conditionNotes[eq.id] || ''} 
+                                                                    onChange={(e) => handleNoteChange(eq.id, e.target.value)} 
+                                                                    className="text-sm border border-gray-300 rounded-md px-2 py-1 w-full focus:ring-orange-500 focus:border-orange-500"
+                                                                />
+                                                            )}
+                                                            
+                                                            {activeTab === 'equipment' && (
+                                                                <input 
+                                                                    type="text" 
+                                                                    placeholder="Condition notes..." 
+                                                                    value={conditionNotes[eq.id] || ''} 
+                                                                    onChange={(e) => handleNoteChange(eq.id, e.target.value)} 
+                                                                    className="text-sm border border-gray-300 rounded-md px-2 py-1 w-full focus:ring-orange-500 focus:border-orange-500"
+                                                                />
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     )}
