@@ -150,7 +150,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 <div className="text-center">
                     <p className="text-xs text-gray-500 mb-2">{getText('Developer', 'Dibuat oleh')}</p>
                     <div className="flex items-center justify-center space-x-2"><Zap className="h-4 w-4 text-blue-500 flex-shrink-0" /><span className="text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Muharom Eko S</span></div>
-                    <p className="text-xs text-gray-400 mt-1">{getText('Version 2.0.1', 'Versi 2.0.1')}</p>
+                    <p className="text-xs text-gray-400 mt-1">{getText('Version 1.0', 'Versi 1.0')}</p>
                 </div>
             </div>
         </div>
