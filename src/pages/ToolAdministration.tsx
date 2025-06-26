@@ -5,11 +5,12 @@ import { z } from 'zod';
 import {
     Wrench, Plus, Search, Edit, Trash2, Eye, Package, AlertCircle, RefreshCw, X, 
     Camera, Cpu, Wifi, Zap, FlaskConical, Armchair, Shield,
-    MapPin, Hash, Layers, CheckCircle, XCircle, Star, AlertTriangle, Building
+    MapPin, Hash, Layers, CheckCircle, XCircle, Star, AlertTriangle, Building,
+    User, Phone, CreditCard, Clock, Calendar, Users, Activity, TrendingUp
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { Equipment, Room, Department } from '../types';
+import { Equipment, Room, Department, User as UserType } from '../types';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 
@@ -32,6 +33,23 @@ interface EquipmentWithDetails extends Equipment {
   rooms?: Room & { department: Department };
 }
 
+interface LendingDetail {
+  id: string;
+  date: string;
+  borrowed_quantity: number;
+  returned_quantity: number;
+  missing_quantity: number;
+  status: 'active' | 'returned' | 'overdue';
+  created_at: string;
+  user?: UserType;
+  checkout?: {
+    id: string;
+    checkout_date: string;
+    expected_return_date: string;
+    status: string;
+  };
+}
+
 const ToolAdministration: React.FC = () => {
     const { profile } = useAuth();
     const [equipment, setEquipment] = useState<EquipmentWithDetails[]>([]);
@@ -44,6 +62,8 @@ const ToolAdministration: React.FC = () => {
     const [editingEquipment, setEditingEquipment] = useState<EquipmentWithDetails | null>(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
     const [selectedEquipment, setSelectedEquipment] = useState<EquipmentWithDetails | null>(null);
+    const [lendingDetails, setLendingDetails] = useState<LendingDetail[]>([]);
+    const [loadingLending, setLoadingLending] = useState(false);
 
     const form = useForm<EquipmentForm>({
         resolver: zodResolver(equipmentSchema),
@@ -88,6 +108,123 @@ const ToolAdministration: React.FC = () => {
             setRooms(data || []);
         } catch (error) {
             console.error('Error fetching rooms:', error);
+        }
+    };
+
+    const fetchLendingDetails = async (equipmentId: string) => {
+        try {
+            setLoadingLending(true);
+            
+            // Fetch all lending tool records for this equipment
+            const { data: lendingData, error: lendingError } = await supabase
+                .from('lending_tool')
+                .select('*')
+                .contains('id_equipment', [equipmentId])
+                .order('created_at', { ascending: false });
+
+            if (lendingError) throw lendingError;
+
+            if (!lendingData || lendingData.length === 0) {
+                setLendingDetails([]);
+                return;
+            }
+
+            // Process each lending record to get detailed information
+            const detailedLendings = await Promise.all(
+                lendingData.map(async (lending) => {
+                    let lendingDetail: LendingDetail = {
+                        id: lending.id,
+                        date: lending.date,
+                        borrowed_quantity: 0,
+                        returned_quantity: 0,
+                        missing_quantity: 0,
+                        status: 'active',
+                        created_at: lending.created_at
+                    };
+
+                    // Find the equipment index in the arrays
+                    const equipmentIndex = lending.id_equipment.findIndex((id: string) => id === equipmentId);
+                    if (equipmentIndex !== -1) {
+                        lendingDetail.borrowed_quantity = lending.qty[equipmentIndex] || 0;
+                    }
+
+                    // Fetch user information
+                    if (lending.id_user) {
+                        const { data: userData } = await supabase
+                            .from('users')
+                            .select('id, full_name, identity_number, email, phone_number')
+                            .eq('id', lending.id_user)
+                            .single();
+                        
+                        if (userData) {
+                            lendingDetail.user = userData;
+                        }
+                    }
+
+                    // Fetch checkout information to determine status and returned quantities
+                    const { data: checkoutData } = await supabase
+                        .from('checkouts')
+                        .select('*')
+                        .eq('lendingTool_id', lending.id)
+                        .eq('type', 'things')
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+
+                    if (checkoutData && checkoutData.length > 0) {
+                        const checkout = checkoutData[0];
+                        lendingDetail.checkout = {
+                            id: checkout.id,
+                            checkout_date: checkout.checkout_date,
+                            expected_return_date: checkout.expected_return_date,
+                            status: checkout.status
+                        };
+
+                        // Determine status based on checkout
+                        if (checkout.status === 'active') {
+                            lendingDetail.status = 'returned';
+                        } else if (checkout.status === 'returned') {
+                            lendingDetail.status = 'active';
+                        }
+
+                        // Fetch checkout items to get returned quantities
+                        const { data: checkoutItems } = await supabase
+                            .from('checkout_items')
+                            .select('*')
+                            .eq('checkout_id', checkout.id)
+                            .eq('equipment_id', equipmentId);
+
+                        if (checkoutItems && checkoutItems.length > 0) {
+                            const item = checkoutItems[0];
+                            lendingDetail.returned_quantity = item.quantity || 0;
+                            lendingDetail.missing_quantity = lendingDetail.borrowed_quantity - lendingDetail.returned_quantity;
+                            
+                            if (lendingDetail.missing_quantity <= 0) {
+                                lendingDetail.status = 'returned';
+                                lendingDetail.missing_quantity = 0;
+                            }
+                        } else {
+                            // No checkout items found, assume nothing returned yet
+                            lendingDetail.returned_quantity = 0;
+                            lendingDetail.missing_quantity = lendingDetail.borrowed_quantity;
+                        }
+                    } else {
+                        // No checkout record, equipment is still borrowed
+                        lendingDetail.returned_quantity = 0;
+                        lendingDetail.missing_quantity = lendingDetail.borrowed_quantity;
+                        lendingDetail.status = 'active';
+                    }
+
+                    return lendingDetail;
+                })
+            );
+
+            setLendingDetails(detailedLendings);
+        } catch (error) {
+            console.error('Error fetching lending details:', error);
+            toast.error('Failed to load lending details');
+            setLendingDetails([]);
+        } finally {
+            setLoadingLending(false);
         }
     };
 
@@ -160,6 +297,11 @@ const ToolAdministration: React.FC = () => {
             console.error('Error deleting equipment:', error);
             toast.error(error.message || 'Failed to delete equipment');
         } finally { setLoading(false); }
+    };
+
+    const handleViewDetails = (eq: EquipmentWithDetails) => {
+        setSelectedEquipment(eq);
+        fetchLendingDetails(eq.id);
     };
 
     const filteredEquipment = equipment.filter(eq => {
@@ -237,6 +379,13 @@ const ToolAdministration: React.FC = () => {
                 )}
             </div>
         );
+    };
+
+    const getLendingStatusColor = (status: string, missingQty: number) => {
+        if (missingQty > 0) return 'bg-red-100 text-red-800 border-red-200';
+        if (status === 'active') return 'bg-blue-100 text-blue-800 border-blue-200';
+        if (status === 'returned') return 'bg-green-100 text-green-800 border-green-200';
+        return 'bg-gray-100 text-gray-800 border-gray-200';
     };
 
     if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
@@ -425,9 +574,9 @@ const ToolAdministration: React.FC = () => {
 
                                 <div className="flex items-center justify-between pt-3 border-t border-gray-100">
                                     <button 
-                                        onClick={() => setSelectedEquipment(eq)} 
+                                        onClick={() => handleViewDetails(eq)} 
                                         className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium transition-colors text-sm"
-                                        title="View Details"
+                                        title="View Details & Lending"
                                     >
                                         <Eye className="h-4 w-4" />
                                         <span>View</span>
@@ -655,10 +804,10 @@ const ToolAdministration: React.FC = () => {
                 </div>
             )}
             
-            {/* Equipment Detail Modal */}
+            {/* Equipment Detail Modal with Lending Tracking */}
             {selectedEquipment && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col overflow-hidden">
                         <div className="bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-600 p-6 text-white">
                             <div className="flex justify-between items-center">
                                 <div>
@@ -678,7 +827,7 @@ const ToolAdministration: React.FC = () => {
                         </div>
                         
                         <div className="p-8 overflow-y-auto flex-1">
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                                 {/* Equipment Details */}
                                 <div className="space-y-6">
                                     <div>
@@ -773,31 +922,6 @@ const ToolAdministration: React.FC = () => {
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-
-                                {/* Specifications */}
-                                <div className="space-y-6">
-                                    <div>
-                                        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                                            <FlaskConical className="h-5 w-5 text-blue-600" />
-                                            Specifications
-                                        </h3>
-                                        <div className="bg-gray-50 rounded-lg p-6 h-64 overflow-y-auto">
-                                            {selectedEquipment.Spesification ? (
-                                                <div className="prose prose-sm max-w-none">
-                                                    <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
-                                                        {selectedEquipment.Spesification}
-                                                    </p>
-                                                </div>
-                                            ) : (
-                                                <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                                                    <AlertCircle className="h-12 w-12 mb-3 opacity-50" />
-                                                    <p className="text-center">No specification details available.</p>
-                                                    <p className="text-sm text-center mt-1">Consider adding specifications for better equipment management.</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
 
                                     {/* Quick Actions */}
                                     <div>
@@ -805,7 +929,7 @@ const ToolAdministration: React.FC = () => {
                                             <Wrench className="h-5 w-5 text-blue-600" />
                                             Quick Actions
                                         </h3>
-                                        <div className="grid grid-cols-2 gap-3">
+                                        <div className="grid grid-cols-1 gap-3">
                                             <button 
                                                 onClick={() => {
                                                     setSelectedEquipment(null);
@@ -814,7 +938,7 @@ const ToolAdministration: React.FC = () => {
                                                 className="flex items-center justify-center gap-2 p-4 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg transition-colors"
                                             >
                                                 <Edit className="h-5 w-5" />
-                                                <span className="font-semibold">Edit</span>
+                                                <span className="font-semibold">Edit Equipment</span>
                                             </button>
                                             
                                             <button 
@@ -825,9 +949,148 @@ const ToolAdministration: React.FC = () => {
                                                 className="flex items-center justify-center gap-2 p-4 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg transition-colors"
                                             >
                                                 <Trash2 className="h-5 w-5" />
-                                                <span className="font-semibold">Delete</span>
+                                                <span className="font-semibold">Delete Equipment</span>
                                             </button>
                                         </div>
+                                    </div>
+                                </div>
+
+                                {/* Lending Tracking */}
+                                <div className="lg:col-span-2 space-y-6">
+                                    <div>
+                                        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                            <Users className="h-5 w-5 text-orange-600" />
+                                            Equipment Lending Tracking
+                                            {loadingLending && <RefreshCw className="h-4 w-4 animate-spin text-gray-400" />}
+                                        </h3>
+                                        
+                                        {loadingLending ? (
+                                            <div className="bg-gray-50 rounded-lg p-8 text-center">
+                                                <RefreshCw className="h-8 w-8 animate-spin text-gray-400 mx-auto mb-4" />
+                                                <p className="text-gray-600">Loading lending details...</p>
+                                            </div>
+                                        ) : lendingDetails.length === 0 ? (
+                                            <div className="bg-gray-50 rounded-lg p-8 text-center">
+                                                <Activity className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                                                <h4 className="text-lg font-medium text-gray-600 mb-2">No Lending Records</h4>
+                                                <p className="text-gray-500">This equipment has not been borrowed yet.</p>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-4">
+                                                {/* Summary Cards */}
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                                        <div className="flex items-center justify-between">
+                                                            <div>
+                                                                <p className="text-sm font-medium text-blue-600">Total Borrowed</p>
+                                                                <p className="text-2xl font-bold text-blue-800">
+                                                                    {lendingDetails.reduce((sum, detail) => sum + detail.borrowed_quantity, 0)}
+                                                                </p>
+                                                            </div>
+                                                            <TrendingUp className="h-8 w-8 text-blue-600" />
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                                                        <div className="flex items-center justify-between">
+                                                            <div>
+                                                                <p className="text-sm font-medium text-green-600">Total Returned</p>
+                                                                <p className="text-2xl font-bold text-green-800">
+                                                                    {lendingDetails.reduce((sum, detail) => sum + detail.returned_quantity, 0)}
+                                                                </p>
+                                                            </div>
+                                                            <CheckCircle className="h-8 w-8 text-green-600" />
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                                                        <div className="flex items-center justify-between">
+                                                            <div>
+                                                                <p className="text-sm font-medium text-red-600">Missing Items</p>
+                                                                <p className="text-2xl font-bold text-red-800">
+                                                                    {lendingDetails.reduce((sum, detail) => sum + detail.missing_quantity, 0)}
+                                                                </p>
+                                                            </div>
+                                                            <AlertTriangle className="h-8 w-8 text-red-600" />
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Lending Records */}
+                                                <div className="space-y-3">
+                                                    {lendingDetails.map((detail) => (
+                                                        <div key={detail.id} className={`border rounded-lg p-4 ${detail.missing_quantity > 0 ? 'border-red-200 bg-red-50' : detail.status === 'active' ? 'border-blue-200 bg-blue-50' : 'border-green-200 bg-green-50'}`}>
+                                                            <div className="flex items-start justify-between">
+                                                                <div className="flex items-start space-x-4">
+                                                                    <div className="flex-shrink-0 h-12 w-12 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
+                                                                        <User className="h-6 w-6 text-white" />
+                                                                    </div>
+                                                                    <div className="flex-1">
+                                                                        <h4 className="font-semibold text-gray-900">
+                                                                            {detail.user?.full_name || 'Unknown User'}
+                                                                        </h4>
+                                                                        <div className="space-y-1 mt-2">
+                                                                            <div className="flex items-center text-sm text-gray-600">
+                                                                                <CreditCard className="h-4 w-4 mr-2" />
+                                                                                ID: {detail.user?.identity_number || 'N/A'}
+                                                                            </div>
+                                                                            <div className="flex items-center text-sm text-gray-600">
+                                                                                <Phone className="h-4 w-4 mr-2" />
+                                                                                {detail.user?.phone_number || 'No phone'}
+                                                                            </div>
+                                                                            <div className="flex items-center text-sm text-gray-600">
+                                                                                <Calendar className="h-4 w-4 mr-2" />
+                                                                                Borrowed: {format(new Date(detail.date), 'MMM d, yyyy h:mm a')}
+                                                                            </div>
+                                                                            {detail.checkout && (
+                                                                                <div className="flex items-center text-sm text-gray-600">
+                                                                                    <Clock className="h-4 w-4 mr-2" />
+                                                                                    Expected Return: {format(new Date(detail.checkout.expected_return_date), 'MMM d, yyyy h:mm a')}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                <div className="text-right">
+                                                                    <div className="grid grid-cols-3 gap-4 text-center mb-3">
+                                                                        <div>
+                                                                            <div className="text-lg font-bold text-blue-600">{detail.borrowed_quantity}</div>
+                                                                            <div className="text-xs text-gray-600">Borrowed</div>
+                                                                        </div>
+                                                                        <div>
+                                                                            <div className="text-lg font-bold text-green-600">{detail.returned_quantity}</div>
+                                                                            <div className="text-xs text-gray-600">Returned</div>
+                                                                        </div>
+                                                                        <div>
+                                                                            <div className={`text-lg font-bold ${detail.missing_quantity > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                                                                                {detail.missing_quantity}
+                                                                            </div>
+                                                                            <div className="text-xs text-gray-600">Missing</div>
+                                                                        </div>
+                                                                    </div>
+                                                                    
+                                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getLendingStatusColor(detail.status, detail.missing_quantity)}`}>
+                                                                        {detail.missing_quantity > 0 ? 'MISSING ITEMS' : detail.status.toUpperCase()}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            {detail.missing_quantity > 0 && (
+                                                                <div className="mt-3 p-3 bg-red-100 border border-red-200 rounded-md">
+                                                                    <div className="flex items-center">
+                                                                        <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
+                                                                        <span className="text-sm font-medium text-red-800">
+                                                                            {detail.missing_quantity} {selectedEquipment.unit} missing and needs to be returned
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
