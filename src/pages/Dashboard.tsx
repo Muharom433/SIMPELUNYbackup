@@ -297,10 +297,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                     <MapPin className="w-4 h-4" />
                     <span>Faculty of Vocational</span>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Timer className="w-4 h-4" />
-                    <span>24/7 Online</span>
-                  </div>
+                
                 </div>
               </div>
 
