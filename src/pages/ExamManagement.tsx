@@ -1,4 +1,120 @@
-import React, { useState, useEffect, useMemo } from 'react';
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Lecturer in Charge *", "Dosen Pengampu *")}</label>
+                                        <Controller 
+                                            name="lecturer_id" 
+                                            control={form.control} 
+                                            render={({ field }) => { 
+                                                const options = filteredLecturers.map(l => ({ 
+                                                    value: l.id, 
+                                                    label: l.full_name 
+                                                })); 
+                                                const currentValue = options.find(o => o.value === field.value); 
+                                                return ( 
+                                                    <Select 
+                                                        {...field} 
+                                                        options={options} 
+                                                        value={currentValue} 
+                                                        onChange={val => field.onChange(val?.value)} 
+                                                        placeholder={getText("Search or select lecturer...", "Cari atau pilih dosen...")} 
+                                                        isClearable 
+                                                        noOptionsMessage={() => watchStudyProgramId ? getText('No lecturers found', 'Tidak ada dosen ditemukan') : getText('Select a study program first', 'Pilih program studi terlebih dahulu')} 
+                                                        styles={{
+                                                            control: (provided) => ({
+                                                                ...provided,
+                                                                minHeight: '42px',
+                                                                borderColor: '#d1d5db',
+                                                            }),
+                                                        }}
+                                                    /> 
+                                                ) 
+                                            }} 
+                                        />
+                                        {form.formState.errors.lecturer_id && (
+                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.lecturer_id.message}</p>
+                                        )}
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Inspector (Pengawas) *", "Pengawas *")}</label>
+                                        <Controller 
+                                            name="inspector" 
+                                            control={form.control} 
+                                            render={({ field }) => { 
+                                                const options = filteredLecturers.map(l => ({ 
+                                                    value: l.id,
+                                                    label: l.full_name
+                                                })); 
+                                                const currentValue = options.find(o => o.value === field.value); 
+                                                return ( 
+                                                    <Select 
+                                                        {...field} 
+                                                        options={options} 
+                                                        value={currentValue} 
+                                                        onChange={val => field.onChange(val?.value)} 
+                                                        placeholder={getText("Search or select inspector...", "Cari atau pilih pengawas...")} 
+                                                        isClearable 
+                                                        noOptionsMessage={() => watchStudyProgramId ? getText('No lecturers found', 'Tidak ada dosen ditemukan') : getText('Select a study program first', 'Pilih program studi terlebih dahulu')} 
+                                                        styles={{
+                                                            control: (provided) => ({
+                                                                ...provided,
+                                                                minHeight: '42px',
+                                                                borderColor: '#d1d5db',
+                                                            }),
+                                                        }}
+                                                    /> 
+                                                ) 
+                                            }} 
+                                        />
+                                        {form.formState.errors.inspector && (
+                                            <p className="mt-1 text-sm text-red-600">{form.formState.errors.inspector.message}</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Room Assignment - Updated */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        {getText("Room", "Ruangan")} {!watchIsTakeHome && '*'}
+                                        {watchIsTakeHome && (
+                                            <span className="text-gray-500 text-sm ml-2">({getText("Not required for Take Home exams", "Tidak diperlukan untuk ujian Take Home")})</span>
+                                        )}
+                                    </label>
+                                    <Controller 
+                                        name="room_id" 
+                                        control={form.control} 
+                                        render={({ field }) => { 
+                                            const roomOptions = getAvailableRooms().map(r => ({ 
+                                                value: r.id, 
+                                                label: `${r.name} (${r.code}) - ${getText("Cap:", "Kapasitas:")} ${r.capacity}` 
+                                            })); 
+                                            const selectedValue = roomOptions.find(o => o.value === field.value); 
+                                            return ( 
+                                                <Select 
+                                                    {...field} 
+                                                    options={roomOptions} 
+                                                    value={selectedValue} 
+                                                    onChange={option => field.onChange(option ? option.value : '')} 
+                                                    isDisabled={watchIsTakeHome} 
+                                                    placeholder={watchIsTakeHome ? getText('No room needed for Take Home exam', 'Tidak perlu ruangan untuk ujian Take Home') : getText('Search or select room...', 'Cari atau pilih ruangan...')} 
+                                                    isClearable 
+                                                    styles={{
+                                                        control: (provided) => ({
+                                                            ...provided,
+                                                            minHeight: '42px',
+                                                            borderColor: '#d1d5db',
+                                                            backgroundColor: watchIsTakeHome ? '#f9fafb' : 'white',
+                                                        }),
+                                                    }}
+                                                /> 
+                                            ); 
+                                        }}
+                                    />
+                                    {form.formState.errors.room_id && (
+                                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.room_id.message}</p>
+                                    )}
+                                    {!watchIsTakeHome && watchStartTime && watchEndTime && watchDate && (
+                                        <p className="mt-2 text-sm text-gray-600">import React, { useState, useEffect, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -908,6 +1024,7 @@ const ExamManagement = () => {
                                     </th>
                                 )}
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                     <div className="flex items-center space-x-1">
                                         <BookOpen className="h-4 w-4" />
                                         <span>{getText("Course", "Mata Kuliah")}</span>
@@ -1258,7 +1375,7 @@ const ExamManagement = () => {
                                 {/* Schedule Information - Updated with time fields */}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Date *", "Tanggal *")}</label>
                                         <input 
                                             {...form.register('date')} 
                                             type="date" 
@@ -1271,7 +1388,7 @@ const ExamManagement = () => {
                                     
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Start Time {!watchIsTakeHome && '*'}
+                                            {getText("Start Time", "Waktu Mulai")} {!watchIsTakeHome && '*'}
                                         </label>
                                         <input 
                                             {...form.register('start_time')} 
@@ -1286,7 +1403,7 @@ const ExamManagement = () => {
                                     
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            End Time {!watchIsTakeHome && '*'}
+                                            {getText("End Time", "Waktu Selesai")} {!watchIsTakeHome && '*'}
                                         </label>
                                         <input 
                                             {...form.register('end_time')} 
@@ -1310,11 +1427,11 @@ const ExamManagement = () => {
                                     />
                                     <label htmlFor="is_take_home" className="text-sm font-medium text-blue-900 flex items-center space-x-2">
                                         <BookOpen className="h-4 w-4" />
-                                        <span>This is a Take Home Exam</span>
+                                        <span>{getText("This is a Take Home Exam", "Ini adalah Ujian Take Home")}</span>
                                     </label>
                                     {watchIsTakeHome && (
                                         <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
-                                            No time schedule or room required
+                                            {getText("No time schedule or room required", "Tidak perlu jadwal waktu atau ruangan")}
                                         </span>
                                     )}
                                 </div>
@@ -1322,7 +1439,7 @@ const ExamManagement = () => {
                                 {/* Class Information */}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Semester (1-8) *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Semester (1-8) *", "Semester (1-8) *")}</label>
                                         <input 
                                             {...form.register('semester', { 
                                                 valueAsNumber: true, 
@@ -1342,11 +1459,11 @@ const ExamManagement = () => {
                                         )}
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Class *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Class *", "Kelas *")}</label>
                                         <input 
                                             {...form.register('class')} 
                                             type="text" 
-                                            placeholder="e.g., A, B, C" 
+                                            placeholder={getText("e.g., A, B, C", "contoh: A, B, C")} 
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
                                         />
                                         {form.formState.errors.class && (
@@ -1354,7 +1471,7 @@ const ExamManagement = () => {
                                         )}
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Student Amount *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Student Amount *", "Jumlah Mahasiswa *")}</label>
                                         <input 
                                             {...form.register('student_amount', { valueAsNumber: true })} 
                                             type="number" 
@@ -1369,7 +1486,7 @@ const ExamManagement = () => {
 
                                 {/* Study Program */}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Study Program *</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Study Program *", "Program Studi *")}</label>
                                     <Controller 
                                         name="study_program_id" 
                                         control={form.control} 
@@ -1385,7 +1502,7 @@ const ExamManagement = () => {
                                                     options={options} 
                                                     value={currentValue} 
                                                     onChange={option => field.onChange(option ? option.value : '')} 
-                                                    placeholder="Search or select study program..." 
+                                                    placeholder={getText("Search or select study program...", "Cari atau pilih program studi...")} 
                                                     isClearable 
                                                     styles={{
                                                         control: (provided) => ({
@@ -1521,7 +1638,7 @@ const ExamManagement = () => {
                                     )}
                                     {!watchIsTakeHome && watchStartTime && watchEndTime && watchDate && (
                                         <p className="mt-2 text-sm text-gray-600">
-                                            💡 Showing {getAvailableRooms().length} available rooms for {watchDate} from {watchStartTime} to {watchEndTime}
+                                            💡 {getText("Showing", "Menampilkan")} {getAvailableRooms().length} {getText("available rooms for", "ruangan tersedia untuk")} {watchDate} {getText("from", "dari")} {watchStartTime} {getText("to", "hingga")} {watchEndTime}
                                         </p>
                                     )}
                                 </div>
@@ -1533,7 +1650,7 @@ const ExamManagement = () => {
                                         onClick={() => setShowModal(false)} 
                                         className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 font-medium"
                                     >
-                                        Cancel
+                                        {getText("Cancel", "Batal")}
                                     </button>
                                     <button 
                                         type="submit" 
@@ -1543,12 +1660,12 @@ const ExamManagement = () => {
                                         {loading ? (
                                             <span className="flex items-center justify-center space-x-2">
                                                 <RefreshCw className="h-4 w-4 animate-spin" />
-                                                <span>Saving...</span>
+                                                <span>{getText("Saving...", "Menyimpan...")}</span>
                                             </span>
                                         ) : (
                                             <span className="flex items-center justify-center space-x-2">
                                                 <Calendar className="h-4 w-4" />
-                                                <span>{editingExam ? 'Update Exam' : 'Create Exam'}</span>
+                                                <span>{editingExam ? getText('Update Exam', 'Perbarui Ujian') : getText('Create Exam', 'Buat Ujian')}</span>
                                             </span>
                                         )}
                                     </button>
@@ -1569,26 +1686,26 @@ const ExamManagement = () => {
                                     <AlertCircle className="h-6 w-6 text-red-600" />
                                 </div>
                                 <div className="ml-4">
-                                    <h3 className="text-lg font-medium text-gray-900">Delete Exam Schedule</h3>
-                                    <p className="text-sm text-gray-500 mt-1">This action cannot be undone</p>
+                                    <h3 className="text-lg font-medium text-gray-900">{getText("Delete Exam Schedule", "Hapus Jadwal Ujian")}</h3>
+                                    <p className="text-sm text-gray-500 mt-1">{getText("This action cannot be undone", "Tindakan ini tidak dapat dibatalkan")}</p>
                                 </div>
                             </div>
                             <p className="text-sm text-gray-600 mb-6">
-                                Are you sure you want to delete this exam schedule? All associated data will be permanently removed.
+                                {getText("Are you sure you want to delete this exam schedule? All associated data will be permanently removed.", "Apakah Anda yakin ingin menghapus jadwal ujian ini? Semua data terkait akan dihapus secara permanen.")}
                             </p>
                             <div className="flex space-x-3">
                                 <button 
                                     onClick={() => setShowDeleteConfirm(null)} 
                                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium"
                                 >
-                                    Cancel
+                                    {getText("Cancel", "Batal")}
                                 </button>
                                 <button 
                                     onClick={() => handleDelete(showDeleteConfirm as string)} 
                                     disabled={loading} 
                                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-all duration-200 font-medium"
                                 >
-                                    {loading ? 'Deleting...' : 'Delete'}
+                                    {loading ? getText('Deleting...', 'Menghapus...') : getText('Delete', 'Hapus')}
                                 </button>
                             </div>
                         </div>
@@ -1604,7 +1721,7 @@ const ExamManagement = () => {
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
                                     <Printer className="h-6 w-6 text-blue-600" />
-                                    <span>Print Exam Schedule</span>
+                                    <span>{getText("Print Exam Schedule", "Cetak Jadwal Ujian")}</span>
                                 </h3>
                                 <button 
                                     onClick={() => setShowPrintModal(false)} 
@@ -1616,7 +1733,7 @@ const ExamManagement = () => {
                             <form onSubmit={printForm.handleSubmit(handlePrint)} className="space-y-4">
                                 {isSuperAdmin && (
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Department *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Department *", "Departemen *")}</label>
                                         <Controller 
                                             name="department_id" 
                                             control={printForm.control} 
@@ -1627,7 +1744,7 @@ const ExamManagement = () => {
                                                         field.onChange(option ? option.value : ''); 
                                                         setPrintSelectedDepartment(option ? option.value : ''); 
                                                     }} 
-                                                    placeholder="Select department..." 
+                                                    placeholder={getText("Select department...", "Pilih departemen...")} 
                                                     isClearable 
                                                 />
                                             )} 
@@ -1638,7 +1755,7 @@ const ExamManagement = () => {
                                     </div>
                                 )}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Study Program *</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Study Program *", "Program Studi *")}</label>
                                     <Controller 
                                         name="study_program_id" 
                                         control={printForm.control} 
@@ -1652,7 +1769,7 @@ const ExamManagement = () => {
                                                     options={options} 
                                                     value={currentValue} 
                                                     onChange={option => field.onChange(option ? option.value : '')} 
-                                                    placeholder="Select study program..." 
+                                                    placeholder={getText("Select study program...", "Pilih program studi...")} 
                                                     isDisabled={isSuperAdmin && !printSelectedDepartment} 
                                                     isClearable 
                                                 /> 
@@ -1664,7 +1781,7 @@ const ExamManagement = () => {
                                     )}
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Semester Type *</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Semester Type *", "Jenis Semester *")}</label>
                                     <Controller 
                                         name="semester" 
                                         control={printForm.control} 
@@ -1672,12 +1789,12 @@ const ExamManagement = () => {
                                             <Select 
                                                 {...field} 
                                                 options={[
-                                                    {value: 'GASAL', label: 'GASAL (Odd)'}, 
-                                                    {value: 'GENAP', label: 'GENAP (Even)'}
+                                                    {value: 'GASAL', label: getText('GASAL (Odd)', 'GASAL (Ganjil)')}, 
+                                                    {value: 'GENAP', label: getText('GENAP (Even)', 'GENAP (Genap)')}
                                                 ]} 
-                                                value={field.value ? {value: field.value, label: `${field.value} (${field.value === 'GASAL' ? 'Odd' : 'Even'})`} : null} 
+                                                value={field.value ? {value: field.value, label: `${field.value} (${field.value === 'GASAL' ? getText('Odd', 'Ganjil') : getText('Even', 'Genap')})`} : null} 
                                                 onChange={option => field.onChange(option?.value)} 
-                                                placeholder="Select semester type..." 
+                                                placeholder={getText("Select semester type...", "Pilih jenis semester...")} 
                                             /> 
                                         )} 
                                     />
@@ -1686,11 +1803,11 @@ const ExamManagement = () => {
                                     )}
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Academic Year *</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Academic Year *", "Tahun Akademik *")}</label>
                                     <input 
                                         {...printForm.register('academic_year')} 
                                         type="text" 
-                                        placeholder="e.g. 2024/2025" 
+                                        placeholder={getText("e.g. 2024/2025", "contoh: 2024/2025")} 
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
                                     />
                                     {printForm.formState.errors.academic_year && (
@@ -1699,7 +1816,7 @@ const ExamManagement = () => {
                                 </div>
                                 {isDepartmentAdmin && (
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Department Head *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Department Head *", "Kepala Departemen *")}</label>
                                         <Controller 
                                             name="department_head_id" 
                                             control={printForm.control} 
@@ -1712,7 +1829,7 @@ const ExamManagement = () => {
                                                         const selectedHead = departmentHeads.find(h => h.id === option?.value); 
                                                         printForm.setValue('department_head_name', selectedHead?.full_name); 
                                                     }} 
-                                                    placeholder="Search and select head..." 
+                                                    placeholder={getText("Search and select head...", "Cari dan pilih kepala departemen...")} 
                                                     isClearable 
                                                 /> 
                                             )} 
@@ -1728,14 +1845,14 @@ const ExamManagement = () => {
                                         onClick={() => setShowPrintModal(false)} 
                                         className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium"
                                     >
-                                        Cancel
+                                        {getText("Cancel", "Batal")}
                                     </button>
                                     <button 
                                         type="submit" 
                                         className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium flex items-center justify-center space-x-2"
                                     >
                                         <Printer className="h-4 w-4" />
-                                        <span>Generate PDF</span>
+                                        <span>{getText("Generate PDF", "Buat PDF")}</span>
                                     </button>
                                 </div>
                             </form>
@@ -1754,14 +1871,13 @@ const ExamManagement = () => {
                                     <AlertCircle className="h-6 w-6 text-red-600" />
                                 </div>
                                 <div className="ml-4">
-                                    <h3 className="text-lg leading-6 font-medium text-gray-900">Change Exam Mode?</h3>
-                                    <p className="text-sm text-gray-500 mt-1">This action will permanently delete all data</p>
+                                    <h3 className="text-lg leading-6 font-medium text-gray-900">{getText("Change Exam Mode?", "Ubah Mode Ujian?")}</h3>
+                                    <p className="text-sm text-gray-500 mt-1">{getText("This action will permanently delete all data", "Tindakan ini akan menghapus semua data secara permanen")}</p>
                                 </div>
                             </div>
                             <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
                                 <p className="text-sm text-red-800">
-                                    This action will <span className="font-bold">PERMANENTLY DELETE ALL</span> existing exam schedules. 
-                                    Are you sure you want to continue?
+                                    {getText("This action will", "Tindakan ini akan")} <span className="font-bold">{getText("PERMANENTLY DELETE ALL", "MENGHAPUS SEMUA SECARA PERMANEN")}</span> {getText("existing exam schedules. Are you sure you want to continue?", "jadwal ujian yang ada. Apakah Anda yakin ingin melanjutkan?")}
                                 </p>
                             </div>
                             <div className="flex space-x-3">
@@ -1769,13 +1885,13 @@ const ExamManagement = () => {
                                     onClick={() => setShowClearConfirm(false)} 
                                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium"
                                 >
-                                    Cancel
+                                    {getText("Cancel", "Batal")}
                                 </button>
                                 <button 
                                     onClick={confirmClearAndToggleMode} 
                                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all duration-200 font-medium"
                                 >
-                                    Yes, Change & Delete
+                                    {getText("Yes, Change & Delete", "Ya, Ubah & Hapus")}
                                 </button>
                             </div>
                         </div>
