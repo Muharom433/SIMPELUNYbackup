@@ -439,41 +439,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                       SIMPEL Kuliah (Sistem Pelayanan Kuliah) adalah platform inovatif yang dirancang khusus untuk mengoptimalkan pengelolaan fasilitas kampus di Fakultas Vokasi UNY. Sistem ini menyediakan solusi terintegrasi untuk pemesanan ruangan, peminjaman peralatan, dan manajemen jadwal secara digital.
                     </p>
                   </div>
-                  
-                  <div>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-3 flex items-center">
-                      <BookOpen className="w-5 h-5 mr-2 text-green-600" />
-                      Latar Belakang
-                    </h3>
-                    <p>
-                      Dengan semakin berkembangnya kebutuhan digitalisasi di dunia pendidikan, Fakultas Vokasi UNY memerlukan sistem yang dapat mengatasi kompleksitas pengelolaan fasilitas kampus. Sistem manual yang selama ini digunakan seringkali menimbulkan konflik jadwal dan ketidakefisienan dalam penggunaan sumber daya.
-                    </p>
-                  </div>
-                  
-                  <div>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-3 flex items-center">
-                      <Lightbulb className="w-5 h-5 mr-2 text-amber-600" />
-                      Tujuan
-                    </h3>
-                    <ul className="space-y-2">
-                      <li className="flex items-start">
-                        <CheckCircle className="w-5 h-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                        Meningkatkan efisiensi pengelolaan fasilitas kampus
-                      </li>
-                      <li className="flex items-start">
-                        <CheckCircle className="w-5 h-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                        Mengurangi konflik jadwal dan tumpang tindih penggunaan ruangan
-                      </li>
-                      <li className="flex items-start">
-                        <CheckCircle className="w-5 h-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                        Memberikan transparansi dalam proses pemesanan dan peminjaman
-                      </li>
-                      <li className="flex items-start">
-                        <CheckCircle className="w-5 h-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                        Meningkatkan kualitas pelayanan kepada civitas akademika
-                      </li>
-                    </ul>
-                  </div>
                 </div>
               </div>
             </div>
