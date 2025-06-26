@@ -1062,7 +1062,7 @@ const ExamManagement = () => {
                                     <X className="h-6 w-6" /> 
                                 </button>
                             </div>
-                            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+                            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
                                 {/* Course Information Section */}
                                 <div className="bg-gray-50 rounded-lg p-4">
                                     <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
