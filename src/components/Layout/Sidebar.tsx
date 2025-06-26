@@ -83,7 +83,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
 
         if (user.role === 'department_admin') {
             return [
-                { icon: PieChart, label: getText('Department Analytics', 'Analitik Departemen'), path: '/department-analytics' },
+                { icon: PieChart, label: getText('Department Analytics', 'Analitik Departemen'), path: '/' },
                 { icon: CalendarCheck, label: getText('Exam Management', 'Manajemen Ujian'), path: '/exams' },
                 { icon: BookOpen, label: getText('Department Bookings', 'Pemesanan Departemen'), path: '/department-bookings', badge: pendingBookingsCount > 0 ? pendingBookingsCount : null },
                 { icon: Users, label: getText('User Management', 'Manajemen Pengguna'), path: '/users' },
