@@ -366,11 +366,14 @@ const ExamManagement = () => {
         return days[date.getDay()]; 
     };
 
-    // FIXED: Inspector handling - save by ID, display by name
+    // FIXED: Inspector handling - save name to inspector column
     const handleSubmit = async (data: ExamFormData) => {
         try {
             setLoading(true);
             const day = getDayFromDate(data.date);
+            
+            // Get inspector name from ID
+            const inspectorInfo = lecturers.find(l => l.id === data.inspector);
             
             const examData = {
                 day,
@@ -383,7 +386,7 @@ const ExamManagement = () => {
                 student_amount: data.student_amount,
                 room_id: data.session === 'Take Home' ? null : data.room_id,
                 lecturer_id: data.lecturer_id,
-                inspector_id: data.inspector, // Save inspector ID
+                inspector: inspectorInfo?.full_name || null, // Save inspector NAME to inspector column
                 department_id: profile.department_id,
                 study_program_id: data.study_program_id,
             };
@@ -415,9 +418,12 @@ const ExamManagement = () => {
         } 
     };
 
-    // FIXED: Inspector handling in edit
+    // FIXED: Inspector handling in edit - find inspector by name to get ID for form
     const handleEdit = (exam: any) => {
         setEditingExam(exam);
+        
+        // Find inspector by name to get ID for the form
+        const inspectorUser = lecturers.find(l => l.full_name === exam.inspector);
         
         form.reset({
             course_name: exam.course_name || '',
@@ -429,7 +435,7 @@ const ExamManagement = () => {
             student_amount: exam.student_amount,
             room_id: exam.room_id || '',
             lecturer_id: exam.lecturer_id,
-            inspector: exam.inspector_id || '', // Use inspector_id from database
+            inspector: inspectorUser?.id || '', // Use inspector ID for form
             study_program_id: exam.study_program_id,
         });
         setShowModal(true);
@@ -539,8 +545,8 @@ const ExamManagement = () => {
             const tableColumn = ["No.", "HARI", "TANGGAL", "SESI", "KODE MK", "MATA KULIAH", "SMT", "KLS", "MHS", "RUANG", "PENGAWAS"]; 
             const tableRows: any[] = []; 
             examsToPrint.forEach((exam, index) => { 
-                // FIXED: Get inspector name from inspector_id
-                const inspectorName = lecturers.find(l => l.id === exam.inspector_id)?.full_name || '-';
+                // FIXED: Get inspector name directly from inspector column
+                const inspectorName = exam.inspector || '-';
                 tableRows.push([ 
                     index + 1, 
                     exam.day, 
@@ -579,7 +585,7 @@ const ExamManagement = () => {
             examsToPrint.forEach((exam) => {
                 const uniqueKey = `${exam.course_code}-${exam.class}`;
                 if (!uniqueCourses.has(uniqueKey)) {
-                    const inspectorName = lecturers.find(l => l.id === exam.inspector_id)?.full_name || '-';
+                    const inspectorName = exam.inspector || '-'; // Use inspector column directly
                     additionalInfoRows.push([
                         exam.course_code,
                         exam.class,
@@ -842,8 +848,8 @@ const ExamManagement = () => {
                                 </tr>
                             ) : (
                                 filteredExams.map((exam) => {
-                                    // FIXED: Get inspector name from inspector_id
-                                    const inspectorName = lecturers.find(l => l.id === exam.inspector_id)?.full_name || 'Not assigned';
+                                    // FIXED: Display inspector name directly from inspector column
+                                    const inspectorName = exam.inspector || 'Not assigned';
                                     
                                     return (
                                         <tr key={exam.id} className="hover:bg-gray-50 transition-colors duration-200">
