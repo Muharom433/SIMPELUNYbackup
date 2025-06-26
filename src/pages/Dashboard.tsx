@@ -148,22 +148,22 @@ const Dashboard: React.FC = () => {
           <div className="max-w-7xl mx-auto">
             <div className="grid lg:grid-cols-2 gap-8 items-center">
               {/* Left Content */}
-              <div className="space-y-6" style={{color: '#5d3a1a'}}>
+              <div className="space-y-6" style={{color: '#2c1810'}}>
                 <div className="space-y-4">
                   <div className="inline-flex items-center px-4 py-2 bg-white bg-opacity-30 backdrop-blur-sm rounded-full text-sm font-medium">
-                    <Star className="w-4 h-4 mr-2" style={{color: '#8b5a2b'}} />
+                    <Star className="w-4 h-4 mr-2" style={{color: '#8b4513'}} />
                     Best Faculty Management System
                   </div>
                   <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold leading-tight">
                     Faculty of 
-                    <span className="block bg-clip-text text-transparent" style={{background: 'linear-gradient(to right, #8b5a2b, #5d3a1a)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'}}>
+                    <span className="block bg-clip-text text-transparent" style={{background: 'linear-gradient(to right, #8b4513, #654321)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'}}>
                       Vocational
                     </span>
                   </h1>
-                  <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold" style={{color: '#6b4423'}}>
+                  <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold" style={{color: '#3c2415'}}>
                     Yogyakarta State University
                   </h2>
-                  <p className="text-sm sm:text-base lg:text-lg leading-relaxed max-w-lg" style={{color: '#7a4f2a'}}>
+                  <p className="text-sm sm:text-base lg:text-lg leading-relaxed max-w-lg" style={{color: '#4a2c1a'}}>
                     SIMPEL kuliah or Sistem Pelayanan kuliah is an Innovation to improve our services.
                   </p>
                 </div>
@@ -177,7 +177,7 @@ const Dashboard: React.FC = () => {
                       </div>
                       <div>
                         <p className="text-xl lg:text-2xl font-bold">1200+</p>
-                        <p className="text-xs lg:text-sm" style={{color: '#7a4f2a'}}>Bookings</p>
+                        <p className="text-xs lg:text-sm" style={{color: '#4a2c1a'}}>Bookings</p>
                       </div>
                     </div>
                     <div className="mt-3 flex items-center text-green-400 text-sm">
@@ -192,7 +192,7 @@ const Dashboard: React.FC = () => {
                       </div>
                       <div>
                         <p className="text-xl lg:text-2xl font-bold">{formatTime(currentTime)}</p>
-                        <p className="text-xs lg:text-sm" style={{color: '#7a4f2a'}}>Live Time</p>
+                        <p className="text-xs lg:text-sm" style={{color: '#4a2c1a'}}>Live Time</p>
                       </div>
                     </div>
                   </div>
