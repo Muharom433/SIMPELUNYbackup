@@ -62,7 +62,7 @@ function App() {
             <Route path="exams" element={<ExamManagement />} />
             
             {/* Super Admin Routes */}
-            <Route path="tool-lending-management" element={<RoomManagement />} />
+            <Route path="tool-lending-management" element={<ToolLendingManagement />} />
             <Route path="rooms" element={<RoomManagement />} />
             <Route path="users" element={<UserManagement />} />
             <Route path="departments" element={<DepartmentManagement />} />
