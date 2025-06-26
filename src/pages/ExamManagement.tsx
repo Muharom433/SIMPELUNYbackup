@@ -194,7 +194,10 @@ const ExamManagement = () => {
     useEffect(() => { 
         if (watchDate && watchStartTime && watchEndTime && !watchIsTakeHome) { 
             fetchBookedRooms(watchDate, watchStartTime, watchEndTime); 
-        } 
+        } else {
+            // Clear booked rooms if take home or incomplete data
+            setBookedRooms({});
+        }
     }, [watchDate, watchStartTime, watchEndTime, watchIsTakeHome]);
 
     useEffect(() => { 
@@ -368,16 +371,60 @@ const ExamManagement = () => {
 
     const fetchBookedRooms = async (date: string, startTime: string, endTime: string) => { 
         try { 
+            console.log('🔍 Checking room availability for:', { date, startTime, endTime });
+            
+            // Fetch all exams on the same date that are not take home
             const { data, error } = await supabase 
                 .from('exams') 
-                .select('room_id') 
+                .select('room_id, start_time, end_time, id, course_name') 
                 .eq('date', date) 
                 .eq('is_take_home', false)
-                .or(`start_time.lte.${endTime},end_time.gte.${startTime}`); // Check for time overlap
+                .not('room_id', 'is', null);
                 
             if (error) throw error; 
-            const bookedRoomIds = data.map(exam => exam.room_id).filter(Boolean); 
-            setBookedRooms(prev => ({ ...prev, [`${startTime}-${endTime}`]: bookedRoomIds })); 
+            
+            console.log('📅 Found exams on same date:', data);
+            
+            // Filter rooms that have time conflicts
+            const conflictingRoomIds = data
+                .filter(exam => {
+                    // Skip if it's the current exam being edited
+                    if (editingExam && exam.id === editingExam.id) {
+                        console.log('⏭️ Skipping current editing exam:', exam.course_name);
+                        return false;
+                    }
+                    
+                    // Check for time overlap
+                    const examStart = exam.start_time;
+                    const examEnd = exam.end_time;
+                    
+                    if (!examStart || !examEnd) {
+                        console.log('⚠️ Exam missing time data:', exam.course_name);
+                        return false;
+                    }
+                    
+                    // Time overlap logic: 
+                    // Overlap occurs if: start_time < exam_end_time AND end_time > exam_start_time
+                    const hasOverlap = startTime < examEnd && endTime > examStart;
+                    
+                    if (hasOverlap) {
+                        console.log('❌ Time conflict found:', {
+                            exam: exam.course_name,
+                            examTime: `${examStart}-${examEnd}`,
+                            newTime: `${startTime}-${endTime}`,
+                            roomId: exam.room_id
+                        });
+                    }
+                    
+                    return hasOverlap;
+                })
+                .map(exam => exam.room_id)
+                .filter(Boolean);
+            
+            console.log('🚫 Conflicting room IDs:', conflictingRoomIds);
+            
+            const key = `${date}-${startTime}-${endTime}`;
+            setBookedRooms(prev => ({ ...prev, [key]: conflictingRoomIds })); 
         } catch (error: any) { 
             console.error('Error fetching booked rooms:', error); 
         } 
@@ -505,17 +552,39 @@ const ExamManagement = () => {
     });
 
     const getAvailableRooms = () => { 
-        if (watchIsTakeHome) return rooms; 
+        if (watchIsTakeHome) {
+            console.log('🏠 Take home exam - showing all rooms');
+            return rooms;
+        }
         
-        if (!watchStartTime || !watchEndTime) return rooms;
+        if (!watchStartTime || !watchEndTime || !watchDate) {
+            console.log('⏰ Incomplete time/date data - showing all rooms');
+            return rooms;
+        }
         
-        const currentRoomId = editingExam?.room_id; 
-        const timeSlotKey = `${watchStartTime}-${watchEndTime}`;
+        const timeSlotKey = `${watchDate}-${watchStartTime}-${watchEndTime}`;
+        const conflictingRoomIds = bookedRooms[timeSlotKey] || [];
         
-        return rooms.filter(room => { 
-            const isBooked = bookedRooms[timeSlotKey]?.includes(room.id); 
-            return !isBooked || room.id === currentRoomId; 
-        }); 
+        console.log('🔑 Checking availability with key:', timeSlotKey);
+        console.log('🚫 Conflicting rooms:', conflictingRoomIds);
+        
+        const availableRooms = rooms.filter(room => {
+            // Don't filter out the current room if editing
+            if (editingExam && editingExam.room_id === room.id) {
+                console.log('✅ Keeping current room for editing:', room.name);
+                return true;
+            }
+            
+            // Filter out rooms that have conflicts
+            const isAvailable = !conflictingRoomIds.includes(room.id);
+            if (!isAvailable) {
+                console.log('❌ Room unavailable:', room.name);
+            }
+            return isAvailable;
+        });
+        
+        console.log(`📊 Available rooms: ${availableRooms.length}/${rooms.length}`);
+        return availableRooms;
     };
 
     const handlePrint = async (formData: PrintFormData) => { 
@@ -1398,9 +1467,9 @@ const ExamManagement = () => {
                                     {form.formState.errors.room_id && (
                                         <p className="mt-1 text-sm text-red-600">{form.formState.errors.room_id.message}</p>
                                     )}
-                                    {!watchIsTakeHome && watchStartTime && watchEndTime && (
+                                    {!watchIsTakeHome && watchStartTime && watchEndTime && watchDate && (
                                         <p className="mt-2 text-sm text-gray-600">
-                                            💡 Only available rooms for the selected date and time are shown
+                                            💡 Showing {getAvailableRooms().length} available rooms for {watchDate} from {watchStartTime} to {watchEndTime}
                                         </p>
                                     )}
                                 </div>
