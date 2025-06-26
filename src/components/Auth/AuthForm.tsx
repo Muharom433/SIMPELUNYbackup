@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { Building, Eye, EyeOff, User, Lock, UserPlus, LogIn, Shield, Phone } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 
 const signInSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
@@ -31,27 +32,41 @@ const AuthForm: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { signIn, signUp } = useAuth();
+  const navigate = useNavigate();
 
   const signInForm = useForm<SignInForm>({
     resolver: zodResolver(signInSchema),
+    defaultValues: {
+      username: '',
+      password: ''
+    }
   });
 
   const signUpForm = useForm<SignUpForm>({
     resolver: zodResolver(signUpSchema),
+    defaultValues: {
+      username: '',
+      password: '',
+      confirmPassword: '',
+      full_name: '',
+      identity_number: '',
+      phone_number: ''
+    }
   });
 
   const handleSignIn = async (data: SignInForm) => {
     setLoading(true);
     try {
-      const { error } = await signIn(data.username, data.password);
-      if (error) {
-        toast.error(error.message || 'Failed to sign in');
+      const result = await signIn(data.username, data.password);
+      if (result.error) {
+        toast.error(result.error.message || 'Failed to sign in');
       } else {
         toast.success('Welcome back!');
-        window.location.href = '/book';
+        navigate('/');
       }
     } catch (error) {
-      toast.error('An error occurred during sign in');
+      console.error('Sign in handler error:', error);
+      toast.error('An unexpected error occurred during sign in');
     } finally {
       setLoading(false);
     }
@@ -60,19 +75,27 @@ const AuthForm: React.FC = () => {
   const handleSignUp = async (data: SignUpForm) => {
     setLoading(true);
     try {
-      const { error } = await signUp(data.username, data.password, {
+      const result = await signUp(data.username, data.password, {
         full_name: data.full_name,
         identity_number: data.identity_number,
         phone_number: data.phone_number,
       });
-      if (error) {
-        toast.error(error.message || 'Failed to create account');
+      
+      if (result.error) {
+        toast.error(result.error.message || 'Failed to create account');
       } else {
         toast.success('Account created successfully! You can now sign in.');
         setIsSignUp(false);
+        
+        // Reset the sign in form with the new username
+        signInForm.reset({
+          username: data.username,
+          password: ''
+        });
       }
     } catch (error) {
-      toast.error('An error occurred during sign up');
+      console.error('Sign up handler error:', error);
+      toast.error('An unexpected error occurred during sign up');
     } finally {
       setLoading(false);
     }
@@ -101,6 +124,7 @@ const AuthForm: React.FC = () => {
           {/* Tab Switcher */}
           <div className="flex mb-8 bg-gray-100 rounded-lg p-1">
             <button
+              type="button"
               onClick={() => setIsSignUp(false)}
               className={`flex-1 flex items-center justify-center space-x-2 py-2 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
                 !isSignUp
@@ -112,6 +136,7 @@ const AuthForm: React.FC = () => {
               <span>Sign In</span>
             </button>
             <button
+              type="button"
               onClick={() => setIsSignUp(true)}
               className={`flex-1 flex items-center justify-center space-x-2 py-2 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
                 isSignUp
@@ -134,6 +159,7 @@ const AuthForm: React.FC = () => {
                   <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                   <input
                     {...signUpForm.register('full_name')}
+                    id="full_name"
                     type="text"
                     placeholder="Enter your full name"
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
@@ -154,6 +180,7 @@ const AuthForm: React.FC = () => {
                   <Shield className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                   <input
                     {...signUpForm.register('identity_number')}
+                    id="identity_number"
                     type="text"
                     placeholder="Enter your student/staff ID"
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
@@ -174,6 +201,7 @@ const AuthForm: React.FC = () => {
                   <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                   <input
                     {...signUpForm.register('phone_number')}
+                    id="phone_number"
                     type="tel"
                     placeholder="Enter your phone number"
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
@@ -187,13 +215,14 @@ const AuthForm: React.FC = () => {
               </div>
 
               <div>
-                <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="signup_username" className="block text-sm font-medium text-gray-700 mb-2">
                   Username
                 </label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                   <input
                     {...signUpForm.register('username')}
+                    id="signup_username"
                     type="text"
                     placeholder="Choose a username"
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
@@ -207,13 +236,14 @@ const AuthForm: React.FC = () => {
               </div>
 
               <div>
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="signup_password" className="block text-sm font-medium text-gray-700 mb-2">
                   Password
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                   <input
                     {...signUpForm.register('password')}
+                    id="signup_password"
                     type={showPassword ? 'text' : 'password'}
                     placeholder="Create a strong password"
                     className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
@@ -245,6 +275,7 @@ const AuthForm: React.FC = () => {
                   <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                   <input
                     {...signUpForm.register('confirmPassword')}
+                    id="confirmPassword"
                     type="password"
                     placeholder="Confirm your password"
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
@@ -259,7 +290,7 @@ const AuthForm: React.FC = () => {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !signUpForm.formState.isValid}
                 className="w-full flex justify-center items-center space-x-2 py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
               >
                 <UserPlus className="h-5 w-5" />
@@ -269,13 +300,14 @@ const AuthForm: React.FC = () => {
           ) : (
             <form onSubmit={signInForm.handleSubmit(handleSignIn)} className="space-y-6">
               <div>
-                <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="signin_username" className="block text-sm font-medium text-gray-700 mb-2">
                   Username
                 </label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                   <input
                     {...signInForm.register('username')}
+                    id="signin_username"
                     type="text"
                     placeholder="Enter your username"
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
@@ -289,13 +321,14 @@ const AuthForm: React.FC = () => {
               </div>
 
               <div>
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="signin_password" className="block text-sm font-medium text-gray-700 mb-2">
                   Password
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                   <input
                     {...signInForm.register('password')}
+                    id="signin_password"
                     type={showPassword ? 'text' : 'password'}
                     placeholder="Enter your password"
                     className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
@@ -341,7 +374,7 @@ const AuthForm: React.FC = () => {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !signInForm.formState.isValid}
                 className="w-full flex justify-center items-center space-x-2 py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
               >
                 <LogIn className="h-5 w-5" />
