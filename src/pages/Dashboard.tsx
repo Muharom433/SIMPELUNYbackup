@@ -143,22 +143,22 @@ const Dashboard: React.FC = () => {
 
         <div className="relative px-6 py-16 sm:px-12 lg:px-16">
           <div className="max-w-7xl mx-auto">
-            <div className="grid lg:grid-cols-2 gap-12 items-center">
+            <div className="grid lg:grid-cols-2 gap-8 items-center">
               {/* Left Content */}
-              <div className="text-white space-y-8">
+              <div className="text-white space-y-6">
                 <div className="space-y-4">
                   <div className="inline-flex items-center px-4 py-2 bg-white bg-opacity-10 backdrop-blur-sm rounded-full text-sm font-medium">
                     <Star className="w-4 h-4 mr-2 text-yellow-400" />
                     Best Faculty Management System
                   </div>
-                  <h1 className="text-5xl lg:text-7xl font-bold leading-tight">
+                  <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight">
                     Faculty of 
                     <span className="block bg-gradient-to-r from-yellow-400 to-orange-400 bg-clip-text text-transparent">
                       Vocational
                     </span>
                     Room Booking
                   </h1>
-                  <p className="text-xl text-purple-100 leading-relaxed max-w-lg">
+                  <p className="text-lg sm:text-xl text-purple-100 leading-relaxed max-w-lg">
                     Streamline your room bookings and equipment management with our advanced system. 
                     Experience seamless scheduling and real-time availability.
                   </p>
@@ -166,14 +166,14 @@ const Dashboard: React.FC = () => {
 
                 {/* Stats Cards in Hero */}
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-2xl p-6 border border-white border-opacity-20">
+                  <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-2xl p-4 lg:p-6 border border-white border-opacity-20">
                     <div className="flex items-center space-x-3">
                       <div className="bg-green-500 p-2 rounded-xl">
-                        <CheckCircle className="w-6 h-6 text-white" />
+                        <CheckCircle className="w-5 h-5 lg:w-6 lg:h-6 text-white" />
                       </div>
                       <div>
-                        <p className="text-2xl font-bold">1200+</p>
-                        <p className="text-sm text-purple-200">Bookings</p>
+                        <p className="text-xl lg:text-2xl font-bold">1200+</p>
+                        <p className="text-xs lg:text-sm text-purple-200">Bookings</p>
                       </div>
                     </div>
                     <div className="mt-3 flex items-center text-green-400 text-sm">
@@ -181,34 +181,20 @@ const Dashboard: React.FC = () => {
                       <span>98% Success Rate</span>
                     </div>
                   </div>
-                  <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-2xl p-6 border border-white border-opacity-20">
+                  <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-2xl p-4 lg:p-6 border border-white border-opacity-20">
                     <div className="flex items-center space-x-3">
                       <div className="bg-blue-500 p-2 rounded-xl">
-                        <Clock className="w-6 h-6 text-white" />
+                        <Clock className="w-5 h-5 lg:w-6 lg:h-6 text-white" />
                       </div>
                       <div>
-                        <p className="text-2xl font-bold">{formatTime(currentTime)}</p>
-                        <p className="text-sm text-purple-200">Live Time</p>
+                        <p className="text-xl lg:text-2xl font-bold">{formatTime(currentTime)}</p>
+                        <p className="text-xs lg:text-sm text-purple-200">Live Time</p>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* CTA Buttons */}
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <button className="group bg-white text-purple-700 px-8 py-4 rounded-2xl font-semibold text-lg hover:bg-gray-100 transition-all duration-300 transform hover:scale-105 shadow-xl">
-                    <span className="flex items-center justify-center">
-                      Book Now
-                      <ChevronRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-                    </span>
-                  </button>
-                  <button className="group bg-transparent border-2 border-white text-white px-8 py-4 rounded-2xl font-semibold text-lg hover:bg-white hover:text-purple-700 transition-all duration-300">
-                    <span className="flex items-center justify-center">
-                      <Play className="w-5 h-5 mr-2" />
-                      Watch Demo
-                    </span>
-                  </button>
-                </div>
+                {/* CTA Buttons - REMOVED */}
 
                 {/* Contact Info */}
                 <div className="flex items-center space-x-6 text-sm text-purple-200">
