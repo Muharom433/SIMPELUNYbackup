@@ -424,23 +424,27 @@ const ExamManagement = () => {
         } 
     };
 
-    const handleEdit = (exam: any) => { 
-        setEditingExam(exam); 
-        form.reset({ 
-            course_name: exam.course_name || '', 
-            course_code: exam.course_code, 
-            date: exam.date, 
-            session: exam.session, 
-            semester: exam.semester, 
-            class: exam.class, 
-            student_amount: exam.student_amount, 
-            room_id: exam.room_id || '', 
-            lecturer_id: exam.lecturer_id,
-            inspector: exam.inspector || '',
-            study_program_id: exam.study_program_id, 
-        }); 
-        setShowModal(true); 
-    };
+    const handleEdit = (exam: any) => {
+    setEditingExam(exam);
+
+    // Find the lecturer object that matches the inspector's name
+    const inspectorUser = lecturers.find(l => l.full_name === exam.inspector);
+
+    form.reset({
+        course_name: exam.course_name || '',
+        course_code: exam.course_code,
+        date: exam.date,
+        session: exam.session,
+        semester: exam.semester,
+        class: exam.class,
+        student_amount: exam.student_amount,
+        room_id: exam.room_id || '',
+        lecturer_id: exam.lecturer_id,
+        inspector: inspectorUser?.id || '', // Set the form value to the ID
+        study_program_id: exam.study_program_id,
+    });
+    setShowModal(true);
+};
 
     const handleDelete = async (id: string) => { 
         try { 
