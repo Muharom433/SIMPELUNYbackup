@@ -14,6 +14,13 @@ import { Equipment, User as UserType } from '../types';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 
+// Constants for lending status
+const LENDING_STATUS = {
+    BORROW: 'borrow',
+    RETURNED: 'returned',
+    OVERDUE: 'overdue'
+};
+
 const lendingSchema = z.object({
     full_name: z.string().min(3, 'Full name must be at least 3 characters'),
     identity_number: z.string().min(5, 'Identity number must be at least 5 characters'),
@@ -258,19 +265,27 @@ const ToolLending: React.FC = () => {
                 throw new Error('Unable to create or find user');
             }
 
-            // Create lending record with userId (NO user_info)
+            // Create lending record with userId and auto status
             const lendingData = {
                 date: new Date(data.date).toISOString(),
                 id_equipment: equipmentIds,
                 qty: quantities,
-                id_user: userId // ALWAYS use id_user, never user_info
+                id_user: userId, // ALWAYS use id_user, never user_info
+                status: LENDING_STATUS.BORROW, // Automatically set status to 'borrow'
+                created_at: new Date().toISOString(), // Optional: tambahkan timestamp
+                updated_at: new Date().toISOString()  // Optional: tambahkan timestamp
             };
+
+            console.log('Creating lending record with data:', lendingData); // Debug log
 
             const { error: lendingError } = await supabase
                 .from('lending_tool')
                 .insert(lendingData);
 
-            if (lendingError) throw lendingError;
+            if (lendingError) {
+                console.error('Error creating lending record:', lendingError);
+                throw lendingError;
+            }
 
             // Update equipment quantities
             for (const item of selectedEquipment) {
