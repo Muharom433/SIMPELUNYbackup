@@ -248,9 +248,9 @@ const Dashboard: React.FC = () => {
                       </div>
                     </div>
                     
-                    {/* Building Text - Top Left Corner (2x bigger and further left) */}
+                    {/* Building Text - Top Left Corner (2x bigger, further left, and moved down closer to people) */}
                     <div 
-                      className="absolute top-2 -left-4 lg:top-4 lg:-left-8 z-20"
+                      className="absolute top-16 -left-2 lg:top-20 lg:-left-4 z-20"
                       style={{ animation: 'float 6s ease-in-out infinite' }}
                     >
                       <img 
@@ -273,9 +273,9 @@ const Dashboard: React.FC = () => {
                       </div>
                     </div>
                     
-                    {/* Shaping Text - Bottom Right Corner (2x bigger and further right) */}
+                    {/* Shaping Text - Bottom Right Corner (2x bigger, moved down and further right) */}
                     <div 
-                      className="absolute bottom-8 -right-8 lg:bottom-12 lg:-right-16 z-20"
+                      className="absolute bottom-2 -right-12 lg:bottom-4 lg:-right-20 z-20"
                       style={{ animation: 'float 6s ease-in-out infinite 3s' }}
                     >
                       <img 
