@@ -619,7 +619,7 @@ const ExamManagement = () => {
             doc.setFontSize(10);
             doc.setFont('helvetica', 'normal');
             doc.text(`Yogyakarta, ${format(new Date(), 'd MMMM yyyy')}`, signatureX, signatureY);
-            doc.text("Kepala Departemen,", signatureX, signatureY + 7); // CHANGED: "Ketua Jurusan" to "Kepala Departemen"
+            doc.text("Kepala Departemen,", signatureX, signatureY + 7); 
             
             const nameY = signatureY + 30;
             const nameLines = doc.splitTextToSize(departmentHead.full_name, signatureMaxWidth);
