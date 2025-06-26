@@ -32,6 +32,7 @@ import { useAuth } from '../hooks/useAuth';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
 import logoUNY from '../assets/logouny.png';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const examSchema = z.object({
   course_name: z.string().min(1, 'Course name is required'),
@@ -106,6 +107,7 @@ const getImageDataUrl = async (url: string): Promise<string> => {
 
 const ExamManagement = () => {
     const { profile } = useAuth();
+    const { getText } = useLanguage();
     const [exams, setExams] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
@@ -130,9 +132,9 @@ const ExamManagement = () => {
     const printSchema = useMemo(() => {
         return z.object({
             department_id: z.string().optional(),
-            study_program_id: z.string().min(1, 'Study Program is required'),
-            semester: z.enum(['GASAL', 'GENAP'], { required_error: 'Semester type is required' }),
-            academic_year: z.string().min(9, 'Academic Year is required (e.g., 2023/2024)').regex(/^\d{4}\/\d{4}$/, 'Invalid format. Use (`YYYY/YYYY`)'),
+            study_program_id: z.string().min(1, getText('Study Program is required', 'Program Studi wajib diisi')),
+            semester: z.enum(['GASAL', 'GENAP'], { required_error: getText('Semester type is required', 'Tipe semester wajib diisi') }),
+            academic_year: z.string().min(9, getText('Academic Year is required (e.g., 2023/2024)', 'Tahun Akademik wajib diisi (contoh: 2023/2024)')).regex(/^\d{4}\/\d{4}$/, getText('Invalid format. Use (YYYY/YYYY)', 'Format tidak valid. Gunakan (YYYY/YYYY)')),
             department_head_id: z.string().optional(),
             department_head_name: z.string().optional(),
         }).superRefine((data, ctx) => {
@@ -140,18 +142,18 @@ const ExamManagement = () => {
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
                     path: ['department_id'],
-                    message: 'Department is required for Super Admin.',
+                    message: getText('Department is required for Super Admin.', 'Departemen wajib diisi untuk Super Admin.'),
                 });
             }
             if (profile?.role === 'department_admin' && !data.department_head_id) {
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
                     path: ['department_head_id'],
-                    message: 'Department Head is required.',
+                    message: getText('Department Head is required.', 'Kepala Departemen wajib diisi.'),
                 });
             }
         });
-    }, [profile?.role]);
+    }, [profile?.role, getText]);
 
     const form = useForm<ExamFormData>({ 
         resolver: zodResolver(examSchema), 
@@ -257,10 +259,13 @@ const ExamManagement = () => {
             if (updateError) throw updateError; 
             setExamModeEnabled(newMode); 
             setExams([]); 
-            toast.success(`Exam Mode has been ${newMode ? 'enabled' : 'disabled'} and all previous schedules have been cleared.`); 
+            toast.success(getText(
+                `Exam Mode has been ${newMode ? 'enabled' : 'disabled'} and all previous schedules have been cleared.`,
+                `Mode Ujian telah ${newMode ? 'diaktifkan' : 'dinonaktifkan'} dan semua jadwal sebelumnya telah dihapus.`
+            )); 
         } catch (error: any) { 
             console.error('Error updating exam mode:', error); 
-            toast.error('Failed to update exam mode.'); 
+            toast.error(getText('Failed to update exam mode.', 'Gagal memperbarui mode ujian.')); 
         } finally { 
             setLoading(false); 
             setShowClearConfirm(false); 
@@ -281,7 +286,7 @@ const ExamManagement = () => {
             setExams(data || []); 
         } catch (error: any) { 
             console.error('Error fetching exams:', error); 
-            toast.error('Failed to load exams.'); 
+            toast.error(getText('Failed to load exams.', 'Gagal memuat ujian.')); 
         } 
     };
 
@@ -296,7 +301,7 @@ const ExamManagement = () => {
             setStudyPrograms(data || []); 
         } catch (error: any) { 
             console.error('Error fetching study programs:', error); 
-            toast.error('Failed to load study programs.'); 
+            toast.error(getText('Failed to load study programs.', 'Gagal memuat program studi.')); 
         } 
     };
 
@@ -311,7 +316,7 @@ const ExamManagement = () => {
             setRooms(data || []); 
         } catch (error: any) { 
             console.error('Error fetching rooms:', error); 
-            toast.error('Failed to load rooms.'); 
+            toast.error(getText('Failed to load rooms.', 'Gagal memuat ruangan.')); 
         } 
     };
 
@@ -330,7 +335,7 @@ const ExamManagement = () => {
             setFilteredLecturers(data || []); 
         } catch (error: any) { 
             console.error('Error fetching lecturers:', error); 
-            toast.error('Failed to load lecturers.'); 
+            toast.error(getText('Failed to load lecturers.', 'Gagal memuat dosen.')); 
         } 
     };
 
@@ -345,7 +350,7 @@ const ExamManagement = () => {
             setDepartments(data || []); 
         } catch (error: any) { 
             console.error('Error fetching departments:', error); 
-            toast.error('Failed to load departments.'); 
+            toast.error(getText('Failed to load departments.', 'Gagal memuat departemen.')); 
         } 
     };
 
@@ -365,7 +370,7 @@ const ExamManagement = () => {
             setDepartmentHeads(data || []); 
         } catch (error: any) { 
             console.error('Error fetching department heads:', error); 
-            toast.error('Failed to load department heads.'); 
+            toast.error(getText('Failed to load department heads.', 'Gagal memuat kepala departemen.')); 
         } 
     };
 
@@ -477,7 +482,7 @@ const ExamManagement = () => {
                     .update(examData) 
                     .eq('id', editingExam.id); 
                 if (error) throw error; 
-                toast.success('Exam updated successfully'); 
+                toast.success(getText('Exam updated successfully', 'Ujian berhasil diperbarui')); 
                 setShowModal(false);
                 setEditingExam(null); 
             } else { 
@@ -485,13 +490,13 @@ const ExamManagement = () => {
                     .from('exams') 
                     .insert([examData]); 
                 if (error) throw error; 
-                toast.success('Exam created successfully'); 
+                toast.success(getText('Exam created successfully', 'Ujian berhasil dibuat')); 
             } 
             
             fetchExams(); 
         } catch (error: any) { 
             console.error('Error saving exam:', error); 
-            toast.error(error.message || 'Failed to save exam'); 
+            toast.error(error.message || getText('Failed to save exam', 'Gagal menyimpan ujian')); 
         } finally { 
             setLoading(false); 
         } 
@@ -529,12 +534,12 @@ const ExamManagement = () => {
                 .delete() 
                 .eq('id', id); 
             if (error) throw error; 
-            toast.success('Exam deleted successfully'); 
+            toast.success(getText('Exam deleted successfully', 'Ujian berhasil dihapus')); 
             setShowDeleteConfirm(null); 
             fetchExams(); 
         } catch (error: any) { 
             console.error('Error deleting exam:', error); 
-            toast.error(error.message || 'Failed to delete exam'); 
+            toast.error(error.message || getText('Failed to delete exam', 'Gagal menghapus ujian')); 
         } finally { 
             setLoading(false); 
         } 
@@ -595,17 +600,17 @@ const ExamManagement = () => {
             const currentDepartment = departments.find(d => d.id === departmentIdForQuery); 
             let departmentHead; 
             if (isSuperAdmin) { 
-                departmentHead = { full_name: 'KEPALA DEPARTEMEN', identity_number: '123' }; 
+                departmentHead = { full_name: getText('DEPARTMENT HEAD', 'KEPALA DEPARTEMEN'), identity_number: '123' }; 
             } else { 
                 departmentHead = departmentHeads.find(h => h.id === formData.department_head_id); 
             } 
             if (!selectedProgram || !departmentHead || !currentDepartment) { 
-                toast.error("Please ensure all fields are selected and data is loaded."); 
+                toast.error(getText("Please ensure all fields are selected and data is loaded.", "Pastikan semua field telah dipilih dan data telah dimuat.")); 
                 return; 
             } 
             const examsToPrint = exams.filter(exam => exam.study_program_id === formData.study_program_id && exam.department_id === departmentIdForQuery); 
             if (examsToPrint.length === 0) { 
-                toast.error("No exams found for the selected criteria."); 
+                toast.error(getText("No exams found for the selected criteria.", "Tidak ditemukan ujian untuk kriteria yang dipilih.")); 
                 return; 
             } 
             const doc = new jsPDF(); 
@@ -649,11 +654,23 @@ const ExamManagement = () => {
             doc.text(titleLines, pageWidth / 2, currentY, { align: 'center' });
             currentY += (titleLines.length * 5); 
             currentY += 5; 
-            const tableColumn = ["No.", "HARI", "TANGGAL", "WAKTU", "KODE MK", "MATA KULIAH", "SMT", "KLS", "MHS", "RUANG", "PENGAWAS"]; 
+            const tableColumn = [
+                getText("No.", "No."), 
+                getText("DAY", "HARI"), 
+                getText("DATE", "TANGGAL"), 
+                getText("TIME", "WAKTU"), 
+                getText("COURSE CODE", "KODE MK"), 
+                getText("COURSE", "MATA KULIAH"), 
+                getText("SMT", "SMT"), 
+                getText("CLASS", "KLS"), 
+                getText("STUDENTS", "MHS"), 
+                getText("ROOM", "RUANG"), 
+                getText("SUPERVISOR", "PENGAWAS")
+            ]; 
             const tableRows: any[] = []; 
             examsToPrint.forEach((exam, index) => { 
                 const inspectorName = exam.inspector || '-';
-                const timeDisplay = exam.is_take_home ? 'Take Home' : (exam.start_time && exam.end_time ? `${exam.start_time}-${exam.end_time}` : '-');
+                const timeDisplay = exam.is_take_home ? getText('Take Home', 'Take Home') : (exam.start_time && exam.end_time ? `${exam.start_time}-${exam.end_time}` : '-');
                 tableRows.push([ 
                     index + 1, 
                     exam.day, 
@@ -664,7 +681,7 @@ const ExamManagement = () => {
                     exam.semester, 
                     exam.class, 
                     exam.student_amount, 
-                    exam.is_take_home ? 'Take Home' : (exam.room?.name || '-'),
+                    exam.is_take_home ? getText('Take Home', 'Take Home') : (exam.room?.name || '-'),
                     inspectorName,
                 ]); 
             }); 
@@ -685,7 +702,12 @@ const ExamManagement = () => {
                 } 
             }); 
             
-            const additionalInfoColumn = ["KODE MK", "KELAS", "Dosen Pengawas", "Dosen Pengampu MK"];
+            const additionalInfoColumn = [
+                getText("COURSE CODE", "KODE MK"), 
+                getText("CLASS", "KELAS"), 
+                getText("Supervisor", "Dosen Pengawas"), 
+                getText("Lecturer", "Dosen Pengampu MK")
+            ];
             const additionalInfoRows: any[] = [];
             
             const uniqueCourses = new Set<string>();
@@ -711,7 +733,7 @@ const ExamManagement = () => {
                 let subheadingY = finalY + 10;
                 doc.setFontSize(12);
                 doc.setFont('helvetica', 'bold');
-                doc.text("Daftar Dosen Pengawas", 14, subheadingY);
+                doc.text(getText("Supervisor List", "Daftar Dosen Pengawas"), 14, subheadingY);
             
                 autoTable(doc, {
                     head: [additionalInfoColumn],
@@ -736,7 +758,7 @@ const ExamManagement = () => {
             doc.setFontSize(10);
             doc.setFont('helvetica', 'normal');
             doc.text(`Yogyakarta, ${format(new Date(), 'd MMMM yyyy')}`, signatureX, signatureY);
-            doc.text("Kepala Departemen,", signatureX, signatureY + 5); 
+            doc.text(getText("Department Head,", "Kepala Departemen,"), signatureX, signatureY + 5); 
             
             const nameY = signatureY + 30;
             const nameLines = doc.splitTextToSize(departmentHead.full_name, signatureMaxWidth);
@@ -751,7 +773,7 @@ const ExamManagement = () => {
             setShowPrintModal(false);
         } catch (e: any) {
             console.error("PDF Generation Error:", e);
-            toast.error("An unexpected error occurred while generating the PDF.");
+            toast.error(getText("An unexpected error occurred while generating the PDF.", "Terjadi kesalahan tak terduga saat membuat PDF."));
         }
     };
 
@@ -777,7 +799,7 @@ const ExamManagement = () => {
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                             <input 
                                 type="text" 
-                                placeholder="Search courses, departments..." 
+                                placeholder={getText("Search courses, departments...", "Cari mata kuliah, departemen...")} 
                                 value={searchTerm} 
                                 onChange={(e) => setSearchTerm(e.target.value)} 
                                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200" 
@@ -799,7 +821,7 @@ const ExamManagement = () => {
                                     type="time"
                                     value={timeFilter}
                                     onChange={(e) => setTimeFilter(e.target.value)}
-                                    placeholder="Filter by time"
+                                    placeholder={getText("Filter by time", "Filter berdasarkan waktu")}
                                     className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 min-w-[140px]"
                                 />
                             </div>
@@ -810,9 +832,9 @@ const ExamManagement = () => {
                                     onChange={(e) => setSemesterFilter(e.target.value)} 
                                     className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 appearance-none bg-white min-w-[140px]" 
                                 >
-                                    <option value="all">All Semesters</option> 
+                                    <option value="all">{getText("All Semesters", "Semua Semester")}</option> 
                                     {[1, 2, 3, 4, 5, 6, 7, 8].map(sem => (
-                                        <option key={sem} value={sem.toString()}>Semester {sem}</option>
+                                        <option key={sem} value={sem.toString()}>{getText("Semester", "Semester")} {sem}</option>
                                     ))}
                                 </select>
                             </div>
@@ -822,7 +844,7 @@ const ExamManagement = () => {
                         <button 
                             onClick={() => fetchExams()} 
                             className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all duration-200" 
-                            title="Refresh"
+                            title={getText("Refresh", "Muat Ulang")}
                         > 
                             <RefreshCw className="h-5 w-5" /> 
                         </button>
@@ -835,7 +857,7 @@ const ExamManagement = () => {
                             className="flex items-center space-x-2 px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200" 
                         > 
                             <Printer className="h-4 w-4" /> 
-                            <span>Print</span> 
+                            <span>{getText("Print", "Cetak")}</span> 
                         </button>
                         {isDepartmentAdmin && (
                             <button 
@@ -861,7 +883,7 @@ const ExamManagement = () => {
                                 className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 shadow-sm hover:shadow-md" 
                             > 
                                 <Plus className="h-4 w-4" /> 
-                                <span>Add Exam</span> 
+                                <span>{getText("Add Exam", "Tambah Ujian")}</span> 
                             </button>
                         )}
                     </div>
@@ -878,55 +900,55 @@ const ExamManagement = () => {
                                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                         <div className="flex items-center space-x-1">
                                             <Building className="h-4 w-4" />
-                                            <span>Department</span>
+                                            <span>{getText("Department", "Departemen")}</span>
                                         </div>
                                     </th>
                                 )}
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                     <div className="flex items-center space-x-1">
                                         <BookOpen className="h-4 w-4" />
-                                        <span>Course</span>
+                                        <span>{getText("Course", "Mata Kuliah")}</span>
                                     </div>
                                 </th> 
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                     <div className="flex items-center space-x-1">
                                         <Calendar className="h-4 w-4" />
-                                        <span>Date & Time</span>
+                                        <span>{getText("Date & Time", "Tanggal & Waktu")}</span>
                                     </div>
                                 </th> 
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                     <div className="flex items-center space-x-1">
                                         <GraduationCap className="h-4 w-4" />
-                                        <span>Class & Semester</span>
+                                        <span>{getText("Class & Semester", "Kelas & Semester")}</span>
                                     </div>
                                 </th> 
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                     <div className="flex items-center space-x-1">
                                         <MapPin className="h-4 w-4" />
-                                        <span>Room</span>
+                                        <span>{getText("Room", "Ruangan")}</span>
                                     </div>
                                 </th> 
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                     <div className="flex items-center space-x-1">
                                         <User className="h-4 w-4" />
-                                        <span>Lecturer</span>
+                                        <span>{getText("Lecturer", "Dosen")}</span>
                                     </div>
                                 </th>
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                     <div className="flex items-center space-x-1">
                                         <Eye className="h-4 w-4" />
-                                        <span>Inspector</span>
+                                        <span>{getText("Inspector", "Pengawas")}</span>
                                     </div>
                                 </th>
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                     <div className="flex items-center space-x-1">
                                         <Users className="h-4 w-4" />
-                                        <span>Students</span>
+                                        <span>{getText("Students", "Mahasiswa")}</span>
                                     </div>
                                 </th>
                                 {isDepartmentAdmin && (
                                     <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                                        Actions
+                                        {getText("Actions", "Aksi")}
                                     </th>
                                 )}
                             </tr>
@@ -937,7 +959,7 @@ const ExamManagement = () => {
                                     <td colSpan={isDepartmentAdmin ? 9 : (isSuperAdmin ? 9 : 8)} className="px-6 py-12 text-center">
                                         <div className="flex items-center justify-center">
                                             <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mr-2" />
-                                            <span className="text-gray-600">Loading exams...</span>
+                                            <span className="text-gray-600">{getText("Loading exams...", "Memuat ujian...")}</span>
                                         </div>
                                     </td>
                                 </tr>
@@ -946,14 +968,14 @@ const ExamManagement = () => {
                                     <td colSpan={isDepartmentAdmin ? 9 : (isSuperAdmin ? 9 : 8)} className="px-6 py-12 text-center">
                                         <div className="text-gray-500">
                                             <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                                            <p className="text-lg font-medium mb-2">No exams found</p>
-                                            <p>Try adjusting your search or filters</p>
+                                            <p className="text-lg font-medium mb-2">{getText("No exams found", "Tidak ada ujian ditemukan")}</p>
+                                            <p>{getText("Try adjusting your search or filters", "Coba sesuaikan pencarian atau filter Anda")}</p>
                                         </div>
                                     </td>
                                 </tr>
                             ) : (
                                 filteredExams.map((exam) => {
-                                    const inspectorName = exam.inspector || 'Not assigned';
+                                    const inspectorName = exam.inspector || getText('Not assigned', 'Belum ditugaskan');
                                     
                                     return (
                                         <tr key={exam.id} className="hover:bg-gray-50 transition-colors duration-200">
@@ -984,19 +1006,19 @@ const ExamManagement = () => {
                                                     <div className="text-sm text-gray-600">{exam.day}</div>
                                                     {exam.is_take_home ? (
                                                         <div className="text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded-full inline-block mt-1">
-                                                            Take Home Exam
+                                                            {getText("Take Home Exam", "Ujian Take Home")}
                                                         </div>
                                                     ) : (
                                                         <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full inline-block mt-1">
-                                                            {exam.start_time && exam.end_time ? `${exam.start_time} - ${exam.end_time}` : 'Time not set'}
+                                                            {exam.start_time && exam.end_time ? `${exam.start_time} - ${exam.end_time}` : getText('Time not set', 'Waktu belum diatur')}
                                                         </div>
                                                     )}
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div>
-                                                    <div className="text-sm font-medium text-gray-900">Class {exam.class}</div>
-                                                    <div className="text-sm text-gray-600">Semester {exam.semester}</div>
+                                                    <div className="text-sm font-medium text-gray-900">{getText("Class", "Kelas")} {exam.class}</div>
+                                                    <div className="text-sm text-gray-600">{getText("Semester", "Semester")} {exam.semester}</div>
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
@@ -1004,7 +1026,7 @@ const ExamManagement = () => {
                                                     {exam.is_take_home ? (
                                                         <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                                                             <BookOpen className="h-3 w-3 mr-1" />
-                                                            Take Home Exam
+                                                            {getText("Take Home Exam", "Ujian Take Home")}
                                                         </span>
                                                     ) : (
                                                         <div className="flex items-center">
@@ -1025,7 +1047,7 @@ const ExamManagement = () => {
                                                         <User className="h-4 w-4 text-white" />
                                                     </div>
                                                     <div className="ml-3">
-                                                        <div className="text-sm font-medium text-gray-900">{exam.lecturer?.full_name || 'Unknown'}</div>
+                                                        <div className="text-sm font-medium text-gray-900">{exam.lecturer?.full_name || getText('Unknown', 'Tidak diketahui')}</div>
                                                     </div>
                                                 </div>
                                             </td>
@@ -1055,14 +1077,14 @@ const ExamManagement = () => {
                                                         <button 
                                                             onClick={() => handleEdit(exam)} 
                                                             className="text-blue-600 hover:text-blue-900 p-2 rounded-lg hover:bg-blue-50 transition-all duration-200"
-                                                            title="Edit exam"
+                                                            title={getText("Edit exam", "Edit ujian")}
                                                         >
                                                             <Edit className="h-4 w-4" />
                                                         </button>
                                                         <button 
                                                             onClick={() => setShowDeleteConfirm(exam.id)} 
                                                             className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
-                                                            title="Delete exam"
+                                                            title={getText("Delete exam", "Hapus ujian")}
                                                         >
                                                             <Trash2 className="h-4 w-4" />
                                                         </button>
@@ -1088,9 +1110,9 @@ const ExamManagement = () => {
                         <div>
                             <h1 className="text-3xl font-bold flex items-center space-x-3">
                                 <Shield className="h-8 w-8" /> 
-                                <span>Super Admin Dashboard</span>
+                                <span>{getText("Super Admin Dashboard", "Dashboard Super Admin")}</span>
                             </h1>
-                            <p className="mt-2 opacity-90">Manage system-wide exam settings and view all schedules.</p>
+                            <p className="mt-2 opacity-90">{getText("Manage system-wide exam settings and view all schedules.", "Kelola pengaturan ujian sistem dan lihat semua jadwal.")}</p>
                         </div>
                         <div className="text-center">
                             <button 
@@ -1100,7 +1122,7 @@ const ExamManagement = () => {
                                 {examModeEnabled ? <Power className="h-7 w-7 text-white" /> : <PowerOff className="h-7 w-7 text-white" />}
                             </button>
                             <p className={`mt-2 text-sm font-bold ${examModeEnabled ? 'text-emerald-200' : 'text-red-200'}`}>
-                                Exam Mode: {examModeEnabled ? 'ENABLED' : 'DISABLED'}
+                                {getText("Exam Mode:", "Mode Ujian:")} {examModeEnabled ? getText('ENABLED', 'AKTIF') : getText('DISABLED', 'NONAKTIF')}
                             </p>
                         </div>
                     </div>
@@ -1114,8 +1136,8 @@ const ExamManagement = () => {
                 <div className="flex items-center justify-center h-64">
                     <div className="text-center p-8 bg-yellow-50 border border-yellow-200 rounded-xl">
                         <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">Exam Scheduling Disabled</h3>
-                        <p className="text-gray-600">This feature is currently unavailable. Please contact the Super Admin.</p>
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">{getText("Exam Scheduling Disabled", "Penjadwalan Ujian Dinonaktifkan")}</h3>
+                        <p className="text-gray-600">{getText("This feature is currently unavailable. Please contact the Super Admin.", "Fitur ini saat ini tidak tersedia. Silakan hubungi Super Admin.")}</p>
                     </div>
                 </div>
             );
@@ -1127,13 +1149,13 @@ const ExamManagement = () => {
                             <div>
                                 <h1 className="text-3xl font-bold flex items-center space-x-3">
                                     <Calendar className="h-8 w-8" />
-                                    <span>Exam Management</span>
+                                    <span>{getText("Exam Management", "Manajemen Ujian")}</span>
                                 </h1>
-                                <p className="mt-2 opacity-90">Manage exam schedules for your department</p>
+                                <p className="mt-2 opacity-90">{getText("Manage exam schedules for your department", "Kelola jadwal ujian untuk departemen Anda")}</p>
                             </div>
                             <div className="hidden md:block text-right">
                                 <div className="text-2xl font-bold">{exams.length}</div>
-                                <div className="text-sm opacity-80">Total Exams</div>
+                                <div className="text-sm opacity-80">{getText("Total Exams", "Total Ujian")}</div>
                             </div>
                         </div>
                     </div>
@@ -1146,8 +1168,8 @@ const ExamManagement = () => {
             <div className="flex items-center justify-center h-64">
                 <div className="text-center">
                     <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Access Denied</h3>
-                    <p className="text-gray-600">You do not have permission to view this page.</p>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">{getText("Access Denied", "Akses Ditolak")}</h3>
+                    <p className="text-gray-600">{getText("You do not have permission to view this page.", "Anda tidak memiliki izin untuk melihat halaman ini.")}</p>
                 </div>
             </div>
         );
@@ -1157,7 +1179,7 @@ const ExamManagement = () => {
         <>
             {pageContent}
 
-            {/* Modal Form - Updated with time fields and take home checkbox */}
+            {/* Modal Form - Updated with multilingual support */}
             {showModal && isDepartmentAdmin && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -1165,7 +1187,7 @@ const ExamManagement = () => {
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-xl font-bold text-gray-900 flex items-center space-x-2">
                                     <Calendar className="h-6 w-6 text-blue-600" />
-                                    <span>{editingExam ? 'Edit Exam Schedule' : 'Add New Exam Schedule'}</span>
+                                    <span>{editingExam ? getText('Edit Exam Schedule', 'Edit Jadwal Ujian') : getText('Add New Exam Schedule', 'Tambah Jadwal Ujian Baru')}</span>
                                 </h3>
                                 <button 
                                     onClick={() => setShowModal(false)} 
@@ -1178,11 +1200,11 @@ const ExamManagement = () => {
                                 {/* Course Information */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Course Name *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Course Name", "Nama Mata Kuliah")} *</label>
                                         <input 
                                             {...form.register('course_name')} 
                                             type="text" 
-                                            placeholder="e.g., Database Systems" 
+                                            placeholder={getText("e.g., Database Systems", "contoh: Sistem Basis Data")} 
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
                                         />
                                         {form.formState.errors.course_name && (
@@ -1190,11 +1212,11 @@ const ExamManagement = () => {
                                         )}
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Course Code *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Course Code", "Kode Mata Kuliah")} *</label>
                                         <input 
                                             {...form.register('course_code')} 
                                             type="text" 
-                                            placeholder="e.g., CS301" 
+                                            placeholder={getText("e.g., CS301", "contoh: CS301")} 
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
                                         />
                                         {form.formState.errors.course_code && (
@@ -1206,7 +1228,7 @@ const ExamManagement = () => {
                                 {/* Schedule Information - Updated with time fields */}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Date", "Tanggal")} *</label>
                                         <input 
                                             {...form.register('date')} 
                                             type="date" 
@@ -1219,7 +1241,7 @@ const ExamManagement = () => {
                                     
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Start Time {!watchIsTakeHome && '*'}
+                                            {getText("Start Time", "Waktu Mulai")} {!watchIsTakeHome && '*'}
                                         </label>
                                         <input 
                                             {...form.register('start_time')} 
@@ -1234,7 +1256,7 @@ const ExamManagement = () => {
                                     
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            End Time {!watchIsTakeHome && '*'}
+                                            {getText("End Time", "Waktu Selesai")} {!watchIsTakeHome && '*'}
                                         </label>
                                         <input 
                                             {...form.register('end_time')} 
@@ -1258,11 +1280,11 @@ const ExamManagement = () => {
                                     />
                                     <label htmlFor="is_take_home" className="text-sm font-medium text-blue-900 flex items-center space-x-2">
                                         <BookOpen className="h-4 w-4" />
-                                        <span>This is a Take Home Exam</span>
+                                        <span>{getText("This is a Take Home Exam", "Ini adalah Ujian Take Home")}</span>
                                     </label>
                                     {watchIsTakeHome && (
                                         <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
-                                            No time schedule or room required
+                                            {getText("No time schedule or room required", "Tidak perlu jadwal waktu atau ruangan")}
                                         </span>
                                     )}
                                 </div>
@@ -1270,7 +1292,7 @@ const ExamManagement = () => {
                                 {/* Class Information */}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Semester (1-8) *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Semester (1-8)", "Semester (1-8)")} *</label>
                                         <input 
                                             {...form.register('semester', { 
                                                 valueAsNumber: true, 
@@ -1290,11 +1312,11 @@ const ExamManagement = () => {
                                         )}
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Class *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Class", "Kelas")} *</label>
                                         <input 
                                             {...form.register('class')} 
                                             type="text" 
-                                            placeholder="e.g., A, B, C" 
+                                            placeholder={getText("e.g., A, B, C", "contoh: A, B, C")} 
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
                                         />
                                         {form.formState.errors.class && (
@@ -1302,7 +1324,7 @@ const ExamManagement = () => {
                                         )}
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Student Amount *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Student Amount", "Jumlah Mahasiswa")} *</label>
                                         <input 
                                             {...form.register('student_amount', { valueAsNumber: true })} 
                                             type="number" 
@@ -1317,7 +1339,7 @@ const ExamManagement = () => {
 
                                 {/* Study Program */}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Study Program *</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Study Program", "Program Studi")} *</label>
                                     <Controller 
                                         name="study_program_id" 
                                         control={form.control} 
@@ -1333,7 +1355,7 @@ const ExamManagement = () => {
                                                     options={options} 
                                                     value={currentValue} 
                                                     onChange={option => field.onChange(option ? option.value : '')} 
-                                                    placeholder="Search or select study program..." 
+                                                    placeholder={getText("Search or select study program...", "Cari atau pilih program studi...")} 
                                                     isClearable 
                                                     styles={{
                                                         control: (provided) => ({
@@ -1354,7 +1376,7 @@ const ExamManagement = () => {
                                 {/* Lecturer and Inspector */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Lecturer in Charge *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Lecturer in Charge", "Dosen Pengampu")} *</label>
                                         <Controller 
                                             name="lecturer_id" 
                                             control={form.control} 
@@ -1370,9 +1392,9 @@ const ExamManagement = () => {
                                                         options={options} 
                                                         value={currentValue} 
                                                         onChange={val => field.onChange(val?.value)} 
-                                                        placeholder="Search or select lecturer..." 
+                                                        placeholder={getText("Search or select lecturer...", "Cari atau pilih dosen...")} 
                                                         isClearable 
-                                                        noOptionsMessage={() => watchStudyProgramId ? 'No lecturers found' : 'Select a study program first'} 
+                                                        noOptionsMessage={() => watchStudyProgramId ? getText('No lecturers found', 'Tidak ada dosen ditemukan') : getText('Select a study program first', 'Pilih program studi terlebih dahulu')} 
                                                         styles={{
                                                             control: (provided) => ({
                                                                 ...provided,
@@ -1390,7 +1412,7 @@ const ExamManagement = () => {
                                     </div>
                                     
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Inspector (Pengawas) *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Inspector (Pengawas)", "Pengawas")} *</label>
                                         <Controller 
                                             name="inspector" 
                                             control={form.control} 
@@ -1406,9 +1428,9 @@ const ExamManagement = () => {
                                                         options={options} 
                                                         value={currentValue} 
                                                         onChange={val => field.onChange(val?.value)} 
-                                                        placeholder="Search or select inspector..." 
+                                                        placeholder={getText("Search or select inspector...", "Cari atau pilih pengawas...")} 
                                                         isClearable 
-                                                        noOptionsMessage={() => watchStudyProgramId ? 'No lecturers found' : 'Select a study program first'} 
+                                                        noOptionsMessage={() => watchStudyProgramId ? getText('No lecturers found', 'Tidak ada dosen ditemukan') : getText('Select a study program first', 'Pilih program studi terlebih dahulu')} 
                                                         styles={{
                                                             control: (provided) => ({
                                                                 ...provided,
@@ -1429,9 +1451,9 @@ const ExamManagement = () => {
                                 {/* Room Assignment - Updated */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Room {!watchIsTakeHome && '*'}
+                                        {getText("Room", "Ruangan")} {!watchIsTakeHome && '*'}
                                         {watchIsTakeHome && (
-                                            <span className="text-gray-500 text-sm ml-2">(Not required for Take Home exams)</span>
+                                            <span className="text-gray-500 text-sm ml-2">{getText("(Not required for Take Home exams)", "(Tidak diperlukan untuk ujian Take Home)")}</span>
                                         )}
                                     </label>
                                     <Controller 
@@ -1440,7 +1462,7 @@ const ExamManagement = () => {
                                         render={({ field }) => { 
                                             const roomOptions = getAvailableRooms().map(r => ({ 
                                                 value: r.id, 
-                                                label: `${r.name} (${r.code}) - Cap: ${r.capacity}` 
+                                                label: `${r.name} (${r.code}) - ${getText("Cap:", "Kapasitas:")} ${r.capacity}` 
                                             })); 
                                             const selectedValue = roomOptions.find(o => o.value === field.value); 
                                             return ( 
@@ -1450,7 +1472,7 @@ const ExamManagement = () => {
                                                     value={selectedValue} 
                                                     onChange={option => field.onChange(option ? option.value : '')} 
                                                     isDisabled={watchIsTakeHome} 
-                                                    placeholder={watchIsTakeHome ? 'No room needed for Take Home exam' : 'Search or select room...'} 
+                                                    placeholder={watchIsTakeHome ? getText('No room needed for Take Home exam', 'Tidak perlu ruangan untuk ujian Take Home') : getText('Search or select room...', 'Cari atau pilih ruangan...')} 
                                                     isClearable 
                                                     styles={{
                                                         control: (provided) => ({
@@ -1469,7 +1491,7 @@ const ExamManagement = () => {
                                     )}
                                     {!watchIsTakeHome && watchStartTime && watchEndTime && watchDate && (
                                         <p className="mt-2 text-sm text-gray-600">
-                                            💡 Showing {getAvailableRooms().length} available rooms for {watchDate} from {watchStartTime} to {watchEndTime}
+                                            💡 {getText(`Showing ${getAvailableRooms().length} available rooms for ${watchDate} from ${watchStartTime} to ${watchEndTime}`, `Menampilkan ${getAvailableRooms().length} ruangan tersedia untuk ${watchDate} dari ${watchStartTime} sampai ${watchEndTime}`)}
                                         </p>
                                     )}
                                 </div>
@@ -1481,7 +1503,7 @@ const ExamManagement = () => {
                                         onClick={() => setShowModal(false)} 
                                         className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 font-medium"
                                     >
-                                        Cancel
+                                        {getText("Cancel", "Batal")}
                                     </button>
                                     <button 
                                         type="submit" 
@@ -1491,12 +1513,12 @@ const ExamManagement = () => {
                                         {loading ? (
                                             <span className="flex items-center justify-center space-x-2">
                                                 <RefreshCw className="h-4 w-4 animate-spin" />
-                                                <span>Saving...</span>
+                                                <span>{getText("Saving...", "Menyimpan...")}</span>
                                             </span>
                                         ) : (
                                             <span className="flex items-center justify-center space-x-2">
                                                 <Calendar className="h-4 w-4" />
-                                                <span>{editingExam ? 'Update Exam' : 'Create Exam'}</span>
+                                                <span>{editingExam ? getText('Update Exam', 'Perbarui Ujian') : getText('Create Exam', 'Buat Ujian')}</span>
                                             </span>
                                         )}
                                     </button>
@@ -1517,26 +1539,26 @@ const ExamManagement = () => {
                                     <AlertCircle className="h-6 w-6 text-red-600" />
                                 </div>
                                 <div className="ml-4">
-                                    <h3 className="text-lg font-medium text-gray-900">Delete Exam Schedule</h3>
-                                    <p className="text-sm text-gray-500 mt-1">This action cannot be undone</p>
+                                    <h3 className="text-lg font-medium text-gray-900">{getText("Delete Exam Schedule", "Hapus Jadwal Ujian")}</h3>
+                                    <p className="text-sm text-gray-500 mt-1">{getText("This action cannot be undone", "Tindakan ini tidak dapat dibatalkan")}</p>
                                 </div>
                             </div>
                             <p className="text-sm text-gray-600 mb-6">
-                                Are you sure you want to delete this exam schedule? All associated data will be permanently removed.
+                                {getText("Are you sure you want to delete this exam schedule? All associated data will be permanently removed.", "Apakah Anda yakin ingin menghapus jadwal ujian ini? Semua data terkait akan dihapus secara permanen.")}
                             </p>
                             <div className="flex space-x-3">
                                 <button 
                                     onClick={() => setShowDeleteConfirm(null)} 
                                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium"
                                 >
-                                    Cancel
+                                    {getText("Cancel", "Batal")}
                                 </button>
                                 <button 
                                     onClick={() => handleDelete(showDeleteConfirm as string)} 
                                     disabled={loading} 
                                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-all duration-200 font-medium"
                                 >
-                                    {loading ? 'Deleting...' : 'Delete'}
+                                    {loading ? getText('Deleting...', 'Menghapus...') : getText('Delete', 'Hapus')}
                                 </button>
                             </div>
                         </div>
@@ -1552,7 +1574,7 @@ const ExamManagement = () => {
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
                                     <Printer className="h-6 w-6 text-blue-600" />
-                                    <span>Print Exam Schedule</span>
+                                    <span>{getText("Print Exam Schedule", "Cetak Jadwal Ujian")}</span>
                                 </h3>
                                 <button 
                                     onClick={() => setShowPrintModal(false)} 
@@ -1564,7 +1586,7 @@ const ExamManagement = () => {
                             <form onSubmit={printForm.handleSubmit(handlePrint)} className="space-y-4">
                                 {isSuperAdmin && (
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Department *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Department", "Departemen")} *</label>
                                         <Controller 
                                             name="department_id" 
                                             control={printForm.control} 
@@ -1575,7 +1597,7 @@ const ExamManagement = () => {
                                                         field.onChange(option ? option.value : ''); 
                                                         setPrintSelectedDepartment(option ? option.value : ''); 
                                                     }} 
-                                                    placeholder="Select department..." 
+                                                    placeholder={getText("Select department...", "Pilih departemen...")} 
                                                     isClearable 
                                                 />
                                             )} 
@@ -1586,7 +1608,7 @@ const ExamManagement = () => {
                                     </div>
                                 )}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Study Program *</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Study Program", "Program Studi")} *</label>
                                     <Controller 
                                         name="study_program_id" 
                                         control={printForm.control} 
@@ -1600,7 +1622,7 @@ const ExamManagement = () => {
                                                     options={options} 
                                                     value={currentValue} 
                                                     onChange={option => field.onChange(option ? option.value : '')} 
-                                                    placeholder="Select study program..." 
+                                                    placeholder={getText("Select study program...", "Pilih program studi...")} 
                                                     isDisabled={isSuperAdmin && !printSelectedDepartment} 
                                                     isClearable 
                                                 /> 
@@ -1612,7 +1634,7 @@ const ExamManagement = () => {
                                     )}
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Semester Type *</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Semester Type", "Tipe Semester")} *</label>
                                     <Controller 
                                         name="semester" 
                                         control={printForm.control} 
@@ -1620,12 +1642,12 @@ const ExamManagement = () => {
                                             <Select 
                                                 {...field} 
                                                 options={[
-                                                    {value: 'GASAL', label: 'GASAL (Odd)'}, 
-                                                    {value: 'GENAP', label: 'GENAP (Even)'}
+                                                    {value: 'GASAL', label: getText('GASAL (Odd)', 'GASAL (Ganjil)')}, 
+                                                    {value: 'GENAP', label: getText('GENAP (Even)', 'GENAP (Genap)')}
                                                 ]} 
-                                                value={field.value ? {value: field.value, label: `${field.value} (${field.value === 'GASAL' ? 'Odd' : 'Even'})`} : null} 
+                                                value={field.value ? {value: field.value, label: `${field.value} (${field.value === 'GASAL' ? getText('Odd', 'Ganjil') : getText('Even', 'Genap')})`} : null} 
                                                 onChange={option => field.onChange(option?.value)} 
-                                                placeholder="Select semester type..." 
+                                                placeholder={getText("Select semester type...", "Pilih tipe semester...")} 
                                             /> 
                                         )} 
                                     />
@@ -1634,11 +1656,11 @@ const ExamManagement = () => {
                                     )}
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Academic Year *</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Academic Year", "Tahun Akademik")} *</label>
                                     <input 
                                         {...printForm.register('academic_year')} 
                                         type="text" 
-                                        placeholder="e.g. 2024/2025" 
+                                        placeholder={getText("e.g. 2024/2025", "contoh: 2024/2025")} 
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
                                     />
                                     {printForm.formState.errors.academic_year && (
@@ -1647,7 +1669,7 @@ const ExamManagement = () => {
                                 </div>
                                 {isDepartmentAdmin && (
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Department Head *</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Department Head", "Kepala Departemen")} *</label>
                                         <Controller 
                                             name="department_head_id" 
                                             control={printForm.control} 
@@ -1660,7 +1682,7 @@ const ExamManagement = () => {
                                                         const selectedHead = departmentHeads.find(h => h.id === option?.value); 
                                                         printForm.setValue('department_head_name', selectedHead?.full_name); 
                                                     }} 
-                                                    placeholder="Search and select head..." 
+                                                    placeholder={getText("Search and select head...", "Cari dan pilih kepala...")} 
                                                     isClearable 
                                                 /> 
                                             )} 
@@ -1676,14 +1698,14 @@ const ExamManagement = () => {
                                         onClick={() => setShowPrintModal(false)} 
                                         className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium"
                                     >
-                                        Cancel
+                                        {getText("Cancel", "Batal")}
                                     </button>
                                     <button 
                                         type="submit" 
                                         className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium flex items-center justify-center space-x-2"
                                     >
                                         <Printer className="h-4 w-4" />
-                                        <span>Generate PDF</span>
+                                        <span>{getText("Generate PDF", "Buat PDF")}</span>
                                     </button>
                                 </div>
                             </form>
@@ -1702,14 +1724,13 @@ const ExamManagement = () => {
                                     <AlertCircle className="h-6 w-6 text-red-600" />
                                 </div>
                                 <div className="ml-4">
-                                    <h3 className="text-lg leading-6 font-medium text-gray-900">Change Exam Mode?</h3>
-                                    <p className="text-sm text-gray-500 mt-1">This action will permanently delete all data</p>
+                                    <h3 className="text-lg leading-6 font-medium text-gray-900">{getText("Change Exam Mode?", "Ubah Mode Ujian?")}</h3>
+                                    <p className="text-sm text-gray-500 mt-1">{getText("This action will permanently delete all data", "Tindakan ini akan menghapus semua data secara permanen")}</p>
                                 </div>
                             </div>
                             <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
                                 <p className="text-sm text-red-800">
-                                    This action will <span className="font-bold">PERMANENTLY DELETE ALL</span> existing exam schedules. 
-                                    Are you sure you want to continue?
+                                    {getText("This action will", "Tindakan ini akan")} <span className="font-bold">{getText("PERMANENTLY DELETE ALL", "MENGHAPUS SEMUA SECARA PERMANEN")}</span> {getText("existing exam schedules. Are you sure you want to continue?", "jadwal ujian yang ada. Apakah Anda yakin ingin melanjutkan?")}
                                 </p>
                             </div>
                             <div className="flex space-x-3">
@@ -1717,13 +1738,13 @@ const ExamManagement = () => {
                                     onClick={() => setShowClearConfirm(false)} 
                                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium"
                                 >
-                                    Cancel
+                                    {getText("Cancel", "Batal")}
                                 </button>
                                 <button 
                                     onClick={confirmClearAndToggleMode} 
                                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all duration-200 font-medium"
                                 >
-                                    Yes, Change & Delete
+                                    {getText("Yes, Change & Delete", "Ya, Ubah & Hapus")}
                                 </button>
                             </div>
                         </div>
