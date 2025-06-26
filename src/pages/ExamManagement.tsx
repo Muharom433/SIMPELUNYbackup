@@ -611,7 +611,7 @@ const ExamManagement = () => {
             });
                 newFinalY = (doc as any).lastAutoTable.finalY; // Update the final Y position
             }
-           // --- MODIFIED CODE ---
+            // --- MODIFIED CODE ---
             const signatureX = 140;
             const signatureY = newFinalY + 10;
             const signatureMaxWidth = 60;
@@ -619,20 +619,15 @@ const ExamManagement = () => {
             doc.setFontSize(10);
             doc.setFont('helvetica', 'normal');
             doc.text(`Yogyakarta, ${format(new Date(), 'd MMMM yyyy')}`, signatureX, signatureY);
-            
-            // REDUCED the vertical space from 7 to 5
             doc.text("Kepala Departemen,", signatureX, signatureY + 5); 
             
-            // REDUCED the vertical space from 30 to 20
-            const nameY = signatureY + 20; 
+            const nameY = signatureY + 30;
             const nameLines = doc.splitTextToSize(departmentHead.full_name, signatureMaxWidth);
             doc.setFont('helvetica', 'bold');
             doc.text(nameLines, signatureX, nameY);
             
             const nameBlockHeight = (nameLines.length * doc.getLineHeight()) / doc.internal.scaleFactor;
-            
-            // REDUCED the vertical space from 3 to 2
-            const nipY = nameY + nameBlockHeight + 2; 
+            const nipY = nameY + nameBlockHeight + 1; // Position NIP directly after the name
             doc.setFont('helvetica', 'normal');
             doc.text(`NIP. ${departmentHead.identity_number}`, signatureX, nipY);
             doc.save(`Jadwal_UAS_${selectedProgram.code}_${formData.semester}.pdf`);
