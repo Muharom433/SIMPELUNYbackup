@@ -426,8 +426,6 @@ const ExamManagement = () => {
 
     const handleEdit = (exam: any) => {
     setEditingExam(exam);
-
-    // Find the lecturer object that matches the inspector's name
     const inspectorUser = lecturers.find(l => l.full_name === exam.inspector);
 
     form.reset({
