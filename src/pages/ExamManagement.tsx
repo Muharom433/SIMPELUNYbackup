@@ -611,30 +611,29 @@ const ExamManagement = () => {
             });
                 newFinalY = (doc as any).lastAutoTable.finalY; // Update the final Y position
             }
-            
+            // --- MODIFIED CODE ---
             const signatureX = 140;
-            const signatureY = newFinalY + 10; // Start the signature below the new table
+            const signatureY = newFinalY + 10;
             const signatureMaxWidth = 60;
             
             doc.setFontSize(10);
             doc.setFont('helvetica', 'normal');
             doc.text(`Yogyakarta, ${format(new Date(), 'd MMMM yyyy')}`, signatureX, signatureY);
-            doc.text("Ketua Jurusan,", signatureX, signatureY + 7);
+            doc.text("Kepala Departemen,", signatureX, signatureY + 7); // CHANGED: "Ketua Jurusan" to "Kepala Departemen"
             
             const nameY = signatureY + 30;
             const nameLines = doc.splitTextToSize(departmentHead.full_name, signatureMaxWidth);
             doc.setFont('helvetica', 'bold');
             doc.text(nameLines, signatureX, nameY);
             
-            const nameBlockHeight = (nameLines.length * doc.getLineHeight()) / doc.internal.scaleFactor;
-            const underlineY = nameY + nameBlockHeight -1; // Adjusted for better positioning
-            doc.setLineWidth(0.5);
-            doc.line(signatureX, underlineY, signatureX + signatureMaxWidth -10, underlineY);
+            // REMOVED the two lines that draw the underline
+            // doc.setLineWidth(0.5);
+            // doc.line(signatureX, underlineY, signatureX + signatureMaxWidth -10, underlineY); 
             
-            const nipY = underlineY + 4; 
+            const nameBlockHeight = (nameLines.length * doc.getLineHeight()) / doc.internal.scaleFactor;
+            const nipY = nameY + nameBlockHeight + 3; // Position NIP directly after the name
             doc.setFont('helvetica', 'normal');
             doc.text(`NIP. ${departmentHead.identity_number}`, signatureX, nipY);
-// --- END: REPLACE WITH THIS BLOCK ---
             doc.save(`Jadwal_UAS_${selectedProgram.code}_${formData.semester}.pdf`);
             setShowPrintModal(false);
         } catch (e: any) {
