@@ -25,88 +25,81 @@ import {
   Shield,
   ChevronRight,
   Play,
-  GraduationCap,
-  School,
-  ChevronLeft,
+  Search,
+  Bell,
+  Settings,
+  User,
 } from 'lucide-react';
 
-interface ScheduleData {
-  time: string;
-  monday: string;
-  tuesday: string;
-  wednesday: string;
-  thursday: string;
-  friday: string;
+interface DashboardStats {
+  totalBookings: number;
+  pendingBookings: number;
+  availableRooms: number;
+  totalUsers: number;
+  todayBookings: number;
+  equipmentAvailable: number;
+  activeBookings: number;
+  completedBookings: number;
 }
 
-interface DashboardStats {
-  totalRooms: number;
-  activeClasses: number;
-  todaySchedule: number;
-  totalStudents: number;
+interface RecentActivity {
+  id: string;
+  type: 'booking' | 'equipment' | 'approval' | 'checkout';
+  message: string;
+  timestamp: string;
+  status: 'success' | 'warning' | 'error' | 'info';
 }
 
 const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats>({
-    totalRooms: 45,
-    activeClasses: 12,
-    todaySchedule: 28,
-    totalStudents: 1250,
+    totalBookings: 1247,
+    pendingBookings: 23,
+    availableRooms: 18,
+    totalUsers: 450,
+    todayBookings: 12,
+    equipmentAvailable: 35,
+    activeBookings: 8,
+    completedBookings: 1180,
   });
-  
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [scrollY, setScrollY] = useState(0);
 
-  const scheduleData: ScheduleData[] = [
-    {
-      time: "07:00 - 08:40",
-      monday: "Database Systems",
-      tuesday: "Web Programming",
-      wednesday: "Mobile App Dev",
-      thursday: "Network Security",
-      friday: "UI/UX Design"
-    },
-    {
-      time: "08:40 - 10:20",
-      monday: "Data Structures",
-      tuesday: "Software Engineering",
-      wednesday: "Machine Learning",
-      thursday: "Cloud Computing",
-      friday: "Digital Marketing"
-    },
-    {
-      time: "10:30 - 12:10",
-      monday: "Algorithm Analysis",
-      tuesday: "Project Management",
-      wednesday: "AI Fundamentals",
-      thursday: "Cybersecurity",
-      friday: "E-Commerce"
-    },
-    {
-      time: "13:00 - 14:40",
-      monday: "System Analysis",
-      tuesday: "Quality Assurance",
-      wednesday: "Data Mining",
-      thursday: "Information Systems",
-      friday: "Business Intelligence"
-    },
-    {
-      time: "14:40 - 16:20",
-      monday: "Practicum Lab",
-      tuesday: "Workshop",
-      wednesday: "Seminar",
-      thursday: "Industry Visit",
-      friday: "Final Project"
-    }
-  ];
-
   useEffect(() => {
+    // Update time every second
     const timer = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
 
+    // Handle scroll for animations
     const handleScroll = () => setScrollY(window.scrollY);
     window.addEventListener('scroll', handleScroll);
+
+    // Mock recent activity data
+    const mockActivity: RecentActivity[] = [
+      {
+        id: '1',
+        type: 'booking',
+        message: 'Room A101 booked for Database Systems lecture',
+        timestamp: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+        status: 'success'
+      },
+      {
+        id: '2',
+        type: 'equipment',
+        message: 'Projector PROJ-001 returned successfully',
+        timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+        status: 'success'
+      },
+      {
+        id: '3',
+        type: 'approval',
+        message: 'Booking approval pending for Room B205',
+        timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        status: 'warning'
+      }
+    ];
+    setRecentActivity(mockActivity);
 
     return () => {
       clearInterval(timer);
@@ -125,26 +118,71 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 overflow-x-hidden">
+      {/* Navigation */}
+      <nav className="bg-white/80 backdrop-blur-sm border-b border-orange-100 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center space-x-8">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center">
+                  <Building className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="font-bold text-gray-900">Faculty of Vocational</h1>
+                  <p className="text-xs text-gray-600">Yogyakarta State University</p>
+                </div>
+              </div>
+              <div className="hidden md:flex space-x-6">
+                <a href="#" className="text-gray-700 hover:text-orange-600 font-medium">Dashboard</a>
+                <a href="#" className="text-gray-700 hover:text-orange-600 font-medium">Booking</a>
+                <a href="#" className="text-gray-700 hover:text-orange-600 font-medium">Equipment</a>
+                <a href="#" className="text-gray-700 hover:text-orange-600 font-medium">Reports</a>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className="relative">
+                <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                <input 
+                  type="text" 
+                  placeholder="Search..." 
+                  className="pl-10 pr-4 py-2 bg-gray-100 rounded-lg border-0 focus:ring-2 focus:ring-orange-300 text-sm"
+                />
+              </div>
+              <button className="p-2 text-gray-600 hover:text-orange-600 relative">
+                <Bell className="w-5 h-5" />
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
+              </button>
+              <button className="p-2 text-gray-600 hover:text-orange-600">
+                <Settings className="w-5 h-5" />
+              </button>
+              <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-amber-500 rounded-full flex items-center justify-center">
+                <User className="w-5 h-5 text-white" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </nav>
+
       {/* Hero Section */}
-      <div className="relative bg-gradient-to-br from-amber-600 via-orange-600 to-yellow-700 overflow-hidden">
+      <div className="relative bg-gradient-to-br from-orange-500 via-amber-600 to-yellow-600 overflow-hidden">
         {/* Animated Background Elements */}
         <div className="absolute inset-0">
           <div 
-            className="absolute top-20 left-10 w-72 h-72 bg-gradient-to-br from-amber-400 to-orange-400 rounded-full mix-blend-multiply filter blur-xl opacity-30"
+            className="absolute top-20 left-10 w-72 h-72 bg-yellow-400 rounded-full mix-blend-multiply filter blur-xl opacity-30"
             style={{ 
               transform: `translateY(${scrollY * 0.5}px)`,
               animation: 'blob 7s infinite'
             }}
           ></div>
           <div 
-            className="absolute top-40 right-10 w-72 h-72 bg-gradient-to-br from-yellow-400 to-amber-400 rounded-full mix-blend-multiply filter blur-xl opacity-25"
+            className="absolute top-40 right-10 w-72 h-72 bg-orange-400 rounded-full mix-blend-multiply filter blur-xl opacity-30"
             style={{ 
               transform: `translateY(${scrollY * 0.3}px)`,
               animation: 'blob 7s infinite 2s'
             }}
           ></div>
           <div 
-            className="absolute bottom-20 left-20 w-72 h-72 bg-gradient-to-br from-orange-400 to-red-400 rounded-full mix-blend-multiply filter blur-xl opacity-20"
+            className="absolute bottom-20 left-20 w-72 h-72 bg-amber-400 rounded-full mix-blend-multiply filter blur-xl opacity-30"
             style={{ 
               transform: `translateY(${scrollY * 0.4}px)`,
               animation: 'blob 7s infinite 4s'
@@ -157,26 +195,22 @@ const Dashboard: React.FC = () => {
             <div className="grid lg:grid-cols-2 gap-12 items-center">
               {/* Left Content */}
               <div className="text-white space-y-8">
-                <div className="space-y-4">
-                  <div className="inline-flex items-center px-4 py-2 bg-white bg-opacity-15 backdrop-blur-sm rounded-full text-sm font-medium border border-white border-opacity-20">
-                    <GraduationCap className="w-4 h-4 mr-2 text-yellow-300" />
-                    Excellence in Vocational Education
+                <div className="space-y-6">
+                  <div className="inline-flex items-center px-4 py-2 bg-white bg-opacity-20 backdrop-blur-sm rounded-full text-sm font-medium">
+                    <Star className="w-4 h-4 mr-2 text-yellow-300" />
+                    Building Career Saving Future
                   </div>
                   <h1 className="text-5xl lg:text-7xl font-bold leading-tight">
                     Faculty of 
-                    <span className="block bg-gradient-to-r from-yellow-300 via-amber-200 to-orange-300 bg-clip-text text-transparent">
+                    <span className="block text-yellow-300">
                       Vocational
                     </span>
+                    <span className="text-2xl lg:text-3xl font-normal block mt-2 text-orange-100">
+                      Yogyakarta State University
+                    </span>
                   </h1>
-                  <h2 className="text-2xl lg:text-3xl font-semibold text-amber-100">
-                    Yogyakarta State University
-                  </h2>
-                  <p className="text-xl text-amber-50 leading-relaxed max-w-lg font-medium">
-                    Building Career Saving Future
-                  </p>
-                  <p className="text-lg text-amber-100 leading-relaxed max-w-lg">
-                    Empowering students with practical skills and industry-ready knowledge 
-                    for tomorrow's challenges.
+                  <p className="text-xl text-orange-100 leading-relaxed max-w-lg">
+                    Building Career Saving Future - Advanced room booking and equipment management system for modern educational facilities.
                   </p>
                 </div>
 
@@ -184,27 +218,27 @@ const Dashboard: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-white bg-opacity-15 backdrop-blur-sm rounded-2xl p-6 border border-white border-opacity-20">
                     <div className="flex items-center space-x-3">
-                      <div className="bg-gradient-to-br from-green-500 to-emerald-600 p-2 rounded-xl">
-                        <School className="w-6 h-6 text-white" />
+                      <div className="bg-green-500 p-2 rounded-xl">
+                        <CheckCircle className="w-6 h-6 text-white" />
                       </div>
                       <div>
-                        <p className="text-2xl font-bold">1250+</p>
-                        <p className="text-sm text-amber-200">Students</p>
+                        <p className="text-2xl font-bold">1200+</p>
+                        <p className="text-sm text-orange-200">Total Bookings</p>
                       </div>
                     </div>
                     <div className="mt-3 flex items-center text-green-300 text-sm">
                       <ArrowUp className="w-4 h-4 mr-1" />
-                      <span>95% Success Rate</span>
+                      <span>98% Success Rate</span>
                     </div>
                   </div>
                   <div className="bg-white bg-opacity-15 backdrop-blur-sm rounded-2xl p-6 border border-white border-opacity-20">
                     <div className="flex items-center space-x-3">
-                      <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-2 rounded-xl">
+                      <div className="bg-blue-500 p-2 rounded-xl">
                         <Clock className="w-6 h-6 text-white" />
                       </div>
                       <div>
                         <p className="text-2xl font-bold">{formatTime(currentTime)}</p>
-                        <p className="text-sm text-amber-200">Live Time</p>
+                        <p className="text-sm text-orange-200">Live Time</p>
                       </div>
                     </div>
                   </div>
@@ -212,44 +246,51 @@ const Dashboard: React.FC = () => {
 
                 {/* CTA Buttons */}
                 <div className="flex flex-col sm:flex-row gap-4">
-                  <button className="group bg-white text-amber-700 px-8 py-4 rounded-2xl font-semibold text-lg hover:bg-amber-50 transition-all duration-300 transform hover:scale-105 shadow-xl">
+                  <button className="group bg-white text-orange-700 px-8 py-4 rounded-2xl font-semibold text-lg hover:bg-gray-100 transition-all duration-300 transform hover:scale-105 shadow-xl">
                     <span className="flex items-center justify-center">
-                      Explore Programs
+                      Book Room Now
                       <ChevronRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
                     </span>
                   </button>
-                  <button className="group bg-transparent border-2 border-white text-white px-8 py-4 rounded-2xl font-semibold text-lg hover:bg-white hover:text-amber-700 transition-all duration-300">
+                  <button className="group bg-transparent border-2 border-white text-white px-8 py-4 rounded-2xl font-semibold text-lg hover:bg-white hover:text-orange-700 transition-all duration-300">
                     <span className="flex items-center justify-center">
                       <Play className="w-5 h-5 mr-2" />
-                      Virtual Tour
+                      Watch Demo
                     </span>
                   </button>
                 </div>
 
-                {/* Contact Info */}
-                <div className="flex items-center space-x-6 text-sm text-amber-200">
+                {/* University Info */}
+                <div className="flex items-center space-x-6 text-sm text-orange-200">
                   <div className="flex items-center space-x-2">
                     <MapPin className="w-4 h-4" />
-                    <span>Yogyakarta, Indonesia</span>
+                    <span>Yogyakarta State University</span>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Timer className="w-4 h-4" />
-                    <span>Est. 1964</span>
+                    <span>24/7 Online System</span>
                   </div>
                 </div>
               </div>
 
-              {/* Right Content - Building Image */}
+              {/* Right Content - University Building */}
               <div className="relative">
                 <div 
                   className="relative transform transition-transform duration-1000"
-                  style={{ transform: `translateY(${scrollY * 0.1}px) rotateY(${scrollY * 0.02}deg)` }}
+                  style={{ transform: `translateY(${scrollY * 0.1}px)` }}
                 >
-                  {/* Building Image */}
-                  <div className="relative bg-gradient-to-br from-amber-100 to-orange-200 rounded-3xl overflow-hidden shadow-2xl">
-                    <div className="aspect-w-4 aspect-h-5 flex items-center justify-center bg-gradient-to-br from-amber-100 to-orange-100">
-                      <div className="w-full h-full flex items-center justify-center">
-                        <School className="w-32 h-32 text-amber-600" />
+                  {/* Building Representation */}
+                  <div className="relative bg-gradient-to-br from-amber-100 to-orange-200 rounded-3xl overflow-hidden shadow-2xl border-4 border-white border-opacity-30">
+                    <div className="aspect-w-4 aspect-h-5 flex items-center justify-center bg-gradient-to-br from-orange-100 to-amber-100 p-12">
+                      <div className="text-center space-y-4">
+                        <Building className="w-32 h-32 text-orange-600 mx-auto" />
+                        <div className="space-y-2">
+                          <h3 className="text-2xl font-bold text-orange-800">Faculty Building</h3>
+                          <p className="text-orange-700">Yogyakarta State University</p>
+                          <div className="bg-orange-600 text-white px-4 py-2 rounded-lg inline-block">
+                            Modern Facilities
+                          </div>
+                        </div>
                       </div>
                     </div>
                     
@@ -260,7 +301,7 @@ const Dashboard: React.FC = () => {
                     >
                       <div className="flex items-center space-x-2">
                         <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                        <span className="text-sm font-medium">45 Rooms</span>
+                        <span className="text-sm font-medium text-gray-700">18 Available</span>
                       </div>
                     </div>
                     
@@ -269,8 +310,8 @@ const Dashboard: React.FC = () => {
                       style={{ animation: 'float 6s ease-in-out infinite 3s' }}
                     >
                       <div className="text-center">
-                        <p className="text-2xl font-bold text-amber-700">A</p>
-                        <p className="text-xs text-gray-600">Accredited</p>
+                        <p className="text-2xl font-bold text-orange-700">4.9★</p>
+                        <p className="text-xs text-gray-600">User Rating</p>
                       </div>
                     </div>
                   </div>
@@ -281,122 +322,73 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Quick Actions Section */}
-      <div className="py-24 bg-white">
-        <div className="max-w-7xl mx-auto px-6 sm:px-12 lg:px-16">
-          <div className="text-center space-y-4 mb-16">
-            <div className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-amber-100 to-orange-100 text-amber-800 rounded-full text-sm font-medium">
-              <Zap className="w-4 h-4 mr-2" />
-              Quick Access
-            </div>
-            <h2 className="text-4xl lg:text-5xl font-bold text-gray-900">
-              Everything You Need
-              <span className="block bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">
-                At Your Fingertips
-              </span>
-            </h2>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              {
-                icon: Calendar,
-                title: 'Room Booking',
-                description: 'Book classrooms and labs with real-time availability checking and automated scheduling.',
-                color: 'bg-gradient-to-br from-amber-500 to-orange-600'
-              },
-              {
-                icon: BarChart3,
-                title: 'Schedule Analytics',
-                description: 'Monitor class schedules, room utilization, and academic calendar with detailed insights.',
-                color: 'bg-gradient-to-br from-yellow-500 to-amber-600'
-              },
-              {
-                icon: Users,
-                title: 'Student Portal',
-                description: 'Access student information, attendance records, and academic progress tracking.',
-                color: 'bg-gradient-to-br from-orange-500 to-red-600'
-              }
-            ].map((feature, index) => (
-              <div 
-                key={index}
-                className="group bg-white rounded-3xl p-8 shadow-lg hover:shadow-2xl transition-all duration-500 border border-amber-100 hover:border-amber-300 transform hover:-translate-y-2"
-              >
-                <div className={`${feature.color} w-16 h-16 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300`}>
-                  <feature.icon className="w-8 h-8 text-white" />
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-4">{feature.title}</h3>
-                <p className="text-gray-600 leading-relaxed">{feature.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
       {/* Stats Dashboard Section */}
-      <div className="py-24 bg-gradient-to-br from-amber-50 to-orange-50">
+      <div className="py-24" style={{ backgroundColor: '#daa06d', backgroundImage: 'linear-gradient(135deg, #daa06d 0%, #c8935d 100%)' }}>
         <div className="max-w-7xl mx-auto px-6 sm:px-12 lg:px-16">
           <div className="text-center space-y-4 mb-16">
-            <h2 className="text-4xl lg:text-5xl font-bold text-gray-900">
-              Faculty Overview
+            <div className="inline-flex items-center px-4 py-2 bg-white bg-opacity-20 text-white rounded-full text-sm font-medium">
+              <Activity className="w-4 h-4 mr-2" />
+              Real-time Statistics
+            </div>
+            <h2 className="text-4xl lg:text-5xl font-bold text-white">
+              Dashboard Overview
             </h2>
-            <p className="text-xl text-gray-600">Real-time statistics and facility management</p>
+            <p className="text-xl text-orange-100">Monitor your facility usage with live statistics</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
             {[
               {
-                title: 'Total Rooms',
-                value: stats.totalRooms,
-                subtitle: 'Available facilities',
+                title: 'Available Rooms',
+                value: stats.availableRooms,
+                subtitle: 'Ready for booking',
                 icon: Building,
-                color: 'bg-gradient-to-r from-amber-500 to-orange-600',
-                change: '+3 new',
+                color: 'bg-gradient-to-r from-emerald-500 to-emerald-600',
+                change: '+5%',
                 trend: 'up',
               },
               {
-                title: 'Active Classes',
-                value: stats.activeClasses,
-                subtitle: 'Currently running',
-                icon: BookOpen,
-                color: 'bg-gradient-to-r from-yellow-500 to-amber-600',
-                change: '+5 today',
-                trend: 'up',
-              },
-              {
-                title: 'Today\'s Schedule',
-                value: stats.todaySchedule,
-                subtitle: 'Classes scheduled',
+                title: 'Today\'s Bookings',
+                value: stats.todayBookings,
+                subtitle: `${stats.activeBookings} currently active`,
                 icon: Calendar,
-                color: 'bg-gradient-to-r from-orange-500 to-red-600',
-                change: '85% filled',
+                color: 'bg-gradient-to-r from-blue-500 to-blue-600',
+                change: '+12%',
                 trend: 'up',
               },
               {
-                title: 'Total Students',
-                value: stats.totalStudents,
-                subtitle: 'Enrolled students',
+                title: 'Equipment Available',
+                value: stats.equipmentAvailable,
+                subtitle: 'Items ready to lend',
+                icon: Package,
+                color: 'bg-gradient-to-r from-purple-500 to-purple-600',
+                change: '+8%',
+                trend: 'up',
+              },
+              {
+                title: 'Total Users',
+                value: stats.totalUsers,
+                subtitle: 'Registered users',
                 icon: Users,
-                color: 'bg-gradient-to-r from-red-500 to-pink-600',
-                change: '+12% this year',
+                color: 'bg-gradient-to-r from-rose-500 to-rose-600',
+                change: '+15%',
                 trend: 'up',
               },
             ].map((card, index) => (
               <div 
                 key={index} 
-                className="bg-white rounded-3xl shadow-lg border border-amber-200 p-8 hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-1"
+                className="bg-white rounded-3xl shadow-xl border border-orange-200 p-8 hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-2"
                 style={{ 
                   animationDelay: `${index * 100}ms`,
-                  transform: `translateY(${Math.max(0, scrollY * 0.05 - index * 10)}px)`
                 }}
               >
                 <div className="flex items-center justify-between mb-6">
                   <div className={`${card.color} p-4 rounded-2xl shadow-lg`}>
                     <card.icon className="h-8 w-8 text-white" />
                   </div>
-                  <div className="flex items-center text-green-600 text-sm font-medium">
+                  <div className="flex items-center text-green-600 text-sm font-medium bg-green-50 px-3 py-1 rounded-full">
                     <ArrowUp className="h-4 w-4 mr-1" />
-                    <span className="text-xs">{card.change}</span>
+                    {card.change}
                   </div>
                 </div>
                 <div>
@@ -409,18 +401,18 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Quick Actions Grid */}
-          <div className="bg-white rounded-3xl shadow-xl p-8 border border-amber-200">
+          <div className="bg-white bg-opacity-95 backdrop-blur-sm rounded-3xl shadow-2xl p-8 border border-orange-200">
             <h3 className="text-2xl font-bold text-gray-900 mb-8 text-center">Quick Actions</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
               {[
-                { icon: Calendar, label: 'Book Room', color: 'text-amber-600 bg-amber-50 hover:bg-amber-100' },
-                { icon: BarChart3, label: 'View Schedule', color: 'text-orange-600 bg-orange-50 hover:bg-orange-100' },
-                { icon: Users, label: 'Student List', color: 'text-yellow-600 bg-yellow-50 hover:bg-yellow-100' },
-                { icon: CheckCircle, label: 'Check Attendance', color: 'text-red-600 bg-red-50 hover:bg-red-100' },
+                { icon: Calendar, label: 'Book Room', color: 'text-orange-700 bg-orange-50 hover:bg-orange-100 border-orange-200' },
+                { icon: Package, label: 'Borrow Equipment', color: 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200' },
+                { icon: CheckCircle, label: 'Check Out', color: 'text-blue-700 bg-blue-50 hover:bg-blue-100 border-blue-200' },
+                { icon: BarChart3, label: 'View Reports', color: 'text-purple-700 bg-purple-50 hover:bg-purple-100 border-purple-200' },
               ].map((action, index) => (
                 <button
                   key={index}
-                  className={`group flex flex-col items-center space-y-4 p-8 border-2 border-amber-200 rounded-2xl hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 ${action.color}`}
+                  className={`group flex flex-col items-center space-y-4 p-8 border-2 rounded-2xl hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 ${action.color}`}
                 >
                   <action.icon className="h-10 w-10 group-hover:scale-110 transition-transform" />
                   <span className="text-lg font-semibold text-center">{action.label}</span>
@@ -431,98 +423,65 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Class Schedule Section */}
-      <div className="py-24 bg-white">
+      {/* Recent Activity Section */}
+      <div className="py-24 bg-gradient-to-br from-orange-50 to-amber-50">
         <div className="max-w-7xl mx-auto px-6 sm:px-12 lg:px-16">
-          <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-3xl p-12 border border-amber-200">
+          <div className="bg-white rounded-3xl p-12 border border-orange-200 shadow-xl">
             <div className="flex items-center justify-between mb-8">
-              <h2 className="text-3xl font-bold text-gray-900">Weekly Class Schedule</h2>
-              <div className="flex items-center space-x-4">
-                <button className="text-amber-600 hover:text-amber-700 font-semibold flex items-center space-x-2 bg-white px-6 py-3 rounded-xl shadow-sm hover:shadow-md transition-all">
-                  <ChevronLeft className="h-5 w-5" />
-                  <span>Previous</span>
-                </button>
-                <button className="text-amber-600 hover:text-amber-700 font-semibold flex items-center space-x-2 bg-white px-6 py-3 rounded-xl shadow-sm hover:shadow-md transition-all">
-                  <span>Next</span>
-                  <ChevronRight className="h-5 w-5" />
-                </button>
-              </div>
+              <h2 className="text-3xl font-bold text-gray-900">Recent Activity</h2>
+              <button className="text-orange-700 hover:text-orange-800 font-semibold flex items-center space-x-2 bg-orange-50 px-6 py-3 rounded-xl shadow-sm hover:shadow-md transition-all border border-orange-200">
+                <Eye className="h-5 w-5" />
+                <span>View All Activities</span>
+              </button>
             </div>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full bg-white rounded-2xl shadow-lg overflow-hidden">
-                <thead className="bg-gradient-to-r from-amber-500 to-orange-600 text-white">
-                  <tr>
-                    <th className="px-6 py-4 text-left font-semibold">Time</th>
-                    <th className="px-6 py-4 text-left font-semibold">Monday</th>
-                    <th className="px-6 py-4 text-left font-semibold">Tuesday</th>
-                    <th className="px-6 py-4 text-left font-semibold">Wednesday</th>
-                    <th className="px-6 py-4 text-left font-semibold">Thursday</th>
-                    <th className="px-6 py-4 text-left font-semibold">Friday</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {scheduleData.map((row, index) => (
-                    <tr 
-                      key={index} 
-                      className={`border-b border-amber-100 hover:bg-amber-50 transition-colors ${
-                        index % 2 === 0 ? 'bg-white' : 'bg-amber-25'
-                      }`}
-                    >
-                      <td className="px-6 py-4 font-semibold text-amber-700 bg-gradient-to-r from-amber-50 to-orange-50">
-                        {row.time}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="p-3 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg">
-                          <span className="text-sm font-medium text-blue-800">{row.monday}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="p-3 bg-gradient-to-r from-green-50 to-green-100 rounded-lg">
-                          <span className="text-sm font-medium text-green-800">{row.tuesday}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="p-3 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg">
-                          <span className="text-sm font-medium text-purple-800">{row.wednesday}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="p-3 bg-gradient-to-r from-pink-50 to-pink-100 rounded-lg">
-                          <span className="text-sm font-medium text-pink-800">{row.thursday}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="p-3 bg-gradient-to-r from-indigo-50 to-indigo-100 rounded-lg">
-                          <span className="text-sm font-medium text-indigo-800">{row.friday}</span>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-6">
+              {recentActivity.map((activity, index) => (
+                <div 
+                  key={activity.id} 
+                  className="flex items-start space-x-6 p-6 bg-gradient-to-r from-orange-50 to-amber-50 rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 border border-orange-100"
+                  style={{ animationDelay: `${index * 150}ms` }}
+                >
+                  <div className={`flex-shrink-0 p-3 rounded-xl ${
+                    activity.status === 'success' ? 'bg-green-100 text-green-600' :
+                    activity.status === 'warning' ? 'bg-yellow-100 text-yellow-600' :
+                    'bg-blue-100 text-blue-600'
+                  }`}>
+                    <Calendar className="h-6 w-6" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-lg font-medium text-gray-900 mb-2">{activity.message}</p>
+                    <p className="text-sm text-gray-500">
+                      {new Date(activity.timestamp).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="flex-shrink-0">
+                    <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium ${
+                      activity.status === 'success' ? 'bg-green-100 text-green-800' :
+                      activity.status === 'warning' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-blue-100 text-blue-800'
+                    }`}>
+                      {activity.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </div>
 
       {/* Footer CTA */}
-      <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-yellow-700 py-16">
+      <div style={{ backgroundColor: '#daa06d' }} className="py-16">
         <div className="max-w-4xl mx-auto text-center px-6">
           <h2 className="text-4xl font-bold text-white mb-4">
-            Ready to Shape Your Future?
+            Ready to Transform Your Faculty Management?
           </h2>
-          <p className="text-xl text-amber-100 mb-8">
-            Join thousands of students who have built successful careers through our programs.
+          <p className="text-xl text-orange-100 mb-8">
+            Join hundreds of satisfied users who trust our platform for their daily operations at Faculty of Vocational.
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="bg-white text-amber-700 px-12 py-4 rounded-2xl font-bold text-lg hover:bg-amber-50 transition-all duration-300 transform hover:scale-105 shadow-xl">
-              Apply Now
-            </button>
-            <button className="bg-transparent border-2 border-white text-white px-12 py-4 rounded-2xl font-bold text-lg hover:bg-white hover:text-amber-700 transition-all duration-300">
-              Learn More
-            </button>
-          </div>
+          <button className="bg-white text-orange-700 px-12 py-4 rounded-2xl font-bold text-lg hover:bg-gray-100 transition-all duration-300 transform hover:scale-105 shadow-xl">
+            Get Started Today
+          </button>
         </div>
       </div>
 
@@ -553,10 +512,6 @@ const Dashboard: React.FC = () => {
           right: 0;
           bottom: 0;
           left: 0;
-        }
-        
-        .bg-amber-25 {
-          background-color: #fffbeb;
         }
       `}</style>
     </div>
