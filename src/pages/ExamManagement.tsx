@@ -592,22 +592,49 @@ const ExamManagement = () => {
           });
           // --- END: ADD THIS NEW CODE ---
             const finalY = (doc as any).lastAutoTable.finalY || 100;
-            const signatureX = 140; 
-            const signatureY = finalY + 10; 
-            const signatureMaxWidth = 60; 
+            // --- START: REPLACE THE OLD SIGNATURE BLOCK WITH THIS ---
+            let newFinalY = finalY;
+            
+            // Only add the second table if there is data for it
+            if (additionalInfoRows.length > 0) {
+                autoTable(doc, {
+                    head: [additionalInfoColumn],
+                    body: additionalInfoRows,
+                    startY: finalY + 10, // Start 10 units below the first table
+                    theme: 'grid',
+                    styles: { fontSize: 8, cellPadding: 1.5, valign: 'middle' },
+                    headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' },
+                    columnStyles: {
+                        0: { halign: 'center', cellWidth: 25 },
+                        1: { halign: 'center', cellWidth: 15 },
+                    }
+                });
+                newFinalY = (doc as any).lastAutoTable.finalY; // Update the final Y position
+            }
+            
+            const signatureX = 140;
+            const signatureY = newFinalY + 10; // Start the signature below the new table
+            const signatureMaxWidth = 60;
+            
             doc.setFontSize(10);
             doc.setFont('helvetica', 'normal');
             doc.text(`Yogyakarta, ${format(new Date(), 'd MMMM yyyy')}`, signatureX, signatureY);
             doc.text("Ketua Jurusan,", signatureX, signatureY + 7);
-            const nameY = signatureY + 30; 
+            
+            const nameY = signatureY + 30;
             const nameLines = doc.splitTextToSize(departmentHead.full_name, signatureMaxWidth);
             doc.setFont('helvetica', 'bold');
             doc.text(nameLines, signatureX, nameY);
+            
             const nameBlockHeight = (nameLines.length * doc.getLineHeight()) / doc.internal.scaleFactor;
-            const underlineY = nameY + nameBlockHeight + 1; 
-            const nipY = underlineY;
+            const underlineY = nameY + nameBlockHeight -1; // Adjusted for better positioning
+            doc.setLineWidth(0.5);
+            doc.line(signatureX, underlineY, signatureX + signatureMaxWidth -10, underlineY);
+            
+            const nipY = underlineY + 4; 
             doc.setFont('helvetica', 'normal');
             doc.text(`NIP. ${departmentHead.identity_number}`, signatureX, nipY);
+// --- END: REPLACE WITH THIS BLOCK ---
             doc.save(`Jadwal_UAS_${selectedProgram.code}_${formData.semester}.pdf`);
             setShowPrintModal(false);
         } catch (e: any) {
