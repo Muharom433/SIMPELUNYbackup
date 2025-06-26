@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import {
     LayoutDashboard, Calendar, Package, CheckCircle, BookOpen, Users, Building, Settings, User, FileText,
     BarChart3, Clock, GraduationCap, Wrench, ClipboardCheck, MapPin, CalendarCheck, CheckSquare, X,
-    ChevronRight, Sparkles, Home, PieChart, Zap
+    ChevronRight, Sparkles, Home, PieChart, Zap,HandHelping
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
