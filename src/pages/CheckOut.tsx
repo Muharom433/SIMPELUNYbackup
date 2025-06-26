@@ -317,7 +317,12 @@ const CheckOut: React.FC = () => {
     }
   };
 
-  const handleRecordSelect = (record: CombinedRecord, event?: React.MouseEvent) => {
+  const handleOutsideClick = (e: React.MouseEvent) => {
+    // Only close if clicking on the input area itself, not on dropdown items
+    if (e.target === e.currentTarget) {
+      setShowRecordDropdown(false);
+    }
+  };
     if (event) {
       event.preventDefault();
       event.stopPropagation();
@@ -697,6 +702,10 @@ const CheckOut: React.FC = () => {
                     setShowRecordDropdown(true);
                   }}
                   onFocus={() => setShowRecordDropdown(true)}
+                  onBlur={() => {
+                    // Delay hiding to allow clicks on dropdown items
+                    setTimeout(() => setShowRecordDropdown(false), 150);
+                  }}
                   className="w-full pl-12 pr-4 py-4 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-transparent transition-all duration-200 placeholder-gray-400 relative z-10"
                 />
                 <button
@@ -708,7 +717,10 @@ const CheckOut: React.FC = () => {
                 </button>
                 
                 {showRecordDropdown && (
-                  <div className="absolute z-60 w-full mt-2 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-2xl max-h-96 overflow-y-auto">
+                  <div 
+                    className="absolute z-60 w-full mt-2 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-2xl max-h-96 overflow-y-auto"
+                    onMouseDown={(e) => e.preventDefault()} // Prevent input blur when clicking dropdown
+                  >
                     {loading ? (
                       <div className="flex flex-col items-center justify-center py-12">
                         <RefreshCw className="h-8 w-8 animate-spin text-emerald-600 mb-3" />
@@ -1214,17 +1226,7 @@ const CheckOut: React.FC = () => {
         </div>
       </div>
 
-      {/* Click outside to close dropdown */}
-      {showRecordDropdown && (
-        <div
-          className="fixed inset-0 z-30"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setShowRecordDropdown(false);
-          }}
-        />
-      )}
+      {/* No more overlay - using onBlur instead */}
     </div>
   );
 };
