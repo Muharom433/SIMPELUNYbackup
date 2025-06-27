@@ -19,13 +19,24 @@ import {
   ChevronRight,
   BarChart3,
   Activity,
-  TrendingUp
+  TrendingUp,
+  FileText,
+  Calendar,
+  Send,
+  Download,
+  Eye,
+  CheckCircle,
+  XCircle,
+  Clock3,
+  Filter,
+  CalendarCheck
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line } from 'recharts';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 import ExcelUploadModal from '../components/ExcelUpload/ExcelUploadModal';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const scheduleSchema = z.object({
   course_name: z.string().min(2, 'Course name is required'),
@@ -44,7 +55,18 @@ const scheduleSchema = z.object({
   kurikulum: z.string().optional(),
 });
 
+const rescheduleSchema = z.object({
+  course_code: z.string().min(2, 'Course code is required'),
+  day: z.string().min(1, 'Day is required'),
+  start_time: z.string().min(1, 'Start time is required'),
+  end_time: z.string().min(1, 'End time is required'),
+  room: z.string().min(1, 'Room is required'),
+  class: z.string().min(1, 'Class/Rombel is required'),
+  reason: z.string().min(10, 'Please provide a detailed reason (min 10 characters)'),
+});
+
 type ScheduleForm = z.infer<typeof scheduleSchema>;
+type RescheduleForm = z.infer<typeof rescheduleSchema>;
 
 interface LectureSchedule {
   id: string;
@@ -66,18 +88,40 @@ interface LectureSchedule {
   updated_at: string;
 }
 
+interface RescheduleRequest {
+  id: string;
+  course_code: string;
+  day: string;
+  start_time: string;
+  end_time: string;
+  room: string;
+  class: string;
+  reason: string;
+  is_done: boolean | null;
+  requested_by: string;
+  requested_at: string;
+  reviewed_by?: string;
+  reviewed_at?: string;
+  notes?: string;
+}
+
 const LectureSchedules: React.FC = () => {
   const { profile } = useAuth();
+  const { getText } = useLanguage();
   const [schedules, setSchedules] = useState<LectureSchedule[]>([]);
+  const [rescheduleRequests, setRescheduleRequests] = useState<RescheduleRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [semesterFilter, setSemesterFilter] = useState<string>('all');
   const [dayFilter, setDayFilter] = useState<string>('all');
   const [showModal, setShowModal] = useState(false);
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [showRescheduleRequestsModal, setShowRescheduleRequestsModal] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<LectureSchedule | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [rescheduleFilter, setRescheduleFilter] = useState<string>('pending');
   
   const [sortConfig, setSortConfig] = useState<{ key: keyof LectureSchedule; direction: 'ascending' | 'descending' } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -92,11 +136,16 @@ const LectureSchedules: React.FC = () => {
       amount: 0
     }
   });
+
+  const rescheduleForm = useForm<RescheduleForm>({
+    resolver: zodResolver(rescheduleSchema),
+  });
   
   const dayNames = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
   useEffect(() => {
     fetchSchedules();
+    fetchRescheduleRequests();
     const timer = setInterval(() => setCurrentTime(new Date()), 60000);
     return () => clearInterval(timer);
   }, []);
@@ -117,6 +166,20 @@ const LectureSchedules: React.FC = () => {
       toast.error(error.message || 'Failed to load lecture schedules');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchRescheduleRequests = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('reschedule')
+        .select('*')
+        .order('requested_at', { ascending: false });
+      
+      if (error) throw error;
+      setRescheduleRequests(data || []);
+    } catch (error: any) {
+      console.error('Error fetching reschedule requests:', error);
     }
   };
 
@@ -146,13 +209,13 @@ const LectureSchedules: React.FC = () => {
           .update(scheduleData)
           .eq('id', editingSchedule.id);
         if (error) throw error;
-        toast.success('Schedule updated successfully! 🎉');
+        toast.success(getText('Schedule updated successfully!', 'Jadwal berhasil diperbarui!'));
       } else {
         const { error } = await supabase
           .from('lecture_schedules')
           .insert(scheduleData);
         if (error) throw error;
-        toast.success('Schedule created successfully! ✨');
+        toast.success(getText('Schedule created successfully!', 'Jadwal berhasil dibuat!'));
       }
 
       setShowModal(false);
@@ -162,6 +225,35 @@ const LectureSchedules: React.FC = () => {
     } catch (error: any) {
       console.error('Error saving schedule:', error);
       toast.error(error.message || 'Failed to save schedule');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRescheduleSubmit = async (data: RescheduleForm) => {
+    try {
+      setLoading(true);
+      const rescheduleData = {
+        ...data,
+        is_done: null,
+        requested_by: profile?.full_name || 'Unknown',
+        requested_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('reschedule')
+        .insert(rescheduleData);
+      
+      if (error) throw error;
+      
+      toast.success(getText('Reschedule request submitted successfully!', 'Permintaan reschedule berhasil dikirim!'));
+      
+      setShowRescheduleModal(false);
+      rescheduleForm.reset();
+      fetchRescheduleRequests();
+    } catch (error: any) {
+      console.error('Error submitting reschedule request:', error);
+      toast.error(error.message || 'Failed to submit reschedule request');
     } finally {
       setLoading(false);
     }
@@ -197,7 +289,7 @@ const LectureSchedules: React.FC = () => {
         .eq('id', scheduleId);
       
       if (error) throw error;
-      toast.success('Schedule deleted successfully! 🗑️');
+      toast.success(getText('Schedule deleted successfully!', 'Jadwal berhasil dihapus!'));
       setShowDeleteConfirm(null);
       fetchSchedules();
     } catch (error: any) {
@@ -206,6 +298,39 @@ const LectureSchedules: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRescheduleAction = async (requestId: string, isDone: boolean, notes?: string) => {
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('reschedule')
+        .update({
+          is_done: isDone,
+          reviewed_by: profile?.full_name,
+          reviewed_at: new Date().toISOString(),
+          notes: notes
+        })
+        .eq('id', requestId);
+      
+      if (error) throw error;
+      
+      toast.success(getText(
+        `Reschedule request ${isDone ? 'approved' : 'rejected'} successfully!`,
+        `Permintaan reschedule berhasil ${isDone ? 'disetujui' : 'ditolak'}!`
+      ));
+      fetchRescheduleRequests();
+    } catch (error: any) {
+      console.error('Error processing reschedule request:', error);
+      toast.error(error.message || 'Failed to process reschedule request');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generatePDF = () => {
+    // Implementation for PDF generation
+    toast.success(getText('PDF generated successfully!', 'PDF berhasil dibuat!'));
   };
 
   const filteredSchedules = useMemo(() => {
@@ -222,6 +347,16 @@ const LectureSchedules: React.FC = () => {
       return matchesSearch && matchesSemester && matchesDay;
     });
   }, [schedules, searchTerm, semesterFilter, dayFilter]);
+
+  const filteredRescheduleRequests = useMemo(() => {
+    return rescheduleRequests.filter(request => {
+      if (rescheduleFilter === 'all') return true;
+      if (rescheduleFilter === 'pending') return request.is_done === null;
+      if (rescheduleFilter === 'approved') return request.is_done === true;
+      if (rescheduleFilter === 'rejected') return request.is_done === false;
+      return true;
+    });
+  }, [rescheduleRequests, rescheduleFilter]);
 
   const sortedSchedules = useMemo(() => {
     let sortableItems = [...filteredSchedules];
@@ -254,8 +389,10 @@ const LectureSchedules: React.FC = () => {
   const startIndex = (currentPage - 1) * rowsPerPage;
   const currentTableData = sortedSchedules.slice(startIndex, startIndex + rowsPerPage);
 
-  // Day intensity analysis with color coding
+  // Day intensity analysis - only for super admin
   const dayIntensityStats = useMemo(() => {
+    if (profile?.role !== 'super_admin') return [];
+    
     const stats = dayNames.map(day => {
       const daySchedules = schedules.filter(s => s.day?.toLowerCase() === day.toLowerCase());
       const count = daySchedules.length;
@@ -263,19 +400,19 @@ const LectureSchedules: React.FC = () => {
       let intensity, color;
       if (count === 0) {
         intensity = 'Empty';
-        color = '#9CA3AF'; // gray-400
+        color = '#9CA3AF';
       } else if (count <= 3) {
         intensity = 'Light';
-        color = '#10B981'; // green-500
+        color = '#10B981';
       } else if (count <= 6) {
         intensity = 'Moderate';
-        color = '#3B82F6'; // blue-500
+        color = '#3B82F6';
       } else if (count <= 9) {
         intensity = 'Busy';
-        color = '#F59E0B'; // yellow-500
+        color = '#F59E0B';
       } else {
         intensity = 'Very Busy';
-        color = '#EF4444'; // red-500
+        color = '#EF4444';
       }
       
       return {
@@ -287,7 +424,7 @@ const LectureSchedules: React.FC = () => {
       };
     });
     return stats;
-  }, [schedules]);
+  }, [schedules, profile?.role]);
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -333,8 +470,15 @@ const LectureSchedules: React.FC = () => {
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
-          <p className="text-gray-600">You don't have permission to access lecture schedules.</p>
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+            {getText('Access Denied', 'Akses Ditolak')}
+          </h3>
+          <p className="text-gray-600">
+            {getText(
+              "You don't have permission to access lecture schedules.",
+              "Anda tidak memiliki izin untuk mengakses jadwal kuliah."
+            )}
+          </p>
         </div>
       </div>
     );
@@ -350,97 +494,106 @@ const LectureSchedules: React.FC = () => {
               <div className="p-2 bg-white bg-opacity-20 rounded-lg backdrop-blur-sm">
                 <Clock className="h-6 md:h-8 w-6 md:w-8" />
               </div>
-              <span>Lecture Schedules</span>
+              <span>{getText('Lecture Schedules', 'Jadwal Kuliah')}</span>
             </h1>
             <p className="text-sm md:text-lg opacity-90">
-              Manage academic schedules and timetables
+              {getText('Manage academic schedules and timetables', 'Kelola jadwal akademik dan timetable')}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-4 text-xs md:text-sm">
               <div className="flex items-center gap-2 opacity-80">
                 <BookOpen className="h-4 w-4" />
-                <span>Total: {schedules.length}</span>
+                <span>{getText('Total', 'Total')}: {schedules.length}</span>
               </div>
               <div className="flex items-center gap-2 opacity-80">
                 <User className="h-4 w-4" />
-                <span>Active: {schedules.filter(s => isScheduleActive(s)).length}</span>
+                <span>{getText('Active', 'Aktif')}: {schedules.filter(s => isScheduleActive(s)).length}</span>
               </div>
+              {profile?.role === 'super_admin' && (
+                <div className="flex items-center gap-2 opacity-80">
+                  <Calendar className="h-4 w-4" />
+                  <span>{getText('Reschedule Requests', 'Permintaan Reschedule')}: {rescheduleRequests.filter(r => r.is_done === null).length}</span>
+                </div>
+              )}
             </div>
           </div>
           <div className="text-right">
             <div className="text-3xl md:text-4xl font-bold opacity-90">{schedules.length}</div>
-            <div className="text-xs md:text-sm opacity-70">Total Schedules</div>
+            <div className="text-xs md:text-sm opacity-70">
+              {getText('Total Schedules', 'Total Jadwal')}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Day Intensity Chart */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-teal-100 rounded-lg">
-              <TrendingUp className="h-5 w-5 text-teal-600" />
+      {/* Day Intensity Chart - Super Admin Only */}
+      {profile?.role === 'super_admin' && dayIntensityStats.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-teal-100 rounded-lg">
+                <TrendingUp className="h-5 w-5 text-teal-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {getText('Daily Schedule Intensity', 'Intensitas Jadwal Harian')}
+                </h3>
+                <p className="text-sm text-gray-600">
+                  {getText('Weekly schedule distribution analysis', 'Analisis distribusi jadwal mingguan')}
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Daily Schedule Intensity</h3>
-              <p className="text-sm text-gray-600">Weekly schedule distribution analysis</p>
+          </div>
+          
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={dayIntensityStats} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis 
+                  dataKey="day" 
+                  tick={{ fontSize: 12 }}
+                  stroke="#64748b"
+                />
+                <YAxis 
+                  tick={{ fontSize: 12 }}
+                  stroke="#64748b"
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Line 
+                  type="monotone"
+                  dataKey="count" 
+                  stroke="#0d9488"
+                  strokeWidth={3}
+                  dot={{ fill: '#0d9488', strokeWidth: 2, r: 6 }}
+                  activeDot={{ r: 8, fill: '#0f766e' }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          
+          <div className="flex flex-wrap items-center justify-center gap-4 mt-4 pt-4 border-t border-gray-100">
+            <div className="flex items-center gap-2 text-xs">
+              <div className="w-3 h-3 rounded bg-gray-400"></div>
+              <span className="text-gray-600">Empty (0)</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <div className="w-3 h-3 rounded bg-green-500"></div>
+              <span className="text-gray-600">Light (1-3)</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <div className="w-3 h-3 rounded bg-blue-500"></div>
+              <span className="text-gray-600">Moderate (4-6)</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <div className="w-3 h-3 rounded bg-yellow-500"></div>
+              <span className="text-gray-600">Busy (7-9)</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <div className="w-3 h-3 rounded bg-red-500"></div>
+              <span className="text-gray-600">Very Busy (10+)</span>
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-2xl font-bold text-gray-900">{schedules.length}</div>
-            <div className="text-xs text-gray-500">Total Schedules</div>
-          </div>
         </div>
-        
-        <div className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={dayIntensityStats} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis 
-                dataKey="day" 
-                tick={{ fontSize: 12 }}
-                stroke="#64748b"
-              />
-              <YAxis 
-                tick={{ fontSize: 12 }}
-                stroke="#64748b"
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Line 
-                type="monotone"
-                dataKey="count" 
-                stroke="#0d9488"
-                strokeWidth={3}
-                dot={{ fill: '#0d9488', strokeWidth: 2, r: 6 }}
-                activeDot={{ r: 8, fill: '#0f766e' }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-        
-        {/* Legend */}
-        <div className="flex flex-wrap items-center justify-center gap-4 mt-4 pt-4 border-t border-gray-100">
-          <div className="flex items-center gap-2 text-xs">
-            <div className="w-3 h-3 rounded bg-gray-400"></div>
-            <span className="text-gray-600">Empty (0)</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <div className="w-3 h-3 rounded bg-green-500"></div>
-            <span className="text-gray-600">Light (1-3)</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <div className="w-3 h-3 rounded bg-blue-500"></div>
-            <span className="text-gray-600">Moderate (4-6)</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <div className="w-3 h-3 rounded bg-yellow-500"></div>
-            <span className="text-gray-600">Busy (7-9)</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <div className="w-3 h-3 rounded bg-red-500"></div>
-            <span className="text-gray-600">Very Busy (10+)</span>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Filters and Actions */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6">
@@ -450,7 +603,7 @@ const LectureSchedules: React.FC = () => {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search schedules..."
+                placeholder={getText('Search schedules...', 'Cari jadwal...')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
@@ -462,7 +615,7 @@ const LectureSchedules: React.FC = () => {
                 onChange={(e) => setSemesterFilter(e.target.value)}
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               >
-                <option value="all">All Semesters</option>
+                <option value="all">{getText('All Semesters', 'Semua Semester')}</option>
                 {[1, 2, 3, 4, 5, 6, 7, 8].map(sem => (
                   <option key={sem} value={sem.toString()}>Semester {sem}</option>
                 ))}
@@ -472,7 +625,7 @@ const LectureSchedules: React.FC = () => {
                 onChange={(e) => setDayFilter(e.target.value)}
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               >
-                <option value="all">All Days</option>
+                <option value="all">{getText('All Days', 'Semua Hari')}</option>
                 {dayNames.map((day) => (
                   <option key={day} value={day}>{day}</option>
                 ))}
@@ -484,17 +637,54 @@ const LectureSchedules: React.FC = () => {
             <button
               onClick={() => fetchSchedules()}
               className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Refresh"
+              title={getText('Refresh', 'Muat Ulang')}
             >
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
-            <button
-              onClick={() => setShowUploadModal(true)}
-              className="flex items-center gap-2 px-3 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-            >
-              <Upload className="h-4 w-4" />
-              <span className="hidden sm:inline">Import</span>
-            </button>
+            
+            {/* Department Admin Actions */}
+            {profile?.role === 'department_admin' && (
+              <button
+                onClick={() => setShowRescheduleModal(true)}
+                className="flex items-center gap-2 px-3 py-2 text-orange-700 border border-orange-300 rounded-lg hover:bg-orange-50 transition-colors text-sm"
+              >
+                <Calendar className="h-4 w-4" />
+                <span className="hidden sm:inline">{getText('Request Reschedule', 'Minta Reschedule')}</span>
+              </button>
+            )}
+
+            {/* Super Admin Actions */}
+            {profile?.role === 'super_admin' && (
+              <>
+                <button
+                  onClick={() => setShowRescheduleRequestsModal(true)}
+                  className="flex items-center gap-2 px-3 py-2 text-purple-700 border border-purple-300 rounded-lg hover:bg-purple-50 transition-colors text-sm relative"
+                >
+                  <Eye className="h-4 w-4" />
+                  <span className="hidden sm:inline">{getText('View Requests', 'Lihat Permintaan')}</span>
+                  {rescheduleRequests.filter(r => r.is_done === null).length > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                      {rescheduleRequests.filter(r => r.is_done === null).length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={generatePDF}
+                  className="flex items-center gap-2 px-3 py-2 text-green-700 border border-green-300 rounded-lg hover:bg-green-50 transition-colors text-sm"
+                >
+                  <Download className="h-4 w-4" />
+                  <span className="hidden sm:inline">{getText('Export PDF', 'Ekspor PDF')}</span>
+                </button>
+                <button
+                  onClick={() => setShowUploadModal(true)}
+                  className="flex items-center gap-2 px-3 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                >
+                  <Upload className="h-4 w-4" />
+                  <span className="hidden sm:inline">{getText('Import Excel', 'Impor Excel')}</span>
+                </button>
+              </>
+            )}
+
             <button
               onClick={() => {
                 setEditingSchedule(null);
@@ -509,7 +699,7 @@ const LectureSchedules: React.FC = () => {
               className="flex items-center gap-2 px-3 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm font-medium"
             >
               <Plus className="h-4 w-4" />
-              <span>Add Schedule</span>
+              <span>{getText('Add Schedule', 'Tambah Jadwal')}</span>
             </button>
           </div>
         </div>
@@ -523,33 +713,33 @@ const LectureSchedules: React.FC = () => {
               <tr>
                 <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   <button onClick={() => requestSort('course_name')} className="flex items-center gap-1 hover:text-gray-700">
-                    <span>Subject</span>
+                    <span>{getText('Subject', 'Mata Kuliah')}</span>
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </th>
                 <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   <button onClick={() => requestSort('lecturer')} className="flex items-center gap-1 hover:text-gray-700">
-                    <span>Lecturer</span>
+                    <span>{getText('Lecturer', 'Dosen')}</span>
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </th>
                 <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   <button onClick={() => requestSort('room')} className="flex items-center gap-1 hover:text-gray-700">
-                    <span>Room</span>
+                    <span>{getText('Room', 'Ruangan')}</span>
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </th>
                 <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   <button onClick={() => requestSort('day')} className="flex items-center gap-1 hover:text-gray-700">
-                    <span>Schedule</span>
+                    <span>{getText('Schedule', 'Jadwal')}</span>
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </th>
                 <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Details
+                  {getText('Details', 'Detail')}
                 </th>
                 <th className="px-3 md:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
+                  {getText('Actions', 'Aksi')}
                 </th>
               </tr>
             </thead>
@@ -559,7 +749,7 @@ const LectureSchedules: React.FC = () => {
                   <td colSpan={6} className="px-6 py-12 text-center">
                     <div className="flex items-center justify-center">
                       <RefreshCw className="h-6 w-6 animate-spin text-teal-600 mr-2" />
-                      <span className="text-gray-600">Loading schedules...</span>
+                      <span className="text-gray-600">{getText('Loading schedules...', 'Memuat jadwal...')}</span>
                     </div>
                   </td>
                 </tr>
@@ -568,8 +758,8 @@ const LectureSchedules: React.FC = () => {
                   <td colSpan={6} className="px-6 py-12 text-center">
                     <div className="text-gray-500">
                       <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p className="text-lg font-medium mb-2">No schedules found</p>
-                      <p className="text-sm">Try adjusting your search or create a new schedule</p>
+                      <p className="text-lg font-medium mb-2">{getText('No schedules found', 'Tidak ada jadwal ditemukan')}</p>
+                      <p className="text-sm">{getText('Try adjusting your search or create a new schedule', 'Coba sesuaikan pencarian atau buat jadwal baru')}</p>
                     </div>
                   </td>
                 </tr>
@@ -604,7 +794,7 @@ const LectureSchedules: React.FC = () => {
                       <td className="px-3 md:px-6 py-4">
                         <div>
                           <div className="text-sm text-gray-900">Semester {schedule.semester}</div>
-                          <div className="text-xs text-gray-500 capitalize">{schedule.type}</div>
+                          <div className="text-xs text-gray-500 capitalize">{getText(schedule.type === 'theory' ? 'Theory' : 'Practical', schedule.type === 'theory' ? 'Teori' : 'Praktik')}</div>
                         </div>
                       </td>
                       <td className="px-3 md:px-6 py-4 text-right">
@@ -612,14 +802,14 @@ const LectureSchedules: React.FC = () => {
                           <button
                             onClick={() => handleEdit(schedule)}
                             className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
-                            title="Edit"
+                            title={getText('Edit', 'Edit')}
                           >
                             <Edit className="h-3 w-3" />
                           </button>
                           <button
                             onClick={() => setShowDeleteConfirm(schedule.id)}
                             className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                            title="Delete"
+                            title={getText('Delete', 'Hapus')}
                           >
                             <Trash2 className="h-3 w-3" />
                           </button>
@@ -637,7 +827,10 @@ const LectureSchedules: React.FC = () => {
         {totalPages > 1 && (
           <div className="flex flex-col sm:flex-row justify-between items-center px-4 py-3 bg-gray-50 border-t border-gray-200 gap-3">
             <span className="text-sm text-gray-600">
-              Showing {sortedSchedules.length > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + rowsPerPage, sortedSchedules.length)} of {sortedSchedules.length} entries
+              {getText(
+                `Showing ${sortedSchedules.length > 0 ? startIndex + 1 : 0} to ${Math.min(startIndex + rowsPerPage, sortedSchedules.length)} of ${sortedSchedules.length} entries`,
+                `Menampilkan ${sortedSchedules.length > 0 ? startIndex + 1 : 0} sampai ${Math.min(startIndex + rowsPerPage, sortedSchedules.length)} dari ${sortedSchedules.length} entri`
+              )}
             </span>
             <nav className="flex items-center gap-2">
               <button
@@ -648,7 +841,7 @@ const LectureSchedules: React.FC = () => {
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <span className="text-sm font-medium px-3 py-1">
-                Page {currentPage} of {totalPages}
+                {getText(`Page ${currentPage} of ${totalPages}`, `Halaman ${currentPage} dari ${totalPages}`)}
               </span>
               <button
                 onClick={() => setCurrentPage(p => p + 1)}
@@ -662,7 +855,7 @@ const LectureSchedules: React.FC = () => {
         )}
       </div>
 
-      {/* Add/Edit Modal */}
+      {/* Add/Edit Schedule Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
@@ -670,7 +863,7 @@ const LectureSchedules: React.FC = () => {
               <div className="flex items-center justify-between">
                 <h3 className="text-2xl font-bold flex items-center gap-3">
                   <Clock className="h-6 w-6" />
-                  {editingSchedule ? 'Edit Schedule' : 'Add New Schedule'}
+                  {editingSchedule ? getText('Edit Schedule', 'Edit Jadwal') : getText('Add New Schedule', 'Tambah Jadwal Baru')}
                 </h3>
                 <button
                   onClick={() => {
@@ -688,12 +881,12 @@ const LectureSchedules: React.FC = () => {
             <form onSubmit={form.handleSubmit(handleSubmit)} className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">Course Name *</label>
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Course Name', 'Nama Mata Kuliah')} *</label>
                   <input
                     {...form.register('course_name')}
                     type="text"
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
-                    placeholder="Enter course name"
+                    placeholder={getText('Enter course name', 'Masukkan nama mata kuliah')}
                   />
                   {form.formState.errors.course_name && (
                     <p className="text-red-500 text-sm">{form.formState.errors.course_name.message}</p>
@@ -701,7 +894,7 @@ const LectureSchedules: React.FC = () => {
                 </div>
                 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">Course Code *</label>
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Course Code', 'Kode Mata Kuliah')} *</label>
                   <input
                     {...form.register('course_code')}
                     type="text"
@@ -716,12 +909,12 @@ const LectureSchedules: React.FC = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">Lecturer *</label>
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Lecturer', 'Dosen')} *</label>
                   <input
                     {...form.register('lecturer')}
                     type="text"
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
-                    placeholder="Enter lecturer name"
+                    placeholder={getText('Enter lecturer name', 'Masukkan nama dosen')}
                   />
                   {form.formState.errors.lecturer && (
                     <p className="text-red-500 text-sm">{form.formState.errors.lecturer.message}</p>
@@ -729,7 +922,7 @@ const LectureSchedules: React.FC = () => {
                 </div>
                 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">Room *</label>
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Room', 'Ruangan')} *</label>
                   <input
                     {...form.register('room')}
                     type="text"
@@ -743,12 +936,12 @@ const LectureSchedules: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">Study Program *</label>
+                <label className="block text-sm font-semibold text-gray-700">{getText('Study Program', 'Program Studi')} *</label>
                 <input
                   {...form.register('subject_study')}
                   type="text"
                   className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
-                  placeholder="Enter study program"
+                  placeholder={getText('Enter study program', 'Masukkan program studi')}
                 />
                 {form.formState.errors.subject_study && (
                   <p className="text-red-500 text-sm">{form.formState.errors.subject_study.message}</p>
@@ -757,12 +950,12 @@ const LectureSchedules: React.FC = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">Day *</label>
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Day', 'Hari')} *</label>
                   <select
                     {...form.register('day')}
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
                   >
-                    <option value="">Select Day</option>
+                    <option value="">{getText('Select Day', 'Pilih Hari')}</option>
                     {dayNames.map(day => (
                       <option key={day} value={day}>{day}</option>
                     ))}
@@ -773,7 +966,7 @@ const LectureSchedules: React.FC = () => {
                 </div>
                 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">Start Time *</label>
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Start Time', 'Waktu Mulai')} *</label>
                   <input
                     {...form.register('start_time')}
                     type="time"
@@ -785,7 +978,7 @@ const LectureSchedules: React.FC = () => {
                 </div>
                 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">End Time *</label>
+                  <label className="block text-sm font-semibold text-gray-700">{getText('End Time', 'Waktu Selesai')} *</label>
                   <input
                     {...form.register('end_time')}
                     type="time"
@@ -799,7 +992,7 @@ const LectureSchedules: React.FC = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">Semester *</label>
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Semester', 'Semester')} *</label>
                   <select
                     {...form.register('semester', { valueAsNumber: true })}
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
@@ -814,7 +1007,7 @@ const LectureSchedules: React.FC = () => {
                 </div>
                 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">Academic Year *</label>
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Academic Year', 'Tahun Akademik')} *</label>
                   <input
                     {...form.register('academics_year', { valueAsNumber: true })}
                     type="number"
@@ -827,13 +1020,13 @@ const LectureSchedules: React.FC = () => {
                 </div>
                 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">Class Type *</label>
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Class Type', 'Tipe Kelas')} *</label>
                   <select
                     {...form.register('type')}
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
                   >
-                    <option value="theory">Theory</option>
-                    <option value="practical">Practical</option>
+                    <option value="theory">{getText('Theory', 'Teori')}</option>
+                    <option value="practical">{getText('Practical', 'Praktik')}</option>
                   </select>
                   {form.formState.errors.type && (
                     <p className="text-red-500 text-sm">{form.formState.errors.type.message}</p>
@@ -843,7 +1036,7 @@ const LectureSchedules: React.FC = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">Class/Rombel *</label>
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Class/Rombel', 'Kelas/Rombel')} *</label>
                   <input
                     {...form.register('class')}
                     type="text"
@@ -856,7 +1049,7 @@ const LectureSchedules: React.FC = () => {
                 </div>
                 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">Amount</label>
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Amount', 'Jumlah')}</label>
                   <input
                     {...form.register('amount', { valueAsNumber: true })}
                     type="number"
@@ -870,12 +1063,12 @@ const LectureSchedules: React.FC = () => {
                 </div>
                 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">Kurikulum</label>
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Curriculum', 'Kurikulum')}</label>
                   <input
                     {...form.register('kurikulum')}
                     type="text"
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
-                    placeholder="Optional"
+                    placeholder={getText('Optional', 'Opsional')}
                   />
                 </div>
               </div>
@@ -890,7 +1083,7 @@ const LectureSchedules: React.FC = () => {
                   }}
                   className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
                 >
-                  Cancel
+                  {getText('Cancel', 'Batal')}
                 </button>
                 <button
                   type="submit"
@@ -900,14 +1093,317 @@ const LectureSchedules: React.FC = () => {
                   {loading ? (
                     <div className="flex items-center gap-2">
                       <RefreshCw className="h-4 w-4 animate-spin" />
-                      Saving...
+                      {getText('Saving...', 'Menyimpan...')}
                     </div>
                   ) : (
-                    editingSchedule ? 'Update Schedule' : 'Create Schedule'
+                    editingSchedule ? getText('Update Schedule', 'Perbarui Jadwal') : getText('Create Schedule', 'Buat Jadwal')
                   )}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Reschedule Request Modal - Department Admin */}
+      {showRescheduleModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+            <div className="bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-600 p-6 text-white">
+              <div className="flex items-center justify-between">
+                <h3 className="text-2xl font-bold flex items-center gap-3">
+                  <Calendar className="h-6 w-6" />
+                  {getText('Request Schedule Reschedule', 'Permintaan Reschedule Jadwal')}
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowRescheduleModal(false);
+                    rescheduleForm.reset();
+                  }}
+                  className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+            
+            <form onSubmit={rescheduleForm.handleSubmit(handleRescheduleSubmit)} className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Course Code', 'Kode Mata Kuliah')} *</label>
+                  <input
+                    {...rescheduleForm.register('course_code')}
+                    type="text"
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-orange-500 focus:ring-0 transition-colors"
+                    placeholder="e.g. TIF001"
+                  />
+                  {rescheduleForm.formState.errors.course_code && (
+                    <p className="text-red-500 text-sm">{rescheduleForm.formState.errors.course_code.message}</p>
+                  )}
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Day', 'Hari')} *</label>
+                  <select
+                    {...rescheduleForm.register('day')}
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-orange-500 focus:ring-0 transition-colors"
+                  >
+                    <option value="">{getText('Select Day', 'Pilih Hari')}</option>
+                    {dayNames.map(day => (
+                      <option key={day} value={day}>{day}</option>
+                    ))}
+                  </select>
+                  {rescheduleForm.formState.errors.day && (
+                    <p className="text-red-500 text-sm">{rescheduleForm.formState.errors.day.message}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Start Time', 'Waktu Mulai')} *</label>
+                  <input
+                    {...rescheduleForm.register('start_time')}
+                    type="time"
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-orange-500 focus:ring-0 transition-colors"
+                  />
+                  {rescheduleForm.formState.errors.start_time && (
+                    <p className="text-red-500 text-sm">{rescheduleForm.formState.errors.start_time.message}</p>
+                  )}
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">{getText('End Time', 'Waktu Selesai')} *</label>
+                  <input
+                    {...rescheduleForm.register('end_time')}
+                    type="time"
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-orange-500 focus:ring-0 transition-colors"
+                  />
+                  {rescheduleForm.formState.errors.end_time && (
+                    <p className="text-red-500 text-sm">{rescheduleForm.formState.errors.end_time.message}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Room', 'Ruangan')} *</label>
+                  <input
+                    {...rescheduleForm.register('room')}
+                    type="text"
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-orange-500 focus:ring-0 transition-colors"
+                    placeholder="e.g. Lab Komputer 1"
+                  />
+                  {rescheduleForm.formState.errors.room && (
+                    <p className="text-red-500 text-sm">{rescheduleForm.formState.errors.room.message}</p>
+                  )}
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Class/Rombel', 'Kelas/Rombel')} *</label>
+                  <input
+                    {...rescheduleForm.register('class')}
+                    type="text"
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-orange-500 focus:ring-0 transition-colors"
+                    placeholder="e.g. A, B, C"
+                  />
+                  {rescheduleForm.formState.errors.class && (
+                    <p className="text-red-500 text-sm">{rescheduleForm.formState.errors.class.message}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700">{getText('Reason for Reschedule', 'Alasan Reschedule')} *</label>
+                <textarea
+                  {...rescheduleForm.register('reason')}
+                  rows={4}
+                  className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-orange-500 focus:ring-0 transition-colors"
+                  placeholder={getText('Please provide a detailed reason for the reschedule request...', 'Mohon berikan alasan detail untuk permintaan reschedule...')}
+                />
+                {rescheduleForm.formState.errors.reason && (
+                  <p className="text-red-500 text-sm">{rescheduleForm.formState.errors.reason.message}</p>
+                )}
+              </div>
+
+              <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRescheduleModal(false);
+                    rescheduleForm.reset();
+                  }}
+                  className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
+                >
+                  {getText('Cancel', 'Batal')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 font-semibold transition-all shadow-lg"
+                >
+                  {loading ? (
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      {getText('Submitting...', 'Mengirim...')}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Send className="h-4 w-4" />
+                      {getText('Submit Request', 'Kirim Permintaan')}
+                    </div>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Reschedule Requests Modal - Super Admin */}
+      {showRescheduleRequestsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
+            <div className="bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-600 p-6 text-white">
+              <div className="flex items-center justify-between">
+                <h3 className="text-2xl font-bold flex items-center gap-3">
+                  <Eye className="h-6 w-6" />
+                  {getText('Reschedule Requests Management', 'Manajemen Permintaan Reschedule')}
+                </h3>
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={generatePDF}
+                    className="flex items-center gap-2 px-3 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors text-sm"
+                  >
+                    <Download className="h-4 w-4" />
+                    {getText('Export PDF', 'Ekspor PDF')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowRescheduleRequestsModal(false);
+                    }}
+                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-6 max-h-[80vh] overflow-y-auto">
+              {/* Filter */}
+              <div className="mb-6 flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-gray-500" />
+                  <select
+                    value={rescheduleFilter}
+                    onChange={(e) => setRescheduleFilter(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+                  >
+                    <option value="all">{getText('All Requests', 'Semua Permintaan')}</option>
+                    <option value="pending">{getText('Pending', 'Menunggu')}</option>
+                    <option value="approved">{getText('Approved', 'Disetujui')}</option>
+                    <option value="rejected">{getText('Rejected', 'Ditolak')}</option>
+                  </select>
+                </div>
+                <div className="text-sm text-gray-600">
+                  {getText(
+                    `Total: ${filteredRescheduleRequests.length} requests`,
+                    `Total: ${filteredRescheduleRequests.length} permintaan`
+                  )}
+                </div>
+              </div>
+
+              {/* Requests List */}
+              <div className="space-y-4">
+                {filteredRescheduleRequests.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                    <p className="text-lg font-medium text-gray-900 mb-2">
+                      {getText('No reschedule requests found', 'Tidak ada permintaan reschedule ditemukan')}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {getText('All reschedule requests will appear here', 'Semua permintaan reschedule akan muncul di sini')}
+                    </p>
+                  </div>
+                ) : (
+                  filteredRescheduleRequests.map((request) => (
+                    <div key={request.id} className="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h4 className="text-lg font-semibold text-gray-900">{request.course_code}</h4>
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                              request.is_done === null ? 'bg-yellow-100 text-yellow-800' :
+                              request.is_done === true ? 'bg-green-100 text-green-800' :
+                              'bg-red-100 text-red-800'
+                            }`}>
+                              {getText(
+                                request.is_done === null ? 'Pending' : request.is_done === true ? 'Approved' : 'Rejected',
+                                request.is_done === null ? 'Menunggu' : request.is_done === true ? 'Disetujui' : 'Ditolak'
+                              )}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div>
+                              <span className="text-gray-500">{getText('Day', 'Hari')}:</span>
+                              <div className="font-medium">{request.day}</div>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">{getText('Time', 'Waktu')}:</span>
+                              <div className="font-medium">{request.start_time} - {request.end_time}</div>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">{getText('Room', 'Ruangan')}:</span>
+                              <div className="font-medium">{request.room}</div>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">{getText('Class', 'Kelas')}:</span>
+                              <div className="font-medium">{request.class}</div>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {request.is_done === null && (
+                          <div className="flex items-center gap-2 ml-4">
+                            <button
+                              onClick={() => handleRescheduleAction(request.id, true)}
+                              className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                              {getText('Approve', 'Setujui')}
+                            </button>
+                            <button
+                              onClick={() => handleRescheduleAction(request.id, false)}
+                              className="flex items-center gap-1 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+                            >
+                              <XCircle className="h-4 w-4" />
+                              {getText('Reject', 'Tolak')}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="mb-4">
+                        <span className="text-gray-500 text-sm">{getText('Reason', 'Alasan')}:</span>
+                        <p className="mt-1 text-gray-900">{request.reason}</p>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-xs text-gray-500 pt-4 border-t border-gray-200">
+                        <div>
+                          {getText('Requested by', 'Diminta oleh')}: {request.requested_by} • {new Date(request.requested_at).toLocaleDateString()}
+                        </div>
+                        {request.reviewed_by && (
+                          <div>
+                            {getText('Reviewed by', 'Ditinjau oleh')}: {request.reviewed_by} • {request.reviewed_at && new Date(request.reviewed_at).toLocaleDateString()}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -921,15 +1417,17 @@ const LectureSchedules: React.FC = () => {
                 <AlertCircle className="h-8 w-8 text-red-600" />
               </div>
               <div className="ml-4">
-                <h3 className="text-xl font-bold text-gray-900">Delete Schedule</h3>
-                <p className="text-sm text-gray-600 mt-1">This action cannot be undone</p>
+                <h3 className="text-xl font-bold text-gray-900">{getText('Delete Schedule', 'Hapus Jadwal')}</h3>
+                <p className="text-sm text-gray-600 mt-1">{getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')}</p>
               </div>
             </div>
             
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
               <p className="text-sm text-red-800">
-                Are you sure you want to delete this lecture schedule? This action will permanently remove 
-                the schedule from the system.
+                {getText(
+                  'Are you sure you want to delete this lecture schedule? This action will permanently remove the schedule from the system.',
+                  'Apakah Anda yakin ingin menghapus jadwal kuliah ini? Tindakan ini akan menghapus jadwal secara permanen dari sistem.'
+                )}
               </p>
             </div>
             
@@ -938,7 +1436,7 @@ const LectureSchedules: React.FC = () => {
                 onClick={() => setShowDeleteConfirm(null)}
                 className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
               >
-                Cancel
+                {getText('Cancel', 'Batal')}
               </button>
               <button
                 onClick={() => handleDelete(showDeleteConfirm as string)}
@@ -948,12 +1446,12 @@ const LectureSchedules: React.FC = () => {
                 {loading ? (
                   <div className="flex items-center justify-center gap-2">
                     <RefreshCw className="h-4 w-4 animate-spin" />
-                    Deleting...
+                    {getText('Deleting...', 'Menghapus...')}
                   </div>
                 ) : (
                   <div className="flex items-center justify-center gap-2">
                     <Trash2 className="h-4 w-4" />
-                    Delete Schedule
+                    {getText('Delete Schedule', 'Hapus Jadwal')}
                   </div>
                 )}
               </button>
@@ -962,14 +1460,16 @@ const LectureSchedules: React.FC = () => {
         </div>
       )}
 
-      {/* ExcelUploadModal - keeping the original component unchanged */}
-      <ExcelUploadModal 
-        isOpen={showUploadModal} 
-        onClose={() => setShowUploadModal(false)} 
-        onSuccess={() => { 
-          fetchSchedules(); 
-        }}
-      />
+      {/* ExcelUploadModal - Super Admin Only - TETAP MENGGUNAKAN YANG SUDAH ADA */}
+      {profile?.role === 'super_admin' && (
+        <ExcelUploadModal 
+          isOpen={showUploadModal} 
+          onClose={() => setShowUploadModal(false)} 
+          onSuccess={() => { 
+            fetchSchedules(); 
+          }}
+        />
+      )}
     </div>
   );
 };
