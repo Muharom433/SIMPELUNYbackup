@@ -448,7 +448,7 @@ const SessionSchedule = () => {
           const newUserData = {
             identity_number: formData.student_nim,
             full_name: formData.student_name,
-            email: `${formData.student_nim}@student.edu`, // A placeholder email
+            username: formData.student_nim, // A placeholder email
             role: 'student',
             password: formData.student_nim,
             study_program_id: formData.study_program_id,
