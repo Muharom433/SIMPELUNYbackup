@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import {
     LayoutDashboard, Calendar, Package, CheckCircle, BookOpen, Users, Building, Settings, User, FileText,
     BarChart3, Clock, GraduationCap, Wrench, ClipboardCheck, MapPin, CalendarCheck, CheckSquare, X,
-    ChevronRight, Sparkles, Home, PieChart, Zap,HandHelping
+    ChevronRight, Sparkles, Home, PieChart, Zap, HandHelping, UserCheck
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -147,7 +147,6 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
     };
 
     const getMenuItems = () => {
-        // This function now correctly uses getText from the useLanguage hook
         const publicItems = [
             { icon: Home, label: getText('About SIMPEL', 'Tutorial SIMPEL'), path: '/'},
             { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book'},
@@ -163,8 +162,9 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
             return [
                 { icon: PieChart, label: getText('Dashboard', 'Dasbor'), path: '/' },
                 { icon: CalendarCheck, label: getText('Exam Management', 'Jadwal UAS'), path: '/exams' },
+                { icon: UserCheck, label: getText('Session Schedule', 'Jadwal Sidang'), path: '/session-schedule' }, // New menu item
                 { icon: Users, label: getText('User Management', 'Data Dosen/Mahasiswa'), path: '/users' },
-              { icon: Clock, label: getText('Lecture Schedules', 'Jadwal Kuliah'), path: '/schedules' },
+                { icon: Clock, label: getText('Lecture Schedules', 'Jadwal Kuliah'), path: '/schedules' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/profile' },
             ];
         }
@@ -177,10 +177,11 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: MapPin, label: getText('Departments', 'Departemen'), path: '/departments' },
                 { icon: GraduationCap, label: getText('Study Programs', 'Program Studi'), path: '/study-programs' },
                 { icon: Calendar, label: getText('Booking Management', 'Manajemen Pemesanan'), path: '/bookings', badge: pendingBookingsCount > 0 ? pendingBookingsCount : null },
-              { icon: HandHelping, label: getText('Tool Lending Administration', 'Administrasi Peminjaman Alat'), path: '/tool-lending-management' },
+                { icon: HandHelping, label: getText('Tool Lending Administration', 'Administrasi Peminjaman Alat'), path: '/tool-lending-management' },
                 { icon: ClipboardCheck, label: getText('Validation Queue', 'Antrian Validasi'), path: '/validation', badge: pendingCheckoutsCount > 0 ? pendingCheckoutsCount : null },
                 { icon: Clock, label: getText('Lecture Schedules', 'Jadwal Kuliah'), path: '/schedules' },
                 { icon: CalendarCheck, label: getText('Exam Management', 'Manajemen Ujian'), path: '/exams' },
+                { icon: UserCheck, label: getText('Session Schedule', 'Jadwal Sidang'), path: '/session-schedule' }, // New menu item
                 { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' },
                 { icon: FileText, label: getText('Reports', 'Laporan'), path: '/reports', badge: newReportsCount > 0 ? newReportsCount : null },
                 { icon: Settings, label: getText('System Settings', 'Pengaturan Sistem'), path: '/settings' },
