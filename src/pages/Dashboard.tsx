@@ -413,7 +413,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             <div className="relative">
               <div className="relative bg-gradient-to-br from-gray-100 to-gray-200 rounded-3xl p-8 shadow-2xl">
                 <div className="aspect-video rounded-2xl overflow-hidden shadow-xl">
-                  <iframe src="https://www.youtube.com/embed/FThMmRz2Y-w?si=skv_zkSfgJCmIo0j" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+                  <iframe width="auto" src="https://www.youtube.com/embed/FThMmRz2Y-w?si=skv_zkSfgJCmIo0j" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
                 </div>
                 
                 <div className="mt-6 text-center">
