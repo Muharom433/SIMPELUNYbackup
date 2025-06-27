@@ -250,7 +250,11 @@ const AuthForm: React.FC = () => {
           <p className="mt-2 text-sm text-gray-600 max-w-md mx-auto">
             {isSignUp 
               ? getText('Create your account to get started with smart campus management', 'Buat akun Anda untuk memulai manajemen kampus yang cerdas')
-              : getText('Sign in to access your smart campus dashboard', 'Masuk untuk mengakses dasbor kampus cerdas Anda')
+              : getText(`Try login using
+              username : Id Number
+              Password : Id Number`, `coba login dengan
+              username : NIM
+              Password : NIM`)
             }
           </p>
         </div>
