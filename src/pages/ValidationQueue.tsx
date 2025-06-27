@@ -341,50 +341,6 @@ const ValidationQueue: React.FC = () => {
         }
     }, [showDetailModal, selectedCheckoutId, checkouts, activeTab]);
 
-    const handleCheckItem = async (checkoutId: string, equipmentId: string, isChecked: boolean) => {
-        const tempCheckedItems = new Set(checkedItems);
-        if (isChecked) tempCheckedItems.add(equipmentId); else tempCheckedItems.delete(equipmentId);
-        setCheckedItems(tempCheckedItems);
-
-        if (isChecked) {
-            // For equipment checkouts, use the returned quantity, otherwise default to 1
-            const quantity = activeTab === 'equipment' ? (returnedQuantities[equipmentId] || 1) : 1;
-            
-            const { error } = await supabase.from('checkout_items').upsert({ 
-                checkout_id: checkoutId, 
-                equipment_id: equipmentId, 
-                condition_notes: conditionNotes[equipmentId] || null, 
-                quantity: quantity
-            }, { onConflict: 'checkout_id, equipment_id' });
-            
-            if (error) { 
-                toast.error(`Failed to save check status.`); 
-                setCheckedItems(prev => { const s = new Set(prev); s.delete(equipmentId); return s; }); 
-            } else {
-                // Update equipment quantity immediately when checked
-                if (activeTab === 'equipment') {
-                    await updateEquipmentQuantity(equipmentId, quantity);
-                }
-            }
-        } else {
-            const { error } = await supabase.from('checkout_items').delete().match({ 
-                checkout_id: checkoutId, 
-                equipment_id: equipmentId 
-            });
-            
-            if (error) { 
-                toast.error(`Failed to save uncheck status.`); 
-                setCheckedItems(prev => { const s = new Set(prev); s.add(equipmentId); return s; }); 
-            } else {
-                // Revert equipment quantity when unchecked
-                if (activeTab === 'equipment') {
-                    const quantity = returnedQuantities[equipmentId] || 1;
-                    await updateEquipmentQuantity(equipmentId, -quantity);
-                }
-            }
-        }
-    };
-
     const updateEquipmentQuantity = async (equipmentId: string, quantityChange: number) => {
         try {
             const { data: currentEquipment, error: getError } = await supabase
@@ -394,7 +350,7 @@ const ValidationQueue: React.FC = () => {
                 .single();
 
             if (!getError && currentEquipment) {
-                const newQuantity = currentEquipment.quantity + quantityChange;
+                const newQuantity = Math.max(0, currentEquipment.quantity + quantityChange);
                 
                 const { error: updateError } = await supabase
                     .from('equipment')
@@ -407,10 +363,91 @@ const ValidationQueue: React.FC = () => {
                 if (updateError) {
                     console.error('Error updating equipment quantity:', updateError);
                     toast.error('Failed to update equipment quantity');
+                    return false;
                 }
+                
+                console.log(`Equipment ${equipmentId} quantity updated: ${currentEquipment.quantity} → ${newQuantity}`);
+                return true;
             }
         } catch (error) {
             console.error('Error updating equipment quantity:', error);
+            return false;
+        }
+        return false;
+    };
+
+    const handleCheckItem = async (checkoutId: string, equipmentId: string, isChecked: boolean) => {
+        const tempCheckedItems = new Set(checkedItems);
+        
+        if (isChecked) {
+            tempCheckedItems.add(equipmentId);
+        } else {
+            tempCheckedItems.delete(equipmentId);
+        }
+        
+        setCheckedItems(tempCheckedItems);
+
+        if (isChecked) {
+            // When checking an item, save to checkout_items table
+            const quantity = activeTab === 'equipment' ? (returnedQuantities[equipmentId] || 1) : 1;
+            
+            const { error } = await supabase.from('checkout_items').upsert({ 
+                checkout_id: checkoutId, 
+                equipment_id: equipmentId, 
+                condition_notes: conditionNotes[equipmentId] || null, 
+                quantity: quantity
+            }, { onConflict: 'checkout_id, equipment_id' });
+            
+            if (error) { 
+                toast.error(`Failed to save check status.`); 
+                setCheckedItems(prev => { const s = new Set(prev); s.delete(equipmentId); return s; }); 
+                return;
+            }
+
+            // Update equipment quantity based on tab type
+            let quantityChange = 0;
+            if (activeTab === 'room') {
+                // Room checkout: checking means equipment is returned (+1 to inventory)
+                quantityChange = 1;
+            } else {
+                // Equipment checkout: checking means equipment is returned (use returned quantity)
+                quantityChange = quantity;
+            }
+
+            const success = await updateEquipmentQuantity(equipmentId, quantityChange);
+            if (!success) {
+                // Revert the checkbox state if quantity update failed
+                setCheckedItems(prev => { const s = new Set(prev); s.delete(equipmentId); return s; });
+            }
+        } else {
+            // When unchecking an item, remove from checkout_items table
+            const { error } = await supabase.from('checkout_items').delete().match({ 
+                checkout_id: checkoutId, 
+                equipment_id: equipmentId 
+            });
+            
+            if (error) { 
+                toast.error(`Failed to save uncheck status.`); 
+                setCheckedItems(prev => { const s = new Set(prev); s.add(equipmentId); return s; }); 
+                return;
+            }
+
+            // Revert equipment quantity based on tab type
+            let quantityChange = 0;
+            if (activeTab === 'room') {
+                // Room checkout: unchecking means equipment is not returned (-1 from inventory)
+                quantityChange = -1;
+            } else {
+                // Equipment checkout: unchecking means equipment is not returned (subtract returned quantity)
+                const quantity = returnedQuantities[equipmentId] || 1;
+                quantityChange = -quantity;
+            }
+
+            const success = await updateEquipmentQuantity(equipmentId, quantityChange);
+            if (!success) {
+                // Revert the checkbox state if quantity update failed
+                setCheckedItems(prev => { const s = new Set(prev); s.add(equipmentId); return s; });
+            }
         }
     };
     
@@ -485,9 +522,6 @@ const ValidationQueue: React.FC = () => {
                 if (lendingUpdateError) {
                     console.error('Error updating lending tool status:', lendingUpdateError);
                 }
-
-                // Equipment quantities are already updated when items are checked
-                // No need to update again here
             }
             
             toast.success('Checkout approved successfully!');
@@ -515,6 +549,19 @@ const ValidationQueue: React.FC = () => {
                 }).eq('id', bookingId);
                 
                 if (bookingError) throw bookingError;
+
+                // Revert equipment quantities for checked items in room checkouts
+                const checkoutItems = await supabase
+                    .from('checkout_items')
+                    .select('*')
+                    .eq('checkout_id', checkoutId);
+
+                if (checkoutItems.data) {
+                    for (const item of checkoutItems.data) {
+                        // For room checkouts, subtract 1 from equipment quantity when rejecting
+                        await updateEquipmentQuantity(item.equipment_id, -1);
+                    }
+                }
             } else {
                 const lendingToolId = checkout?.lendingTool_id;
                 if (!lendingToolId) throw new Error('Lending tool ID not found for this checkout');
@@ -526,7 +573,7 @@ const ValidationQueue: React.FC = () => {
                 
                 if (lendingError) throw lendingError;
 
-                // Revert equipment quantities for checked items
+                // Revert equipment quantities for checked items in equipment checkouts
                 const checkoutItems = await supabase
                     .from('checkout_items')
                     .select('*')
@@ -1171,27 +1218,6 @@ const ValidationQueue: React.FC = () => {
                             </div>
                             <div className="space-y-4 mt-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Report Title *</label>
-                                    <input 
-                                        type="text" 
-                                        value={reportTitle} 
-                                        onChange={(e) => setReportTitle(e.target.value)} 
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Severity</label>
-                                    <select 
-                                        value={reportSeverity} 
-                                        onChange={(e) => setReportSeverity(e.target.value as any)} 
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                                    >
-                                        <option value="minor">Minor</option>
-                                        <option value="major">Major</option>
-                                        <option value="critical">Critical</option>
-                                    </select>
-                                </div>
-                                <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
                                     <textarea 
                                         value={reportDescription} 
@@ -1227,4 +1253,4 @@ const ValidationQueue: React.FC = () => {
     );
 };
 
-export default ValidationQueue;
+export default ValidationQueue
