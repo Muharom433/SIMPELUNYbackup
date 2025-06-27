@@ -105,7 +105,7 @@ const LectureSchedules: React.FC = () => {
   const [rescheduleRequests, setRescheduleRequests] = useState<RescheduleRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [semesterFilter, setSemesterFilter] = useState<string>('all');
+  const [roomFilter, setRoomFilter] = useState<string>('all');
   const [dayFilter, setDayFilter] = useState<string>('all');
   const [showModal, setShowModal] = useState(false);
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
@@ -134,6 +134,16 @@ const LectureSchedules: React.FC = () => {
     resolver: zodResolver(rescheduleSchema),
   });
   
+  // Get unique rooms from schedules for filter dropdown
+  const uniqueRooms = useMemo(() => {
+    const rooms = schedules
+      .map(schedule => schedule.room)
+      .filter((room): room is string => Boolean(room))
+      .filter((room, index, arr) => arr.indexOf(room) === index)
+      .sort();
+    return rooms;
+  }, [schedules]);
+
   const dayNames = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
   useEffect(() => {
@@ -456,12 +466,12 @@ const LectureSchedules: React.FC = () => {
         (schedule.lecturer?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
         (schedule.room?.toLowerCase() || '').includes(searchTerm.toLowerCase());
       
-      const matchesSemester = semesterFilter === 'all' || schedule.semester?.toString() === semesterFilter;
+      const matchesRoom = roomFilter === 'all' || schedule.room?.toLowerCase() === roomFilter.toLowerCase();
       const matchesDay = dayFilter === 'all' || schedule.day?.toLowerCase() === dayFilter.toLowerCase();
       
-      return matchesSearch && matchesSemester && matchesDay;
+      return matchesSearch && matchesRoom && matchesDay;
     });
-  }, [schedules, searchTerm, semesterFilter, dayFilter]);
+  }, [schedules, searchTerm, roomFilter, dayFilter]);
 
   const filteredRescheduleRequests = useMemo(() => {
     return rescheduleRequests.filter(request => {
@@ -725,13 +735,13 @@ const LectureSchedules: React.FC = () => {
             </div>
             <div className="flex flex-wrap gap-2">
               <select
-                value={semesterFilter}
-                onChange={(e) => setSemesterFilter(e.target.value)}
+                value={roomFilter}
+                onChange={(e) => setRoomFilter(e.target.value)}
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               >
-                <option value="all">{getText('All Semesters', 'Semua Semester')}</option>
-                {[1, 2, 3, 4, 5, 6, 7, 8].map(sem => (
-                  <option key={sem} value={sem.toString()}>Semester {sem}</option>
+                <option value="all">{getText('All Rooms', 'Semua Ruangan')}</option>
+                {uniqueRooms.map((room) => (
+                  <option key={room} value={room}>{room}</option>
                 ))}
               </select>
               <select
