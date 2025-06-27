@@ -92,7 +92,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: UserCheck, label: getText('Session Schedule', 'Jadwal Sidang'), path: '/session-schedule' },
                 { icon: Users, label: getText('User Management', 'Data Dosen/Mahasiswa'), path: '/users' },
                 { icon: Clock, label: getText('Lecture Schedules', 'Jadwal Kuliah'), path: '/schedules' },
-                { icon: User, label: getText('Profile', 'Profil'), path: '/profile' },
+                { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
         }
 
