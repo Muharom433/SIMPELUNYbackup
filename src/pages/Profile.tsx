@@ -38,7 +38,7 @@ const Profile: React.FC = () => {
   const [profileData, setProfileData] = useState({
     full_name: user?.full_name || '',
     email: user?.email || '',
-    phone: user?.phone || '',
+    phone: user?.phone_number || '',
     identity_number: user?.identity_number || '',
     address: user?.address || ''
   });
