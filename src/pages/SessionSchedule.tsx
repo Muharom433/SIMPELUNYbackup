@@ -261,7 +261,8 @@ const SessionSchedule = () => {
       
       const { data } = await query;
       let filtered = data || [];
-      }
+
+     
 
       setRooms(filtered);
       setAvailableRooms(filtered);
