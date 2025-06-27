@@ -636,7 +636,7 @@ const SessionSchedule = () => {
             pageWidth -= 30; 
             doc.setLineWidth(1); 
             doc.line(14, currentY, pageWidth - 14, currentY); 
-            currentY += 10; 
+            currentY += 7; 
       const subtitle = `JADWAL SIDANG ${selectedProgram.name.toUpperCase()} TAHUN AKADEMIK ${printData.academic_year}`;
       doc.setFontSize(12);
       const titleLines = doc.splitTextToSize(subtitle, pageWidth - 30);
