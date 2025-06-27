@@ -113,7 +113,7 @@ const Profile: React.FC = () => {
         .from('users')
         .update({
           full_name: profileData.full_name,
-          phone: profileData.phone,
+          phone_number: profileData.phone,
           address: profileData.address,
           updated_at: new Date().toISOString()
         })
