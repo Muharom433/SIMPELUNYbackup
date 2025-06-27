@@ -15,13 +15,13 @@ import ValidationQueue from './pages/ValidationQueue';
 import CheckoutValidation from './pages/CheckoutValidation';
 import LectureSchedules from './pages/LectureSchedules';
 import ExamManagement from './pages/ExamManagement';
-import SessionSchedule from './pages/SessionSchedule'; // New import
+import SessionSchedule from './pages/SessionSchedule';
 import ToolAdministration from './pages/ToolAdministration';
 import ToolLending from './pages/ToolLending';
 import ToolLendingManagement from './pages/ToolLendingManagement';
 import Reports from './pages/Reports';
 import SystemSettings from './pages/SystemSettings';
-import Profile from './pages/Profile';
+import Profile from './pages/Profile'; // No longer needs user prop
 import { useAuth } from './hooks/useAuth';
 
 function App() {
@@ -52,9 +52,9 @@ function App() {
             
             {/* Public/Student Routes */}
             <Route path="tools" element={<ToolLending />} />
-            <Route path="profile" element={<Profile />} />
+            <Route path="profile" element={<Profile />} /> {/* No props needed */}
             <Route path="exams" element={<ExamManagement />} />
-            <Route path="session-schedule" element={<SessionSchedule />} /> {/* New route */}
+            <Route path="session-schedule" element={<SessionSchedule />} />
             
             {/* Super Admin Routes */}
             <Route path="tool-lending-management" element={<ToolLendingManagement />} />
