@@ -52,7 +52,7 @@ function App() {
             
             {/* Public/Student Routes */}
             <Route path="tools" element={<ToolLending />} />
-            <Route path="profile" element={<Profile/>} />
+            <Route path="profile" element={<Profile />} />
             <Route path="department-bookings" element={<div className="p-6">Department Bookings - Coming Soon</div>} />
             <Route path="department-reports" element={<div className="p-6">Department Reports - Coming Soon</div>} />
             <Route path="department-equipment" element={<div className="p-6">Equipment Management - Coming Soon</div>} />
