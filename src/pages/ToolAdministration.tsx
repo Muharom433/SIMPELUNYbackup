@@ -48,6 +48,7 @@ interface LendingDetail {
     expected_return_date: string;
     status: string;
   };
+  source?: 'lending_tool' | 'booking';
 }
 
 const ToolAdministration: React.FC = () => {
@@ -124,101 +125,142 @@ const ToolAdministration: React.FC = () => {
 
             if (lendingError) throw lendingError;
 
-            if (!lendingData || lendingData.length === 0) {
-                setLendingDetails([]);
-                return;
-            }
+            // Fetch approved bookings that include this equipment
+            const { data: bookingData, error: bookingError } = await supabase
+                .from('bookings')
+                .select('*, user:users(id, full_name, identity_number, email, phone_number)')
+                .eq('status', 'approved')
+                .contains('equipment_requested', [equipmentId])
+                .order('created_at', { ascending: false });
 
-            // Process each lending record to get detailed information
-            const detailedLendings = await Promise.all(
-                lendingData.map(async (lending) => {
-                    let lendingDetail: LendingDetail = {
-                        id: lending.id,
-                        date: lending.date,
-                        borrowed_quantity: 0,
-                        returned_quantity: 0,
-                        missing_quantity: 0,
-                        status: 'active',
-                        created_at: lending.created_at
-                    };
+            if (bookingError) throw bookingError;
 
-                    // Find the equipment index in the arrays
-                    const equipmentIndex = lending.id_equipment.findIndex((id: string) => id === equipmentId);
-                    if (equipmentIndex !== -1) {
-                        lendingDetail.borrowed_quantity = lending.qty[equipmentIndex] || 0;
-                    }
+            let allLendingDetails: LendingDetail[] = [];
 
-                    // Fetch user information
-                    if (lending.id_user) {
-                        const { data: userData } = await supabase
-                            .from('users')
-                            .select('id, full_name, identity_number, email, phone_number')
-                            .eq('id', lending.id_user)
-                            .single();
-                        
-                        if (userData) {
-                            lendingDetail.user = userData;
-                        }
-                    }
-
-                    // Fetch checkout information to determine status and returned quantities
-                    const { data: checkoutData } = await supabase
-                        .from('checkouts')
-                        .select('*')
-                        .eq('lendingTool_id', lending.id)
-                        .eq('type', 'things')
-                        .order('created_at', { ascending: false })
-                        .limit(1);
-
-                    if (checkoutData && checkoutData.length > 0) {
-                        const checkout = checkoutData[0];
-                        lendingDetail.checkout = {
-                            id: checkout.id,
-                            checkout_date: checkout.checkout_date,
-                            expected_return_date: checkout.expected_return_date,
-                            status: checkout.status
+            // Process lending_tool records
+            if (lendingData && lendingData.length > 0) {
+                const detailedLendings = await Promise.all(
+                    lendingData.map(async (lending) => {
+                        let lendingDetail: LendingDetail = {
+                            id: lending.id,
+                            date: lending.date,
+                            borrowed_quantity: 0,
+                            returned_quantity: 0,
+                            missing_quantity: 0,
+                            status: 'active',
+                            created_at: lending.created_at,
+                            source: 'lending_tool'
                         };
 
-                        // Determine status based on checkout
-                        if (checkout.status === 'active') {
-                            lendingDetail.status = 'returned';
-                        } else if (checkout.status === 'returned') {
+                        // Find the equipment index in the arrays
+                        const equipmentIndex = lending.id_equipment.findIndex((id: string) => id === equipmentId);
+                        if (equipmentIndex !== -1) {
+                            lendingDetail.borrowed_quantity = lending.qty[equipmentIndex] || 0;
+                        }
+
+                        // Fetch user information
+                        if (lending.id_user) {
+                            const { data: userData } = await supabase
+                                .from('users')
+                                .select('id, full_name, identity_number, email, phone_number')
+                                .eq('id', lending.id_user)
+                                .single();
+                            
+                            if (userData) {
+                                lendingDetail.user = userData;
+                            }
+                        }
+
+                        // Fetch checkout information to determine status and returned quantities
+                        const { data: checkoutData } = await supabase
+                            .from('checkouts')
+                            .select('*')
+                            .eq('lendingTool_id', lending.id)
+                            .eq('type', 'things')
+                            .order('created_at', { ascending: false })
+                            .limit(1);
+
+                        if (checkoutData && checkoutData.length > 0) {
+                            const checkout = checkoutData[0];
+                            lendingDetail.checkout = {
+                                id: checkout.id,
+                                checkout_date: checkout.checkout_date,
+                                expected_return_date: checkout.expected_return_date,
+                                status: checkout.status
+                            };
+
+                            // Fetch checkout items to get returned quantities
+                            const { data: checkoutItems } = await supabase
+                                .from('checkout_items')
+                                .select('*')
+                                .eq('checkout_id', checkout.id)
+                                .eq('equipment_id', equipmentId);
+
+                            if (checkoutItems && checkoutItems.length > 0) {
+                                const item = checkoutItems[0];
+                                lendingDetail.returned_quantity = item.quantity || 0;
+                                lendingDetail.missing_quantity = lendingDetail.borrowed_quantity - lendingDetail.returned_quantity;
+                                
+                                if (lendingDetail.missing_quantity <= 0) {
+                                    lendingDetail.status = 'returned';
+                                    lendingDetail.missing_quantity = 0;
+                                }
+                            } else {
+                                // No checkout items found, assume nothing returned yet
+                                lendingDetail.returned_quantity = 0;
+                                lendingDetail.missing_quantity = lendingDetail.borrowed_quantity;
+                            }
+                        } else {
+                            // No checkout record, equipment is still borrowed
+                            lendingDetail.returned_quantity = 0;
+                            lendingDetail.missing_quantity = lendingDetail.borrowed_quantity;
                             lendingDetail.status = 'active';
                         }
 
-                        // Fetch checkout items to get returned quantities
-                        const { data: checkoutItems } = await supabase
-                            .from('checkout_items')
-                            .select('*')
-                            .eq('checkout_id', checkout.id)
-                            .eq('equipment_id', equipmentId);
+                        return lendingDetail;
+                    })
+                );
+                
+                allLendingDetails = [...allLendingDetails, ...detailedLendings];
+            }
 
-                        if (checkoutItems && checkoutItems.length > 0) {
-                            const item = checkoutItems[0];
-                            lendingDetail.returned_quantity = item.quantity || 0;
-                            lendingDetail.missing_quantity = lendingDetail.borrowed_quantity - lendingDetail.returned_quantity;
-                            
-                            if (lendingDetail.missing_quantity <= 0) {
-                                lendingDetail.status = 'returned';
-                                lendingDetail.missing_quantity = 0;
-                            }
-                        } else {
-                            // No checkout items found, assume nothing returned yet
-                            lendingDetail.returned_quantity = 0;
-                            lendingDetail.missing_quantity = lendingDetail.borrowed_quantity;
+            // Process booking records
+            if (bookingData && bookingData.length > 0) {
+                const bookingLendings = bookingData.map((booking) => {
+                    const lendingDetail: LendingDetail = {
+                        id: `booking-${booking.id}`,
+                        date: booking.start_time,
+                        borrowed_quantity: 1, // Default quantity for bookings
+                        returned_quantity: 0, // Assume not returned for bookings
+                        missing_quantity: 1, // Default missing for approved bookings
+                        status: 'active',
+                        created_at: booking.created_at,
+                        source: 'booking',
+                        user: booking.user || (booking.user_info ? {
+                            id: 'temp',
+                            full_name: booking.user_info.full_name,
+                            identity_number: booking.user_info.identity_number,
+                            email: booking.user_info.email || null,
+                            phone_number: booking.user_info.phone_number || null
+                        } : undefined),
+                        checkout: {
+                            id: `booking-checkout-${booking.id}`,
+                            checkout_date: booking.start_time,
+                            expected_return_date: booking.end_time,
+                            status: 'active'
                         }
-                    } else {
-                        // No checkout record, equipment is still borrowed
-                        lendingDetail.returned_quantity = 0;
-                        lendingDetail.missing_quantity = lendingDetail.borrowed_quantity;
-                        lendingDetail.status = 'active';
-                    }
+                    };
 
                     return lendingDetail;
-                })
-            );
+                });
 
-            setLendingDetails(detailedLendings);
+                allLendingDetails = [...allLendingDetails, ...bookingLendings];
+            }
+
+            // Filter to show only records with missing items
+            const missingItemsOnly = allLendingDetails.filter(detail => detail.missing_quantity > 0);
+            
+            setLendingDetails(missingItemsOnly);
         } catch (error) {
             console.error('Error fetching lending details:', error);
             toast.error('Failed to load lending details');
@@ -379,13 +421,6 @@ const ToolAdministration: React.FC = () => {
                 )}
             </div>
         );
-    };
-
-    const getLendingStatusColor = (status: string, missingQty: number) => {
-        if (missingQty > 0) return 'bg-red-100 text-red-800 border-red-200';
-        if (status === 'active') return 'bg-blue-100 text-blue-800 border-blue-200';
-        if (status === 'returned') return 'bg-green-100 text-green-800 border-green-200';
-        return 'bg-gray-100 text-gray-800 border-gray-200';
     };
 
     if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
@@ -804,7 +839,7 @@ const ToolAdministration: React.FC = () => {
                 </div>
             )}
             
-            {/* Equipment Detail Modal with Lending Tracking */}
+            {/* Equipment Detail Modal with Enhanced Lending Tracking */}
             {selectedEquipment && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col overflow-hidden">
@@ -955,75 +990,57 @@ const ToolAdministration: React.FC = () => {
                                     </div>
                                 </div>
 
-                                {/* Lending Tracking */}
+                                {/* Enhanced Missing Items Tracking */}
                                 <div className="lg:col-span-2 space-y-6">
                                     <div>
                                         <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                                            <Users className="h-5 w-5 text-orange-600" />
-                                            Equipment Lending Tracking
+                                            <AlertTriangle className="h-5 w-5 text-red-600" />
+                                            Missing Equipment Tracking
                                             {loadingLending && <RefreshCw className="h-4 w-4 animate-spin text-gray-400" />}
                                         </h3>
                                         
                                         {loadingLending ? (
                                             <div className="bg-gray-50 rounded-lg p-8 text-center">
                                                 <RefreshCw className="h-8 w-8 animate-spin text-gray-400 mx-auto mb-4" />
-                                                <p className="text-gray-600">Loading lending details...</p>
+                                                <p className="text-gray-600">Loading missing items details...</p>
                                             </div>
                                         ) : lendingDetails.length === 0 ? (
-                                            <div className="bg-gray-50 rounded-lg p-8 text-center">
-                                                <Activity className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                                                <h4 className="text-lg font-medium text-gray-600 mb-2">No Lending Records</h4>
-                                                <p className="text-gray-500">This equipment has not been borrowed yet.</p>
+                                            <div className="bg-green-50 rounded-lg p-8 text-center border border-green-200">
+                                                <CheckCircle className="h-16 w-16 text-green-400 mx-auto mb-4" />
+                                                <h4 className="text-lg font-medium text-green-800 mb-2">All Equipment Returned!</h4>
+                                                <p className="text-green-600">No missing items for this equipment. All borrowed items have been returned successfully.</p>
                                             </div>
                                         ) : (
                                             <div className="space-y-4">
-                                                {/* Summary Cards */}
-                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                                                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                                                        <div className="flex items-center justify-between">
+                                                {/* Header for Missing Items */}
+                                                <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center">
+                                                            <AlertTriangle className="h-6 w-6 text-red-600 mr-3" />
                                                             <div>
-                                                                <p className="text-sm font-medium text-blue-600">Total Borrowed</p>
-                                                                <p className="text-2xl font-bold text-blue-800">
-                                                                    {lendingDetails.reduce((sum, detail) => sum + detail.borrowed_quantity, 0)}
+                                                                <h4 className="text-lg font-semibold text-red-800">Missing Equipment Alert</h4>
+                                                                <p className="text-sm text-red-600">
+                                                                    The following records show equipment that has not been returned yet.
                                                                 </p>
                                                             </div>
-                                                            <TrendingUp className="h-8 w-8 text-blue-600" />
                                                         </div>
-                                                    </div>
-                                                    
-                                                    <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-                                                        <div className="flex items-center justify-between">
-                                                            <div>
-                                                                <p className="text-sm font-medium text-green-600">Total Returned</p>
-                                                                <p className="text-2xl font-bold text-green-800">
-                                                                    {lendingDetails.reduce((sum, detail) => sum + detail.returned_quantity, 0)}
-                                                                </p>
+                                                        <div className="text-right">
+                                                            <div className="text-2xl font-bold text-red-800">
+                                                                {lendingDetails.reduce((sum, detail) => sum + detail.missing_quantity, 0)}
                                                             </div>
-                                                            <CheckCircle className="h-8 w-8 text-green-600" />
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-                                                        <div className="flex items-center justify-between">
-                                                            <div>
-                                                                <p className="text-sm font-medium text-red-600">Missing Items</p>
-                                                                <p className="text-2xl font-bold text-red-800">
-                                                                    {lendingDetails.reduce((sum, detail) => sum + detail.missing_quantity, 0)}
-                                                                </p>
-                                                            </div>
-                                                            <AlertTriangle className="h-8 w-8 text-red-600" />
+                                                            <div className="text-sm text-red-600">Missing Items</div>
                                                         </div>
                                                     </div>
                                                 </div>
 
-                                                {/* Lending Records */}
+                                                {/* Missing Items Records */}
                                                 <div className="space-y-3">
                                                     {lendingDetails.map((detail) => (
-                                                        <div key={detail.id} className={`border rounded-lg p-4 ${detail.missing_quantity > 0 ? 'border-red-200 bg-red-50' : detail.status === 'active' ? 'border-blue-200 bg-blue-50' : 'border-green-200 bg-green-50'}`}>
+                                                        <div key={detail.id} className="border border-red-200 bg-red-50 rounded-lg p-4">
                                                             <div className="flex items-start justify-between">
                                                                 <div className="flex items-start space-x-4">
-                                                                    <div className="flex-shrink-0 h-12 w-12 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
-                                                                        <User className="h-6 w-6 text-white" />
+                                                                    <div className={`flex-shrink-0 h-12 w-12 rounded-full flex items-center justify-center ${detail.source === 'booking' ? 'bg-gradient-to-r from-purple-500 to-indigo-500' : 'bg-gradient-to-r from-red-500 to-pink-500'}`}>
+                                                                        {detail.source === 'booking' ? <Building className="h-6 w-6 text-white" /> : <User className="h-6 w-6 text-white" />}
                                                                     </div>
                                                                     <div className="flex-1">
                                                                         <h4 className="font-semibold text-gray-900">
@@ -1048,44 +1065,35 @@ const ToolAdministration: React.FC = () => {
                                                                                     Expected Return: {format(new Date(detail.checkout.expected_return_date), 'MMM d, yyyy h:mm a')}
                                                                                 </div>
                                                                             )}
+                                                                            <div className={`flex items-center text-sm font-medium ${detail.source === 'booking' ? 'text-purple-600' : 'text-blue-600'}`}>
+                                                                                {detail.source === 'booking' ? <Building className="h-4 w-4 mr-2" /> : <Users className="h-4 w-4 mr-2" />}
+                                                                                Source: {detail.source === 'booking' ? 'Room Booking' : 'Lending Tool'}
+                                                                            </div>
                                                                         </div>
                                                                     </div>
                                                                 </div>
                                                                 
                                                                 <div className="text-right">
-                                                                    <div className="grid grid-cols-3 gap-4 text-center mb-3">
-                                                                        <div>
-                                                                            <div className="text-lg font-bold text-blue-600">{detail.borrowed_quantity}</div>
-                                                                            <div className="text-xs text-gray-600">Borrowed</div>
-                                                                        </div>
-                                                                        <div>
-                                                                            <div className="text-lg font-bold text-green-600">{detail.returned_quantity}</div>
-                                                                            <div className="text-xs text-gray-600">Returned</div>
-                                                                        </div>
-                                                                        <div>
-                                                                            <div className={`text-lg font-bold ${detail.missing_quantity > 0 ? 'text-red-600' : 'text-gray-400'}`}>
-                                                                                {detail.missing_quantity}
-                                                                            </div>
-                                                                            <div className="text-xs text-gray-600">Missing</div>
-                                                                        </div>
+                                                                    <div className="text-center mb-3">
+                                                                        <div className="text-3xl font-bold text-red-600">{detail.missing_quantity}</div>
+                                                                        <div className="text-sm text-red-600">Missing {selectedEquipment.unit}</div>
                                                                     </div>
                                                                     
-                                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getLendingStatusColor(detail.status, detail.missing_quantity)}`}>
-                                                                        {detail.missing_quantity > 0 ? 'MISSING ITEMS' : detail.status.toUpperCase()}
+                                                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border bg-red-100 text-red-800 border-red-200">
+                                                                        NEEDS RETURN
                                                                     </span>
                                                                 </div>
                                                             </div>
                                                             
-                                                            {detail.missing_quantity > 0 && (
-                                                                <div className="mt-3 p-3 bg-red-100 border border-red-200 rounded-md">
-                                                                    <div className="flex items-center">
-                                                                        <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
-                                                                        <span className="text-sm font-medium text-red-800">
-                                                                            {detail.missing_quantity} {selectedEquipment.unit} missing and needs to be returned
-                                                                        </span>
-                                                                    </div>
+                                                            <div className="mt-4 p-3 bg-red-100 border border-red-200 rounded-md">
+                                                                <div className="flex items-center">
+                                                                    <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
+                                                                    <span className="text-sm font-medium text-red-800">
+                                                                        {detail.missing_quantity} {selectedEquipment.unit} borrowed and needs to be returned
+                                                                        {detail.source === 'booking' ? ' (from room booking)' : ' (from lending tool)'}
+                                                                    </span>
                                                                 </div>
-                                                            )}
+                                                            </div>
                                                         </div>
                                                     ))}
                                                 </div>
