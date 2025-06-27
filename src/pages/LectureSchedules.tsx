@@ -89,7 +89,6 @@ interface LectureSchedule {
 }
 
 interface RescheduleRequest {
-  id: string;
   course_code: string;
   day: string;
   start_time: string;
@@ -295,13 +294,18 @@ const LectureSchedules: React.FC = () => {
     }
   };
 
-  const handleRescheduleAction = async (requestId: string, isDone: boolean) => {
+  const handleRescheduleAction = async (request: RescheduleRequest, isDone: boolean) => {
     try {
       setLoading(true);
       const { error } = await supabase
         .from('reschedule')
         .update({ is_done: isDone })
-        .eq('id', requestId);
+        .eq('course_code', request.course_code)
+        .eq('day', request.day)
+        .eq('start_time', request.start_time)
+        .eq('end_time', request.end_time)
+        .eq('room', request.room)
+        .eq('class', request.class);
       
       if (error) throw error;
       
@@ -1423,8 +1427,8 @@ const LectureSchedules: React.FC = () => {
                     </p>
                   </div>
                 ) : (
-                  filteredRescheduleRequests.map((request) => (
-                    <div key={request.id} className="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                  filteredRescheduleRequests.map((request, index) => (
+                    <div key={`${request.course_code}-${request.day}-${request.start_time}-${request.end_time}`} className="bg-gray-50 rounded-lg p-6 border border-gray-200">
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
@@ -1465,7 +1469,7 @@ const LectureSchedules: React.FC = () => {
                             <input
                               type="checkbox"
                               checked={request.is_done === true}
-                              onChange={(e) => handleRescheduleAction(request.id, e.target.checked)}
+                              onChange={(e) => handleRescheduleAction(request, e.target.checked)}
                               className="w-5 h-5 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500 focus:ring-2"
                             />
                             <span className="text-sm font-medium text-gray-700">
