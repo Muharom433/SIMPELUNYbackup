@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import React, { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import Select from 'react-select';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
@@ -22,8 +21,8 @@ import {
   Clock,
   MapPin,
   GraduationCap,
-  Eye,
-  UserCheck
+  UserCheck,
+  ChevronDown
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -63,12 +62,17 @@ type PrintFormData = {
 const SessionSchedule = () => {
   const { profile } = useAuth();
   const { getText } = useLanguage();
+  
+  // Main state
   const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [editingSession, setEditingSession] = useState<any | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<any | null>(null);
+
+  // Filter states
   const [searchTerm, setSearchTerm] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [programFilter, setProgramFilter] = useState('');
@@ -81,8 +85,29 @@ const SessionSchedule = () => {
   const [departments, setDepartments] = useState<any[]>([]);
   const [departmentHeads, setDepartmentHeads] = useState<any[]>([]);
   const [availableRooms, setAvailableRooms] = useState<any[]>([]);
-  const [filteredStudents, setFilteredStudents] = useState<any[]>([]);
-  const [filteredLecturers, setFilteredLecturers] = useState<any[]>([]);
+
+  // Form data state for student info (separated inputs like BookRoom)
+  const [formData, setFormData] = useState({
+    student_name: '',
+    student_nim: '',
+    study_program_id: ''
+  });
+
+  // Dropdown search states
+  const [studentSearch, setStudentSearch] = useState('');
+  const [supervisorSearch, setSupervisorSearch] = useState('');
+  const [examinerSearch, setExaminerSearch] = useState('');
+  const [secretarySearch, setSecretarySearch] = useState('');
+  const [roomSearch, setRoomSearch] = useState('');
+  const [programSearch, setProgramSearch] = useState('');
+
+  // Dropdown visibility states
+  const [showStudentDropdown, setShowStudentDropdown] = useState(false);
+  const [showSupervisorDropdown, setShowSupervisorDropdown] = useState(false);
+  const [showExaminerDropdown, setShowExaminerDropdown] = useState(false);
+  const [showSecretaryDropdown, setShowSecretaryDropdown] = useState(false);
+  const [showRoomDropdown, setShowRoomDropdown] = useState(false);
+  const [showProgramDropdown, setShowProgramDropdown] = useState(false);
 
   const form = useForm<SessionFormData>({
     resolver: zodResolver(sessionSchema),
@@ -103,7 +128,6 @@ const SessionSchedule = () => {
   const watchDate = form.watch('date');
   const watchStartTime = form.watch('start_time');
   const watchEndTime = form.watch('end_time');
-  const watchStudentId = form.watch('student_id');
 
   useEffect(() => {
     if (profile) {
@@ -122,15 +146,6 @@ const SessionSchedule = () => {
       checkAvailableRooms(watchDate, watchStartTime, watchEndTime);
     }
   }, [watchDate, watchStartTime, watchEndTime]);
-
-  useEffect(() => {
-    if (watchStudentId) {
-      const selectedStudent = students.find(s => s.id === watchStudentId);
-      if (selectedStudent && selectedStudent.study_program_id) {
-        filterLecturersByStudyProgram(selectedStudent.study_program_id);
-      }
-    }
-  }, [watchStudentId, students, lecturers]);
 
   const fetchSessions = async () => {
     try {
@@ -203,7 +218,6 @@ const SessionSchedule = () => {
       }
 
       setStudents(filtered);
-      setFilteredStudents(filtered);
     } catch (error: any) {
       console.error('Error fetching students:', error);
       toast.error(getText('Failed to load students.', 'Gagal memuat mahasiswa.'));
@@ -235,7 +249,6 @@ const SessionSchedule = () => {
       }
 
       setLecturers(filtered);
-      setFilteredLecturers(filtered);
     } catch (error: any) {
       console.error('Error fetching lecturers:', error);
       toast.error(getText('Failed to load lecturers.', 'Gagal memuat dosen.'));
@@ -314,59 +327,166 @@ const SessionSchedule = () => {
     }
   };
 
+  // Enhanced room availability check that includes lecture schedules
   const checkAvailableRooms = async (date: string, startTime: string, endTime: string) => {
     try {
-      const { data } = await supabase
-        .from('final_sessions')
-        .select('room_id, start_time, end_time, id')
-        .eq('date', date)
-        .not('room_id', 'is', null);
+      console.log('🔍 Checking room availability for:', { date, startTime, endTime });
+      
+      // Get day name for checking lecture schedules
+      const dateObj = new Date(date);
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const dayName = dayNames[dateObj.getDay()];
+      
+      // Fetch conflicts from both final_sessions and lecture_schedules
+      const [finalSessionsResponse, lectureSchedulesResponse] = await Promise.all([
+        supabase
+          .from('final_sessions')
+          .select('room_id, start_time, end_time, id')
+          .eq('date', date)
+          .not('room_id', 'is', null),
+        supabase
+          .from('lecture_schedules')
+          .select('room, start_time, end_time')
+          .eq('day', dayName)
+      ]);
 
-      const conflictingRoomIds = (data || [])
+      if (finalSessionsResponse.error) throw finalSessionsResponse.error;
+      if (lectureSchedulesResponse.error) throw lectureSchedulesResponse.error;
+      
+      console.log('📅 Found final sessions on same date:', finalSessionsResponse.data);
+      console.log('📚 Found lecture schedules on same day:', lectureSchedulesResponse.data);
+      
+      // Get conflicting room IDs from final sessions
+      const finalSessionConflicts = (finalSessionsResponse.data || [])
         .filter(session => {
+          // Skip if it's the current session being edited
           if (editingSession && session.id === editingSession.id) {
+            console.log('⏭️ Skipping current editing session');
             return false;
           }
           
+          // Check for time overlap
           const sessionStart = session.start_time;
           const sessionEnd = session.end_time;
           
-          if (!sessionStart || !sessionEnd) return false;
+          if (!sessionStart || !sessionEnd) {
+            console.log('⚠️ Session missing time data');
+            return false;
+          }
           
-          return startTime < sessionEnd && endTime > sessionStart;
+          // Time overlap logic: 
+          // Overlap occurs if: start_time < session_end_time AND end_time > session_start_time
+          const hasOverlap = startTime < sessionEnd && endTime > sessionStart;
+          
+          if (hasOverlap) {
+            console.log('❌ Final session time conflict found:', {
+              sessionTime: `${sessionStart}-${sessionEnd}`,
+              newTime: `${startTime}-${endTime}`,
+              roomId: session.room_id
+            });
+          }
+          
+          return hasOverlap;
         })
-        .map(session => session.room_id);
+        .map(session => session.room_id)
+        .filter(Boolean);
 
-      const available = rooms.filter(room => !conflictingRoomIds.includes(room.id));
+      // Get conflicting room IDs from lecture schedules
+      const lectureScheduleConflicts = (lectureSchedulesResponse.data || [])
+        .filter(schedule => {
+          const scheduleStart = schedule.start_time;
+          const scheduleEnd = schedule.end_time;
+          
+          if (!scheduleStart || !scheduleEnd || !schedule.room) {
+            return false;
+          }
+          
+          // Convert times to comparable format (assuming same date)
+          const sessionStartTime = startTime.split('T')[1] || startTime; // Get time part
+          const sessionEndTime = endTime.split('T')[1] || endTime; // Get time part
+          
+          // Time overlap logic for lecture schedules
+          const hasOverlap = sessionStartTime < scheduleEnd && sessionEndTime > scheduleStart;
+          
+          if (hasOverlap) {
+            console.log('❌ Lecture schedule time conflict found:', {
+              scheduleTime: `${scheduleStart}-${scheduleEnd}`,
+              newTime: `${sessionStartTime}-${sessionEndTime}`,
+              room: schedule.room
+            });
+          }
+          
+          return hasOverlap;
+        });
+
+      // Map lecture schedule room names to room IDs
+      const lectureRoomIds = [];
+      for (const conflictSchedule of lectureScheduleConflicts) {
+        const matchingRoom = rooms.find(room => 
+          room.name.toLowerCase() === conflictSchedule.room.toLowerCase()
+        );
+        if (matchingRoom) {
+          lectureRoomIds.push(matchingRoom.id);
+        }
+      }
+      
+      // Combine all conflicting room IDs
+      const allConflictingRoomIds = [...finalSessionConflicts, ...lectureRoomIds];
+      
+      console.log('🚫 All conflicting room IDs:', allConflictingRoomIds);
+      
+      // Filter available rooms
+      const available = rooms.filter(room => !allConflictingRoomIds.includes(room.id));
       setAvailableRooms(available);
+      
+      console.log(`📊 Available rooms: ${available.length}/${rooms.length}`);
     } catch (error: any) {
       console.error('Error checking available rooms:', error);
       setAvailableRooms(rooms);
     }
   };
 
-  const filterLecturersByStudyProgram = (studyProgramId: string) => {
-    if (!studyProgramId) {
-      setFilteredLecturers(lecturers);
-      return;
-    }
+  const resetForm = () => {
+    form.reset({
+      student_id: '',
+      date: format(new Date(), 'yyyy-MM-dd'),
+      start_time: '',
+      end_time: '',
+      room_id: '',
+      title: '',
+      supervisor: '',
+      examiner: '',
+      secretary: '',
+    });
     
-    const filtered = lecturers.filter(lecturer => 
-      lecturer.study_program_id === studyProgramId
-    );
-    setFilteredLecturers(filtered);
-  };
-
-  const removeTitles = (name: string) => {
-    return name.replace(/prof\.|dr\.|s\.pd\.|m\.pd\.|s\.kom\.|m\.kom\./gi, '').trim();
+    setFormData({
+      student_name: '',
+      student_nim: '',
+      study_program_id: ''
+    });
+    
+    setStudentSearch('');
+    setSupervisorSearch('');
+    setExaminerSearch('');
+    setSecretarySearch('');
+    setRoomSearch('');
+    setProgramSearch('');
+    
+    // Reset dropdown visibility
+    setShowStudentDropdown(false);
+    setShowSupervisorDropdown(false);
+    setShowExaminerDropdown(false);
+    setShowSecretaryDropdown(false);
+    setShowRoomDropdown(false);
+    setShowProgramDropdown(false);
   };
 
   const handleSubmit = async (data: SessionFormData) => {
     try {
-      setLoading(true);
+      setSubmitting(true);
 
       const sessionData = {
-        student_id: data.student_id,
+        student_id: data.student_id || null,
         date: data.date,
         start_time: data.start_time,
         end_time: data.end_time,
@@ -375,6 +495,12 @@ const SessionSchedule = () => {
         supervisor: data.supervisor,
         examiner: data.examiner,
         secretary: data.secretary,
+        // If no student_id (manual entry), store student info
+        student_info: !data.student_id ? {
+          full_name: formData.student_name,
+          identity_number: formData.student_nim,
+          study_program_id: formData.study_program_id
+        } : null
       };
 
       if (editingSession) {
@@ -394,18 +520,20 @@ const SessionSchedule = () => {
 
       setShowModal(false);
       setEditingSession(null);
-      form.reset();
+      resetForm();
       fetchSessions();
     } catch (error: any) {
       console.error('Error saving session:', error);
       toast.error(error.message || getText('Failed to save session', 'Gagal menyimpan jadwal sidang'));
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
   const handleEdit = (session: any) => {
     setEditingSession(session);
+    
+    // Set form values
     form.reset({
       student_id: session.student_id,
       date: session.date,
@@ -417,12 +545,26 @@ const SessionSchedule = () => {
       examiner: session.examiner,
       secretary: session.secretary,
     });
+    
+    // Set display values
+    setStudentSearch(session.student?.identity_number || '');
+    setFormData({
+      student_name: session.student?.full_name || '',
+      student_nim: session.student?.identity_number || '',
+      study_program_id: session.student?.study_program?.id || ''
+    });
+    setProgramSearch(session.student?.study_program?.name || '');
+    setRoomSearch(session.room?.name || '');
+    setSupervisorSearch(session.supervisor);
+    setExaminerSearch(session.examiner);
+    setSecretarySearch(session.secretary);
+    
     setShowModal(true);
   };
 
   const handleDelete = async (id: string) => {
     try {
-      setLoading(true);
+      setSubmitting(true);
       const { error } = await supabase
         .from('final_sessions')
         .delete()
@@ -435,7 +577,7 @@ const SessionSchedule = () => {
       console.error('Error deleting session:', error);
       toast.error(error.message || getText('Failed to delete session', 'Gagal menghapus jadwal sidang'));
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
@@ -624,7 +766,7 @@ const SessionSchedule = () => {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
                 type="text"
-                placeholder={getText("Search by name, NIM, title...", "Cari berdasarkan nama, NIM, judul...")}
+                placeholder={getText("Search by name,NIM, title...", "Cari berdasarkan nama, NIM, judul...")}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
@@ -677,17 +819,7 @@ const SessionSchedule = () => {
               <button
                 onClick={() => {
                   setEditingSession(null);
-                  form.reset({
-                    student_id: '',
-                    date: format(new Date(), 'yyyy-MM-dd'),
-                    start_time: '',
-                    end_time: '',
-                    room_id: '',
-                    title: '',
-                    supervisor: '',
-                    examiner: '',
-                    secretary: '',
-                  });
+                  resetForm();
                   setShowModal(true);
                 }}
                 className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 shadow-sm hover:shadow-md"
@@ -885,275 +1017,468 @@ const SessionSchedule = () => {
                 </button>
               </div>
               <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-                {/* Student Information */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Student", "Mahasiswa")} *</label>
-                  <Controller
-                    name="student_id"
-                    control={form.control}
-                    render={({ field }) => {
-                      const options = filteredStudents.map(s => ({
-                        value: s.id,
-                        label: `${s.full_name} (${s.identity_number}) - ${s.study_program?.name || ''}`
-                      }));
-                      const currentValue = options.find(o => o.value === field.value);
-                      return (
-                        <Select
-                          {...field}
-                          options={options}
-                          value={currentValue}
-                          onChange={option => field.onChange(option ? option.value : '')}
-                          placeholder={getText("Search and select student...", "Cari dan pilih mahasiswa...")}
-                          isClearable
-                          isSearchable
-                          styles={{
-                            control: (provided) => ({
-                              ...provided,
-                              minHeight: '42px',
-                              borderColor: '#d1d5db',
-                            }),
+                {/* Student Information - Separated like BookRoom */}
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-3 pb-4 border-b border-gray-200">
+                    <User className="h-5 w-5 text-blue-500" />
+                    <h4 className="text-lg font-semibold text-gray-800">{getText("Student Information", "Informasi Mahasiswa")}</h4>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Student NIM", "NIM Mahasiswa")} *</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder={getText("Enter or search NIM...", "Masukkan atau cari NIM...")}
+                          value={studentSearch}
+                          onChange={(e) => {
+                            setStudentSearch(e.target.value);
+                            setShowStudentDropdown(true);
+                            
+                            // Auto-search for existing students
+                            const foundStudent = students.find(s => s.identity_number === e.target.value);
+                            if (foundStudent) {
+                              form.setValue('student_id', foundStudent.id);
+                              setFormData(prev => ({
+                                ...prev,
+                                student_name: foundStudent.full_name,
+                                student_nim: foundStudent.identity_number,
+                                study_program_id: foundStudent.study_program_id || ''
+                              }));
+                              const program = studyPrograms.find(p => p.id === foundStudent.study_program_id);
+                              if (program) setProgramSearch(program.name);
+                              toast.success(getText('Student data auto-filled!', 'Data mahasiswa otomatis terisi!'));
+                            } else {
+                              form.setValue('student_id', '');
+                              setFormData(prev => ({
+                                ...prev,
+                                student_name: '',
+                                student_nim: e.target.value,
+                                study_program_id: ''
+                              }));
+                              setProgramSearch('');
+                            }
                           }}
+                          onFocus={() => setShowStudentDropdown(true)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
-                      );
-                    }}
-                  />
-                  {form.formState.errors.student_id && (
-                    <p className="mt-1 text-sm text-red-600">{form.formState.errors.student_id.message}</p>
-                  )}
+                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        
+                        {showStudentDropdown && studentSearch && (
+                          <div 
+                            className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
+                            onMouseLeave={() => setShowStudentDropdown(false)}
+                          >
+                            {students
+                              .filter(student => 
+                                student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
+                                student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
+                              )
+                              .slice(0, 5)
+                              .map(student => (
+                                <button
+                                  key={student.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setStudentSearch(student.identity_number);
+                                    form.setValue('student_id', student.id);
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      student_name: student.full_name,
+                                      student_nim: student.identity_number,
+                                      study_program_id: student.study_program_id || ''
+                                    }));
+                                    const program = studyPrograms.find(p => p.id === student.study_program_id);
+                                    if (program) setProgramSearch(program.name);
+                                    setShowStudentDropdown(false);
+                                    toast.success(getText('Student data auto-filled!', 'Data mahasiswa otomatis terisi!'));
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                >
+                                  <div className="font-medium">{student.full_name}</div>
+                                  <div className="text-sm text-gray-500">{student.identity_number}</div>
+                                </button>
+                              ))
+                            }
+                            {students.filter(student => 
+                              student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
+                              student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
+                            ).length === 0 && (
+                              <div className="px-3 py-2 text-gray-500 text-sm">
+                                {getText('No students found - you can enter manually', 'Tidak ada mahasiswa ditemukan - Anda bisa input manual')}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Student Name", "Nama Mahasiswa")} *</label>
+                      <input
+                        type="text"
+                        value={formData.student_name}
+                        onChange={(e) => setFormData(prev => ({ ...prev, student_name: e.target.value }))}
+                        placeholder={getText("Enter student name...", "Masukkan nama mahasiswa...")}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Study Program", "Program Studi")} *</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={programSearch}
+                          onChange={(e) => {
+                            setProgramSearch(e.target.value);
+                            setShowProgramDropdown(true);
+                          }}
+                          onFocus={() => setShowProgramDropdown(true)}
+                          placeholder={getText("Search study program...", "Cari program studi...")}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        
+                        {showProgramDropdown && (
+                          <div 
+                            className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
+                            onMouseLeave={() => setShowProgramDropdown(false)}
+                          >
+                            {studyPrograms
+                              .filter(program => 
+                                program.name.toLowerCase().includes(programSearch.toLowerCase())
+                              )
+                              .slice(0, 5)
+                              .map(program => (
+                                <button
+                                  key={program.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setFormData(prev => ({ ...prev, study_program_id: program.id }));
+                                    setProgramSearch(program.name);
+                                    setShowProgramDropdown(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                >
+                                  {program.name}
+                                </button>
+                              ))
+                            }
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Schedule Information */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Date", "Tanggal")} *</label>
-                    <input
-                      {...form.register('date')}
-                      type="date"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                    {form.formState.errors.date && (
-                      <p className="mt-1 text-sm text-red-600">{form.formState.errors.date.message}</p>
-                    )}
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-3 pb-4 border-b border-gray-200">
+                    <Calendar className="h-5 w-5 text-blue-500" />
+                    <h4 className="text-lg font-semibold text-gray-800">{getText("Schedule Information", "Informasi Jadwal")}</h4>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Start Time", "Waktu Mulai")} *</label>
-                    <input
-                      {...form.register('start_time')}
-                      type="time"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                    {form.formState.errors.start_time && (
-                      <p className="mt-1 text-sm text-red-600">{form.formState.errors.start_time.message}</p>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">{getText("End Time", "Waktu Selesai")} *</label>
-                    <input
-                      {...form.register('end_time')}
-                      type="time"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                    {form.formState.errors.end_time && (
-                      <p className="mt-1 text-sm text-red-600">{form.formState.errors.end_time.message}</p>
-                    )}
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Date", "Tanggal")} *</label>
+                      <input
+                        {...form.register('date')}
+                        type="date"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      {form.formState.errors.date && (
+                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.date.message}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Start Time", "Waktu Mulai")} *</label>
+                      <input
+                        {...form.register('start_time')}
+                        type="time"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      {form.formState.errors.start_time && (
+                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.start_time.message}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("End Time", "Waktu Selesai")} *</label>
+                      <input
+                        {...form.register('end_time')}
+                        type="time"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      {form.formState.errors.end_time && (
+                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.end_time.message}</p>
+                      )}
+                    </div>
                   </div>
                 </div>
 
                 {/* Room Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Room", "Ruangan")} *</label>
-                  <Controller
-                    name="room_id"
-                    control={form.control}
-                    render={({ field }) => {
-                      const roomOptions = availableRooms.map(r => ({
-                        value: r.id,
-                        label: `${r.name} (${r.code || 'No Code'})`
-                      }));
-                      const selectedValue = roomOptions.find(o => o.value === field.value);
-                      return (
-                        <Select
-                          {...field}
-                          options={roomOptions}
-                          value={selectedValue}
-                          onChange={option => field.onChange(option ? option.value : '')}
-                          placeholder={getText('Search and select room...', 'Cari dan pilih ruangan...')}
-                          isClearable
-                          isSearchable
-                          styles={{
-                            control: (provided) => ({
-                              ...provided,
-                              minHeight: '42px',
-                              borderColor: '#d1d5db',
-                            }),
-                          }}
-                        />
-                      );
-                    }}
-                  />
-                  {form.formState.errors.room_id && (
-                    <p className="mt-1 text-sm text-red-600">{form.formState.errors.room_id.message}</p>
-                  )}
-                  {watchStartTime && watchEndTime && watchDate && (
-                    <p className="mt-2 text-sm text-gray-600">
-                      💡 {getText(`Showing ${availableRooms.length} available rooms for ${watchDate} from ${watchStartTime} to ${watchEndTime}`, `Menampilkan ${availableRooms.length} ruangan tersedia untuk ${watchDate} dari ${watchStartTime} sampai ${watchEndTime}`)}
-                    </p>
-                  )}
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-3 pb-4 border-b border-gray-200">
+                    <MapPin className="h-5 w-5 text-blue-500" />
+                    <h4 className="text-lg font-semibold text-gray-800">{getText("Room Selection", "Pilihan Ruangan")}</h4>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Room", "Ruangan")} *</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={roomSearch}
+                        onChange={(e) => {
+                          setRoomSearch(e.target.value);
+                          setShowRoomDropdown(true);
+                        }}
+                        onFocus={() => setShowRoomDropdown(true)}
+                        placeholder={getText('Search and select room...', 'Cari dan pilih ruangan...')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      
+                      {showRoomDropdown && (
+                        <div 
+                          className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
+                          onMouseLeave={() => setShowRoomDropdown(false)}
+                        >
+                          {availableRooms
+                            .filter(room => room.name.toLowerCase().includes(roomSearch.toLowerCase()))
+                            .slice(0, 5)
+                            .map(room => (
+                              <button
+                                key={room.id}
+                                type="button"
+                                onClick={() => {
+                                  form.setValue('room_id', room.id);
+                                  setRoomSearch(room.name);
+                                  setShowRoomDropdown(false);
+                                }}
+                                className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                              >
+                                <div className="font-medium">{room.name}</div>
+                                <div className="text-sm text-gray-500">{room.code || 'No Code'}</div>
+                              </button>
+                            ))
+                          }
+                        </div>
+                      )}
+                    </div>
+                    {form.formState.errors.room_id && (
+                      <p className="mt-1 text-sm text-red-600">{form.formState.errors.room_id.message}</p>
+                    )}
+                    {watchStartTime && watchEndTime && watchDate && (
+                      <p className="mt-2 text-sm text-gray-600">
+                        💡 {getText(`Showing ${availableRooms.length} available rooms for ${watchDate} from ${watchStartTime} to ${watchEndTime}`, `Menampilkan ${availableRooms.length} ruangan tersedia untuk ${watchDate} dari ${watchStartTime} sampai ${watchEndTime}`)}
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 {/* Title */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Thesis Title", "Judul Skripsi/Tesis")} *</label>
-                  <textarea
-                    {...form.register('title')}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder={getText("Enter the complete thesis title...", "Masukkan judul lengkap skripsi/tesis...")}
-                  />
-                  {form.formState.errors.title && (
-                    <p className="mt-1 text-sm text-red-600">{form.formState.errors.title.message}</p>
-                  )}
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-3 pb-4 border-b border-gray-200">
+                    <BookOpen className="h-5 w-5 text-blue-500" />
+                    <h4 className="text-lg font-semibold text-gray-800">{getText("Thesis Information", "Informasi Skripsi")}</h4>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Thesis Title", "Judul Skripsi/Tesis")} *</label>
+                    <textarea
+                      {...form.register('title')}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder={getText("Enter the complete thesis title...", "Masukkan judul lengkap skripsi/tesis...")}
+                    />
+                    {form.formState.errors.title && (
+                      <p className="mt-1 text-sm text-red-600">{form.formState.errors.title.message}</p>
+                    )}
+                  </div>
                 </div>
 
-                {/* Committee Members */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Supervisor", "Pembimbing")} *</label>
-                    <Controller
-                      name="supervisor"
-                      control={form.control}
-                      render={({ field }) => {
-                        const options = filteredLecturers.map(l => ({
-                          value: l.full_name,
-                          label: l.full_name
-                        }));
-                        const currentValue = options.find(o => o.value === field.value);
-                        return (
-                          <Select
-                            {...field}
-                            options={options}
-                            value={currentValue}
-                            onChange={option => field.onChange(option ? option.value : '')}
-                            placeholder={getText("Search supervisor...", "Cari pembimbing...")}
-                            isClearable
-                            isSearchable
-                            filterOption={(option, inputValue) => {
-                              const cleanInput = removeTitles(inputValue.toLowerCase());
-                              const cleanLabel = removeTitles(option.label.toLowerCase());
-                              return cleanLabel.includes(cleanInput);
-                            }}
-                            styles={{
-                              control: (provided) => ({
-                                ...provided,
-                                minHeight: '42px',
-                                borderColor: '#d1d5db',
-                              }),
-                            }}
-                          />
-                        );
-                      }}
-                    />
-                    {form.formState.errors.supervisor && (
-                      <p className="mt-1 text-sm text-red-600">{form.formState.errors.supervisor.message}</p>
-                    )}
+                {/* Committee Members - Always show all lecturers from department */}
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-3 pb-4 border-b border-gray-200">
+                    <Users className="h-5 w-5 text-blue-500" />
+                    <h4 className="text-lg font-semibold text-gray-800">{getText("Committee Members", "Anggota Panitia")}</h4>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Examiner", "Penguji")} *</label>
-                    <Controller
-                      name="examiner"
-                      control={form.control}
-                      render={({ field }) => {
-                        const options = filteredLecturers.map(l => ({
-                          value: l.full_name,
-                          label: l.full_name
-                        }));
-                        const currentValue = options.find(o => o.value === field.value);
-                        return (
-                          <Select
-                            {...field}
-                            options={options}
-                            value={currentValue}
-                            onChange={option => field.onChange(option ? option.value : '')}
-                            placeholder={getText("Search examiner...", "Cari penguji...")}
-                            isClearable
-                            isSearchable
-                            filterOption={(option, inputValue) => {
-                              const cleanInput = removeTitles(inputValue.toLowerCase());
-                              const cleanLabel = removeTitles(option.label.toLowerCase());
-                              return cleanLabel.includes(cleanInput);
-                            }}
-                            styles={{
-                              control: (provided) => ({
-                                ...provided,
-                                minHeight: '42px',
-                                borderColor: '#d1d5db',
-                              }),
-                            }}
-                          />
-                        );
-                      }}
-                    />
-                    {form.formState.errors.examiner && (
-                      <p className="mt-1 text-sm text-red-600">{form.formState.errors.examiner.message}</p>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Secretary", "Sekretaris")} *</label>
-                    <Controller
-                      name="secretary"
-                      control={form.control}
-                      render={({ field }) => {
-                        const options = filteredLecturers.map(l => ({
-                          value: l.full_name,
-                          label: l.full_name
-                        }));
-                        const currentValue = options.find(o => o.value === field.value);
-                        return (
-                          <Select
-                            {...field}
-                            options={options}
-                            value={currentValue}
-                            onChange={option => field.onChange(option ? option.value : '')}
-                            placeholder={getText("Search secretary...", "Cari sekretaris...")}
-                            isClearable
-                            isSearchable
-                            filterOption={(option, inputValue) => {
-                              const cleanInput = removeTitles(inputValue.toLowerCase());
-                              const cleanLabel = removeTitles(option.label.toLowerCase());
-                              return cleanLabel.includes(cleanInput);
-                            }}
-                            styles={{
-                              control: (provided) => ({
-                                ...provided,
-                                minHeight: '42px',
-                                borderColor: '#d1d5db',
-                              }),
-                            }}
-                          />
-                        );
-                      }}
-                    />
-                    {form.formState.errors.secretary && (
-                      <p className="mt-1 text-sm text-red-600">{form.formState.errors.secretary.message}</p>
-                    )}
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Supervisor", "Pembimbing")} *</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={supervisorSearch}
+                          onChange={(e) => {
+                            setSupervisorSearch(e.target.value);
+                            setShowSupervisorDropdown(true);
+                            form.setValue('supervisor', e.target.value);
+                          }}
+                          onFocus={() => setShowSupervisorDropdown(true)}
+                          placeholder={getText("Search supervisor...", "Cari pembimbing...")}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        
+                        {showSupervisorDropdown && (
+                          <div 
+                            className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
+                            onMouseLeave={() => setShowSupervisorDropdown(false)}
+                          >
+                            {lecturers
+                              .filter(lecturer => 
+                                lecturer.full_name.toLowerCase().includes(supervisorSearch.toLowerCase())
+                              )
+                              .slice(0, 10)
+                              .map(lecturer => (
+                                <button
+                                  key={lecturer.id}
+                                  type="button"
+                                  onClick={() => {
+                                    form.setValue('supervisor', lecturer.full_name);
+                                    setSupervisorSearch(lecturer.full_name);
+                                    setShowSupervisorDropdown(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                >
+                                  {lecturer.full_name}
+                                </button>
+                              ))
+                            }
+                          </div>
+                        )}
+                      </div>
+                      {form.formState.errors.supervisor && (
+                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.supervisor.message}</p>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Examiner", "Penguji")} *</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={examinerSearch}
+                          onChange={(e) => {
+                            setExaminerSearch(e.target.value);
+                            setShowExaminerDropdown(true);
+                            form.setValue('examiner', e.target.value);
+                          }}
+                          onFocus={() => setShowExaminerDropdown(true)}
+                          placeholder={getText("Search examiner...", "Cari penguji...")}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        
+                        {showExaminerDropdown && (
+                          <div 
+                            className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
+                            onMouseLeave={() => setShowExaminerDropdown(false)}
+                          >
+                            {lecturers
+                              .filter(lecturer => 
+                                lecturer.full_name.toLowerCase().includes(examinerSearch.toLowerCase())
+                              )
+                              .slice(0, 10)
+                              .map(lecturer => (
+                                <button
+                                  key={lecturer.id}
+                                  type="button"
+                                  onClick={() => {
+                                    form.setValue('examiner', lecturer.full_name);
+                                    setExaminerSearch(lecturer.full_name);
+                                    setShowExaminerDropdown(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                >
+                                  {lecturer.full_name}
+                                </button>
+                              ))
+                            }
+                          </div>
+                        )}
+                      </div>
+                      {form.formState.errors.examiner && (
+                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.examiner.message}</p>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Secretary", "Sekretaris")} *</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={secretarySearch}
+                          onChange={(e) => {
+                            setSecretarySearch(e.target.value);
+                            setShowSecretaryDropdown(true);
+                            form.setValue('secretary', e.target.value);
+                          }}
+                          onFocus={() => setShowSecretaryDropdown(true)}
+                          placeholder={getText("Search secretary...", "Cari sekretaris...")}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        
+                        {showSecretaryDropdown && (
+                          <div 
+                            className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
+                            onMouseLeave={() => setShowSecretaryDropdown(false)}
+                          >
+                            {lecturers
+                              .filter(lecturer => 
+                                lecturer.full_name.toLowerCase().includes(secretarySearch.toLowerCase())
+                              )
+                              .slice(0, 10)
+                              .map(lecturer => (
+                                <button
+                                  key={lecturer.id}
+                                  type="button"
+                                  onClick={() => {
+                                    form.setValue('secretary', lecturer.full_name);
+                                    setSecretarySearch(lecturer.full_name);
+                                    setShowSecretaryDropdown(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                >
+                                  {lecturer.full_name}
+                                </button>
+                              ))
+                            }
+                          </div>
+                        )}
+                      </div>
+                      {form.formState.errors.secretary && (
+                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.secretary.message}</p>
+                      )}
+                    </div>
                   </div>
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex space-x-3 pt-4 border-t border-gray-200">
+                <div className="flex space-x-3 pt-6 border-t border-gray-200">
                   <button
                     type="button"
-                    onClick={() => setShowModal(false)}
+                    onClick={() => {
+                      setShowModal(false);
+                      setEditingSession(null);
+                      resetForm();
+                    }}
                     className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 font-medium"
                   >
                     {getText("Cancel", "Batal")}
                   </button>
                   <button
                     type="submit"
-                    disabled={loading}
+                    disabled={submitting}
                     className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-medium shadow-sm hover:shadow-md"
                   >
-                    {loading ? (
+                    {submitting ? (
                       <span className="flex items-center justify-center space-x-2">
                         <RefreshCw className="h-4 w-4 animate-spin" />
                         <span>{getText("Saving...", "Menyimpan...")}</span>
@@ -1198,10 +1523,10 @@ const SessionSchedule = () => {
                 </button>
                 <button
                   onClick={() => handleDelete(showDeleteConfirm as string)}
-                  disabled={loading}
+                  disabled={submitting}
                   className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-all duration-200 font-medium"
                 >
-                  {loading ? getText('Deleting...', 'Menghapus...') : getText('Delete', 'Hapus')}
+                  {submitting ? getText('Deleting...', 'Menghapus...') : getText('Delete', 'Hapus')}
                 </button>
               </div>
             </div>
@@ -1230,40 +1555,28 @@ const SessionSchedule = () => {
                 {isSuperAdmin && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Department", "Departemen")} *</label>
-                    <Controller
-                      name="department_id"
-                      control={printForm.control}
-                      render={({ field }) => (
-                        <Select
-                          options={departments.map(d => ({ value: d.id, label: d.name }))}
-                          onChange={(option) => field.onChange(option ? option.value : '')}
-                          placeholder={getText("Select department...", "Pilih departemen...")}
-                          isClearable
-                        />
-                      )}
-                    />
+                    <select
+                      {...printForm.register('department_id')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">{getText("Select department...", "Pilih departemen...")}</option>
+                      {departments.map(d => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
                   </div>
                 )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Study Program", "Program Studi")} *</label>
-                  <Controller
-                    name="study_program_id"
-                    control={printForm.control}
-                    render={({ field }) => {
-                      const options = studyPrograms.map(p => ({ value: p.id, label: p.name }));
-                      const currentValue = options.find(o => o.value === field.value);
-                      return (
-                        <Select
-                          {...field}
-                          options={options}
-                          value={currentValue}
-                          onChange={option => field.onChange(option ? option.value : '')}
-                          placeholder={getText("Select study program...", "Pilih program studi...")}
-                          isClearable
-                        />
-                      );
-                    }}
-                  />
+                  <select
+                    {...printForm.register('study_program_id')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">{getText("Select study program...", "Pilih program studi...")}</option>
+                    {studyPrograms.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Academic Year", "Tahun Akademik")} *</label>
@@ -1277,19 +1590,15 @@ const SessionSchedule = () => {
                 {isDepartmentAdmin && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Department Head", "Kepala Departemen")} *</label>
-                    <Controller
-                      name="department_head_id"
-                      control={printForm.control}
-                      render={({ field }) => (
-                        <Select
-                          options={departmentHeads.map(h => ({ value: h.id, label: h.full_name }))}
-                          value={field.value ? departmentHeads.map(h => ({ value: h.id, label: h.full_name })).find(o => o.value === field.value) : null}
-                          onChange={(option) => field.onChange(option ? option.value : '')}
-                          placeholder={getText("Search and select head...", "Cari dan pilih kepala...")}
-                          isClearable
-                        />
-                      )}
-                    />
+                    <select
+                      {...printForm.register('department_head_id')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">{getText("Select department head...", "Pilih kepala departemen...")}</option>
+                      {departmentHeads.map(h => (
+                        <option key={h.id} value={h.id}>{h.full_name}</option>
+                      ))}
+                    </select>
                   </div>
                 )}
                 <div className="flex space-x-3 pt-4">
