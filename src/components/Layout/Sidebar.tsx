@@ -164,9 +164,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: PieChart, label: getText('Dashboard', 'Dasbor'), path: '/' },
                 { icon: CalendarCheck, label: getText('Exam Management', 'Jadwal UAS'), path: '/exams' },
                 { icon: Users, label: getText('User Management', 'Data Dosen/Mahasiswa'), path: '/users' },
-                { icon: Calendar, label: getText('Booking Management', 'Manajemen Pemesanan'), path: '/bookings', badge: pendingBookingsCount > 0 ? pendingBookingsCount : null },
-                { icon: ClipboardCheck, label: getText('Validation Queue', 'Antrian Validasi'), path: '/validation', badge: pendingCheckoutsCount > 0 ? pendingCheckoutsCount : null },
-                { icon: FileText, label: getText('Reports', 'Laporan'), path: '/reports', badge: newReportsCount > 0 ? newReportsCount : null },
+              { icon: Clock, label: getText('Lecture Schedules', 'Jadwal Kuliah'), path: '/schedules' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/profile' },
             ];
         }
