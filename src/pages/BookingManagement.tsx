@@ -64,6 +64,60 @@ const BookingManagement: React.FC = () => {
         }
     };
 
+    // Function to update equipment quantities when booking is approved
+    const updateEquipmentQuantities = async (equipmentIds: string[], operation: 'decrease' | 'increase') => {
+        if (!equipmentIds || equipmentIds.length === 0) return;
+
+        try {
+            // Get current equipment data
+            const { data: equipmentData, error: fetchError } = await supabase
+                .from('equipment')
+                .select('id, quantity')
+                .in('id', equipmentIds);
+
+            if (fetchError) {
+                console.error('Error fetching equipment for quantity update:', fetchError);
+                return;
+            }
+
+            if (!equipmentData || equipmentData.length === 0) {
+                console.warn('No equipment found for quantity update');
+                return;
+            }
+
+            // Update each equipment's quantity
+            const updatePromises = equipmentData.map(async (equipment) => {
+                const currentQuantity = equipment.quantity || 0;
+                let newQuantity;
+
+                if (operation === 'decrease') {
+                    newQuantity = Math.max(0, currentQuantity - 1); // Ensure quantity doesn't go below 0
+                } else {
+                    newQuantity = currentQuantity + 1;
+                }
+
+                const { error: updateError } = await supabase
+                    .from('equipment')
+                    .update({ quantity: newQuantity })
+                    .eq('id', equipment.id);
+
+                if (updateError) {
+                    console.error(`Error updating equipment ${equipment.id} quantity:`, updateError);
+                    throw updateError;
+                }
+
+                return { id: equipment.id, oldQuantity: currentQuantity, newQuantity };
+            });
+
+            const updateResults = await Promise.all(updatePromises);
+            console.log('Equipment quantities updated:', updateResults);
+
+        } catch (error) {
+            console.error('Error updating equipment quantities:', error);
+            throw error;
+        }
+    };
+
     const fetchBookings = async () => {
         try {
             setLoading(true);
@@ -141,6 +195,12 @@ const BookingManagement: React.FC = () => {
         try {
             setProcessingIds(prev => new Set(prev).add(bookingId));
             
+            // Get the current booking data first
+            const currentBooking = bookings.find(b => b.id === bookingId);
+            if (!currentBooking) {
+                throw new Error("Booking not found");
+            }
+
             const { data: updatedBooking, error } = await supabase
                 .from('bookings')
                 .update({ status: newStatus, updated_at: new Date().toISOString() })
@@ -151,6 +211,7 @@ const BookingManagement: React.FC = () => {
             if (error) throw error;
             if (!updatedBooking) throw new Error("Booking not found");
 
+            // Update room availability
             if (updatedBooking.room_id) {
                 const newAvailability = newStatus === 'approved' ? false : true;
                 const { error: roomUpdateError } = await supabase
@@ -159,7 +220,29 @@ const BookingManagement: React.FC = () => {
                     .eq('id', updatedBooking.room_id);
 
                 if (roomUpdateError) {
+                    console.error('Room update error:', roomUpdateError);
                     toast.error('Booking status updated, but failed to update room status.');
+                }
+            }
+
+            // Update equipment quantities based on status change
+            if (updatedBooking.equipment_requested && updatedBooking.equipment_requested.length > 0) {
+                try {
+                    if (newStatus === 'approved') {
+                        // Decrease equipment quantities when approved
+                        await updateEquipmentQuantities(updatedBooking.equipment_requested, 'decrease');
+                        console.log('Equipment quantities decreased for approved booking');
+                    } else if (newStatus === 'rejected') {
+                        // If the booking was previously approved and now rejected, increase quantities back
+                        if (currentBooking.status === 'approved') {
+                            await updateEquipmentQuantities(updatedBooking.equipment_requested, 'increase');
+                            console.log('Equipment quantities increased for rejected booking (was previously approved)');
+                        }
+                    }
+                } catch (equipmentError) {
+                    console.error('Equipment update error:', equipmentError);
+                    toast.error(`Booking ${newStatus} successfully, but failed to update equipment quantities.`);
+                    return; // Don't proceed with success message if equipment update failed
                 }
             }
             
@@ -183,6 +266,18 @@ const BookingManagement: React.FC = () => {
             setProcessingIds(prev => new Set(prev).add(bookingId));
             const bookingToDelete = bookings.find(b => b.id === bookingId);
             
+            // If the booking was approved, restore equipment quantities before deletion
+            if (bookingToDelete?.status === 'approved' && bookingToDelete.equipment_requested?.length > 0) {
+                try {
+                    await updateEquipmentQuantities(bookingToDelete.equipment_requested, 'increase');
+                    console.log('Equipment quantities restored before booking deletion');
+                } catch (equipmentError) {
+                    console.error('Equipment restoration error:', equipmentError);
+                    toast.error('Failed to restore equipment quantities. Deletion cancelled.');
+                    return;
+                }
+            }
+
             const { error } = await supabase
                 .from('bookings')
                 .delete()
@@ -197,6 +292,7 @@ const BookingManagement: React.FC = () => {
                     .eq('id', bookingToDelete.room_id);
 
                 if (roomUpdateError) {
+                    console.error('Room update error:', roomUpdateError);
                     toast.error('Booking deleted, but failed to update room status.');
                 }
             }
