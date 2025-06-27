@@ -636,26 +636,6 @@ const ValidationQueue: React.FC = () => {
 
     return (
         <div className="space-y-6">
-           {/* Add real-time status indicator */}
-            <div className="bg-gradient-to-r from-orange-600 to-red-600 rounded-xl p-6 text-white">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-3xl font-bold flex items-center space-x-3">
-                            <Bell className="h-8 w-8" />
-                            <span>Validation Queue</span>
-                            <div className="flex items-center space-x-2">
-                                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                                <span className="text-sm opacity-75">Live</span>
-                            </div>
-                        </h1>
-                        <p className="mt-2 opacity-90">Review and validate checkouts • Real-time updates enabled</p>
-                    </div>
-                    <div className="hidden md:block text-right">
-                        <div className="text-2xl font-bold">{checkouts.length}</div>
-                        <div className="text-sm opacity-80">Items in Queue</div>
-                    </div>
-                </div>
-            </div>
             {/* Header */}
             <div className="bg-gradient-to-r from-orange-600 to-red-600 rounded-xl p-6 text-white">
                 <div className="flex items-center justify-between">
