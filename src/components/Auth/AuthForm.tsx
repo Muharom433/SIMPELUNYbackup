@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { 
     Building, Eye, EyeOff, User, Lock, UserPlus, LogIn, Shield, Phone, 
     Mail, Hash, GraduationCap, ChevronDown, Globe, Sparkles, ArrowRight,
-    Users, BookOpen, X, Search
+    Users, BookOpen, X, Search, RefreshCw, Key, AlertTriangle, Info,
+    CheckCircle2, Lightbulb, Zap, Star
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -16,6 +17,7 @@ import { useNavigate } from 'react-router-dom';
 const signInSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
+  captcha: z.string().min(4, 'Please enter the captcha code'),
 });
 
 const signUpSchema = z.object({
@@ -28,6 +30,7 @@ const signUpSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
   department_id: z.string().min(1, 'Please select a department'),
   study_program_id: z.string().min(1, 'Please select a study program'),
+  captcha: z.string().min(4, 'Please enter the captcha code'),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
@@ -64,6 +67,11 @@ const AuthForm: React.FC = () => {
   const [selectedDepartment, setSelectedDepartment] = useState<Department | null>(null);
   const [selectedStudyProgram, setSelectedStudyProgram] = useState<StudyProgram | null>(null);
   
+  // Captcha states
+  const [captchaCode, setCaptchaCode] = useState('');
+  const [captchaInput, setCaptchaInput] = useState('');
+  const [showLoginInfo, setShowLoginInfo] = useState(true);
+  
   const { signIn, signUp } = useAuth();
   const { getText, currentLanguage, setLanguage } = useLanguage();
   const navigate = useNavigate();
@@ -72,7 +80,8 @@ const AuthForm: React.FC = () => {
     resolver: zodResolver(signInSchema),
     defaultValues: {
       username: '',
-      password: ''
+      password: '',
+      captcha: ''
     }
   });
 
@@ -87,20 +96,35 @@ const AuthForm: React.FC = () => {
       phone_number: '',
       email: '',
       department_id: '',
-      study_program_id: ''
+      study_program_id: '',
+      captcha: ''
     }
   });
+
+  // Generate captcha code
+  const generateCaptcha = useCallback(() => {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < 6; i++) {
+      result += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+    setCaptchaCode(result);
+    setCaptchaInput('');
+    // Reset captcha fields in forms
+    signInForm.setValue('captcha', '');
+    signUpForm.setValue('captcha', '');
+  }, [signInForm, signUpForm]);
 
   useEffect(() => {
     fetchDepartments();
     fetchStudyPrograms();
-  }, []);
+    generateCaptcha();
+  }, [generateCaptcha]);
 
   useEffect(() => {
     if (selectedDepartment) {
       const filtered = studyPrograms.filter(sp => sp.department_id === selectedDepartment.id);
       setFilteredStudyPrograms(filtered);
-      // Reset study program selection when department changes
       setSelectedStudyProgram(null);
       setStudyProgramSearchTerm('');
       signUpForm.setValue('study_program_id', '');
@@ -135,12 +159,23 @@ const AuthForm: React.FC = () => {
     }
   };
 
+  const verifyCaptcha = (inputCaptcha: string) => {
+    return inputCaptcha.toUpperCase() === captchaCode.toUpperCase();
+  };
+
   const handleSignIn = async (data: SignInForm) => {
+    if (!verifyCaptcha(data.captcha)) {
+      toast.error(getText('Invalid captcha code', 'Kode captcha tidak valid'));
+      generateCaptcha();
+      return;
+    }
+
     setLoading(true);
     try {
       const result = await signIn(data.username, data.password);
       if (result.error) {
         toast.error(result.error.message || getText('Failed to sign in', 'Gagal masuk'));
+        generateCaptcha(); // Regenerate captcha on failed login
       } else {
         toast.success(getText('Welcome back!', 'Selamat datang kembali!'));
         navigate('/');
@@ -148,12 +183,19 @@ const AuthForm: React.FC = () => {
     } catch (error) {
       console.error('Sign in handler error:', error);
       toast.error(getText('An unexpected error occurred during sign in', 'Terjadi kesalahan tak terduga saat masuk'));
+      generateCaptcha();
     } finally {
       setLoading(false);
     }
   };
 
   const handleSignUp = async (data: SignUpForm) => {
+    if (!verifyCaptcha(data.captcha)) {
+      toast.error(getText('Invalid captcha code', 'Kode captcha tidak valid'));
+      generateCaptcha();
+      return;
+    }
+
     setLoading(true);
     try {
       const result = await signUp(data.username, data.password, {
@@ -167,19 +209,22 @@ const AuthForm: React.FC = () => {
       
       if (result.error) {
         toast.error(result.error.message || getText('Failed to create account', 'Gagal membuat akun'));
+        generateCaptcha();
       } else {
         toast.success(getText('Account created successfully! You can now sign in.', 'Akun berhasil dibuat! Anda sekarang dapat masuk.'));
         setIsSignUp(false);
+        generateCaptcha();
         
-        // Reset the sign in form with the new username
         signInForm.reset({
           username: data.username,
-          password: ''
+          password: '',
+          captcha: ''
         });
       }
     } catch (error) {
       console.error('Sign up handler error:', error);
       toast.error(getText('An unexpected error occurred during sign up', 'Terjadi kesalahan tak terduga saat mendaftar'));
+      generateCaptcha();
     } finally {
       setLoading(false);
     }
@@ -247,28 +292,92 @@ const AuthForm: React.FC = () => {
           <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
             SIMPEL Kuliah
           </h2>
-          <p className="mt-2 text-sm text-gray-600 max-w-md mx-auto"><b>
+          <p className="mt-2 text-sm text-gray-600 max-w-md mx-auto">
             {isSignUp 
               ? getText('Create your account to get started with smart campus management', 'Buat akun Anda untuk memulai manajemen kampus yang cerdas')
-              : getText(`Try login using
-              Username : [ Id Number ] &
-              Password : [ Id Number ]`, `Coba login dengan
-              Username : [ NIM ] &
-              Password : [ NIM ]`)
+              : getText('Sign in to access your smart campus dashboard', 'Masuk untuk mengakses dasbor kampus cerdas Anda')
             }
-          </b></p>
+          </p>
         </div>
+
+        {/* Login Information Card - Only show on Sign In */}
+        {!isSignUp && showLoginInfo && (
+          <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-6 border-2 border-emerald-200 shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-emerald-300/20 to-teal-300/20 rounded-full blur-2xl"></div>
+            <div className="absolute bottom-0 left-0 w-16 h-16 bg-gradient-to-tr from-teal-300/20 to-emerald-300/20 rounded-full blur-xl"></div>
+            
+            <button
+              onClick={() => setShowLoginInfo(false)}
+              className="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-white/50 transition-all duration-200"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="relative z-10">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="h-10 w-10 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center shadow-lg">
+                  <Lightbulb className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-emerald-800 text-lg">
+                    {getText('Quick Login Tips', 'Tips Login Cepat')}
+                  </h3>
+                  <p className="text-emerald-600 text-sm">
+                    {getText('For students without account', 'Untuk mahasiswa tanpa akun')}
+                  </p>
+                </div>
+              </div>
+              
+              <div className="bg-white/60 backdrop-blur-sm rounded-xl p-4 mb-4 border border-emerald-200/50">
+                <div className="flex items-start space-x-3">
+                  <div className="h-8 w-8 bg-emerald-500 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Key className="h-4 w-4 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-emerald-800 mb-2">
+                      {getText('Try Login With Your NIM:', 'Coba Login Dengan NIM Anda:')}
+                    </h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-gradient-to-r from-blue-500 to-indigo-500 rounded-lg p-3 text-white">
+                        <p className="text-xs font-medium opacity-90 mb-1">USERNAME</p>
+                        <p className="font-bold text-lg">NIM</p>
+                      </div>
+                      <div className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg p-3 text-white">
+                        <p className="text-xs font-medium opacity-90 mb-1">PASSWORD</p>
+                        <p className="font-bold text-lg">NIM</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <div className="flex items-start space-x-2">
+                  <Info className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                  <p className="text-yellow-800 text-sm">
+                    {getText(
+                      'If this is your first time, your account will be created automatically using your NIM.',
+                      'Jika ini pertama kali Anda login, akun akan dibuat otomatis menggunakan NIM Anda.'
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Auth Card */}
         <div className="bg-white/80 backdrop-blur-sm py-8 px-6 shadow-2xl rounded-3xl border border-white/20 relative">
-          {/* Decorative elements */}
           <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-16 h-1 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"></div>
           
           {/* Tab Switcher */}
           <div className="flex mb-8 bg-gray-100/80 rounded-2xl p-1 backdrop-blur-sm">
             <button
               type="button"
-              onClick={() => setIsSignUp(false)}
+              onClick={() => {
+                setIsSignUp(false);
+                generateCaptcha();
+              }}
               className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 rounded-xl text-sm font-semibold transition-all duration-300 ${
                 !isSignUp
                   ? 'bg-white text-blue-600 shadow-lg transform scale-[1.02]'
@@ -280,7 +389,11 @@ const AuthForm: React.FC = () => {
             </button>
             <button
               type="button"
-              onClick={() => setIsSignUp(true)}
+              onClick={() => {
+                setIsSignUp(true);
+                generateCaptcha();
+                setShowLoginInfo(false);
+              }}
               className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 rounded-xl text-sm font-semibold transition-all duration-300 ${
                 isSignUp
                   ? 'bg-white text-blue-600 shadow-lg transform scale-[1.02]'
@@ -463,8 +576,7 @@ const AuthForm: React.FC = () => {
                     <BookOpen className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 z-10" />
                     <input
                       type="text"
-                      placeholder={getText("Search and select study program", "Cari dan pilih program studi")}
-                      value={selectedStudyProgram ? `${selectedStudyProgram.name} (${selectedStudyProgram.code})` : studyProgramSearchTerm}
+                      placeholder={getText("Search and select study program", "Cari dan pilih program studi")}value={selectedStudyProgram ? `${selectedStudyProgram.name} (${selectedStudyProgram.code})` : studyProgramSearchTerm}
                       onChange={(e) => {
                         setStudyProgramSearchTerm(e.target.value);
                         setShowStudyProgramDropdown(true);
@@ -614,6 +726,59 @@ const AuthForm: React.FC = () => {
                 </div>
               </div>
 
+              {/* Captcha Section */}
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2 pb-2 border-b border-gray-200/50">
+                  <Shield className="h-5 w-5 text-orange-500" />
+                  <h3 className="text-lg font-semibold text-gray-800">
+                    {getText('Security Verification', 'Verifikasi Keamanan')}
+                  </h3>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    {getText('Enter Captcha Code', 'Masukkan Kode Captcha')} *
+                  </label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="order-2 md:order-1">
+                      <div className="relative">
+                        <Shield className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                        <input
+                          {...signUpForm.register('captcha')}
+                          type="text"
+                          placeholder={getText("Enter the code", "Masukkan kode")}
+                          className="w-full pl-10 pr-4 py-3 bg-white/70 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 transition-all duration-200 backdrop-blur-sm uppercase tracking-widest"
+                          maxLength={6}
+                        />
+                      </div>
+                      {signUpForm.formState.errors.captcha && (
+                        <p className="mt-1 text-sm text-red-600 font-medium">
+                          {signUpForm.formState.errors.captcha.message}
+                        </p>
+                      )}
+                    </div>
+                    <div className="order-1 md:order-2">
+                      <div className="bg-gradient-to-r from-gray-100 to-gray-200 rounded-xl p-4 border-2 border-dashed border-gray-300 relative overflow-hidden">
+                        <div className="absolute inset-0 bg-noise opacity-10"></div>
+                        <div className="relative z-10 flex items-center justify-between">
+                          <span className="text-2xl font-bold text-gray-700 tracking-widest font-mono select-none">
+                            {captchaCode}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={generateCaptcha}
+                            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-white/50 rounded-lg transition-all duration-200"
+                            title={getText("Refresh Captcha", "Refresh Captcha")}
+                          >
+                            <RefreshCw className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <button
                 type="submit"
                 disabled={loading || !signUpForm.formState.isValid}
@@ -677,6 +842,50 @@ const AuthForm: React.FC = () => {
                 )}
               </div>
 
+              {/* Captcha Section for Sign In */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  {getText('Security Verification', 'Verifikasi Keamanan')} *
+                </label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="order-2 md:order-1">
+                    <div className="relative">
+                      <Shield className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                      <input
+                        {...signInForm.register('captcha')}
+                        type="text"
+                        placeholder={getText("Enter the code", "Masukkan kode")}
+                        className="w-full pl-10 pr-4 py-3 bg-white/70 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 transition-all duration-200 backdrop-blur-sm uppercase tracking-widest"
+                        maxLength={6}
+                      />
+                    </div>
+                    {signInForm.formState.errors.captcha && (
+                      <p className="mt-1 text-sm text-red-600 font-medium">
+                        {signInForm.formState.errors.captcha.message}
+                      </p>
+                    )}
+                  </div>
+                  <div className="order-1 md:order-2">
+                    <div className="bg-gradient-to-r from-gray-100 to-gray-200 rounded-xl p-4 border-2 border-dashed border-gray-300 relative overflow-hidden">
+                      <div className="absolute inset-0 bg-gradient-to-r from-blue-50/50 to-purple-50/50"></div>
+                      <div className="relative z-10 flex items-center justify-between">
+                        <span className="text-2xl font-bold text-gray-700 tracking-widest font-mono select-none transform rotate-1">
+                          {captchaCode}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={generateCaptcha}
+                          className="p-2 text-gray-500 hover:text-gray-700 hover:bg-white/70 rounded-lg transition-all duration-200 transform hover:scale-110"
+                          title={getText("Refresh Captcha", "Refresh Captcha")}
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between">
                 <div className="flex items-center">
                   <input
@@ -737,6 +946,35 @@ const AuthForm: React.FC = () => {
             <a href="#" className="text-blue-600 hover:text-blue-500 text-sm font-medium transition-colors">
               {getText('Privacy Policy', 'Kebijakan Privasi')}
             </a>
+          </div>
+        </div>
+
+        {/* Demo Accounts Info */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-200/30">
+          <div className="flex items-center space-x-3 mb-3">
+            <div className="h-8 w-8 bg-blue-500 rounded-lg flex items-center justify-center">
+              <Users className="h-4 w-4 text-white" />
+            </div>
+            <h4 className="font-bold text-blue-800">
+              {getText('Demo Accounts', 'Akun Demo')}
+            </h4>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+            <div className="bg-white/60 rounded-lg p-3 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-8 h-8 bg-purple-300/20 rounded-full blur-lg"></div>
+              <p className="font-semibold text-purple-700 relative z-10">Super Admin</p>
+              <p className="text-gray-600 relative z-10">admin / password123</p>
+            </div>
+            <div className="bg-white/60 rounded-lg p-3 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-8 h-8 bg-blue-300/20 rounded-full blur-lg"></div>
+              <p className="font-semibold text-blue-700 relative z-10">Department Admin</p>
+              <p className="text-gray-600 relative z-10">deptadmin / password123</p>
+            </div>
+            <div className="bg-white/60 rounded-lg p-3 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-8 h-8 bg-green-300/20 rounded-full blur-lg"></div>
+              <p className="font-semibold text-green-700 relative z-10">Student</p>
+              <p className="text-gray-600 relative z-10">student / password123</p>
+            </div>
           </div>
         </div>
       </div>
