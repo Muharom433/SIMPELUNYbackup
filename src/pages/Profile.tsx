@@ -18,15 +18,13 @@ import {
   Calendar,
   MapPin
 } from 'lucide-react';
-import { User as UserType } from '../../types';
-import { supabase } from '../../lib/supabase';
-import { useLanguage } from '../../contexts/LanguageContext';
+import { User as UserType } from '../types';
+import { supabase } from '../lib/supabase';
+import { useLanguage } from '../contexts/LanguageContext';
+import { useAuth } from '../hooks/useAuth';
 
-interface ProfileProps {
-  user: UserType | null;
-}
-
-const Profile: React.FC<ProfileProps> = ({ user }) => {
+const Profile: React.FC = () => {
+  const { user } = useAuth(); // Get user from auth hook instead of props
   const { getText } = useLanguage();
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
