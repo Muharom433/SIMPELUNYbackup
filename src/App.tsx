@@ -15,8 +15,9 @@ import ValidationQueue from './pages/ValidationQueue';
 import CheckoutValidation from './pages/CheckoutValidation';
 import LectureSchedules from './pages/LectureSchedules';
 import ExamManagement from './pages/ExamManagement';
+import SessionSchedule from './pages/SessionSchedule'; // New import
 import ToolAdministration from './pages/ToolAdministration';
-import ToolLending from './pages/ToolLending'; // Import the new ToolLending component
+import ToolLending from './pages/ToolLending';
 import ToolLendingManagement from './pages/ToolLendingManagement';
 import Reports from './pages/Reports';
 import SystemSettings from './pages/SystemSettings';
@@ -49,7 +50,7 @@ function App() {
             <Route path="checkout" element={<CheckOut />} />
             
             {/* Public/Student Routes */}
-            <Route path="tools" element={<ToolLending />} /> {/* Updated route */}
+            <Route path="tools" element={<ToolLending />} />
             <Route path="profile" element={<div className="p-6">Profile Management - Coming Soon</div>} />
             
             {/* Department Admin Routes */}
@@ -59,6 +60,7 @@ function App() {
             <Route path="department-reports" element={<div className="p-6">Department Reports - Coming Soon</div>} />
             <Route path="department-equipment" element={<div className="p-6">Equipment Management - Coming Soon</div>} />
             <Route path="exams" element={<ExamManagement />} />
+            <Route path="session-schedule" element={<SessionSchedule />} /> {/* New route */}
             
             {/* Super Admin Routes */}
             <Route path="tool-lending-management" element={<ToolLendingManagement />} />
