@@ -37,6 +37,8 @@ import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 import ExcelUploadModal from '../components/ExcelUpload/ExcelUploadModal';
 import { useLanguage } from '../contexts/LanguageContext';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 const scheduleSchema = z.object({
   course_name: z.string().min(2, 'Course name is required'),
@@ -318,7 +320,123 @@ const LectureSchedules: React.FC = () => {
   };
 
   const generatePDF = () => {
-    toast.success(getText('PDF generated successfully!', 'PDF berhasil dibuat!'));
+    try {
+      // Filter data yang belum selesai (is_done != true)
+      const pendingRequests = rescheduleRequests.filter(request => request.is_done !== true);
+      
+      if (pendingRequests.length === 0) {
+        toast.error(getText('No pending reschedule requests to export', 'Tidak ada permintaan reschedule yang belum selesai untuk diekspor'));
+        return;
+      }
+
+      const doc = new jsPDF();
+      
+      // Set font untuk mendukung karakter Indonesia
+      doc.setFont('helvetica');
+      
+      // Header
+      doc.setFontSize(18);
+      doc.setTextColor(40, 40, 40);
+      doc.text(getText('Reschedule Requests Report', 'Laporan Permintaan Reschedule'), 14, 20);
+      
+      // Sub header
+      doc.setFontSize(12);
+      doc.setTextColor(100, 100, 100);
+      const currentDate = new Date().toLocaleDateString('id-ID', {
+        year: 'numeric',
+        month: 'long', 
+        day: 'numeric'
+      });
+      doc.text(getText(`Generated on: ${currentDate}`, `Dibuat pada: ${currentDate}`), 14, 30);
+      doc.text(getText(`Total Pending Requests: ${pendingRequests.length}`, `Total Permintaan Belum Selesai: ${pendingRequests.length}`), 14, 38);
+      
+      // Prepare table data
+      const tableData = pendingRequests.map((request, index) => [
+        index + 1,
+        request.course_code,
+        request.day,
+        `${request.start_time} - ${request.end_time}`,
+        request.room,
+        request.class,
+        getText(
+          request.is_done === null ? 'Pending' : 'Not Completed',
+          request.is_done === null ? 'Menunggu' : 'Belum Selesai'
+        )
+      ]);
+      
+      // Table headers
+      const headers = [
+        getText('No', 'No'),
+        getText('Course Code', 'Kode MK'),
+        getText('Day', 'Hari'),
+        getText('Time', 'Waktu'),
+        getText('Room', 'Ruangan'),
+        getText('Class', 'Kelas'),
+        getText('Status', 'Status')
+      ];
+      
+      // Generate table
+      (doc as any).autoTable({
+        head: [headers],
+        body: tableData,
+        startY: 50,
+        styles: {
+          fontSize: 10,
+          cellPadding: 3,
+        },
+        headStyles: {
+          fillColor: [59, 130, 246], // Blue color
+          textColor: 255,
+          fontStyle: 'bold',
+        },
+        alternateRowStyles: {
+          fillColor: [245, 247, 250],
+        },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 15 }, // No
+          1: { cellWidth: 25 }, // Course Code
+          2: { cellWidth: 20 }, // Day
+          3: { cellWidth: 35 }, // Time
+          4: { cellWidth: 30 }, // Room
+          5: { halign: 'center', cellWidth: 20 }, // Class
+          6: { halign: 'center', cellWidth: 25 }, // Status
+        },
+        margin: { top: 50, right: 14, bottom: 20, left: 14 },
+      });
+      
+      // Footer
+      const pageCount = (doc as any).internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(100, 100, 100);
+        doc.text(
+          getText(
+            `Page ${i} of ${pageCount} - SIMPEL Kuliah System`,
+            `Halaman ${i} dari ${pageCount} - Sistem SIMPEL Kuliah`
+          ), 
+          14, 
+          doc.internal.pageSize.height - 10
+        );
+      }
+      
+      // Save PDF
+      const fileName = getText(
+        `Reschedule_Requests_${new Date().toISOString().split('T')[0]}.pdf`,
+        `Permintaan_Reschedule_${new Date().toISOString().split('T')[0]}.pdf`
+      );
+      
+      doc.save(fileName);
+      
+      toast.success(getText(
+        `PDF exported successfully! (${pendingRequests.length} pending requests)`,
+        `PDF berhasil diekspor! (${pendingRequests.length} permintaan belum selesai)`
+      ));
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast.error(getText('Failed to generate PDF', 'Gagal membuat PDF'));
+    }
   };
 
   const filteredSchedules = useMemo(() => {
