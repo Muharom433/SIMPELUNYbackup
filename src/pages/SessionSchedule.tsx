@@ -666,17 +666,6 @@ const SessionSchedule = () => {
         headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' },
         columnStyles: { 6: { cellWidth: 30 } }
       });
-
-      const finalY = (doc as any).lastAutoTable.finalY || currentY + 10;
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`Yogyakarta, ${format(new Date(), 'd MMMM yyyy', { locale: (await import('date-fns/locale/id')).default })}`, 140, finalY + 10);
-      doc.text("Kepala Departemen,", 140, finalY + 15);
-      doc.setFont('helvetica', 'bold');
-      doc.text(departmentHead.full_name, 140, finalY + 40);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`NIP. ${departmentHead.identity_number}`, 140, finalY + 45);
-
       doc.save(`Jadwal_Sidang_${selectedProgram.name.replace(/\s+/g, '_')}.pdf`);
       setShowPrintModal(false);
     } catch (e: any) {
