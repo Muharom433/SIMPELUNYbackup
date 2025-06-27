@@ -100,7 +100,6 @@ interface ReportComment {
   commenter_name: string;
   commenter_email: string;
   comment: string;
-  is_staff: boolean;
   created_at: string;
 }
 
