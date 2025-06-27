@@ -489,7 +489,7 @@ const SessionSchedule = () => {
         examiner: data.examiner,
         secretary: data.secretary,
         // If no student_id (manual entry), store student info
-        student_info: !data.student_id ? {
+        student_id: !data.student_id ? {
           full_name: formData.student_name,
           identity_number: formData.student_nim,
           study_program_id: formData.study_program_id
