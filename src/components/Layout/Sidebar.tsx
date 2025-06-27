@@ -21,120 +21,57 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
     const [pendingCheckoutsCount, setPendingCheckoutsCount] = useState(0);
     const [newReportsCount, setNewReportsCount] = useState(0);
 
-    useEffect(() => {
-  // This function will now only run if the user is a super_admin.
-    const fetchCounts = async () => {
-      try {
-        // Fetch for reports
-        const { count: reportsCount } = await supabase
-          .from('reports')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'new');
-        setNewReportsCount(reportsCount || 0);
-  
-        // Fetch for bookings
-        const { count: bookingsCount } = await supabase
-          .from('bookings')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'pending');
-        setPendingBookingsCount(bookingsCount || 0);
-  
-        // Fetch for checkouts
-        const { count: checkoutsCount } = await supabase
-          .from('checkouts')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'pending');
-        setPendingCheckoutsCount(checkoutsCount || 0);
-  
-      } catch (error) {
-        console.error("Error fetching notification counts:", error);
-      }
-    };
-
-  // Only call fetchCounts if the user is a super_admin.
-  // This prevents the API call and the resulting error for department_admins.
-  if (user?.role === 'super_admin') {
-    fetchCounts();
-  }
-}, [user]);
-
-    const fetchPendingBookingsCount = async () => {
-        try {
-            let query = supabase
-                .from('bookings')
-                .select('id', { count: 'exact', head: true })
-                .eq('status', 'pending');
-
-            if (user?.role === 'department_admin' && user.department_id) {
-                const { count, error } = await supabase
-                    .from('bookings')
-                    .select(`id, room:rooms!inner(department_id)`, { count: 'exact', head: true })
-                    .eq('status', 'pending')
-                    .eq('room.department_id', user.department_id);
-                
-                if (error) throw error;
-                setPendingBookingsCount(count || 0);
-            } else {
-                const { count, error } = await query;
-                if (error) throw error;
-                setPendingBookingsCount(count || 0);
-            }
-        } catch (error) { 
-            console.error('Error fetching pending bookings count:', error); 
+    // Fetch notification counts function
+    const fetchNotificationCounts = async () => {
+        // Only fetch for super_admin
+        if (user?.role !== 'super_admin') {
+            return;
         }
-    };
 
-    const fetchPendingCheckoutsCount = async () => {
         try {
-            let query = supabase
-                .from('checkouts')
-                .select('id', { count: 'exact', head: true })
-                .eq('status', 'returned');
-
-            if (user?.role === 'department_admin' && user.department_id) {
-                const { count, error } = await supabase
-                    .from('checkouts')
-                    .select(`id, booking:bookings!inner(room:rooms!inner(department_id))`, { count: 'exact', head: true })
-                    .eq('status', 'returned')
-                    .eq('booking.room.department_id', user.department_id);
-                
-                if (error) throw error;
-                setPendingCheckoutsCount(count || 0);
-            } else {
-                const { count, error } = await query;
-                if (error) throw error;
-                setPendingCheckoutsCount(count || 0);
-            }
-        } catch (error) { 
-            console.error('Error fetching pending checkouts count:', error); 
-        }
-    };
-
-    const fetchNewReportsCount = async () => {
-        try {
-            let query = supabase
+            // Fetch for reports
+            const { count: reportsCount } = await supabase
                 .from('reports')
                 .select('id', { count: 'exact', head: true })
                 .eq('status', 'new');
+            setNewReportsCount(reportsCount || 0);
 
-            if (user?.role === 'department_admin' && user.department_id) {
-                const { count, error } = await supabase
-                    .from('reports')
-                    .select(`id, department_id`, { count: 'exact', head: true })
-                    .eq('status', 'new')
-                    .eq('department_id', user.department_id);
-                
-                if (error) throw error;
-                setNewReportsCount(count || 0);
-            } else {
-                const { count, error } = await query;
-                if (error) throw error;
-                setNewReportsCount(count || 0);
-            }
-        } catch (error) { 
-            console.error('Error fetching new reports count:', error); 
+            // Fetch for bookings
+            const { count: bookingsCount } = await supabase
+                .from('bookings')
+                .select('id', { count: 'exact', head: true })
+                .eq('status', 'pending');
+            setPendingBookingsCount(bookingsCount || 0);
+
+            // Fetch for checkouts
+            const { count: checkoutsCount } = await supabase
+                .from('checkouts')
+                .select('id', { count: 'exact', head: true })
+                .eq('status', 'pending');
+            setPendingCheckoutsCount(checkoutsCount || 0);
+
+        } catch (error) {
+            console.error("Error fetching notification counts:", error);
         }
     };
+
+    useEffect(() => {
+        // Initial fetch
+        fetchNotificationCounts();
+
+        // Set up interval to refresh every minute (60000ms) only for super_admin
+        let intervalId: NodeJS.Timeout;
+        if (user?.role === 'super_admin') {
+            intervalId = setInterval(fetchNotificationCounts, 60000);
+        }
+
+        // Cleanup interval on unmount or user change
+        return () => {
+            if (intervalId) {
+                clearInterval(intervalId);
+            }
+        };
+    }, [user]);
 
     const getMenuItems = () => {
         const publicItems = [
@@ -152,7 +89,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
             return [
                 { icon: PieChart, label: getText('Dashboard', 'Dasbor'), path: '/' },
                 { icon: CalendarCheck, label: getText('Exam Management', 'Jadwal UAS'), path: '/exams' },
-                { icon: UserCheck, label: getText('Session Schedule', 'Jadwal Sidang'), path: '/session-schedule' }, // New menu item
+                { icon: UserCheck, label: getText('Session Schedule', 'Jadwal Sidang'), path: '/session-schedule' },
                 { icon: Users, label: getText('User Management', 'Data Dosen/Mahasiswa'), path: '/users' },
                 { icon: Clock, label: getText('Lecture Schedules', 'Jadwal Kuliah'), path: '/schedules' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/profile' },
@@ -171,7 +108,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: ClipboardCheck, label: getText('Validation Queue', 'Antrian Validasi'), path: '/validation', badge: pendingCheckoutsCount > 0 ? pendingCheckoutsCount : null },
                 { icon: Clock, label: getText('Lecture Schedules', 'Jadwal Kuliah'), path: '/schedules' },
                 { icon: CalendarCheck, label: getText('Exam Management', 'Manajemen Ujian'), path: '/exams' },
-                { icon: UserCheck, label: getText('Session Schedule', 'Jadwal Sidang'), path: '/session-schedule' }, // New menu item
+                { icon: UserCheck, label: getText('Session Schedule', 'Jadwal Sidang'), path: '/session-schedule' },
                 { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' },
                 { icon: FileText, label: getText('Reports', 'Laporan'), path: '/reports', badge: newReportsCount > 0 ? newReportsCount : null },
                 { icon: Settings, label: getText('System Settings', 'Pengaturan Sistem'), path: '/settings' },
