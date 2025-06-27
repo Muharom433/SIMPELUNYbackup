@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import {
-    BookOpen, Search, Eye, Edit, Trash2, Check, X, Clock, Calendar, Users, AlertCircle, CheckCircle, XCircle, RefreshCw, Download, User, Building, Phone, Zap
+    BookOpen, Search, Eye, Edit, Trash2, Check, X, Clock, Calendar, Users, AlertCircle, CheckCircle, XCircle, RefreshCw, Download, User, Building, Phone, Zap, Package, Hash, Wrench
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { Booking, Room, User as UserType, Department } from '../types';
+import { Booking, Room, User as UserType, Department, Equipment } from '../types';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 
 interface BookingWithDetails extends Booking {
     user?: UserType;
     room?: Room & { department?: Department };
+    equipment_details?: Equipment[];
 }
 
 const BookingManagement: React.FC = () => {
@@ -41,6 +42,27 @@ const BookingManagement: React.FC = () => {
         };
     }, []);
 
+    const fetchEquipmentDetails = async (equipmentNames: string[]): Promise<Equipment[]> => {
+        if (!equipmentNames || equipmentNames.length === 0) return [];
+        
+        try {
+            const { data: equipmentData, error } = await supabase
+                .from('equipment')
+                .select('*')
+                .in('name', equipmentNames);
+
+            if (error) {
+                console.error('Error fetching equipment details:', error);
+                return [];
+            }
+
+            return equipmentData || [];
+        } catch (error) {
+            console.error('Error fetching equipment details:', error);
+            return [];
+        }
+    };
+
     const fetchBookings = async () => {
         try {
             setLoading(true);
@@ -57,6 +79,7 @@ const BookingManagement: React.FC = () => {
                 bookingsData.map(async (booking) => {
                     let user: UserType | null = null;
                     let room: (Room & { department?: Department }) | null = null;
+                    let equipment_details: Equipment[] = [];
 
                     if (booking.user_id) {
                         const { data: userData } = await supabase
@@ -87,7 +110,12 @@ const BookingManagement: React.FC = () => {
                         if (roomData) room = roomData;
                     }
 
-                    return { ...booking, user, room };
+                    // Fetch equipment details
+                    if (booking.equipment_requested && booking.equipment_requested.length > 0) {
+                        equipment_details = await fetchEquipmentDetails(booking.equipment_requested);
+                    }
+
+                    return { ...booking, user, room, equipment_details };
                 })
             );
 
@@ -238,12 +266,26 @@ const BookingManagement: React.FC = () => {
         }
     };
 
+    const getCategoryIcon = (category: string) => {
+        switch (category) {
+            case 'Audio Visual': return Package;
+            case 'Computing': return Package;
+            case 'Connectivity': return Package;
+            case 'Power': return Zap;
+            case 'Laboratory': return Wrench;
+            case 'Furniture': return Package;
+            case 'Safety': return Package;
+            default: return Package;
+        }
+    };
+
     if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
         return <div className="flex items-center justify-center h-64"><div className="text-center"><AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" /><h3 className="text-lg font-medium text-gray-900 mb-2">Access Denied</h3><p className="text-gray-600">You don't have permission to access booking management.</p></div></div>;
     }
 
     return (
         <div className="space-y-6">
+            {/* Header and existing UI components remain the same */}
             <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl p-6 text-white">
                 <div className="flex items-center justify-between">
                     <div><h1 className="text-3xl font-bold flex items-center space-x-3"><BookOpen className="h-8 w-8" /><span>Booking Management</span></h1><p className="mt-2 opacity-90">Manage all room bookings and approvals{profile?.role === 'department_admin' && ' for your department'}</p></div>
@@ -283,19 +325,288 @@ const BookingManagement: React.FC = () => {
                             : (filteredBookings.map((booking) => {
                                     const StatusIcon = getStatusIcon(booking.status);
                                     const isProcessing = processingIds.has(booking.id);
-                                    return (<tr key={booking.id} className="hover:bg-gray-50 transition-colors duration-200"><td className="px-6 py-4 whitespace-nowrap"><div><div className="text-sm font-medium text-gray-900">{booking.purpose || 'Class/Study Session'}</div><div className="text-sm text-gray-500">{booking.sks} SKS • {booking.class_type}</div>{booking.equipment_requested && booking.equipment_requested.length > 0 && (<div className="flex items-center mt-1"><Zap className="h-3 w-3 text-gray-400 mr-1" /><span className="text-xs text-gray-500">{booking.equipment_requested.length} equipment requested</span></div>)}</div></td><td className="px-6 py-4 whitespace-nowrap"><div className="flex items-center"><div className="h-8 w-8 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center"><User className="h-4 w-4 text-white" /></div><div className="ml-3"><div className="text-sm font-medium text-gray-900">{booking.user?.full_name || 'Unknown User'}</div><div className="text-sm text-gray-500">{booking.user?.phone_number || booking.user?.identity_number || 'No contact'}</div></div></div></td><td className="px-6 py-4 whitespace-nowrap"><div><div className="text-sm font-medium text-gray-900">{booking.room?.name || 'Unknown Room'}</div><div className="text-sm text-gray-500">{booking.room?.code || 'N/A'} • {booking.room?.department?.name || 'No Department'}</div></div></td><td className="px-6 py-4 whitespace-nowrap"><div><div className="text-sm font-medium text-gray-900">{format(new Date(booking.start_time), 'MMM d, yyyy')}</div><div className="text-sm text-gray-500">{format(new Date(booking.start_time), 'h:mm a')} - {format(new Date(booking.end_time), 'h:mm a')}</div></div></td><td className="px-6 py-4 whitespace-nowrap"><span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(booking.status)}`}><StatusIcon className="h-3 w-3 mr-1" />{booking.status.toUpperCase()}</span></td><td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><div className="flex items-center justify-end space-x-2"><button onClick={() => { setSelectedBooking(booking); setShowDetailModal(true); }} className="text-gray-600 hover:text-gray-900 p-1 rounded transition-colors duration-200"><Eye className="h-4 w-4" /></button>{booking.status === 'pending' && (<> <button onClick={() => handleStatusUpdate(booking.id, 'approved')} disabled={isProcessing} className="text-green-600 hover:text-green-900 p-1 rounded transition-colors duration-200 disabled:opacity-50"><Check className="h-4 w-4" /></button> <button onClick={() => handleStatusUpdate(booking.id, 'rejected')} disabled={isProcessing} className="text-red-600 hover:text-red-900 p-1 rounded transition-colors duration-200 disabled:opacity-50"><X className="h-4 w-4" /></button></>)}<button onClick={() => setShowDeleteConfirm(booking.id)} disabled={isProcessing} className="text-red-600 hover:text-red-900 p-1 rounded transition-colors duration-200 disabled:opacity-50"><Trash2 className="h-4 w-4" /></button></div></td></tr>);
+                                    return (<tr key={booking.id} className="hover:bg-gray-50 transition-colors duration-200"><td className="px-6 py-4 whitespace-nowrap"><div><div className="text-sm font-medium text-gray-900">{booking.purpose || 'Class/Study Session'}</div><div className="text-sm text-gray-500">{booking.sks} SKS • {booking.class_type}</div>{booking.equipment_details && booking.equipment_details.length > 0 && (<div className="flex items-center mt-1"><Zap className="h-3 w-3 text-gray-400 mr-1" /><span className="text-xs text-gray-500">{booking.equipment_details.length} equipment requested</span></div>)}</div></td><td className="px-6 py-4 whitespace-nowrap"><div className="flex items-center"><div className="h-8 w-8 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center"><User className="h-4 w-4 text-white" /></div><div className="ml-3"><div className="text-sm font-medium text-gray-900">{booking.user?.full_name || 'Unknown User'}</div><div className="text-sm text-gray-500">{booking.user?.phone_number || booking.user?.identity_number || 'No contact'}</div></div></div></td><td className="px-6 py-4 whitespace-nowrap"><div><div className="text-sm font-medium text-gray-900">{booking.room?.name || 'Unknown Room'}</div><div className="text-sm text-gray-500">{booking.room?.code || 'N/A'} • {booking.room?.department?.name || 'No Department'}</div></div></td><td className="px-6 py-4 whitespace-nowrap"><div><div className="text-sm font-medium text-gray-900">{format(new Date(booking.start_time), 'MMM d, yyyy')}</div><div className="text-sm text-gray-500">{format(new Date(booking.start_time), 'h:mm a')} - {format(new Date(booking.end_time), 'h:mm a')}</div></div></td><td className="px-6 py-4 whitespace-nowrap"><span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(booking.status)}`}><StatusIcon className="h-3 w-3 mr-1" />{booking.status.toUpperCase()}</span></td><td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><div className="flex items-center justify-end space-x-2"><button onClick={() => { setSelectedBooking(booking); setShowDetailModal(true); }} className="text-gray-600 hover:text-gray-900 p-1 rounded transition-colors duration-200"><Eye className="h-4 w-4" /></button>{booking.status === 'pending' && (<> <button onClick={() => handleStatusUpdate(booking.id, 'approved')} disabled={isProcessing} className="text-green-600 hover:text-green-900 p-1 rounded transition-colors duration-200 disabled:opacity-50"><Check className="h-4 w-4" /></button> <button onClick={() => handleStatusUpdate(booking.id, 'rejected')} disabled={isProcessing} className="text-red-600 hover:text-red-900 p-1 rounded transition-colors duration-200 disabled:opacity-50"><X className="h-4 w-4" /></button></>)}<button onClick={() => setShowDeleteConfirm(booking.id)} disabled={isProcessing} className="text-red-600 hover:text-red-900 p-1 rounded transition-colors duration-200 disabled:opacity-50"><Trash2 className="h-4 w-4" /></button></div></td></tr>);
                             }))}
                         </tbody>
                     </table>
                 </div>
             </div>
 
+            {/* Enhanced Detail Modal with Equipment Details */}
             {showDetailModal && selectedBooking && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"><div className="p-6"><div className="flex items-center justify-between mb-6"><h3 className="text-lg font-semibold text-gray-900">Booking Details</h3><button onClick={() => setShowDetailModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors duration-200"><X className="h-6 w-6" /></button></div><div className="space-y-6"><div className="bg-gray-50 rounded-lg p-4"><h4 className="text-lg font-medium text-gray-900 mb-3">{selectedBooking.purpose || 'Class/Study Session'}</h4><div className="grid grid-cols-2 gap-4 text-sm"><div><span className="text-gray-500">Status:</span><span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedBooking.status)}`}>{selectedBooking.status.toUpperCase()}</span></div><div><span className="text-gray-500">Class Type:</span><span className="ml-2 font-medium">{selectedBooking.class_type}</span></div><div><span className="text-gray-500">SKS:</span><span className="ml-2 font-medium">{selectedBooking.sks}</span></div><div><span className="text-gray-500">Created:</span><span className="ml-2">{format(new Date(selectedBooking.created_at), 'MMM d, yyyy h:mm a')}</span></div></div></div><div><h5 className="font-medium text-gray-900 mb-3">User Information</h5><div className="bg-blue-50 rounded-lg p-4"><div className="flex items-center space-x-3"><div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center"><User className="h-5 w-5 text-white" /></div><div><div className="font-medium text-gray-900">{selectedBooking.user?.full_name || 'Unknown User'}</div><div className="text-sm text-gray-600 flex items-center"><Phone className="h-3 w-3 mr-1.5"/>{selectedBooking.user?.phone_number || 'No phone number'}</div><div className="text-sm text-gray-600">{selectedBooking.user?.identity_number || 'No identity number'}</div></div></div></div></div><div><h5 className="font-medium text-gray-900 mb-3">Room Information</h5><div className="bg-green-50 rounded-lg p-4"><div className="flex items-center space-x-3"><div className="h-10 w-10 bg-gradient-to-r from-green-500 to-teal-500 rounded-full flex items-center justify-center"><Building className="h-5 w-5 text-white" /></div><div><div className="font-medium text-gray-900">{selectedBooking.room?.name || 'Unknown Room'}</div><div className="text-sm text-gray-600">{selectedBooking.room?.code || 'N/A'}</div><div className="text-sm text-gray-600">{selectedBooking.room?.department?.name || 'No Department'}</div><div className="text-sm text-gray-600">Capacity: {selectedBooking.room?.capacity || 'N/A'} seats</div></div></div></div></div><div><h5 className="font-medium text-gray-900 mb-3">Schedule</h5><div className="bg-purple-50 rounded-lg p-4"><div className="grid grid-cols-2 gap-4 text-sm"><div><span className="text-gray-500">Start Time:</span><div className="font-medium">{format(new Date(selectedBooking.start_time), 'MMM d, yyyy h:mm a')}</div></div><div><span className="text-gray-500">End Time:</span><div className="font-medium">{format(new Date(selectedBooking.end_time), 'MMM d, yyyy h:mm a')}</div></div></div></div></div>{selectedBooking.equipment_requested && selectedBooking.equipment_requested.length > 0 && (<div><h5 className="font-medium text-gray-900 mb-3">Requested Equipment</h5><div className="space-y-2">{selectedBooking.equipment_requested.map((equipment, index) => (<div key={index} className="flex items-center p-2 bg-gray-50 rounded"><Zap className="h-4 w-4 text-gray-400 mr-2" /><span className="text-sm">{equipment}</span></div>))}</div></div>)}{selectedBooking.notes && (<div><h5 className="font-medium text-gray-900 mb-3">Notes</h5><div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-700">{selectedBooking.notes}</p></div></div>)}{selectedBooking.status === 'pending' && (<div className="flex space-x-3 pt-4 border-t"><button onClick={() => { handleStatusUpdate(selectedBooking.id, 'approved'); setShowDetailModal(false); }} disabled={processingIds.has(selectedBooking.id)} className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"><Check className="h-4 w-4" /><span>Approve</span></button><button onClick={() => { handleStatusUpdate(selectedBooking.id, 'rejected'); setShowDetailModal(false); }} disabled={processingIds.has(selectedBooking.id)} className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"><X className="h-4 w-4" /><span>Reject</span></button></div>)}</div></div></div></div>
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                        <div className="p-6">
+                            <div className="flex items-center justify-between mb-6">
+                                <h3 className="text-lg font-semibold text-gray-900">Booking Details</h3>
+                                <button onClick={() => setShowDetailModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors duration-200">
+                                    <X className="h-6 w-6" />
+                                </button>
+                            </div>
+                            <div className="space-y-6">
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <h4 className="text-lg font-medium text-gray-900 mb-3">{selectedBooking.purpose || 'Class/Study Session'}</h4>
+                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                        <div>
+                                            <span className="text-gray-500">Status:</span>
+                                            <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedBooking.status)}`}>
+                                                {selectedBooking.status.toUpperCase()}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            <span className="text-gray-500">Class Type:</span>
+                                            <span className="ml-2 font-medium">{selectedBooking.class_type}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-gray-500">SKS:</span>
+                                            <span className="ml-2 font-medium">{selectedBooking.sks}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-gray-500">Created:</span>
+                                            <span className="ml-2">{format(new Date(selectedBooking.created_at), 'MMM d, yyyy h:mm a')}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h5 className="font-medium text-gray-900 mb-3">User Information</h5>
+                                    <div className="bg-blue-50 rounded-lg p-4">
+                                        <div className="flex items-center space-x-3">
+                                            <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
+                                                <User className="h-5 w-5 text-white" />
+                                            </div>
+                                            <div>
+                                                <div className="font-medium text-gray-900">{selectedBooking.user?.full_name || 'Unknown User'}</div>
+                                                <div className="text-sm text-gray-600 flex items-center">
+                                                    <Phone className="h-3 w-3 mr-1.5"/>
+                                                    {selectedBooking.user?.phone_number || 'No phone number'}
+                                                </div>
+                                                <div className="text-sm text-gray-600">{selectedBooking.user?.identity_number || 'No identity number'}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h5 className="font-medium text-gray-900 mb-3">Room Information</h5>
+                                    <div className="bg-green-50 rounded-lg p-4">
+                                        <div className="flex items-center space-x-3">
+                                            <div className="h-10 w-10 bg-gradient-to-r from-green-500 to-teal-500 rounded-full flex items-center justify-center">
+                                                <Building className="h-5 w-5 text-white" />
+                                            </div>
+                                            <div>
+                                                <div className="font-medium text-gray-900">{selectedBooking.room?.name || 'Unknown Room'}</div>
+                                                <div className="text-sm text-gray-600">{selectedBooking.room?.code || 'N/A'}</div>
+                                                <div className="text-sm text-gray-600">{selectedBooking.room?.department?.name || 'No Department'}</div>
+                                                <div className="text-sm text-gray-600">Capacity: {selectedBooking.room?.capacity || 'N/A'} seats</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h5 className="font-medium text-gray-900 mb-3">Schedule</h5>
+                                    <div className="bg-purple-50 rounded-lg p-4">
+                                        <div className="grid grid-cols-2 gap-4 text-sm">
+                                            <div>
+                                                <span className="text-gray-500">Start Time:</span>
+                                                <div className="font-medium">{format(new Date(selectedBooking.start_time), 'MMM d, yyyy h:mm a')}</div>
+                                            </div>
+                                            <div>
+                                                <span className="text-gray-500">End Time:</span>
+                                                <div className="font-medium">{format(new Date(selectedBooking.end_time), 'MMM d, yyyy h:mm a')}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Enhanced Equipment Details Section */}
+                                {selectedBooking.equipment_details && selectedBooking.equipment_details.length > 0 && (
+                                    <div>
+                                        <h5 className="font-medium text-gray-900 mb-3 flex items-center">
+                                            <Package className="h-5 w-5 mr-2 text-blue-600" />
+                                            Requested Equipment ({selectedBooking.equipment_details.length} items)
+                                        </h5>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {selectedBooking.equipment_details.map((equipment, index) => {
+                                                const CategoryIcon = getCategoryIcon(equipment.category);
+                                                return (
+                                                    <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                                        <div className="flex items-start space-x-3">
+                                                            <div className="flex-shrink-0">
+                                                                <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-lg flex items-center justify-center">
+                                                                    <CategoryIcon className="h-5 w-5 text-white" />
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center justify-between mb-2">
+                                                                    <h6 className="text-sm font-semibold text-gray-900 truncate">
+                                                                        {equipment.name}
+                                                                    </h6>
+                                                                    <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
+                                                                        <Hash className="h-3 w-3 mr-1" />
+                                                                        {equipment.code}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="space-y-2">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <span className="text-xs text-gray-500">Category:</span>
+                                                                        <span className="text-xs font-medium text-gray-700">{equipment.category}</span>
+                                                                    </div>
+                                                                    <div className="flex items-center justify-between">
+                                                                        <span className="text-xs text-gray-500">Condition:</span>
+                                                                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                                                                            equipment.condition === 'GOOD' ? 'bg-green-100 text-green-700' :
+                                                                            equipment.condition === 'BROKEN' ? 'bg-red-100 text-red-700' :
+                                                                            'bg-yellow-100 text-yellow-700'
+                                                                        }`}>
+                                                                            {equipment.condition}
+                                                                        </span>
+                                                                    </div>
+                                                                    {equipment.quantity && equipment.unit && (
+                                                                        <div className="flex items-center justify-between">
+                                                                            <span className="text-xs text-gray-500">Quantity:</span>
+                                                                            <span className="text-xs font-medium text-gray-700">
+                                                                                {equipment.quantity} {equipment.unit}
+                                                                            </span>
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="flex items-center justify-between">
+                                                                        <span className="text-xs text-gray-500">Available:</span>
+                                                                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                                                                            equipment.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                                                        }`}>
+                                                                            {equipment.is_available ? 'Yes' : 'No'}
+                                                                        </span>
+                                                                    </div>
+                                                                    {equipment.is_mandatory && (
+                                                                        <div className="flex items-center justify-between">
+                                                                            <span className="text-xs text-gray-500">Type:</span>
+                                                                            <span className="text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                                                                                Mandatory
+                                                                            </span>
+                                                                        </div>
+                                                                    )}
+                                                                    {equipment.Spesification && (
+                                                                        <div className="mt-2 pt-2 border-t border-gray-200">
+                                                                            <span className="text-xs text-gray-500">Specifications:</span>
+                                                                            <p className="text-xs text-gray-700 mt-1 leading-relaxed">
+                                                                                {equipment.Spesification}
+                                                                            </p>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        
+                                        {/* Equipment Summary */}
+                                        <div className="mt-4 bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                            <h6 className="text-sm font-semibold text-blue-900 mb-2">Equipment Summary</h6>
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                                                <div className="text-center">
+                                                    <div className="text-lg font-bold text-blue-700">
+                                                        {selectedBooking.equipment_details.length}
+                                                    </div>
+                                                    <div className="text-blue-600">Total Items</div>
+                                                </div>
+                                                <div className="text-center">
+                                                    <div className="text-lg font-bold text-green-700">
+                                                        {selectedBooking.equipment_details.filter(eq => eq.is_available).length}
+                                                    </div>
+                                                    <div className="text-green-600">Available</div>
+                                                </div>
+                                                <div className="text-center">
+                                                    <div className="text-lg font-bold text-amber-700">
+                                                        {selectedBooking.equipment_details.filter(eq => eq.is_mandatory).length}
+                                                    </div>
+                                                    <div className="text-amber-600">Mandatory</div>
+                                                </div>
+                                                <div className="text-center">
+                                                    <div className="text-lg font-bold text-purple-700">
+                                                        {[...new Set(selectedBooking.equipment_details.map(eq => eq.category))].length}
+                                                    </div>
+                                                    <div className="text-purple-600">Categories</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {selectedBooking.notes && (
+                                    <div>
+                                        <h5 className="font-medium text-gray-900 mb-3">Notes</h5>
+                                        <div className="bg-gray-50 rounded-lg p-4">
+                                            <p className="text-sm text-gray-700">{selectedBooking.notes}</p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {selectedBooking.status === 'pending' && (
+                                    <div className="flex space-x-3 pt-4 border-t">
+                                        <button 
+                                            onClick={() => { 
+                                                handleStatusUpdate(selectedBooking.id, 'approved'); 
+                                                setShowDetailModal(false); 
+                                            }} 
+                                            disabled={processingIds.has(selectedBooking.id)} 
+                                            className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                                        >
+                                            <Check className="h-4 w-4" />
+                                            <span>Approve</span>
+                                        </button>
+                                        <button 
+                                            onClick={() => { 
+                                                handleStatusUpdate(selectedBooking.id, 'rejected'); 
+                                                setShowDetailModal(false); 
+                                            }} 
+                                            disabled={processingIds.has(selectedBooking.id)} 
+                                            className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                                        >
+                                            <X className="h-4 w-4" />
+                                            <span>Reject</span>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
 
+            {/* Delete Confirmation Modal */}
             {showDeleteConfirm && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6"><div className="flex items-center mb-4"><div className="flex-shrink-0"><AlertCircle className="h-6 w-6 text-red-600" /></div><div className="ml-3"><h3 className="text-lg font-medium text-gray-900">Delete Booking</h3></div></div><p className="text-sm text-gray-500 mb-6">Are you sure you want to delete this booking? This action cannot be undone.</p><div className="flex space-x-3"><button onClick={() => setShowDeleteConfirm(null)} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-200">Cancel</button><button onClick={() => handleDelete(showDeleteConfirm)} disabled={processingIds.has(showDeleteConfirm)} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200">{processingIds.has(showDeleteConfirm) ? 'Deleting...' : 'Delete'}</button></div></div></div>
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+                        <div className="flex items-center mb-4">
+                            <div className="flex-shrink-0">
+                                <AlertCircle className="h-6 w-6 text-red-600" />
+                            </div>
+                            <div className="ml-3">
+                                <h3 className="text-lg font-medium text-gray-900">Delete Booking</h3>
+                            </div>
+                        </div>
+                        <p className="text-sm text-gray-500 mb-6">Are you sure you want to delete this booking? This action cannot be undone.</p>
+                        <div className="flex space-x-3">
+                            <button 
+                                onClick={() => setShowDeleteConfirm(null)} 
+                                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-200"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={() => handleDelete(showDeleteConfirm)} 
+                                disabled={processingIds.has(showDeleteConfirm)} 
+                                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                            >
+                                {processingIds.has(showDeleteConfirm) ? 'Deleting...' : 'Delete'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
