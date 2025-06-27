@@ -31,7 +31,7 @@ import toast from 'react-hot-toast';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const sessionSchema = z.object({
-  student_id: z.string().min(1, 'Student is required'),
+  student_id: z.string().optional(),
   date: z.string().min(1, 'Date is required'),
   start_time: z.string().min(1, 'Start time is required'),
   end_time: z.string().min(1, 'End time is required'),
@@ -144,8 +144,11 @@ const SessionSchedule = () => {
   useEffect(() => {
     if (watchDate && watchStartTime && watchEndTime) {
       checkAvailableRooms(watchDate, watchStartTime, watchEndTime);
+    } else {
+      // Reset to all rooms if no time constraints
+      setAvailableRooms(rooms);
     }
-  }, [watchDate, watchStartTime, watchEndTime]);
+  }, [watchDate, watchStartTime, watchEndTime, rooms]);
 
   const fetchSessions = async () => {
     try {
@@ -257,13 +260,13 @@ const SessionSchedule = () => {
 
   const fetchRooms = async () => {
     try {
-      let query = supabase.from('rooms').select('*').order('name');
+      // TIDAK DIBATASI DENGAN DEPARTEMEN - semua ruangan ditampilkan
+      const { data, error } = await supabase.from('rooms').select('*').order('name');
       
-      const { data } = await query;
-      let filtered = data || [];
-
-      setRooms(filtered);
-      setAvailableRooms(filtered);
+      if (error) throw error;
+      
+      setRooms(data || []);
+      setAvailableRooms(data || []);
     } catch (error: any) {
       console.error('Error fetching rooms:', error);
       toast.error(getText('Failed to load rooms.', 'Gagal memuat ruangan.'));
@@ -322,7 +325,7 @@ const SessionSchedule = () => {
   };
 
   // Enhanced room availability check that includes lecture schedules
-    const checkAvailableRooms = async (date: string, startTime: string, endTime: string) => {
+  const checkAvailableRooms = async (date: string, startTime: string, endTime: string) => {
     try {
       console.log('🔍 Checking room availability for:', { date, startTime, endTime });
       
@@ -369,6 +372,9 @@ const SessionSchedule = () => {
             console.log('⚠️ Session missing time data');
             return false;
           }
+          
+          // Time overlap logic: 
+          // Overlap occurs if: start_time < session_end_time AND end_time > session_start_time
           const hasOverlap = startTime < sessionEnd && endTime > sessionStart;
           
           if (hasOverlap) {
@@ -394,16 +400,29 @@ const SessionSchedule = () => {
             return false;
           }
           
-          // Convert times to comparable format (assuming same date)
-          const sessionStartTime = startTime.split('T')[1] || startTime; // Get time part
-          const sessionEndTime = endTime.split('T')[1] || endTime; // Get time part
+          // Convert input times to comparable format (HH:mm:ss)
+          let sessionStartTime, sessionEndTime;
+          
+          if (startTime.includes('T')) {
+            // If datetime-local format (YYYY-MM-DDTHH:mm)
+            sessionStartTime = startTime.split('T')[1] + ':00'; // Add seconds
+            sessionEndTime = endTime.split('T')[1] + ':00'; // Add seconds
+          } else {
+            // If already time format (HH:mm or HH:mm:ss)
+            sessionStartTime = startTime.includes(':') && startTime.split(':').length === 2 ? startTime + ':00' : startTime;
+            sessionEndTime = endTime.includes(':') && endTime.split(':').length === 2 ? endTime + ':00' : endTime;
+          }
+          
+          // Ensure schedule times have seconds
+          const normalizedScheduleStart = scheduleStart.includes(':') && scheduleStart.split(':').length === 2 ? scheduleStart + ':00' : scheduleStart;
+          const normalizedScheduleEnd = scheduleEnd.includes(':') && scheduleEnd.split(':').length === 2 ? scheduleEnd + ':00' : scheduleEnd;
           
           // Time overlap logic for lecture schedules
-          const hasOverlap = sessionStartTime < scheduleEnd && sessionEndTime > scheduleStart;
+          const hasOverlap = sessionStartTime < normalizedScheduleEnd && sessionEndTime > normalizedScheduleStart;
           
           if (hasOverlap) {
             console.log('❌ Lecture schedule time conflict found:', {
-              scheduleTime: `${scheduleStart}-${scheduleEnd}`,
+              scheduleTime: `${normalizedScheduleStart}-${normalizedScheduleEnd}`,
               newTime: `${sessionStartTime}-${sessionEndTime}`,
               room: schedule.room
             });
@@ -428,7 +447,7 @@ const SessionSchedule = () => {
       
       console.log('🚫 All conflicting room IDs:', allConflictingRoomIds);
       
-      // Filter available rooms
+      // Filter available rooms - SEMUA RUANGAN TERSEDIA (tidak dibatasi departemen)
       const available = rooms.filter(room => !allConflictingRoomIds.includes(room.id));
       setAvailableRooms(available);
       
@@ -478,8 +497,70 @@ const SessionSchedule = () => {
     try {
       setSubmitting(true);
 
+      let finalStudentId = data.student_id;
+      
+      // If no student_id (manual entry), create/find user first
+      if (!finalStudentId && formData.student_nim && formData.student_name) {
+        console.log('🔍 Creating/finding user for manual entry:', {
+          nim: formData.student_nim,
+          name: formData.student_name,
+          program: formData.study_program_id
+        });
+
+        // Check if user already exists
+        const { data: existingUser } = await supabase
+          .from('users')
+          .select('id')
+          .eq('identity_number', formData.student_nim)
+          .single();
+
+        if (existingUser) {
+          console.log('✅ Found existing user:', existingUser.id);
+          finalStudentId = existingUser.id;
+        } else {
+          // Create new user (auto-register like BookRoom)
+          console.log('➕ Creating new user...');
+          
+          const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id);
+          const newUserData = {
+            identity_number: formData.student_nim,
+            full_name: formData.student_name,
+            email: `${formData.student_nim}@student.edu`,
+            role: 'student',
+            study_program_id: formData.study_program_id || null,
+            department_id: selectedProgram?.department_id || null,
+            // Set default password or generate one
+            password_hash: 'temp_password_hash', // This should be properly hashed
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+
+          const { data: newUser, error: createError } = await supabase
+            .from('users')
+            .insert([newUserData])
+            .select('id')
+            .single();
+
+          if (createError) {
+            console.error('❌ Error creating user:', createError);
+            throw new Error(`Failed to create user: ${createError.message}`);
+          }
+
+          console.log('✅ Created new user:', newUser.id);
+          finalStudentId = newUser.id;
+          
+          // Show success message for user creation
+          toast.success(getText('New student registered successfully!', 'Mahasiswa baru berhasil didaftarkan!'));
+        }
+      }
+
+      // Validate we have a student ID
+      if (!finalStudentId) {
+        throw new Error(getText('Student information is required', 'Informasi mahasiswa diperlukan'));
+      }
+
       const sessionData = {
-        student_id: data.student_id,
+        student_id: finalStudentId,
         date: data.date,
         start_time: data.start_time,
         end_time: data.end_time,
@@ -488,13 +569,9 @@ const SessionSchedule = () => {
         supervisor: data.supervisor,
         examiner: data.examiner,
         secretary: data.secretary,
-        // If no student_id (manual entry), store student info
-        student_id: !data.student_id ? {
-          full_name: formData.student_name,
-          identity_number: formData.student_nim,
-          study_program_id: formData.study_program_id
-        } : null
       };
+
+      console.log('💾 Saving session data:', sessionData);
 
       if (editingSession) {
         const { error } = await supabase
@@ -759,7 +836,7 @@ const SessionSchedule = () => {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
                 type="text"
-                placeholder={getText("Search by name,NIM, title...", "Cari berdasarkan nama, NIM, judul...")}
+                placeholder={getText("Search by name, NIM, title...", "Cari berdasarkan nama, NIM, judul...")}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
@@ -1043,6 +1120,7 @@ const SessionSchedule = () => {
                               if (program) setProgramSearch(program.name);
                               toast.success(getText('Student data auto-filled!', 'Data mahasiswa otomatis terisi!'));
                             } else {
+                              // Clear student_id for manual entry
                               form.setValue('student_id', '');
                               setFormData(prev => ({
                                 ...prev,
@@ -1051,6 +1129,11 @@ const SessionSchedule = () => {
                                 study_program_id: ''
                               }));
                               setProgramSearch('');
+                              
+                              // Show info for manual entry
+                              if (e.target.value.length >= 5) {
+                                toast.info(getText('Student not found - you can enter manually', 'Mahasiswa tidak ditemukan - Anda bisa input manual'));
+                              }
                             }
                           }}
                           onFocus={() => setShowStudentDropdown(true)}
@@ -1165,6 +1248,23 @@ const SessionSchedule = () => {
                       </div>
                     </div>
                   </div>
+                  
+                  {/* Info box for manual entry */}
+                  {studentSearch && !form.getValues('student_id') && formData.student_nim && (
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+                      <div className="flex items-start space-x-3">
+                        <User className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                        <div className="text-sm text-blue-800">
+                          <p className="font-semibold">
+                            {getText('New Student Registration', 'Pendaftaran Mahasiswa Baru')}
+                          </p>
+                          <p className="mt-1">
+                            {getText('Student not found in database. A new student account will be automatically created when you save this session.', 'Mahasiswa tidak ditemukan di database. Akun mahasiswa baru akan otomatis dibuat saat Anda menyimpan jadwal sidang ini.')}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Schedule Information */}
@@ -1241,7 +1341,7 @@ const SessionSchedule = () => {
                         >
                           {availableRooms
                             .filter(room => room.name.toLowerCase().includes(roomSearch.toLowerCase()))
-                            .slice(0, 5)
+                            .slice(0, 10)
                             .map(room => (
                               <button
                                 key={room.id}
@@ -1254,10 +1354,15 @@ const SessionSchedule = () => {
                                 className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
                               >
                                 <div className="font-medium">{room.name}</div>
-                                <div className="text-sm text-gray-500">{room.code || 'No Code'}</div>
+                                <div className="text-sm text-gray-500">{room.code || 'No Code'} • Kapasitas: {room.capacity || '-'}</div>
                               </button>
                             ))
                           }
+                          {availableRooms.filter(room => room.name.toLowerCase().includes(roomSearch.toLowerCase())).length === 0 && (
+                            <div className="px-3 py-2 text-gray-500 text-sm">
+                              {getText('No available rooms found', 'Tidak ada ruangan tersedia ditemukan')}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1266,7 +1371,7 @@ const SessionSchedule = () => {
                     )}
                     {watchStartTime && watchEndTime && watchDate && (
                       <p className="mt-2 text-sm text-gray-600">
-                        💡 {getText(`Showing ${availableRooms.length} available rooms for ${watchDate} from ${watchStartTime} to ${watchEndTime}`, `Menampilkan ${availableRooms.length} ruangan tersedia untuk ${watchDate} dari ${watchStartTime} sampai ${watchEndTime}`)}
+                        💡 {getText(`Showing ${availableRooms.length} available rooms (all rooms, not limited by department) for ${watchDate} from ${watchStartTime} to ${watchEndTime}`, `Menampilkan ${availableRooms.length} ruangan tersedia (semua ruangan, tidak dibatasi departemen) untuk ${watchDate} dari ${watchStartTime} sampai ${watchEndTime}`)}
                       </p>
                     )}
                   </div>
