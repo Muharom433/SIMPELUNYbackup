@@ -72,6 +72,7 @@ function App() {
             <Route path="tool-admin" element={<ToolAdministration />} />
             <Route path="reports" element={<Reports />} />
             <Route path="settings" element={<SystemSettings />} />
+            <Route path="profile" element={<Profile />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
