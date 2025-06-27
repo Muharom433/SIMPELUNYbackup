@@ -223,6 +223,58 @@ export const translations = {
   confirmationNotification: { en: "You'll receive a confirmation notification", id: 'Anda akan menerima notifikasi konfirmasi' },
 };
 
+// Tambahan translations untuk Session Schedule di LanguageContext.tsx
+// Tambahkan ke bagian translations object:
+
+export const sessionScheduleTranslations = {
+  // Session Schedule
+  sessionSchedule: { en: 'Session Schedule', id: 'Jadwal Sidang' },
+  manageFinalExamSessions: { en: 'Manage final exam sessions', id: 'Kelola jadwal sidang akhir' },
+  addSession: { en: 'Add Session', id: 'Tambah Sidang' },
+  editSession: { en: 'Edit Session', id: 'Edit Sidang' },
+  addNewSession: { en: 'Add New Session', id: 'Tambah Sidang Baru' },
+  updateSession: { en: 'Update Session', id: 'Perbarui Sidang' },
+  createSession: { en: 'Create Session', id: 'Buat Sidang' },
+  
+  // Form fields
+  searchStudentByNIM: { en: 'Search Student by NIM', id: 'Cari Mahasiswa berdasarkan NIM' },
+  enterNIMOrName: { en: 'Enter NIM or name', id: 'Masukkan NIM atau nama' },
+  studentName: { en: 'Student Name', id: 'Nama Mahasiswa' },
+  searchStudyProgram: { en: 'Search study program', id: 'Cari program studi' },
+  searchAvailableRooms: { en: 'Search available rooms', id: 'Cari ruangan tersedia' },
+  thesisTitle: { en: 'Thesis Title', id: 'Judul Skripsi/Tesis' },
+  
+  // Committee roles
+  supervisor: { en: 'Supervisor', id: 'Pembimbing' },
+  examiner: { en: 'Examiner', id: 'Penguji' },
+  secretary: { en: 'Secretary', id: 'Sekretaris' },
+  searchSupervisor: { en: 'Search supervisor', id: 'Cari pembimbing' },
+  searchExaminer: { en: 'Search examiner', id: 'Cari penguji' },
+  searchSecretary: { en: 'Search secretary', id: 'Cari sekretaris' },
+  
+  // Table headers
+  student: { en: 'Student', id: 'Mahasiswa' },
+  program: { en: 'Program', id: 'Program' },
+  schedule: { en: 'Schedule', id: 'Jadwal' },
+  room: { en: 'Room', id: 'Ruangan' },
+  title: { en: 'Title', id: 'Judul' },
+  committee: { en: 'Committee', id: 'Panitia' },
+  actions: { en: 'Actions', id: 'Aksi' },
+  
+  // Filters
+  allPrograms: { en: 'All Programs', id: 'Semua Program' },
+  exportPDF: { en: 'Export PDF', id: 'Ekspor PDF' },
+  
+  // Messages
+  noSessionsFound: { en: 'No sessions found', id: 'Tidak ada sesi ditemukan' },
+  tryAdjustingFilters: { en: 'Try adjusting your search filters', id: 'Coba sesuaikan filter pencarian Anda' },
+  areYouSureDeleteSession: { en: 'Are you sure you want to delete this session?', id: 'Apakah Anda yakin ingin menghapus sesi ini?' },
+  selected: { en: 'Selected', id: 'Dipilih' },
+  
+  // Search placeholders
+  searchByNameNIMTitle: { en: 'Search by name, NIM, title...', id: 'Cari berdasarkan nama, NIM, judul...' },
+};
+
 // Helper function to get translation by key
 export const getTranslation = (key: keyof typeof translations, language: Language = 'en') => {
   return translations[key]?.[language] || key;
