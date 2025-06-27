@@ -443,10 +443,8 @@ const SessionSchedule = () => {
           
           const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id);
           
-          // **FIXED**: Removed the `password_hash` field.
-          // This was causing the "column not found" error because the `users` table
-          // in your database schema does not have a `password_hash` column.
-          // This object now correctly matches the likely schema of your public `users` table.
+          // This object correctly matches the schema of your public `users` table.
+          // It no longer contains the `password_hash` field that was causing the error.
           const newUserData = {
             identity_number: formData.student_nim,
             full_name: formData.student_name,
@@ -709,7 +707,7 @@ const SessionSchedule = () => {
         </div>
       </div>
 
-      {/* Filter Section */}
+      {/* Enhanced Filter Section */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
           <div className="flex flex-col sm:flex-row gap-4 flex-1">
@@ -720,7 +718,7 @@ const SessionSchedule = () => {
                 placeholder={getText("Search by name, NIM, title...", "Cari berdasarkan nama, NIM, judul...")}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
               />
             </div>
             <div className="flex gap-2">
@@ -730,7 +728,7 @@ const SessionSchedule = () => {
                   type="date"
                   value={dateFilter}
                   onChange={(e) => setDateFilter(e.target.value)}
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
                 />
               </div>
               <div className="relative">
@@ -738,7 +736,7 @@ const SessionSchedule = () => {
                 <select
                   value={programFilter}
                   onChange={(e) => setProgramFilter(e.target.value)}
-                  className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white min-w-[180px]"
+                  className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 appearance-none bg-white min-w-[180px]"
                 >
                   <option value="">{getText("All Programs", "Semua Program")}</option>
                   {studyPrograms.map(program => (
@@ -749,15 +747,32 @@ const SessionSchedule = () => {
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <button onClick={() => fetchSessions()} className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg" title={getText("Refresh", "Muat Ulang")}>
+            <button
+              onClick={() => fetchSessions()}
+              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all duration-200"
+              title={getText("Refresh", "Muat Ulang")}
+            >
               <RefreshCw className="h-5 w-5" />
             </button>
-            <button onClick={() => { setShowPrintModal(true); printForm.reset(); }} className="flex items-center space-x-2 px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">
+            <button
+              onClick={() => {
+                setShowPrintModal(true);
+                printForm.reset();
+              }}
+              className="flex items-center space-x-2 px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
+            >
               <Printer className="h-4 w-4" />
               <span>{getText("Print", "Cetak")}</span>
             </button>
             {isDepartmentAdmin && (
-              <button onClick={() => { setEditingSession(null); resetForm(); setShowModal(true); }} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-sm">
+              <button
+                onClick={() => {
+                  setEditingSession(null);
+                  resetForm();
+                  setShowModal(true);
+                }}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 shadow-sm hover:shadow-md"
+              >
                 <Plus className="h-4 w-4" />
                 <span>{getText("Add Session", "Tambah Sidang")}</span>
               </button>
@@ -766,51 +781,163 @@ const SessionSchedule = () => {
         </div>
       </div>
 
-      {/* Sessions Table */}
+      {/* Enhanced Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50 border-b">
+            <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
               <tr>
-                {isSuperAdmin && <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Student</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Program</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Schedule</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Room</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Committee</th>
-                {isDepartmentAdmin && <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>}
+                {isSuperAdmin && (
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <div className="flex items-center space-x-1">
+                      <Building className="h-4 w-4" />
+                      <span>{getText("Department", "Departemen")}</span>
+                    </div>
+                  </th>
+                )}
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <div className="flex items-center space-x-1">
+                    <User className="h-4 w-4" />
+                    <span>{getText("Student", "Mahasiswa")}</span>
+                  </div>
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <div className="flex items-center space-x-1">
+                    <GraduationCap className="h-4 w-4" />
+                    <span>{getText("Program", "Program")}</span>
+                  </div>
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <div className="flex items-center space-x-1">
+                    <Calendar className="h-4 w-4" />
+                    <span>{getText("Schedule", "Jadwal")}</span>
+                  </div>
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <div className="flex items-center space-x-1">
+                    <MapPin className="h-4 w-4" />
+                    <span>{getText("Room", "Ruangan")}</span>
+                  </div>
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <div className="flex items-center space-x-1">
+                    <BookOpen className="h-4 w-4" />
+                    <span>{getText("Title", "Judul")}</span>
+                  </div>
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <div className="flex items-center space-x-1">
+                    <Users className="h-4 w-4" />
+                    <span>{getText("Committee", "Panitia")}</span>
+                  </div>
+                </th>
+                {isDepartmentAdmin && (
+                  <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    {getText("Actions", "Aksi")}
+                  </th>
+                )}
               </tr>
             </thead>
-            <tbody className="bg-white divide-y">
+            <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
-                <tr><td colSpan={isDepartmentAdmin ? 8 : 7} className="text-center p-12"><RefreshCw className="h-6 w-6 animate-spin mx-auto" /></td></tr>
+                <tr>
+                  <td colSpan={isDepartmentAdmin ? 8 : (isSuperAdmin ? 8 : 7)} className="px-6 py-12 text-center">
+                    <div className="flex items-center justify-center">
+                      <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mr-2" />
+                      <span className="text-gray-600">{getText("Loading sessions...", "Memuat jadwal sidang...")}</span>
+                    </div>
+                  </td>
+                </tr>
               ) : filteredSessions.length === 0 ? (
-                <tr><td colSpan={isDepartmentAdmin ? 8 : 7} className="text-center p-12 text-gray-500">{getText("No sessions found", "Tidak ada jadwal sidang")}</td></tr>
+                <tr>
+                  <td colSpan={isDepartmentAdmin ? 8 : (isSuperAdmin ? 8 : 7)} className="px-6 py-12 text-center">
+                    <div className="text-gray-500">
+                      <UserCheck className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p className="text-lg font-medium mb-2">{getText("No sessions found", "Tidak ada jadwal sidang ditemukan")}</p>
+                      <p>{getText("Try adjusting your search or filters", "Coba sesuaikan pencarian atau filter Anda")}</p>
+                    </div>
+                  </td>
+                </tr>
               ) : (
                 filteredSessions.map((session) => (
-                  <tr key={session.id} className="hover:bg-gray-50">
-                    {isSuperAdmin && <td className="px-6 py-4">{session.student?.study_program?.department?.name || 'N/A'}</td>}
-                    <td className="px-6 py-4">
-                      <div className="font-medium">{session.student?.full_name}</div>
-                      <div className="text-sm text-gray-500">{session.student?.identity_number}</div>
+                  <tr key={session.id} className="hover:bg-gray-50 transition-colors duration-200">
+                    {isSuperAdmin && (
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="h-8 w-8 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-lg flex items-center justify-center">
+                            <Building className="h-4 w-4 text-white" />
+                          </div>
+                          <div className="ml-3">
+                            <div className="text-sm font-medium text-gray-900">{session.student?.study_program?.department?.name || 'N/A'}</div>
+                          </div>
+                        </div>
+                      </td>
+                    )}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
+                          <User className="h-5 w-5 text-white" />
+                        </div>
+                        <div className="ml-4">
+                          <div className="text-sm font-semibold text-gray-900">{session.student?.full_name}</div>
+                          <div className="text-sm text-gray-600 font-mono">{session.student?.identity_number}</div>
+                        </div>
+                      </div>
                     </td>
-                    <td className="px-6 py-4">{session.student?.study_program?.name}</td>
-                    <td className="px-6 py-4">
-                      <div>{format(parseISO(session.date), 'MMM d, yyyy')}</div>
-                      <div className="text-sm text-gray-500">{session.start_time} - {session.end_time}</div>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full inline-block">
+                        {session.student?.study_program?.name}
+                      </div>
                     </td>
-                    <td className="px-6 py-4">{session.room?.name || 'N/A'}</td>
-                    <td className="px-6 py-4 max-w-xs truncate">{session.title}</td>
-                    <td className="px-6 py-4 text-xs">
-                      <div>Sup: {session.supervisor}</div>
-                      <div>Exam: {session.examiner}</div>
-                      <div>Sec: {session.secretary}</div>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{format(parseISO(session.date), 'MMM d, yyyy')}</div>
+                        <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full inline-block mt-1">
+                          {session.start_time} - {session.end_time}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div className="h-8 w-8 bg-gradient-to-r from-green-500 to-teal-500 rounded-lg flex items-center justify-center">
+                          <MapPin className="h-4 w-4 text-white" />
+                        </div>
+                        <div className="ml-3">
+                          <div className="text-sm font-medium text-gray-900">{session.room?.name || 'N/A'}</div>
+                          <div className="text-sm text-gray-600">{session.room?.code || 'N/A'}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-gray-900 max-w-xs truncate" title={session.title}>
+                        {session.title}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-xs space-y-1">
+                        <div><span className="font-medium text-blue-600">{getText('Supervisor', 'Pembimbing')}:</span> {session.supervisor}</div>
+                        <div><span className="font-medium text-green-600">{getText('Examiner', 'Penguji')}:</span> {session.examiner}</div>
+                        <div><span className="font-medium text-purple-600">{getText('Secretary', 'Sekretaris')}:</span> {session.secretary}</div>
+                      </div>
                     </td>
                     {isDepartmentAdmin && (
-                      <td className="px-6 py-4 text-right">
-                        <button onClick={() => handleEdit(session)} className="text-blue-600 hover:text-blue-900 p-2"><Edit className="h-4 w-4" /></button>
-                        <button onClick={() => setShowDeleteConfirm(session.id)} className="text-red-600 hover:text-red-900 p-2"><Trash2 className="h-4 w-4" /></button>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <div className="flex items-center justify-end space-x-2">
+                          <button
+                            onClick={() => handleEdit(session)}
+                            className="text-blue-600 hover:text-blue-900 p-2 rounded-lg hover:bg-blue-50 transition-all duration-200"
+                            title={getText("Edit session", "Edit jadwal sidang")}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => setShowDeleteConfirm(session.id)}
+                            className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
+                            title={getText("Delete session", "Hapus jadwal sidang")}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -827,93 +954,511 @@ const SessionSchedule = () => {
           <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-gray-900">{editingSession ? getText('Edit Session', 'Edit Sidang') : getText('Add New Session', 'Tambah Sidang Baru')}</h3>
-                <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 p-2 rounded-lg"><X className="h-6 w-6" /></button>
+                <h3 className="text-xl font-bold text-gray-900 flex items-center space-x-2">
+                  <UserCheck className="h-6 w-6 text-blue-600" />
+                  <span>{editingSession ? getText('Edit Session Schedule', 'Edit Jadwal Sidang') : getText('Add New Session Schedule', 'Tambah Jadwal Sidang Baru')}</span>
+                </h3>
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg"
+                >
+                  <X className="h-6 w-6" />
+                </button>
               </div>
               <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-                {/* Student Info Section */}
+                {/* Student Information - Separated like BookRoom */}
                 <div className="space-y-4">
-                    <h4 className="text-lg font-semibold border-b pb-2">{getText("Student Information", "Informasi Mahasiswa")}</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Student NIM", "NIM Mahasiswa")} *</label>
-                            <div className="relative">
-                                <input
-                                type="text"
-                                placeholder={getText("Enter or search NIM...", "Masukkan atau cari NIM...")}
-                                value={studentSearch}
-                                onChange={(e) => {
-                                    setStudentSearch(e.target.value);
-                                    setShowStudentDropdown(true);
-                                    const foundStudent = students.find(s => s.identity_number === e.target.value);
-                                    if (foundStudent) {
-                                        form.setValue('student_id', foundStudent.id);
-                                        setFormData({
-                                            student_name: foundStudent.full_name,
-                                            student_nim: foundStudent.identity_number,
-                                            study_program_id: foundStudent.study_program_id || ''
-                                        });
-                                        const program = studyPrograms.find(p => p.id === foundStudent.study_program_id);
-                                        if (program) setProgramSearch(program.name);
-                                        toast.success(getText('Student data auto-filled!', 'Data mahasiswa otomatis terisi!'));
-                                    } else {
-                                        form.setValue('student_id', '');
-                                        setFormData(prev => ({ ...prev, student_name: '', student_nim: e.target.value, study_program_id: '' }));
-                                        setProgramSearch('');
-                                        // **FIXED**: Changed toast.info to toast() which is a valid function.
-                                        if (e.target.value.length >= 5) {
-                                            toast(getText('Student not found - you can enter manually', 'Mahasiswa tidak ditemukan - Anda bisa input manual'));
-                                        }
-                                    }
-                                }}
-                                onFocus={() => setShowStudentDropdown(true)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                                />
-                                {showStudentDropdown && studentSearch && (
-                                <div className="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto" onMouseLeave={() => setShowStudentDropdown(false)}>
-                                    {students.filter(s => s.identity_number.includes(studentSearch) || s.full_name.toLowerCase().includes(studentSearch.toLowerCase())).slice(0, 5).map(student => (
-                                    <button key={student.id} type="button" onClick={() => {
-                                        setStudentSearch(student.identity_number);
-                                        form.setValue('student_id', student.id);
-                                        setFormData({ student_name: student.full_name, student_nim: student.identity_number, study_program_id: student.study_program_id || '' });
-                                        const program = studyPrograms.find(p => p.id === student.study_program_id);
-                                        if (program) setProgramSearch(program.name);
-                                        setShowStudentDropdown(false);
-                                    }} className="w-full text-left px-3 py-2 hover:bg-gray-50">
-                                        <div>{student.full_name}</div><div className="text-sm text-gray-500">{student.identity_number}</div>
-                                    </button>
-                                    ))}
-                                </div>
-                                )}
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Student Name", "Nama Mahasiswa")} *</label>
-                            <input type="text" value={formData.student_name} onChange={(e) => setFormData(prev => ({ ...prev, student_name: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Study Program", "Program Studi")} *</label>
-                            <div className="relative">
-                                <input type="text" value={programSearch} onChange={(e) => { setProgramSearch(e.target.value); setShowProgramDropdown(true); }} onFocus={() => setShowProgramDropdown(true)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                                {showProgramDropdown && (
-                                <div className="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto" onMouseLeave={() => setShowProgramDropdown(false)}>
-                                    {studyPrograms.filter(p => p.name.toLowerCase().includes(programSearch.toLowerCase())).slice(0, 5).map(program => (
-                                    <button key={program.id} type="button" onClick={() => { setFormData(prev => ({ ...prev, study_program_id: program.id })); setProgramSearch(program.name); setShowProgramDropdown(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-50">{program.name}</button>
-                                    ))}
-                                </div>
-                                )}
-                            </div>
-                        </div>
+                  <div className="flex items-center space-x-3 pb-4 border-b border-gray-200">
+                    <User className="h-5 w-5 text-blue-500" />
+                    <h4 className="text-lg font-semibold text-gray-800">{getText("Student Information", "Informasi Mahasiswa")}</h4>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Student NIM", "NIM Mahasiswa")} *</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder={getText("Enter or search NIM...", "Masukkan atau cari NIM...")}
+                          value={studentSearch}
+                          onChange={(e) => {
+                            setStudentSearch(e.target.value);
+                            setShowStudentDropdown(true);
+                            
+                            const foundStudent = students.find(s => s.identity_number === e.target.value);
+                            if (foundStudent) {
+                              form.setValue('student_id', foundStudent.id);
+                              setFormData(prev => ({
+                                ...prev,
+                                student_name: foundStudent.full_name,
+                                student_nim: foundStudent.identity_number,
+                                study_program_id: foundStudent.study_program_id || ''
+                              }));
+                              const program = studyPrograms.find(p => p.id === foundStudent.study_program_id);
+                              if (program) setProgramSearch(program.name);
+                              toast.success(getText('Student data auto-filled!', 'Data mahasiswa otomatis terisi!'));
+                            } else {
+                              form.setValue('student_id', '');
+                              setFormData(prev => ({ ...prev, student_name: '', student_nim: e.target.value, study_program_id: '' }));
+                              setProgramSearch('');
+                              
+                              if (e.target.value.length >= 5) {
+                                // **FIXED**: Changed toast.info to toast() which is a valid function.
+                                toast(getText('Student not found - you can enter manually', 'Mahasiswa tidak ditemukan - Anda bisa input manual'));
+                              }
+                            }
+                          }}
+                          onFocus={() => setShowStudentDropdown(true)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        
+                        {showStudentDropdown && studentSearch && (
+                          <div 
+                            className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
+                            onMouseLeave={() => setShowStudentDropdown(false)}
+                          >
+                            {students
+                              .filter(student => 
+                                student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
+                                student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
+                              )
+                              .slice(0, 5)
+                              .map(student => (
+                                <button
+                                  key={student.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setStudentSearch(student.identity_number);
+                                    form.setValue('student_id', student.id);
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      student_name: student.full_name,
+                                      student_nim: student.identity_number,
+                                      study_program_id: student.study_program_id || ''
+                                    }));
+                                    const program = studyPrograms.find(p => p.id === student.study_program_id);
+                                    if (program) setProgramSearch(program.name);
+                                    setShowStudentDropdown(false);
+                                    toast.success(getText('Student data auto-filled!', 'Data mahasiswa otomatis terisi!'));
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                >
+                                  <div className="font-medium">{student.full_name}</div>
+                                  <div className="text-sm text-gray-500">{student.identity_number}</div>
+                                </button>
+                              ))
+                            }
+                            {students.filter(student => 
+                              student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
+                              student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
+                            ).length === 0 && (
+                              <div className="px-3 py-2 text-gray-500 text-sm">
+                                {getText('No students found - you can enter manually', 'Tidak ada mahasiswa ditemukan - Anda bisa input manual')}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Student Name", "Nama Mahasiswa")} *</label>
+                      <input
+                        type="text"
+                        value={formData.student_name}
+                        onChange={(e) => setFormData(prev => ({ ...prev, student_name: e.target.value }))}
+                        placeholder={getText("Enter student name...", "Masukkan nama mahasiswa...")}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Study Program", "Program Studi")} *</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={programSearch}
+                          onChange={(e) => {
+                            setProgramSearch(e.target.value);
+                            setShowProgramDropdown(true);
+                          }}
+                          onFocus={() => setShowProgramDropdown(true)}
+                          placeholder={getText("Search study program...", "Cari program studi...")}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        
+                        {showProgramDropdown && (
+                          <div 
+                            className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
+                            onMouseLeave={() => setShowProgramDropdown(false)}
+                          >
+                            {studyPrograms
+                              .filter(program => 
+                                program.name.toLowerCase().includes(programSearch.toLowerCase())
+                              )
+                              .slice(0, 5)
+                              .map(program => (
+                                <button
+                                  key={program.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setFormData(prev => ({ ...prev, study_program_id: program.id }));
+                                    setProgramSearch(program.name);
+                                    setShowProgramDropdown(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                >
+                                  {program.name}
+                                </button>
+                              ))
+                            }
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Info box for manual entry */}
+                  {studentSearch && !form.getValues('student_id') && formData.student_nim && (
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+                      <div className="flex items-start space-x-3">
+                        <User className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                        <div className="text-sm text-blue-800">
+                          <p className="font-semibold">
+                            {getText('New Student Registration', 'Pendaftaran Mahasiswa Baru')}
+                          </p>
+                          <p className="mt-1">
+                            {getText('Student not found in database. A new student account will be automatically created when you save this session.', 'Mahasiswa tidak ditemukan di database. Akun mahasiswa baru akan otomatis dibuat saat Anda menyimpan jadwal sidang ini.')}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* Other form sections go here, following the same pattern... */}
-                {/* Schedule Information, Room Selection, Thesis Info, Committee... */}
-                
-                <div className="flex space-x-3 pt-6 border-t">
-                  <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-6 py-3 border rounded-lg">{getText("Cancel", "Batal")}</button>
-                  <button type="submit" disabled={submitting} className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg disabled:opacity-50">
-                    {submitting ? getText("Saving...", "Menyimpan...") : (editingSession ? getText('Update Session', 'Perbarui Sidang') : getText('Create Session', 'Buat Sidang'))}
+                {/* Schedule Information */}
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-3 pb-4 border-b border-gray-200">
+                    <Calendar className="h-5 w-5 text-blue-500" />
+                    <h4 className="text-lg font-semibold text-gray-800">{getText("Schedule Information", "Informasi Jadwal")}</h4>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Date", "Tanggal")} *</label>
+                      <input
+                        {...form.register('date')}
+                        type="date"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      {form.formState.errors.date && (
+                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.date.message}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Start Time", "Waktu Mulai")} *</label>
+                      <input
+                        {...form.register('start_time')}
+                        type="time"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      {form.formState.errors.start_time && (
+                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.start_time.message}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("End Time", "Waktu Selesai")} *</label>
+                      <input
+                        {...form.register('end_time')}
+                        type="time"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      {form.formState.errors.end_time && (
+                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.end_time.message}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Room Selection */}
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-3 pb-4 border-b border-gray-200">
+                    <MapPin className="h-5 w-5 text-blue-500" />
+                    <h4 className="text-lg font-semibold text-gray-800">{getText("Room Selection", "Pilihan Ruangan")}</h4>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Room", "Ruangan")} *</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={roomSearch}
+                        onChange={(e) => {
+                          setRoomSearch(e.target.value);
+                          setShowRoomDropdown(true);
+                        }}
+                        onFocus={() => setShowRoomDropdown(true)}
+                        placeholder={getText('Search and select room...', 'Cari dan pilih ruangan...')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      
+                      {showRoomDropdown && (
+                        <div 
+                          className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
+                          onMouseLeave={() => setShowRoomDropdown(false)}
+                        >
+                          {availableRooms
+                            .filter(room => room.name.toLowerCase().includes(roomSearch.toLowerCase()))
+                            .slice(0, 10)
+                            .map(room => (
+                              <button
+                                key={room.id}
+                                type="button"
+                                onClick={() => {
+                                  form.setValue('room_id', room.id);
+                                  setRoomSearch(room.name);
+                                  setShowRoomDropdown(false);
+                                }}
+                                className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                              >
+                                <div className="font-medium">{room.name}</div>
+                                <div className="text-sm text-gray-500">{room.code || 'No Code'} • Kapasitas: {room.capacity || '-'}</div>
+                              </button>
+                            ))
+                          }
+                          {availableRooms.filter(room => room.name.toLowerCase().includes(roomSearch.toLowerCase())).length === 0 && (
+                            <div className="px-3 py-2 text-gray-500 text-sm">
+                              {getText('No available rooms found', 'Tidak ada ruangan tersedia ditemukan')}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {form.formState.errors.room_id && (
+                      <p className="mt-1 text-sm text-red-600">{form.formState.errors.room_id.message}</p>
+                    )}
+                    {watchStartTime && watchEndTime && watchDate && (
+                      <p className="mt-2 text-sm text-gray-600">
+                        💡 {getText(`Showing ${availableRooms.length} available rooms (all rooms, not limited by department) for ${watchDate} from ${watchStartTime} to ${watchEndTime}`, `Menampilkan ${availableRooms.length} ruangan tersedia (semua ruangan, tidak dibatasi departemen) untuk ${watchDate} dari ${watchStartTime} sampai ${watchEndTime}`)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Title */}
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-3 pb-4 border-b border-gray-200">
+                    <BookOpen className="h-5 w-5 text-blue-500" />
+                    <h4 className="text-lg font-semibold text-gray-800">{getText("Thesis Information", "Informasi Skripsi")}</h4>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Thesis Title", "Judul Skripsi/Tesis")} *</label>
+                    <textarea
+                      {...form.register('title')}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder={getText("Enter the complete thesis title...", "Masukkan judul lengkap skripsi/tesis...")}
+                    />
+                    {form.formState.errors.title && (
+                      <p className="mt-1 text-sm text-red-600">{form.formState.errors.title.message}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Committee Members - Always show all lecturers from department */}
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-3 pb-4 border-b border-gray-200">
+                    <Users className="h-5 w-5 text-blue-500" />
+                    <h4 className="text-lg font-semibold text-gray-800">{getText("Committee Members", "Anggota Panitia")}</h4>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Supervisor", "Pembimbing")} *</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={supervisorSearch}
+                          onChange={(e) => {
+                            setSupervisorSearch(e.target.value);
+                            setShowSupervisorDropdown(true);
+                            form.setValue('supervisor', e.target.value);
+                          }}
+                          onFocus={() => setShowSupervisorDropdown(true)}
+                          placeholder={getText("Search supervisor...", "Cari pembimbing...")}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        
+                        {showSupervisorDropdown && (
+                          <div 
+                            className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
+                            onMouseLeave={() => setShowSupervisorDropdown(false)}
+                          >
+                            {lecturers
+                              .filter(lecturer => 
+                                lecturer.full_name.toLowerCase().includes(supervisorSearch.toLowerCase())
+                              )
+                              .slice(0, 10)
+                              .map(lecturer => (
+                                <button
+                                  key={lecturer.id}
+                                  type="button"
+                                  onClick={() => {
+                                    form.setValue('supervisor', lecturer.full_name);
+                                    setSupervisorSearch(lecturer.full_name);
+                                    setShowSupervisorDropdown(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                >
+                                  {lecturer.full_name}
+                                </button>
+                              ))
+                            }
+                          </div>
+                        )}
+                      </div>
+                      {form.formState.errors.supervisor && (
+                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.supervisor.message}</p>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Examiner", "Penguji")} *</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={examinerSearch}
+                          onChange={(e) => {
+                            setExaminerSearch(e.target.value);
+                            setShowExaminerDropdown(true);
+                            form.setValue('examiner', e.target.value);
+                          }}
+                          onFocus={() => setShowExaminerDropdown(true)}
+                          placeholder={getText("Search examiner...", "Cari penguji...")}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        
+                        {showExaminerDropdown && (
+                          <div 
+                            className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
+                            onMouseLeave={() => setShowExaminerDropdown(false)}
+                          >
+                            {lecturers
+                              .filter(lecturer => 
+                                lecturer.full_name.toLowerCase().includes(examinerSearch.toLowerCase())
+                              )
+                              .slice(0, 10)
+                              .map(lecturer => (
+                                <button
+                                  key={lecturer.id}
+                                  type="button"
+                                  onClick={() => {
+                                    form.setValue('examiner', lecturer.full_name);
+                                    setExaminerSearch(lecturer.full_name);
+                                    setShowExaminerDropdown(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                >
+                                  {lecturer.full_name}
+                                </button>
+                              ))
+                            }
+                          </div>
+                        )}
+                      </div>
+                      {form.formState.errors.examiner && (
+                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.examiner.message}</p>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText("Secretary", "Sekretaris")} *</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={secretarySearch}
+                          onChange={(e) => {
+                            setSecretarySearch(e.target.value);
+                            setShowSecretaryDropdown(true);
+                            form.setValue('secretary', e.target.value);
+                          }}
+                          onFocus={() => setShowSecretaryDropdown(true)}
+                          placeholder={getText("Search secretary...", "Cari sekretaris...")}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        
+                        {showSecretaryDropdown && (
+                          <div 
+                            className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
+                            onMouseLeave={() => setShowSecretaryDropdown(false)}
+                          >
+                            {lecturers
+                              .filter(lecturer => 
+                                lecturer.full_name.toLowerCase().includes(secretarySearch.toLowerCase())
+                              )
+                              .slice(0, 10)
+                              .map(lecturer => (
+                                <button
+                                  key={lecturer.id}
+                                  type="button"
+                                  onClick={() => {
+                                    form.setValue('secretary', lecturer.full_name);
+                                    setSecretarySearch(lecturer.full_name);
+                                    setShowSecretaryDropdown(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                >
+                                  {lecturer.full_name}
+                                </button>
+                              ))
+                            }
+                          </div>
+                        )}
+                      </div>
+                      {form.formState.errors.secretary && (
+                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.secretary.message}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex space-x-3 pt-6 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowModal(false);
+                      setEditingSession(null);
+                      resetForm();
+                    }}
+                    className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 font-medium"
+                  >
+                    {getText("Cancel", "Batal")}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                  >
+                    {submitting ? (
+                      <span className="flex items-center justify-center space-x-2">
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        <span>{getText("Saving...", "Menyimpan...")}</span>
+                      </span>
+                    ) : (
+                      <span className="flex items-center justify-center space-x-2">
+                        <UserCheck className="h-4 w-4" />
+                        <span>{editingSession ? getText('Update Session', 'Perbarui Sidang') : getText('Create Session', 'Buat Sidang')}</span>
+                      </span>
+                    )}
                   </button>
                 </div>
               </form>
@@ -926,13 +1471,33 @@ const SessionSchedule = () => {
       {showDeleteConfirm && isDepartmentAdmin && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
-            <div className="p-6 text-center">
-              <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-              <h3 className="text-lg font-medium">{getText("Delete Session?", "Hapus Sidang?")}</h3>
-              <p className="text-sm text-gray-500 my-2">{getText("This action cannot be undone.", "Tindakan ini tidak bisa dibatalkan.")}</p>
-              <div className="flex justify-center space-x-4 mt-6">
-                <button onClick={() => setShowDeleteConfirm(null)} className="px-6 py-2 border rounded-lg">{getText("Cancel", "Batal")}</button>
-                <button onClick={() => handleDelete(showDeleteConfirm as string)} disabled={submitting} className="px-6 py-2 bg-red-600 text-white rounded-lg disabled:opacity-50">{submitting ? 'Deleting...' : 'Delete'}</button>
+            <div className="p-6">
+              <div className="flex items-center mb-4">
+                <div className="flex-shrink-0 h-12 w-12 bg-red-100 rounded-full flex items-center justify-center">
+                  <AlertCircle className="h-6 w-6 text-red-600" />
+                </div>
+                <div className="ml-4">
+                  <h3 className="text-lg font-medium text-gray-900">{getText("Delete Session Schedule", "Hapus Jadwal Sidang")}</h3>
+                  <p className="text-sm text-gray-500 mt-1">{getText("This action cannot be undone", "Tindakan ini tidak dapat dibatalkan")}</p>
+                </div>
+              </div>
+              <p className="text-sm text-gray-600 mb-6">
+                {getText("Are you sure you want to delete this session schedule? All associated data will be permanently removed.", "Apakah Anda yakin ingin menghapus jadwal sidang ini? Semua data terkait akan dihapus secara permanen.")}
+              </p>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(null)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium"
+                >
+                  {getText("Cancel", "Batal")}
+                </button>
+                <button
+                  onClick={() => handleDelete(showDeleteConfirm as string)}
+                  disabled={submitting}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-all duration-200 font-medium"
+                >
+                  {submitting ? getText('Deleting...', 'Menghapus...') : getText('Delete', 'Hapus')}
+                </button>
               </div>
             </div>
           </div>
@@ -944,10 +1509,85 @@ const SessionSchedule = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
             <div className="p-6">
-                <h3 className="text-lg font-semibold mb-4">{getText("Print Schedule", "Cetak Jadwal")}</h3>
-                <form onSubmit={printForm.handleSubmit(handlePrint)} className="space-y-4">
-                    {/* Form fields for print options */}
-                </form>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
+                  <Printer className="h-6 w-6 text-blue-600" />
+                  <span>{getText("Print Session Schedule", "Cetak Jadwal Sidang")}</span>
+                </h3>
+                <button
+                  onClick={() => setShowPrintModal(false)}
+                  className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+              <form onSubmit={printForm.handleSubmit(handlePrint)} className="space-y-4">
+                {isSuperAdmin && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Department", "Departemen")} *</label>
+                    <select
+                      {...printForm.register('department_id')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">{getText("Select department...", "Pilih departemen...")}</option>
+                      {departments.map(d => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Study Program", "Program Studi")} *</label>
+                  <select
+                    {...printForm.register('study_program_id')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">{getText("Select study program...", "Pilih program studi...")}</option>
+                    {studyPrograms.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Academic Year", "Tahun Akademik")} *</label>
+                  <input
+                    {...printForm.register('academic_year')}
+                    type="text"
+                    placeholder={getText("e.g. 2024/2025", "contoh: 2024/2025")}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                {isDepartmentAdmin && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Department Head", "Kepala Departemen")} *</label>
+                    <select
+                      {...printForm.register('department_head_id')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">{getText("Select department head...", "Pilih kepala departemen...")}</option>
+                      {departmentHeads.map(h => (
+                        <option key={h.id} value={h.id}>{h.full_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="flex space-x-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowPrintModal(false)}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium"
+                  >
+                    {getText("Cancel", "Batal")}
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium flex items-center justify-center space-x-2"
+                  >
+                    <Printer className="h-4 w-4" />
+                    <span>{getText("Generate PDF", "Buat PDF")}</span>
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
