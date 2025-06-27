@@ -62,7 +62,6 @@ const rescheduleSchema = z.object({
   end_time: z.string().min(1, 'End time is required'),
   room: z.string().min(1, 'Room is required'),
   class: z.string().min(1, 'Class/Rombel is required'),
-  reason: z.string().min(10, 'Please provide a detailed reason (min 10 characters)'),
 });
 
 type ScheduleForm = z.infer<typeof scheduleSchema>;
@@ -96,7 +95,6 @@ interface RescheduleRequest {
   end_time: string;
   room: string;
   class: string;
-  reason: string;
   is_done: boolean | null;
   requested_by: string;
   requested_at: string;
@@ -300,7 +298,7 @@ const LectureSchedules: React.FC = () => {
     }
   };
 
-  const handleRescheduleAction = async (requestId: string, isDone: boolean, notes?: string) => {
+  const handleRescheduleAction = async (requestId: string, isDone: boolean) => {
     try {
       setLoading(true);
       const { error } = await supabase
@@ -309,15 +307,14 @@ const LectureSchedules: React.FC = () => {
           is_done: isDone,
           reviewed_by: profile?.full_name,
           reviewed_at: new Date().toISOString(),
-          notes: notes
         })
         .eq('id', requestId);
       
       if (error) throw error;
       
       toast.success(getText(
-        `Reschedule request ${isDone ? 'approved' : 'rejected'} successfully!`,
-        `Permintaan reschedule berhasil ${isDone ? 'disetujui' : 'ditolak'}!`
+        `Reschedule request ${isDone ? 'completed' : 'unchecked'} successfully!`,
+        `Permintaan reschedule berhasil ${isDone ? 'diselesaikan' : 'dibatalkan'}!`
       ));
       fetchRescheduleRequests();
     } catch (error: any) {
@@ -718,8 +715,8 @@ const LectureSchedules: React.FC = () => {
                   </button>
                 </th>
                 <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <button onClick={() => requestSort('lecturer')} className="flex items-center gap-1 hover:text-gray-700">
-                    <span>{getText('Lecturer', 'Dosen')}</span>
+                  <button onClick={() => requestSort('subject_study')} className="flex items-center gap-1 hover:text-gray-700">
+                    <span>{getText('Study Program', 'Program Studi')}</span>
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </th>
@@ -778,7 +775,7 @@ const LectureSchedules: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-3 md:px-6 py-4">
-                        <div className="text-sm font-medium text-gray-900">{schedule.lecturer}</div>
+                        <div className="text-sm font-medium text-gray-900">{schedule.subject_study}</div>
                       </td>
                       <td className="px-3 md:px-6 py-4">
                         <div className="text-sm font-medium text-gray-900">{schedule.room}</div>
@@ -1302,8 +1299,7 @@ const LectureSchedules: React.FC = () => {
                   >
                     <option value="all">{getText('All Requests', 'Semua Permintaan')}</option>
                     <option value="pending">{getText('Pending', 'Menunggu')}</option>
-                    <option value="approved">{getText('Approved', 'Disetujui')}</option>
-                    <option value="rejected">{getText('Rejected', 'Ditolak')}</option>
+                    <option value="approved">{getText('Completed', 'Selesai')}</option>
                   </select>
                 </div>
                 <div className="text-sm text-gray-600">
@@ -1339,8 +1335,8 @@ const LectureSchedules: React.FC = () => {
                               'bg-red-100 text-red-800'
                             }`}>
                               {getText(
-                                request.is_done === null ? 'Pending' : request.is_done === true ? 'Approved' : 'Rejected',
-                                request.is_done === null ? 'Menunggu' : request.is_done === true ? 'Disetujui' : 'Ditolak'
+                                request.is_done === null ? 'Pending' : request.is_done === true ? 'Completed' : 'Unchecked',
+                                request.is_done === null ? 'Menunggu' : request.is_done === true ? 'Selesai' : 'Belum Selesai'
                               )}
                             </span>
                           </div>
@@ -1364,29 +1360,19 @@ const LectureSchedules: React.FC = () => {
                           </div>
                         </div>
                         
-                        {request.is_done === null && (
-                          <div className="flex items-center gap-2 ml-4">
-                            <button
-                              onClick={() => handleRescheduleAction(request.id, true)}
-                              className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-                            >
-                              <CheckCircle className="h-4 w-4" />
-                              {getText('Approve', 'Setujui')}
-                            </button>
-                            <button
-                              onClick={() => handleRescheduleAction(request.id, false)}
-                              className="flex items-center gap-1 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
-                            >
-                              <XCircle className="h-4 w-4" />
-                              {getText('Reject', 'Tolak')}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="mb-4">
-                        <span className="text-gray-500 text-sm">{getText('Reason', 'Alasan')}:</span>
-                        <p className="mt-1 text-gray-900">{request.reason}</p>
+                        <div className="flex items-center gap-3 ml-4">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={request.is_done === true}
+                              onChange={(e) => handleRescheduleAction(request.id, e.target.checked)}
+                              className="w-5 h-5 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500 focus:ring-2"
+                            />
+                            <span className="text-sm font-medium text-gray-700">
+                              {getText('Mark as Done', 'Tandai Selesai')}
+                            </span>
+                          </label>
+                        </div>
                       </div>
                       
                       <div className="flex items-center justify-between text-xs text-gray-500 pt-4 border-t border-gray-200">
