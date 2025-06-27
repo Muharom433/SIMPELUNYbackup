@@ -96,11 +96,6 @@ interface RescheduleRequest {
   room: string;
   class: string;
   is_done: boolean | null;
-  requested_by: string;
-  requested_at: string;
-  reviewed_by?: string;
-  reviewed_at?: string;
-  notes?: string;
 }
 
 const LectureSchedules: React.FC = () => {
@@ -171,8 +166,7 @@ const LectureSchedules: React.FC = () => {
     try {
       const { data, error } = await supabase
         .from('reschedule')
-        .select('*')
-        .order('requested_at', { ascending: false });
+        .select('*');
       
       if (error) throw error;
       setRescheduleRequests(data || []);
@@ -231,16 +225,18 @@ const LectureSchedules: React.FC = () => {
   const handleRescheduleSubmit = async (data: RescheduleForm) => {
     try {
       setLoading(true);
-      const rescheduleData = {
-        ...data,
-        is_done: null,
-        requested_by: profile?.full_name || 'Unknown',
-        requested_at: new Date().toISOString(),
-      };
 
       const { error } = await supabase
         .from('reschedule')
-        .insert(rescheduleData);
+        .insert({
+          course_code: data.course_code,
+          day: data.day,
+          start_time: data.start_time,
+          end_time: data.end_time,
+          room: data.room,
+          class: data.class,
+          is_done: null
+        });
       
       if (error) throw error;
       
@@ -303,11 +299,7 @@ const LectureSchedules: React.FC = () => {
       setLoading(true);
       const { error } = await supabase
         .from('reschedule')
-        .update({
-          is_done: isDone,
-          reviewed_by: profile?.full_name,
-          reviewed_at: new Date().toISOString(),
-        })
+        .update({ is_done: isDone })
         .eq('id', requestId);
       
       if (error) throw error;
@@ -326,7 +318,6 @@ const LectureSchedules: React.FC = () => {
   };
 
   const generatePDF = () => {
-    // Implementation for PDF generation
     toast.success(getText('PDF generated successfully!', 'PDF berhasil dibuat!'));
   };
 
@@ -349,8 +340,7 @@ const LectureSchedules: React.FC = () => {
     return rescheduleRequests.filter(request => {
       if (rescheduleFilter === 'all') return true;
       if (rescheduleFilter === 'pending') return request.is_done === null;
-      if (rescheduleFilter === 'approved') return request.is_done === true;
-      if (rescheduleFilter === 'rejected') return request.is_done === false;
+      if (rescheduleFilter === 'completed') return request.is_done === true;
       return true;
     });
   }, [rescheduleRequests, rescheduleFilter]);
@@ -1286,7 +1276,7 @@ const LectureSchedules: React.FC = () => {
                   >
                     <option value="all">{getText('All Requests', 'Semua Permintaan')}</option>
                     <option value="pending">{getText('Pending', 'Menunggu')}</option>
-                    <option value="approved">{getText('Completed', 'Selesai')}</option>
+                    <option value="completed">{getText('Completed', 'Selesai')}</option>
                   </select>
                 </div>
                 <div className="text-sm text-gray-600">
@@ -1363,14 +1353,9 @@ const LectureSchedules: React.FC = () => {
                       </div>
                       
                       <div className="flex items-center justify-between text-xs text-gray-500 pt-4 border-t border-gray-200">
-                        <div>
-                          {getText('Requested by', 'Diminta oleh')}: {request.requested_by} • {new Date(request.requested_at).toLocaleDateString()}
+                        <div className="text-sm text-gray-600">
+                          {getText('Course Code', 'Kode Mata Kuliah')}: <span className="font-medium">{request.course_code}</span>
                         </div>
-                        {request.reviewed_by && (
-                          <div>
-                            {getText('Reviewed by', 'Ditinjau oleh')}: {request.reviewed_by} • {request.reviewed_at && new Date(request.reviewed_at).toLocaleDateString()}
-                          </div>
-                        )}
                       </div>
                     </div>
                   ))
@@ -1433,7 +1418,7 @@ const LectureSchedules: React.FC = () => {
         </div>
       )}
 
-      {/* ExcelUploadModal - Super Admin Only - TETAP MENGGUNAKAN YANG SUDAH ADA */}
+      {/* ExcelUploadModal - Super Admin Only */}
       {profile?.role === 'super_admin' && (
         <ExcelUploadModal 
           isOpen={showUploadModal} 
