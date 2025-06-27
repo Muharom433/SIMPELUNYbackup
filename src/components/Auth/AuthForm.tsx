@@ -247,7 +247,7 @@ const AuthForm: React.FC = () => {
           <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
             SIMPEL Kuliah
           </h2>
-          <p className="mt-2 text-sm text-gray-600 max-w-md mx-auto">
+          <p className="mt-2 text-sm text-gray-600 max-w-md mx-auto"><b>
             {isSignUp 
               ? getText('Create your account to get started with smart campus management', 'Buat akun Anda untuk memulai manajemen kampus yang cerdas')
               : getText(`Try login using
@@ -256,7 +256,7 @@ const AuthForm: React.FC = () => {
               username : NIM
               Password : NIM`)
             }
-          </p>
+          </b></p>
         </div>
 
         {/* Auth Card */}
