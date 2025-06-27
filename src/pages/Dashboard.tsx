@@ -600,9 +600,7 @@ const ReportsSection: React.FC = () => {
             report_id: '1',
             commenter_name: getText('Technical Staff', 'Staf Teknis'),
             commenter_email: 'tech@faculty.edu',
-            comment: getText(
-              'Thank you for reporting this issue. We have identified the problem and ordered a replacement bulb. The projector should be working again by tomorrow.',
-              'Terima kasih telah melaporkan masalah ini. Kami telah mengidentifikasi masalah dan memesan lampu pengganticomment: getText(
+           comment: getText(
               'Thank you for reporting this issue. We have identified the problem and ordered a replacement bulb. The projector should be working again by tomorrow.',
               'Terima kasih telah melaporkan masalah ini. Kami telah mengidentifikasi masalah dan memesan lampu pengganti. Proyektor akan berfungsi kembali besok.'
             ),
