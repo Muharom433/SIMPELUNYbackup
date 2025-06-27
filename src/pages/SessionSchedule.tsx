@@ -636,12 +636,12 @@ const SessionSchedule = () => {
             pageWidth -= 30; 
             doc.setLineWidth(1); 
             doc.line(14, currentY, pageWidth - 14, currentY); 
-            currentY += 7; 
+            currentY += 8; 
       const subtitle = `JADWAL SIDANG ${selectedProgram.name.toUpperCase()} TAHUN AKADEMIK ${printData.academic_year}`;
       doc.setFontSize(12);
       const titleLines = doc.splitTextToSize(subtitle, pageWidth - 30);
       doc.text(titleLines, pageWidth / 2, currentY, { align: 'center' });
-      currentY += (titleLines.length * 5) + 10;
+      currentY += 5;
 
       const tableColumn = ["No.", "NIM", "Nama", "Tanggal", "Waktu", "Ruangan", "Judul", "Pembimbing", "Penguji", "Sekretaris"];
       const tableRows = sessionsToExport.map((session, index) => [
