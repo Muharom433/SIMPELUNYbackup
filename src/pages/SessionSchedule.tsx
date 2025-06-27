@@ -322,14 +322,16 @@ const SessionSchedule = () => {
   };
 
   // Enhanced room availability check that includes lecture schedules
-  const checkAvailableRooms = async (date: string, startTime: string, endTime: string) => {
+    const checkAvailableRooms = async (date: string, startTime: string, endTime: string) => {
     try {
       console.log('🔍 Checking room availability for:', { date, startTime, endTime });
       
-      // Get day name for checking lecture schedules
+      // Get day name for checking lecture schedules (Indonesian format)
       const dateObj = new Date(date);
-      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      const dayName = dayNames[dateObj.getDay()];
+      const dayNamesIndonesian = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+      const dayName = dayNamesIndonesian[dateObj.getDay()];
+      
+      console.log('📅 Checking for day:', dayName);
       
       // Fetch conflicts from both final_sessions and lecture_schedules
       const [finalSessionsResponse, lectureSchedulesResponse] = await Promise.all([
