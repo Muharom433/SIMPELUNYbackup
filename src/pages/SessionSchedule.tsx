@@ -261,11 +261,6 @@ const SessionSchedule = () => {
       
       const { data } = await query;
       let filtered = data || [];
-
-      if (profile?.role === 'department_admin' && profile?.department_id) {
-        filtered = (data || []).filter(room => 
-          room.department_id === profile.department_id
-        );
       }
 
       setRooms(filtered);
