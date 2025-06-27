@@ -369,9 +369,6 @@ const SessionSchedule = () => {
             console.log('⚠️ Session missing time data');
             return false;
           }
-          
-          // Time overlap logic: 
-          // Overlap occurs if: start_time < session_end_time AND end_time > session_start_time
           const hasOverlap = startTime < sessionEnd && endTime > sessionStart;
           
           if (hasOverlap) {
