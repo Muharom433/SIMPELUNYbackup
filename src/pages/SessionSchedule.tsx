@@ -142,6 +142,16 @@ const SessionSchedule = () => {
   const watchDate = form.watch('date');
   const watchStartTime = form.watch('start_time');
   const watchEndTime = form.watch('end_time');
+  const getImageDataUrl = async (url: string): Promise<string> => {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+};
 
   // Effect to fetch initial data once the user profile is available
   useEffect(() => {
