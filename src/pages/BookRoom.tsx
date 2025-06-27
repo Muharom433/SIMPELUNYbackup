@@ -49,6 +49,7 @@ const BookRoom: React.FC = () => {
     const { getText, formatTime, formatDate } = useLanguage();
     const [rooms, setRooms] = useState<RoomWithStatus[]>([]);
     const [loading, setLoading] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
     const [showInUse, setShowInUse] = useState(false);
     const [viewingSchedulesFor, setViewingSchedulesFor] = useState<RoomWithStatus | null>(null);
     const [schedulesForModal, setSchedulesForModal] = useState<LectureSchedule[]>([]);
@@ -240,13 +241,65 @@ const BookRoom: React.FC = () => {
             }
         }
     }, [watchStartTime, watchSks, watchClassType, useManualEndTime, form]);
+
+    // Enhanced success handler with detailed toast message
+    const handleBookingSuccess = (data: BookingForm, selectedRoom: RoomWithStatus) => {
+        const roomName = selectedRoom.name;
+        const startTime = format(new Date(data.start_time), 'MMM d, yyyy HH:mm');
+        const equipmentCount = checkedEquipment.size;
+        
+        // Show detailed success toast
+        toast.success(
+            getText(
+                `✅ Booking submitted successfully!\n🏢 Room: ${roomName}\n⏰ Time: ${startTime}${equipmentCount > 0 ? `\n⚡ Equipment: ${equipmentCount} items` : ''}\n📝 Status: Pending approval`,
+                `✅ Pemesanan berhasil dikirim!\n🏢 Ruangan: ${roomName}\n⏰ Waktu: ${startTime}${equipmentCount > 0 ? `\n⚡ Peralatan: ${equipmentCount} item` : ''}\n📝 Status: Menunggu persetujuan`
+            ),
+            {
+                duration: 6000,
+                style: {
+                    background: '#10B981',
+                    color: '#FFFFFF',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    boxShadow: '0 10px 25px rgba(16, 185, 129, 0.3)',
+                },
+                iconTheme: {
+                    primary: '#FFFFFF',
+                    secondary: '#10B981',
+                },
+            }
+        );
+
+        // Show additional info toast
+        setTimeout(() => {
+            toast(
+                getText(
+                    '📧 You will receive notification once your booking is approved by admin.',
+                    '📧 Anda akan menerima notifikasi setelah pemesanan disetujui oleh admin.'
+                ),
+                {
+                    duration: 4000,
+                    style: {
+                        background: '#3B82F6',
+                        color: '#FFFFFF',
+                        borderRadius: '12px',
+                        padding: '12px',
+                        fontSize: '13px',
+                    },
+                }
+            );
+        }, 1000);
+    };
     
     const onSubmit = async (data: BookingForm) => {
         if (!selectedRoom) { 
             toast.error(getText('Please select a room', 'Silakan pilih ruangan')); 
             return; 
         }
-        setLoading(true);
+        
+        setSubmitting(true);
         try {
             const { data: existingBookings, error: conflictError } = await supabase.from('bookings').select('id').eq('room_id', data.room_id).eq('status', 'approved');
             if (conflictError) throw conflictError;
@@ -292,17 +345,37 @@ const BookRoom: React.FC = () => {
             if (error) throw error;
             const { error: roomUpdateError } = await supabase.from('rooms').update({ is_available: false }).eq('id', data.room_id);
             if (roomUpdateError) console.error('Error updating room availability:', roomUpdateError);
-            toast.success(getText('Room booking submitted for approval!', 'Pemesanan ruangan telah dikirim untuk persetujuan!'));
+            
+            // Call the enhanced success handler
+            handleBookingSuccess(data, selectedRoom);
+            
             form.reset({ class_type: 'theory', sks: 2, equipment_requested: [], });
             setSelectedRoom(null);
             setIdentitySearchTerm('');
             setStudyProgramSearchTerm('');
             setUseManualEndTime(false);
             fetchRoomsWithStatus();
+            
         } catch (error: any) { 
             console.error('Error creating booking:', error); 
-            toast.error(error.message || getText('Failed to create booking', 'Gagal membuat pemesanan')); 
-        } finally { setLoading(false); }
+            toast.error(
+                error.message || getText('Failed to create booking', 'Gagal membuat pemesanan'),
+                {
+                    duration: 5000,
+                    style: {
+                        background: '#EF4444',
+                        color: '#FFFFFF',
+                        borderRadius: '12px',
+                        padding: '16px',
+                        fontSize: '14px',
+                        fontWeight: '500',
+                        boxShadow: '0 10px 25px rgba(239, 68, 68, 0.3)',
+                    },
+                }
+            ); 
+        } finally { 
+            setSubmitting(false); 
+        }
     };
 
     const filteredIdentityNumbers = existingUsers.filter(user => user.identity_number.toLowerCase().includes(identitySearchTerm.toLowerCase()) || user.full_name.toLowerCase().includes(identitySearchTerm.toLowerCase()));
@@ -951,11 +1024,20 @@ return (
                                 <div className="pt-6 border-t border-gray-200/50">
                                     <button 
                                         type="submit" 
-                                        disabled={!selectedRoom} 
+                                        disabled={!selectedRoom || submitting} 
                                         className="w-full flex items-center justify-center space-x-3 px-6 py-4 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold rounded-xl hover:from-blue-600 hover:to-indigo-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl disabled:hover:shadow-lg"
                                     >
-                                        <Send className="h-5 w-5" />
-                                        <span>{getText('Submit', 'Kirim')}</span>
+                                        {submitting ? (
+                                            <>
+                                                <Loader2 className="h-5 w-5 animate-spin" />
+                                                <span>{getText('Submitting...', 'Mengirim...')}</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Send className="h-5 w-5" />
+                                                <span>{getText('Submit Booking', 'Kirim Pemesanan')}</span>
+                                            </>
+                                        )}
                                     </button>
                                 </div>
                             </form>
