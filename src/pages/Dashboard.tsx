@@ -46,6 +46,7 @@ import {
   Phone,
   Mail
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
 
 interface DashboardStats {
