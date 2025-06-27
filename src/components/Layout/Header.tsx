@@ -53,13 +53,56 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
     return () => clearInterval(timer);
   }, []);
 
+  // Fetch notification counts function
+  const fetchNotificationCounts = async () => {
+    // Only fetch for super_admin
+    if (user?.role !== 'super_admin') {
+      return;
+    }
+
+    try {
+      // Fetch for bookings
+      const { count: bookingsCount } = await supabase
+        .from('bookings')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending');
+      setPendingBookingsCount(bookingsCount || 0);
+
+      // Fetch for checkouts
+      const { count: checkoutsCount } = await supabase
+        .from('checkouts')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'returned');
+      setPendingCheckoutsCount(checkoutsCount || 0);
+
+      // Fetch for reports
+      const { count: reportsCount } = await supabase
+        .from('reports')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'new');
+      setNewReportsCount(reportsCount || 0);
+
+    } catch (error) {
+      console.error('Error fetching notification counts:', error);
+    }
+  };
+
   useEffect(() => {
-    if (user && (user.role === 'super_admin' || user.role === 'department_admin')) {
-      fetchPendingBookingsCount();
-      fetchPendingCheckoutsCount();
-      fetchNewReportsCount();
-      
-      const bookingSubscription = supabase
+    // Initial fetch
+    fetchNotificationCounts();
+
+    // Set up interval to refresh every minute (60000ms) only for super_admin
+    let intervalId: NodeJS.Timeout;
+    let bookingSubscription: any;
+    let checkoutSubscription: any;
+    let reportsSubscription: any;
+
+    if (user?.role === 'super_admin') {
+      // Set up interval for periodic refresh
+      intervalId = setInterval(fetchNotificationCounts, 60000);
+
+      // Set up real-time subscriptions for immediate updates
+      bookingSubscription = supabase
         .channel('pending-bookings')
         .on('postgres_changes', 
           { 
@@ -69,12 +112,12 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
             filter: 'status=eq.pending'
           }, 
           () => {
-            fetchPendingBookingsCount();
+            fetchNotificationCounts();
           }
         )
         .subscribe();
 
-      const checkoutSubscription = supabase
+      checkoutSubscription = supabase
         .channel('pending-checkouts')
         .on('postgres_changes', 
           { 
@@ -84,12 +127,12 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
             filter: 'status=eq.returned'
           }, 
           () => {
-            fetchPendingCheckoutsCount();
+            fetchNotificationCounts();
           }
         )
         .subscribe();
 
-      const reportsSubscription = supabase
+      reportsSubscription = supabase
         .channel('new-reports')
         .on('postgres_changes', 
           { 
@@ -99,107 +142,28 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
             filter: 'status=eq.new'
           }, 
           () => {
-            fetchNewReportsCount();
+            fetchNotificationCounts();
           }
         )
         .subscribe();
+    }
 
-      return () => {
+    // Cleanup on unmount or user change
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+      if (bookingSubscription) {
         bookingSubscription.unsubscribe();
+      }
+      if (checkoutSubscription) {
         checkoutSubscription.unsubscribe();
+      }
+      if (reportsSubscription) {
         reportsSubscription.unsubscribe();
-      };
-    }
+      }
+    };
   }, [user]);
-
-  const fetchPendingBookingsCount = async () => {
-    try {
-      let query = supabase
-        .from('bookings')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'pending');
-
-      if (user?.role === 'department_admin' && user.department_id) {
-        const { data, error } = await supabase
-          .from('bookings')
-          .select(`
-            id,
-            room:rooms!inner(department_id)
-          `, { count: 'exact', head: true })
-          .eq('status', 'pending')
-          .eq('room.department_id', user.department_id);
-
-        if (error) throw error;
-        setPendingBookingsCount(data?.length || 0);
-      } else {
-        const { count, error } = await query;
-        if (error) throw error;
-        setPendingBookingsCount(count || 0);
-      }
-    } catch (error) {
-      console.error('Error fetching pending bookings count:', error);
-    }
-  };
-
-  const fetchPendingCheckoutsCount = async () => {
-    try {
-      let query = supabase
-        .from('checkouts')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'returned');
-
-      if (user?.role === 'department_admin' && user.department_id) {
-        const { data, error } = await supabase
-          .from('checkouts')
-          .select(`
-            id,
-            booking:bookings!inner(
-              room:rooms!inner(department_id)
-            )
-          `, { count: 'exact', head: true })
-          .eq('status', 'returned')
-          .eq('booking.room.department_id', user.department_id);
-
-        if (error) throw error;
-        setPendingCheckoutsCount(data?.length || 0);
-      } else {
-        const { count, error } = await query;
-        if (error) throw error;
-        setPendingCheckoutsCount(count || 0);
-      }
-    } catch (error) {
-      console.error('Error fetching pending checkouts count:', error);
-    }
-  };
-
-  const fetchNewReportsCount = async () => {
-    try {
-      let query = supabase
-        .from('reports')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'new');
-
-      if (user?.role === 'department_admin' && user.department_id) {
-        const { data, error } = await supabase
-          .from('reports')
-          .select(`
-            id,
-            department_id
-          `, { count: 'exact', head: true })
-          .eq('status', 'new')
-          .eq('department_id', user.department_id);
-
-        if (error) throw error;
-        setNewReportsCount(data?.length || 0);
-      } else {
-        const { count, error } = await query;
-        if (error) throw error;
-        setNewReportsCount(count || 0);
-      }
-    } catch (error) {
-      console.error('Error fetching new reports count:', error);
-    }
-  };
 
   const totalNotifications = pendingBookingsCount + pendingCheckoutsCount + newReportsCount;
 
@@ -359,123 +323,125 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
 
           {user && (
             <>
-              {/* Notifications */}
-              <div className="relative" data-dropdown>
-                <button 
-                  className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
-                  onClick={() => {
-                    setShowNotificationsDropdown(!showNotificationsDropdown);
-                    setShowUserDropdown(false);
-                    setShowLanguageDropdown(false);
-                  }}
-                >
-                  <Bell className="h-5 w-5" />
-                  {totalNotifications > 0 && (
-                    <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 rounded-full flex items-center justify-center">
-                      <span className="text-xs text-white font-bold">
-                        {totalNotifications > 99 ? '99+' : totalNotifications}
+              {/* Notifications - Only visible for super_admin */}
+              {user.role === 'super_admin' && (
+                <div className="relative" data-dropdown>
+                  <button 
+                    className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
+                    onClick={() => {
+                      setShowNotificationsDropdown(!showNotificationsDropdown);
+                      setShowUserDropdown(false);
+                      setShowLanguageDropdown(false);
+                    }}
+                  >
+                    <Bell className="h-5 w-5" />
+                    {totalNotifications > 0 && (
+                      <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 rounded-full flex items-center justify-center">
+                        <span className="text-xs text-white font-bold">
+                          {totalNotifications > 99 ? '99+' : totalNotifications}
+                        </span>
                       </span>
-                    </span>
-                  )}
-                </button>
+                    )}
+                  </button>
 
-                {showNotificationsDropdown && (
-                  <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                    <div className="p-4 border-b border-gray-200">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-bold text-gray-900">
-                          {getText('Notifications', 'Notifikasi')}
-                        </h3>
-                        <button
-                          onClick={() => setShowNotificationsDropdown(false)}
-                          className="p-1 rounded hover:bg-gray-100"
-                        >
-                          <X className="h-4 w-4 text-gray-500" />
-                        </button>
+                  {showNotificationsDropdown && (
+                    <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                      <div className="p-4 border-b border-gray-200">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-lg font-bold text-gray-900">
+                            {getText('Notifications', 'Notifikasi')}
+                          </h3>
+                          <button
+                            onClick={() => setShowNotificationsDropdown(false)}
+                            className="p-1 rounded hover:bg-gray-100"
+                          >
+                            <X className="h-4 w-4 text-gray-500" />
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="max-h-80 overflow-y-auto">
+                        {totalNotifications === 0 ? (
+                          <div className="p-8 text-center">
+                            <Bell className="h-8 w-8 text-gray-400 mx-auto mb-4" />
+                            <p className="text-gray-500 font-medium">
+                              {getText('No new notifications', 'Tidak ada notifikasi baru')}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="p-2 space-y-2">
+                            {pendingBookingsCount > 0 && (
+                              <div 
+                                className="p-4 hover:bg-blue-50 cursor-pointer rounded"
+                                onClick={() => {
+                                  navigate('/bookings');
+                                  setShowNotificationsDropdown(false);
+                                }}
+                              >
+                                <div className="flex items-start space-x-3">
+                                  <Calendar className="h-5 w-5 text-blue-600 mt-1" />
+                                  <div>
+                                    <p className="text-sm font-semibold text-gray-900">
+                                      {getText('Pending Room Bookings', 'Pemesanan Ruangan Menunggu')}
+                                    </p>
+                                    <p className="text-sm text-gray-600">
+                                      {pendingBookingsCount} {getText('booking', 'pemesanan')} {getText('waiting for approval', 'menunggu persetujuan')}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            
+                            {pendingCheckoutsCount > 0 && (
+                              <div 
+                                className="p-4 hover:bg-green-50 cursor-pointer rounded"
+                                onClick={() => {
+                                  navigate('/validation');
+                                  setShowNotificationsDropdown(false);
+                                }}
+                              >
+                                <div className="flex items-start space-x-3">
+                                  <CheckSquare className="h-5 w-5 text-green-600 mt-1" />
+                                  <div>
+                                    <p className="text-sm font-semibold text-gray-900">
+                                      {getText('Pending Checkouts', 'Pengembalian Menunggu')}
+                                    </p>
+                                    <p className="text-sm text-gray-600">
+                                      {pendingCheckoutsCount} {getText('checkout', 'pengembalian')} {getText('waiting for approval', 'menunggu persetujuan')}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {newReportsCount > 0 && (
+                              <div 
+                                className="p-4 hover:bg-orange-50 cursor-pointer rounded"
+                                onClick={() => {
+                                  navigate('/reports');
+                                  setShowNotificationsDropdown(false);
+                                }}
+                              >
+                                <div className="flex items-start space-x-3">
+                                  <FileText className="h-5 w-5 text-orange-600 mt-1" />
+                                  <div>
+                                    <p className="text-sm font-semibold text-gray-900">
+                                      {getText('New Reports', 'Laporan Baru')}
+                                    </p>
+                                    <p className="text-sm text-gray-600">
+                                      {newReportsCount} {getText('new report', 'laporan baru')} {getText('requiring attention', 'memerlukan perhatian')}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
-                    
-                    <div className="max-h-80 overflow-y-auto">
-                      {totalNotifications === 0 ? (
-                        <div className="p-8 text-center">
-                          <Bell className="h-8 w-8 text-gray-400 mx-auto mb-4" />
-                          <p className="text-gray-500 font-medium">
-                            {getText('No new notifications', 'Tidak ada notifikasi baru')}
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="p-2 space-y-2">
-                          {pendingBookingsCount > 0 && (
-                            <div 
-                              className="p-4 hover:bg-blue-50 cursor-pointer rounded"
-                              onClick={() => {
-                                navigate('/bookings');
-                                setShowNotificationsDropdown(false);
-                              }}
-                            >
-                              <div className="flex items-start space-x-3">
-                                <Calendar className="h-5 w-5 text-blue-600 mt-1" />
-                                <div>
-                                  <p className="text-sm font-semibold text-gray-900">
-                                    {getText('Pending Room Bookings', 'Pemesanan Ruangan Menunggu')}
-                                  </p>
-                                  <p className="text-sm text-gray-600">
-                                    {pendingBookingsCount} {getText('booking', 'pemesanan')} {getText('waiting for approval', 'menunggu persetujuan')}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                          
-                          {pendingCheckoutsCount > 0 && (
-                            <div 
-                              className="p-4 hover:bg-green-50 cursor-pointer rounded"
-                              onClick={() => {
-                                navigate('/validation');
-                                setShowNotificationsDropdown(false);
-                              }}
-                            >
-                              <div className="flex items-start space-x-3">
-                                <CheckSquare className="h-5 w-5 text-green-600 mt-1" />
-                                <div>
-                                  <p className="text-sm font-semibold text-gray-900">
-                                    {getText('Pending Checkouts', 'Pengembalian Menunggu')}
-                                  </p>
-                                  <p className="text-sm text-gray-600">
-                                    {pendingCheckoutsCount} {getText('checkout', 'pengembalian')} {getText('waiting for approval', 'menunggu persetujuan')}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {newReportsCount > 0 && (
-                            <div 
-                              className="p-4 hover:bg-orange-50 cursor-pointer rounded"
-                              onClick={() => {
-                                navigate('/reports');
-                                setShowNotificationsDropdown(false);
-                              }}
-                            >
-                              <div className="flex items-start space-x-3">
-                                <FileText className="h-5 w-5 text-orange-600 mt-1" />
-                                <div>
-                                  <p className="text-sm font-semibold text-gray-900">
-                                    {getText('New Reports', 'Laporan Baru')}
-                                  </p>
-                                  <p className="text-sm text-gray-600">
-                                    {newReportsCount} {getText('new report', 'laporan baru')} {getText('requiring attention', 'memerlukan perhatian')}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
               {/* Settings */}
               <button className="hidden sm:block p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg">
