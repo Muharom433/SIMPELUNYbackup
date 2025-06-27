@@ -582,6 +582,7 @@ const ReportsSection = () => {
           commenter_name: commenterInfo.name,
           commenter_email: commenterInfo.email,
           comment: newComment,
+          
         });
 
       if (error) throw error;
