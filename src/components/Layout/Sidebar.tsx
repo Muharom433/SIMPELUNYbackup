@@ -22,51 +22,41 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
     const [newReportsCount, setNewReportsCount] = useState(0);
 
     useEffect(() => {
-        if (user && (user.role === 'super_admin' || user.role === 'department_admin')) {
-            const fetchPendingCounts = () => {
-                fetchPendingBookingsCount();
-                fetchPendingCheckoutsCount();
-                fetchNewReportsCount();
-            };
-            fetchPendingCounts();
-        
-            const bookingSubscription = supabase
-                .channel('sidebar-pending-bookings')
-                .on('postgres_changes', { 
-                    event: '*', 
-                    schema: 'public', 
-                    table: 'bookings', 
-                    filter: 'status=eq.pending' 
-                }, fetchPendingBookingsCount)
-                .subscribe();
+  // This function will now only run if the user is a super_admin.
+  const fetchCounts = async () => {
+    try {
+      // Fetch for reports
+      const { count: reportsCount } = await supabase
+        .from('reports')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'new');
+      setNewReportsCount(reportsCount || 0);
 
-            const checkoutSubscription = supabase
-                .channel('sidebar-pending-checkouts')
-                .on('postgres_changes', { 
-                    event: '*', 
-                    schema: 'public', 
-                    table: 'checkouts', 
-                    filter: 'status=eq.returned' 
-                }, fetchPendingCheckoutsCount)
-                .subscribe();
+      // Fetch for bookings
+      const { count: bookingsCount } = await supabase
+        .from('bookings')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending');
+      setPendingBookingsCount(bookingsCount || 0);
 
-            const reportsSubscription = supabase
-                .channel('sidebar-new-reports')
-                .on('postgres_changes', { 
-                    event: '*', 
-                    schema: 'public', 
-                    table: 'reports', 
-                    filter: 'status=eq.new' 
-                }, fetchNewReportsCount)
-                .subscribe();
+      // Fetch for checkouts
+      const { count: checkoutsCount } = await supabase
+        .from('checkouts')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending');
+      setPendingCheckoutsCount(checkoutsCount || 0);
 
-            return () => {
-                bookingSubscription.unsubscribe();
-                checkoutSubscription.unsubscribe();
-                reportsSubscription.unsubscribe();
-            };
-        }
-    }, [user]);
+    } catch (error) {
+      console.error("Error fetching notification counts:", error);
+    }
+  };
+
+  // Only call fetchCounts if the user is a super_admin.
+  // This prevents the API call and the resulting error for department_admins.
+  if (profile?.role === 'super_admin') {
+    fetchCounts();
+  }
+}, [profile]);
 
     const fetchPendingBookingsCount = async () => {
         try {
