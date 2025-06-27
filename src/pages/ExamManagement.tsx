@@ -756,7 +756,7 @@ const ExamManagement = () => {
             
             doc.setFontSize(10);
             doc.setFont('helvetica', 'normal');
-            doc.text(`Yogyakarta, ${format(new Date(), 'd MMMM yyyy')}`, signatureX, signatureY);
+            doc.text(`Yogyakarta, ${format(new Date(), 'd MMMM yyyy', { locale: (await import('date-fns/locale/id')).default })}`, signatureX, signatureY);
             doc.text(getText("Department Head,", "Kepala Departemen,"), signatureX, signatureY + 5); 
             
             const nameY = signatureY + 30;
