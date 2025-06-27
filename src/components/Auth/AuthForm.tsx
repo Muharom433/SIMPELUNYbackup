@@ -251,10 +251,10 @@ const AuthForm: React.FC = () => {
             {isSignUp 
               ? getText('Create your account to get started with smart campus management', 'Buat akun Anda untuk memulai manajemen kampus yang cerdas')
               : getText(`Try login using
-              username : Id Number
-              Password : Id Number`, `coba login dengan
-              username : NIM
-              Password : NIM`)
+              Username : [ Id Number ] &
+              Password : [ Id Number ]`, `Coba login dengan
+              Username : [ NIM ] &
+              Password : [ NIM ]`)
             }
           </b></p>
         </div>
