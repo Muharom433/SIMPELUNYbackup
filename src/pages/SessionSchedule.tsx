@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import logoUNY from '../assets/logouny.png';
 import {
   Calendar,
   Search,
