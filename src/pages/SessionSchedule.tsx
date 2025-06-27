@@ -593,10 +593,9 @@ const SessionSchedule = () => {
         return;
       }
 
-      const doc = new jsPDF();
-      let pageWidth = doc.internal.pageSize.getWidth();
-      const departmentName = currentDepartment.name.toUpperCase();
-      const departmentName = currentDepartment.name.toUpperCase(); 
+            const doc = new jsPDF();
+            let pageWidth = doc.internal.pageSize.getWidth();
+            const departmentName = currentDepartment.name.toUpperCase();
             const logoDataUrl = await getImageDataUrl(logoUNY); 
             doc.addImage(logoDataUrl, 'PNG', 12, 15, 30, 30); 
             let currentY = 22; 
