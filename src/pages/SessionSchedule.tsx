@@ -153,7 +153,7 @@ const SessionSchedule = () => {
       let query = supabase
         .from('final_sessions')
         .select(`
-          *,a
+          *,
           student:users!student_id(
             id,
             full_name,
@@ -479,7 +479,7 @@ const SessionSchedule = () => {
       setSubmitting(true);
 
       const sessionData = {
-        student_id: data.student_id || null,
+        student_id: data.student_id,
         date: data.date,
         start_time: data.start_time,
         end_time: data.end_time,
