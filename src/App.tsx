@@ -52,11 +52,8 @@ function App() {
             
             {/* Public/Student Routes */}
             <Route path="tools" element={<ToolLending />} />
-            <Route path="profile" element={<div className="p-6">Profile Management - Coming Soon</div>} />
+            <Route path="profile" element={<Profile/>} />
             
-            {/* Department Admin Routes */}
-            <Route path="department-analytics" element={<div className="p-6">Department Analytics - Coming Soon</div>} />
-            <Route path="exam-schedules" element={<div className="p-6">Exam Schedules - Coming Soon</div>} />
             <Route path="department-bookings" element={<div className="p-6">Department Bookings - Coming Soon</div>} />
             <Route path="department-reports" element={<div className="p-6">Department Reports - Coming Soon</div>} />
             <Route path="department-equipment" element={<div className="p-6">Equipment Management - Coming Soon</div>} />
