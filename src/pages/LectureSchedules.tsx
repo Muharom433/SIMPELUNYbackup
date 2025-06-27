@@ -1210,19 +1210,6 @@ const LectureSchedules: React.FC = () => {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">{getText('Reason for Reschedule', 'Alasan Reschedule')} *</label>
-                <textarea
-                  {...rescheduleForm.register('reason')}
-                  rows={4}
-                  className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-orange-500 focus:ring-0 transition-colors"
-                  placeholder={getText('Please provide a detailed reason for the reschedule request...', 'Mohon berikan alasan detail untuk permintaan reschedule...')}
-                />
-                {rescheduleForm.formState.errors.reason && (
-                  <p className="text-red-500 text-sm">{rescheduleForm.formState.errors.reason.message}</p>
-                )}
-              </div>
-
               <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
                 <button
                   type="button"
