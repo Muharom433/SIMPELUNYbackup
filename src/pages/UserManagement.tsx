@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -19,15 +20,17 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
+import { useLanguage } from '../contexts/LanguageContext';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 
 // User schema for form validation
 const userSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
-  email: z.string().email('Invalid email address'),
+  email: z.string().email('Invalid email address').optional().or(z.literal('')),
   full_name: z.string().min(2, 'Full name must be at least 2 characters'),
   identity_number: z.string().min(5, 'Identity number must be at least 5 characters'),
+  phone_number: z.string().optional(),
   role: z.enum(['super_admin', 'department_admin', 'lecturer', 'student']),
   department_id: z.string().optional().nullable(),
   study_program_id: z.string().optional().nullable(),
@@ -42,6 +45,7 @@ interface User {
   email: string;
   full_name: string;
   identity_number: string;
+  phone_number?: string;
   role: string;
   department_id?: string;
   study_program_id?: string;
@@ -182,6 +186,7 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
 
 const UserManagement: React.FC = () => {
   const { profile } = useAuth();
+  const { getText } = useLanguage();
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [studyPrograms, setStudyPrograms] = useState<StudyProgram[]>([]);
@@ -243,7 +248,7 @@ const UserManagement: React.FC = () => {
       setUsers(data || []);
     } catch (error: any) {
       console.error('Error fetching users:', error);
-      toast.error('Failed to load users');
+      toast.error(getText('Failed to load users', 'Gagal memuat pengguna'));
     } finally {
       setLoading(false);
     }
@@ -262,7 +267,7 @@ const UserManagement: React.FC = () => {
       setDepartments(data || []);
     } catch (error: any) {
       console.error('Error fetching departments:', error);
-      toast.error('Failed to load departments');
+      toast.error(getText('Failed to load departments', 'Gagal memuat departemen'));
     }
   };
 
@@ -284,7 +289,7 @@ const UserManagement: React.FC = () => {
       setStudyPrograms(data || []);
     } catch (error: any) {
       console.error('Error fetching study programs:', error);
-      toast.error('Failed to load study programs');
+      toast.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
     }
   };
 
@@ -307,7 +312,7 @@ const UserManagement: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Error fetching study programs by department:', error);
-      toast.error('Failed to load study programs');
+      toast.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
     }
   };
 
@@ -326,9 +331,10 @@ const UserManagement: React.FC = () => {
 
       const userData = {
         username: data.username,
-        email: data.email,
+        email: data.email || null,
         full_name: data.full_name,
         identity_number: data.identity_number,
+        phone_number: data.phone_number || null,
         role: data.role,
         department_id: data.department_id || null,
         study_program_id: data.study_program_id || null,
@@ -347,11 +353,11 @@ const UserManagement: React.FC = () => {
           .eq('id', editingUser.id);
         
         if (error) throw error;
-        toast.success('User updated successfully');
+        toast.success(getText('User updated successfully', 'Pengguna berhasil diperbarui'));
       } else {
         // Create new user
         if (!data.password) {
-          toast.error('Password is required for new users');
+          toast.error(getText('Password is required for new users', 'Password diperlukan untuk pengguna baru'));
           return;
         }
 
@@ -360,7 +366,7 @@ const UserManagement: React.FC = () => {
           .insert({ ...userData, password: data.password });
         
         if (error) throw error;
-        toast.success('User created successfully');
+        toast.success(getText('User created successfully', 'Pengguna berhasil dibuat'));
       }
 
       setShowModal(false);
@@ -371,16 +377,16 @@ const UserManagement: React.FC = () => {
       console.error('Error saving user:', error);
       if (error.code === '23505') {
         if (error.message.includes('username')) {
-          toast.error('Username already exists');
+          toast.error(getText('Username already exists', 'Username sudah ada'));
         } else if (error.message.includes('email')) {
-          toast.error('Email already exists');
+          toast.error(getText('Email already exists', 'Email sudah ada'));
         } else if (error.message.includes('identity_number')) {
-          toast.error('Identity number already exists');
+          toast.error(getText('Identity number already exists', 'Nomor identitas sudah ada'));
         } else {
-          toast.error('User with this information already exists');
+          toast.error(getText('User with this information already exists', 'Pengguna dengan informasi ini sudah ada'));
         }
       } else {
-        toast.error(error.message || 'Failed to save user');
+        toast.error(error.message || getText('Failed to save user', 'Gagal menyimpan pengguna'));
       }
     } finally {
       setLoading(false);
@@ -391,9 +397,10 @@ const UserManagement: React.FC = () => {
     setEditingUser(user);
     form.reset({
       username: user.username,
-      email: user.email,
+      email: user.email || '',
       full_name: user.full_name,
       identity_number: user.identity_number,
+      phone_number: user.phone_number || '',
       role: user.role as any,
       department_id: user.department_id || undefined,
       study_program_id: user.study_program_id || undefined,
@@ -416,12 +423,12 @@ const UserManagement: React.FC = () => {
         .eq('id', userId);
       
       if (error) throw error;
-      toast.success('User deleted successfully');
+      toast.success(getText('User deleted successfully', 'Pengguna berhasil dihapus'));
       setShowDeleteConfirm(null);
       fetchUsers();
     } catch (error: any) {
       console.error('Error deleting user:', error);
-      toast.error(error.message || 'Failed to delete user');
+      toast.error(error.message || getText('Failed to delete user', 'Gagal menghapus pengguna'));
     } finally {
       setLoading(false);
     }
@@ -438,9 +445,10 @@ const UserManagement: React.FC = () => {
 
   const getRoleDisplayName = (role: string) => {
     switch (role) {
-      case 'super_admin': return 'Super Admin';
-      case 'department_admin': return 'Department Admin';
-      case 'student': return 'Student';
+      case 'super_admin': return getText('Super Admin', 'Super Admin');
+      case 'department_admin': return getText('Department Admin', 'Admin Departemen');
+      case 'lecturer': return getText('Lecturer', 'Dosen');
+      case 'student': return getText('Student', 'Mahasiswa');
       default: return role;
     }
   };
@@ -451,9 +459,15 @@ const UserManagement: React.FC = () => {
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Access Denied</h3>
-          <p className="text-gray-600">You don't have permission to access user management.</p>
-          <p className="text-sm text-gray-500 mt-2">Current role: {profile?.role || 'undefined'}</p>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            {getText('Access Denied', 'Akses Ditolak')}
+          </h3>
+          <p className="text-gray-600">
+            {getText("You don't have permission to access user management.", 'Anda tidak memiliki izin untuk mengakses manajemen pengguna.')}
+          </p>
+          <p className="text-sm text-gray-500 mt-2">
+            {getText('Current role:', 'Peran saat ini:')} {profile?.role || 'undefined'}
+          </p>
         </div>
       </div>
     );
@@ -463,7 +477,8 @@ const UserManagement: React.FC = () => {
     user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.identity_number.toLowerCase().includes(searchTerm.toLowerCase())
+    user.identity_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (user.phone_number && user.phone_number.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   return (
@@ -474,13 +489,17 @@ const UserManagement: React.FC = () => {
           <div>
             <h1 className="text-3xl font-bold flex items-center space-x-3">
               <Users className="h-8 w-8" />
-              <span>User Management</span>
+              <span>{getText('User Management', 'Manajemen Pengguna')}</span>
             </h1>
-            <p className="mt-2 opacity-90">Manage system users and their roles</p>
+            <p className="mt-2 opacity-90">
+              {getText('Manage system users and their roles', 'Kelola pengguna sistem dan peran mereka')}
+            </p>
           </div>
           <div className="hidden md:block text-right">
             <div className="text-2xl font-bold">{users.length}</div>
-            <div className="text-sm opacity-80">Total Users</div>
+            <div className="text-sm opacity-80">
+              {getText('Total Users', 'Total Pengguna')}
+            </div>
           </div>
         </div>
       </div>
@@ -493,7 +512,7 @@ const UserManagement: React.FC = () => {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search users..."
+                placeholder={getText('Search users...', 'Cari pengguna...')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -525,7 +544,7 @@ const UserManagement: React.FC = () => {
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
             >
               <Plus className="h-4 w-4" />
-              <span>Add User</span>
+              <span>{getText('Add User', 'Tambah Pengguna')}</span>
             </button>
           </div>
         </div>
@@ -538,22 +557,22 @@ const UserManagement: React.FC = () => {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  User
+                  {getText('User', 'Pengguna')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Role
+                  {getText('Role', 'Peran')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Email
+                  {getText('Contact', 'Kontak')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Department
+                  {getText('Department', 'Departemen')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Created
+                  {getText('Created', 'Dibuat')}
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
+                  {getText('Actions', 'Aksi')}
                 </th>
               </tr>
             </thead>
@@ -563,7 +582,9 @@ const UserManagement: React.FC = () => {
                   <td colSpan={6} className="px-6 py-12 text-center">
                     <div className="flex items-center justify-center">
                       <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mr-2" />
-                      <span className="text-gray-600">Loading users...</span>
+                      <span className="text-gray-600">
+                        {getText('Loading users...', 'Memuat pengguna...')}
+                      </span>
                     </div>
                   </td>
                 </tr>
@@ -572,7 +593,9 @@ const UserManagement: React.FC = () => {
                   <td colSpan={6} className="px-6 py-12 text-center">
                     <div className="text-gray-500">
                       <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p className="text-lg font-medium mb-2">No users found</p>
+                      <p className="text-lg font-medium mb-2">
+                        {getText('No users found', 'Tidak ada pengguna ditemukan')}
+                      </p>
                     </div>
                   </td>
                 </tr>
@@ -595,6 +618,10 @@ const UserManagement: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {getRoleDisplayName(user.role)}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{user.email || '-'}</div>
+                        <div className="text-sm text-gray-500">{user.phone_number || '-'}</div>
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {(user as any).department?.name || 'N/A'}
                       </td>
@@ -606,14 +633,14 @@ const UserManagement: React.FC = () => {
                           <button
                             onClick={() => handleEdit(user)}
                             className="text-blue-600 hover:text-blue-900 p-1 rounded transition-colors duration-200"
-                            title="Edit user"
+                            title={getText('Edit user', 'Edit pengguna')}
                           >
                             <Edit className="h-4 w-4" />
                           </button>
                           <button
                             onClick={() => setShowDeleteConfirm(user.id)}
                             className="text-red-600 hover:text-red-900 p-1 rounded transition-colors duration-200"
-                            title="Delete user"
+                            title={getText('Delete user', 'Hapus pengguna')}
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -635,7 +662,7 @@ const UserManagement: React.FC = () => {
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold text-gray-900">
-                  {editingUser ? 'Edit User' : 'Add New User'}
+                  {editingUser ? getText('Edit User', 'Edit Pengguna') : getText('Add New User', 'Tambah Pengguna Baru')}
                 </h3>
                 <button
                   onClick={() => {
@@ -651,31 +678,9 @@ const UserManagement: React.FC = () => {
 
               <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Username *</label>
-                  <input
-                    {...form.register('username')}
-                    type="text"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  {form.formState.errors.username && (
-                    <p className="mt-1 text-sm text-red-600">{form.formState.errors.username.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-                  <input
-                    {...form.register('email')}
-                    type="email"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  {form.formState.errors.email && (
-                    <p className="mt-1 text-sm text-red-600">{form.formState.errors.email.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {getText('Full Name', 'Nama Lengkap')} *
+                  </label>
                   <input
                     {...form.register('full_name')}
                     type="text"
@@ -687,7 +692,9 @@ const UserManagement: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Identity Number *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {getText('Identity Number', 'Nomor Identitas')} *
+                  </label>
                   <input
                     {...form.register('identity_number')}
                     type="text"
@@ -699,17 +706,34 @@ const UserManagement: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {getText('Phone Number', 'Nomor Telepon')}
+                  </label>
+                  <input
+                    {...form.register('phone_number')}
+                    type="tel"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder={getText('Enter phone number', 'Masukkan nomor telepon')}
+                  />
+                  {form.formState.errors.phone_number && (
+                    <p className="mt-1 text-sm text-red-600">{form.formState.errors.phone_number.message}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {getText('Role', 'Peran')} *
+                  </label>
                   <select
                     {...form.register('role')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="student">Student</option>
-                    <option value="lecturer">Lecturer</option>
+                    <option value="student">{getText('Student', 'Mahasiswa')}</option>
+                    <option value="lecturer">{getText('Lecturer', 'Dosen')}</option>
                     {profile?.role === 'super_admin' && (
                       <>
-                        <option value="department_admin">Department Admin</option>
-                        <option value="super_admin">Super Admin</option>
+                        <option value="department_admin">{getText('Department Admin', 'Admin Departemen')}</option>
+                        <option value="super_admin">{getText('Super Admin', 'Super Admin')}</option>
                       </>
                     )}
                   </select>
@@ -721,7 +745,9 @@ const UserManagement: React.FC = () => {
                 {/* Department selection - show for super admin */}
                 {profile?.role === 'super_admin' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {getText('Department', 'Departemen')}
+                    </label>
                     <SearchableDropdown
                       options={departments.map(dept => ({ id: dept.id, name: dept.name }))}
                       value={form.watch('department_id') || ''}
@@ -729,9 +755,9 @@ const UserManagement: React.FC = () => {
                         form.setValue('department_id', value);
                         form.setValue('study_program_id', ''); // Reset study program when department changes
                       }}
-                      placeholder="Select Department (Optional)"
-                      searchPlaceholder="Search departments..."
-                      emptyMessage="No departments found"
+                      placeholder={getText('Select Department (Optional)', 'Pilih Departemen (Opsional)')}
+                      searchPlaceholder={getText('Search departments...', 'Cari departemen...')}
+                      emptyMessage={getText('No departments found', 'Tidak ada departemen ditemukan')}
                     />
                     {form.formState.errors.department_id && (
                       <p className="mt-1 text-sm text-red-600">{form.formState.errors.department_id.message}</p>
@@ -742,21 +768,27 @@ const UserManagement: React.FC = () => {
                 {/* Department display for department admin */}
                 {profile?.role === 'department_admin' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {getText('Department', 'Departemen')}
+                    </label>
                     <input
                       type="text"
-                      value={departments.find(d => d.id === profile.department_id)?.name || 'Loading...'}
+                      value={departments.find(d => d.id === profile.department_id)?.name || getText('Loading...', 'Memuat...')}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
                       disabled
                     />
-                    <p className="mt-1 text-sm text-gray-500">Department is automatically set based on your role</p>
+                    <p className="mt-1 text-sm text-gray-500">
+                      {getText('Department is automatically set based on your role', 'Departemen diatur otomatis berdasarkan peran Anda')}
+                    </p>
                   </div>
                 )}
 
                 {/* Study program selection - show when department is selected OR for department admin */}
                 {((profile?.role === 'super_admin' && watchDepartmentId) || profile?.role === 'department_admin') && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Study Program</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {getText('Study Program', 'Program Studi')}
+                    </label>
                     <SearchableDropdown
                       options={studyPrograms.map(program => ({ 
                         id: program.id, 
@@ -765,9 +797,9 @@ const UserManagement: React.FC = () => {
                       }))}
                       value={form.watch('study_program_id') || ''}
                       onChange={(value) => form.setValue('study_program_id', value)}
-                      placeholder="Select Study Program (Optional)"
-                      searchPlaceholder="Search study programs..."
-                      emptyMessage="No study programs found"
+                      placeholder={getText('Select Study Program (Optional)', 'Pilih Program Studi (Opsional)')}
+                      searchPlaceholder={getText('Search study programs...', 'Cari program studi...')}
+                      emptyMessage={getText('No study programs found', 'Tidak ada program studi ditemukan')}
                     />
                     {form.formState.errors.study_program_id && (
                       <p className="mt-1 text-sm text-red-600">{form.formState.errors.study_program_id.message}</p>
@@ -779,14 +811,14 @@ const UserManagement: React.FC = () => {
                 {profile?.role === 'super_admin' && !watchDepartmentId && (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                     <p className="text-sm text-blue-700">
-                      💡 Select a department to see available study programs, or leave empty for general users
+                      💡 {getText('Select a department to see available study programs, or leave empty for general users', 'Pilih departemen untuk melihat program studi yang tersedia, atau biarkan kosong untuk pengguna umum')}
                     </p>
                   </div>
                 )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Password {editingUser ? '(leave blank to keep current)' : '*'}
+                    {getText('Password', 'Kata Sandi')} {editingUser ? getText('(leave blank to keep current)', '(biarkan kosong untuk mempertahankan yang sekarang)') : '*'}
                   </label>
                   <input
                     {...form.register('password')}
@@ -808,14 +840,14 @@ const UserManagement: React.FC = () => {
                     }}
                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
                   >
-                    Cancel
+                    {getText('Cancel', 'Batal')}
                   </button>
                   <button
                     type="submit"
                     disabled={loading}
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                   >
-                    {loading ? 'Saving...' : editingUser ? 'Update' : 'Create'}
+                    {loading ? getText('Saving...', 'Menyimpan...') : editingUser ? getText('Update', 'Perbarui') : getText('Create', 'Buat')}
                   </button>
                 </div>
               </form>
@@ -833,25 +865,27 @@ const UserManagement: React.FC = () => {
                 <AlertCircle className="h-6 w-6 text-red-600" />
               </div>
               <div className="ml-3">
-                <h3 className="text-lg font-medium text-gray-900">Delete User</h3>
+                <h3 className="text-lg font-medium text-gray-900">
+                  {getText('Delete User', 'Hapus Pengguna')}
+                </h3>
               </div>
             </div>
             <p className="text-sm text-gray-500 mb-6">
-              Are you sure you want to delete this user? This action cannot be undone.
+              {getText('Are you sure you want to delete this user? This action cannot be undone.', 'Apakah Anda yakin ingin menghapus pengguna ini? Tindakan ini tidak dapat dibatalkan.')}
             </p>
             <div className="flex space-x-3">
               <button
                 onClick={() => setShowDeleteConfirm(null)}
                 className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
               >
-                Cancel
+                {getText('Cancel', 'Batal')}
               </button>
               <button
                 onClick={() => handleDelete(showDeleteConfirm)}
                 disabled={loading}
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
               >
-                {loading ? 'Deleting...' : 'Delete'}
+                {loading ? getText('Deleting...', 'Menghapus...') : getText('Delete', 'Hapus')}
               </button>
             </div>
           </div>
