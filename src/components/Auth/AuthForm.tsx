@@ -735,32 +735,6 @@ const AuthForm: React.FC = () => {
             </a>
           </div>
         </div>
-
-        {/* Demo Accounts Info */}
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-200/30">
-          <div className="flex items-center space-x-3 mb-3">
-            <div className="h-8 w-8 bg-blue-500 rounded-lg flex items-center justify-center">
-              <Users className="h-4 w-4 text-white" />
-            </div>
-            <h4 className="font-bold text-blue-800">
-              {getText('Demo Accounts', 'Akun Demo')}
-            </h4>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-            <div className="bg-white/60 rounded-lg p-3">
-              <p className="font-semibold text-purple-700">Super Admin</p>
-              <p className="text-gray-600">admin / password123</p>
-            </div>
-            <div className="bg-white/60 rounded-lg p-3">
-              <p className="font-semibold text-blue-700">Department Admin</p>
-              <p className="text-gray-600">deptadmin / password123</p>
-            </div>
-            <div className="bg-white/60 rounded-lg p-3">
-              <p className="font-semibold text-green-700">Student</p>
-              <p className="text-gray-600">student / password123</p>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
