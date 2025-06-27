@@ -42,14 +42,14 @@ const BookingManagement: React.FC = () => {
         };
     }, []);
 
-    const fetchEquipmentDetails = async (equipmentNames: string[]): Promise<Equipment[]> => {
-        if (!equipmentNames || equipmentNames.length === 0) return [];
+    const fetchEquipmentDetails = async (equipmentIds: string[]): Promise<Equipment[]> => {
+        if (!equipmentIds || equipmentIds.length === 0) return [];
         
         try {
             const { data: equipmentData, error } = await supabase
                 .from('equipment')
                 .select('*')
-                .in('name', equipmentNames);
+                .in('id', equipmentIds);
 
             if (error) {
                 console.error('Error fetching equipment details:', error);
@@ -421,120 +421,160 @@ const BookingManagement: React.FC = () => {
                                 </div>
 
                                 {/* Enhanced Equipment Details Section */}
-                                {selectedBooking.equipment_details && selectedBooking.equipment_details.length > 0 && (
-                                    <div>
-                                        <h5 className="font-medium text-gray-900 mb-3 flex items-center">
-                                            <Package className="h-5 w-5 mr-2 text-blue-600" />
-                                            Requested Equipment ({selectedBooking.equipment_details.length} items)
-                                        </h5>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            {selectedBooking.equipment_details.map((equipment, index) => {
-                                                const CategoryIcon = getCategoryIcon(equipment.category);
-                                                return (
-                                                    <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                                                        <div className="flex items-start space-x-3">
-                                                            <div className="flex-shrink-0">
-                                                                <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-lg flex items-center justify-center">
-                                                                    <CategoryIcon className="h-5 w-5 text-white" />
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center justify-between mb-2">
-                                                                    <h6 className="text-sm font-semibold text-gray-900 truncate">
-                                                                        {equipment.name}
-                                                                    </h6>
-                                                                    <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
-                                                                        <Hash className="h-3 w-3 mr-1" />
-                                                                        {equipment.code}
-                                                                    </span>
-                                                                </div>
-                                                                <div className="space-y-2">
-                                                                    <div className="flex items-center justify-between">
-                                                                        <span className="text-xs text-gray-500">Category:</span>
-                                                                        <span className="text-xs font-medium text-gray-700">{equipment.category}</span>
+                                <div>
+                                    <h5 className="font-medium text-gray-900 mb-3 flex items-center">
+                                        <Package className="h-5 w-5 mr-2 text-blue-600" />
+                                        Requested Equipment
+                                        {selectedBooking.equipment_details && selectedBooking.equipment_details.length > 0 && (
+                                            <span className="ml-2 text-sm text-gray-500">({selectedBooking.equipment_details.length} items)</span>
+                                        )}
+                                    </h5>
+                                    
+                                    {/* Debug Info - Remove this in production */}
+                                    <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs">
+                                        <div><strong>Debug Info:</strong></div>
+                                        <div>Equipment Requested IDs: {JSON.stringify(selectedBooking.equipment_requested)}</div>
+                                        <div>Equipment Details Found: {selectedBooking.equipment_details?.length || 0}</div>
+                                        <div>Equipment Names: {JSON.stringify(selectedBooking.equipment_details?.map(eq => ({name: eq.name, code: eq.code, id: eq.id})))}</div>
+                                    </div>
+
+                                    {selectedBooking.equipment_details && selectedBooking.equipment_details.length > 0 ? (
+                                        <>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {selectedBooking.equipment_details.map((equipment, index) => {
+                                                    const CategoryIcon = getCategoryIcon(equipment.category);
+                                                    return (
+                                                        <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                                            <div className="flex items-start space-x-3">
+                                                                <div className="flex-shrink-0">
+                                                                    <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-lg flex items-center justify-center">
+                                                                        <CategoryIcon className="h-5 w-5 text-white" />
                                                                     </div>
-                                                                    <div className="flex items-center justify-between">
-                                                                        <span className="text-xs text-gray-500">Condition:</span>
-                                                                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-                                                                            equipment.condition === 'GOOD' ? 'bg-green-100 text-green-700' :
-                                                                            equipment.condition === 'BROKEN' ? 'bg-red-100 text-red-700' :
-                                                                            'bg-yellow-100 text-yellow-700'
-                                                                        }`}>
-                                                                            {equipment.condition}
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="flex items-center justify-between mb-2">
+                                                                        <h6 className="text-sm font-semibold text-gray-900 truncate">
+                                                                            {equipment.name}
+                                                                        </h6>
+                                                                        <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
+                                                                            <Hash className="h-3 w-3 mr-1" />
+                                                                            {equipment.code}
                                                                         </span>
                                                                     </div>
-                                                                    {equipment.quantity && equipment.unit && (
+                                                                    <div className="space-y-2">
                                                                         <div className="flex items-center justify-between">
-                                                                            <span className="text-xs text-gray-500">Quantity:</span>
-                                                                            <span className="text-xs font-medium text-gray-700">
-                                                                                {equipment.quantity} {equipment.unit}
+                                                                            <span className="text-xs text-gray-500">Category:</span>
+                                                                            <span className="text-xs font-medium text-gray-700">{equipment.category}</span>
+                                                                        </div>
+                                                                        <div className="flex items-center justify-between">
+                                                                            <span className="text-xs text-gray-500">Condition:</span>
+                                                                            <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                                                                                equipment.condition === 'GOOD' ? 'bg-green-100 text-green-700' :
+                                                                                equipment.condition === 'BROKEN' ? 'bg-red-100 text-red-700' :
+                                                                                'bg-yellow-100 text-yellow-700'
+                                                                            }`}>
+                                                                                {equipment.condition}
                                                                             </span>
                                                                         </div>
-                                                                    )}
-                                                                    <div className="flex items-center justify-between">
-                                                                        <span className="text-xs text-gray-500">Available:</span>
-                                                                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-                                                                            equipment.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                                                                        }`}>
-                                                                            {equipment.is_available ? 'Yes' : 'No'}
-                                                                        </span>
+                                                                        {equipment.quantity && equipment.unit && (
+                                                                            <div className="flex items-center justify-between">
+                                                                                <span className="text-xs text-gray-500">Quantity:</span>
+                                                                                <span className="text-xs font-medium text-gray-700">
+                                                                                    {equipment.quantity} {equipment.unit}
+                                                                                </span>
+                                                                            </div>
+                                                                        )}
+                                                                        <div className="flex items-center justify-between">
+                                                                            <span className="text-xs text-gray-500">Available:</span>
+                                                                            <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                                                                                equipment.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                                                            }`}>
+                                                                                {equipment.is_available ? 'Yes' : 'No'}
+                                                                            </span>
+                                                                        </div>
+                                                                        {equipment.is_mandatory && (
+                                                                            <div className="flex items-center justify-between">
+                                                                                <span className="text-xs text-gray-500">Type:</span>
+                                                                                <span className="text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                                                                                    Mandatory
+                                                                                </span>
+                                                                            </div>
+                                                                        )}
+                                                                        {equipment.Spesification && (
+                                                                            <div className="mt-2 pt-2 border-t border-gray-200">
+                                                                                <span className="text-xs text-gray-500">Specifications:</span>
+                                                                                <p className="text-xs text-gray-700 mt-1 leading-relaxed">
+                                                                                    {equipment.Spesification}
+                                                                                </p>
+                                                                            </div>
+                                                                        )}
                                                                     </div>
-                                                                    {equipment.is_mandatory && (
-                                                                        <div className="flex items-center justify-between">
-                                                                            <span className="text-xs text-gray-500">Type:</span>
-                                                                            <span className="text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700">
-                                                                                Mandatory
-                                                                            </span>
-                                                                        </div>
-                                                                    )}
-                                                                    {equipment.Spesification && (
-                                                                        <div className="mt-2 pt-2 border-t border-gray-200">
-                                                                            <span className="text-xs text-gray-500">Specifications:</span>
-                                                                            <p className="text-xs text-gray-700 mt-1 leading-relaxed">
-                                                                                {equipment.Spesification}
-                                                                            </p>
-                                                                        </div>
-                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>
+                                                    );
+                                                })}
+                                            </div>
+                                            
+                                            {/* Equipment Summary */}
+                                            <div className="mt-4 bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                                <h6 className="text-sm font-semibold text-blue-900 mb-2">Equipment Summary</h6>
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                                                    <div className="text-center">
+                                                        <div className="text-lg font-bold text-blue-700">
+                                                            {selectedBooking.equipment_details.length}
+                                                        </div>
+                                                        <div className="text-blue-600">Total Items</div>
                                                     </div>
-                                                );
-                                            })}
-                                        </div>
-                                        
-                                        {/* Equipment Summary */}
-                                        <div className="mt-4 bg-blue-50 rounded-lg p-4 border border-blue-200">
-                                            <h6 className="text-sm font-semibold text-blue-900 mb-2">Equipment Summary</h6>
-                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                                                <div className="text-center">
-                                                    <div className="text-lg font-bold text-blue-700">
-                                                        {selectedBooking.equipment_details.length}
+                                                    <div className="text-center">
+                                                        <div className="text-lg font-bold text-green-700">
+                                                            {selectedBooking.equipment_details.filter(eq => eq.is_available).length}
+                                                        </div>
+                                                        <div className="text-green-600">Available</div>
                                                     </div>
-                                                    <div className="text-blue-600">Total Items</div>
+                                                    <div className="text-center">
+                                                        <div className="text-lg font-bold text-amber-700">
+                                                            {selectedBooking.equipment_details.filter(eq => eq.is_mandatory).length}
+                                                        </div>
+                                                        <div className="text-amber-600">Mandatory</div>
+                                                    </div>
+                                                    <div className="text-center">
+                                                        <div className="text-lg font-bold text-purple-700">
+                                                            {[...new Set(selectedBooking.equipment_details.map(eq => eq.category))].length}
+                                                        </div>
+                                                        <div className="text-purple-600">Categories</div>
+                                                    </div>
                                                 </div>
-                                                <div className="text-center">
-                                                    <div className="text-lg font-bold text-green-700">
-                                                        {selectedBooking.equipment_details.filter(eq => eq.is_available).length}
-                                                    </div>
-                                                    <div className="text-green-600">Available</div>
-                                                </div>
-                                                <div className="text-center">
-                                                    <div className="text-lg font-bold text-amber-700">
-                                                        {selectedBooking.equipment_details.filter(eq => eq.is_mandatory).length}
-                                                    </div>
-                                                    <div className="text-amber-600">Mandatory</div>
-                                                </div>
-                                                <div className="text-center">
-                                                    <div className="text-lg font-bold text-purple-700">
-                                                        {[...new Set(selectedBooking.equipment_details.map(eq => eq.category))].length}
-                                                    </div>
-                                                    <div className="text-purple-600">Categories</div>
+                                            </div>
+                                        </>
+                                    ) : selectedBooking.equipment_requested && selectedBooking.equipment_requested.length > 0 ? (
+                                        <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+                                            <div className="flex items-center">
+                                                <AlertCircle className="h-5 w-5 text-yellow-600 mr-2" />
+                                                <div>
+                                                    <h6 className="text-sm font-semibold text-yellow-800">Equipment Details Not Available</h6>
+                                                    <p className="text-sm text-yellow-700">
+                                                        Requested equipment IDs: {selectedBooking.equipment_requested.join(', ')}
+                                                    </p>
+                                                    <p className="text-xs text-yellow-600 mt-1">
+                                                        Equipment details could not be loaded from the database. The equipment may have been deleted.
+                                                    </p>
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-                                )}
+                                    ) : (
+                                        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                            <div className="flex items-center justify-center text-gray-500">
+                                                <Package className="h-8 w-8 mr-3 opacity-50" />
+                                                <div className="text-center">
+                                                    <p className="text-sm font-medium">No Equipment Requested</p>
+                                                    <p className="text-xs">This booking does not require any additional equipment.</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
 
                                 {selectedBooking.notes && (
                                     <div>
