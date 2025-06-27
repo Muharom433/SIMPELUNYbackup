@@ -21,6 +21,7 @@ import ToolLending from './pages/ToolLending';
 import ToolLendingManagement from './pages/ToolLendingManagement';
 import Reports from './pages/Reports';
 import SystemSettings from './pages/SystemSettings';
+import Profile from './pages/Profile';
 import { useAuth } from './hooks/useAuth';
 
 function App() {
