@@ -38,7 +38,6 @@ import toast from 'react-hot-toast';
 import ExcelUploadModal from '../components/ExcelUpload/ExcelUploadModal';
 import { useLanguage } from '../contexts/LanguageContext';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
 
 const scheduleSchema = z.object({
   course_name: z.string().min(2, 'Course name is required'),
@@ -331,13 +330,10 @@ const LectureSchedules: React.FC = () => {
 
       const doc = new jsPDF();
       
-      // Set font untuk mendukung karakter Indonesia
-      doc.setFont('helvetica');
-      
       // Header
       doc.setFontSize(18);
       doc.setTextColor(40, 40, 40);
-      doc.text(getText('Reschedule Requests Report', 'Laporan Permintaan Reschedule'), 14, 20);
+      doc.text(getText('Reschedule Requests Report', 'Laporan Permintaan Reschedule'), 20, 30);
       
       // Sub header
       doc.setFontSize(12);
@@ -347,65 +343,74 @@ const LectureSchedules: React.FC = () => {
         month: 'long', 
         day: 'numeric'
       });
-      doc.text(getText(`Generated on: ${currentDate}`, `Dibuat pada: ${currentDate}`), 14, 30);
-      doc.text(getText(`Total Pending Requests: ${pendingRequests.length}`, `Total Permintaan Belum Selesai: ${pendingRequests.length}`), 14, 38);
+      doc.text(getText(`Generated on: ${currentDate}`, `Dibuat pada: ${currentDate}`), 20, 45);
+      doc.text(getText(`Total Pending Requests: ${pendingRequests.length}`, `Total Permintaan Belum Selesai: ${pendingRequests.length}`), 20, 55);
       
-      // Prepare table data
-      const tableData = pendingRequests.map((request, index) => [
-        index + 1,
-        request.course_code,
-        request.day,
-        `${request.start_time} - ${request.end_time}`,
-        request.room,
-        request.class,
-        getText(
-          request.is_done === null ? 'Pending' : 'Not Completed',
-          request.is_done === null ? 'Menunggu' : 'Belum Selesai'
-        )
-      ]);
+      // Table header
+      let yPosition = 75;
+      const columnWidths = [15, 35, 25, 45, 35, 25];
+      const columnPositions = [20, 35, 70, 95, 140, 175];
       
-      // Table headers
+      // Header background
+      doc.setFillColor(59, 130, 246);
+      doc.rect(20, yPosition - 8, 180, 15, 'F');
+      
+      // Header text
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      
       const headers = [
         getText('No', 'No'),
         getText('Course Code', 'Kode MK'),
         getText('Day', 'Hari'),
         getText('Time', 'Waktu'),
         getText('Room', 'Ruangan'),
-        getText('Class', 'Kelas'),
-        getText('Status', 'Status')
+        getText('Class', 'Kelas')
       ];
       
-      // Generate table
-      (doc as any).autoTable({
-        head: [headers],
-        body: tableData,
-        startY: 50,
-        styles: {
-          fontSize: 10,
-          cellPadding: 3,
-        },
-        headStyles: {
-          fillColor: [59, 130, 246], // Blue color
-          textColor: 255,
-          fontStyle: 'bold',
-        },
-        alternateRowStyles: {
-          fillColor: [245, 247, 250],
-        },
-        columnStyles: {
-          0: { halign: 'center', cellWidth: 15 }, // No
-          1: { cellWidth: 25 }, // Course Code
-          2: { cellWidth: 20 }, // Day
-          3: { cellWidth: 35 }, // Time
-          4: { cellWidth: 30 }, // Room
-          5: { halign: 'center', cellWidth: 20 }, // Class
-          6: { halign: 'center', cellWidth: 25 }, // Status
-        },
-        margin: { top: 50, right: 14, bottom: 20, left: 14 },
+      headers.forEach((header, index) => {
+        doc.text(header, columnPositions[index] + 2, yPosition);
+      });
+      
+      yPosition += 20;
+      
+      // Table body
+      doc.setTextColor(40, 40, 40);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      
+      pendingRequests.forEach((request, index) => {
+        // Alternate row colors
+        if (index % 2 === 0) {
+          doc.setFillColor(245, 247, 250);
+          doc.rect(20, yPosition - 8, 180, 12, 'F');
+        }
+        
+        const rowData = [
+          (index + 1).toString(),
+          request.course_code,
+          request.day,
+          `${request.start_time} - ${request.end_time}`,
+          request.room,
+          request.class
+        ];
+        
+        rowData.forEach((data, colIndex) => {
+          doc.text(data, columnPositions[colIndex] + 2, yPosition);
+        });
+        
+        yPosition += 12;
+        
+        // Check for page break
+        if (yPosition > 270) {
+          doc.addPage();
+          yPosition = 30;
+        }
       });
       
       // Footer
-      const pageCount = (doc as any).internal.getNumberOfPages();
+      const pageCount = doc.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
         doc.setFontSize(8);
@@ -415,8 +420,8 @@ const LectureSchedules: React.FC = () => {
             `Page ${i} of ${pageCount} - SIMPEL Kuliah System`,
             `Halaman ${i} dari ${pageCount} - Sistem SIMPEL Kuliah`
           ), 
-          14, 
-          doc.internal.pageSize.height - 10
+          20, 
+          280
         );
       }
       
