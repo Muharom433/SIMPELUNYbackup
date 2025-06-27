@@ -95,23 +95,44 @@ const BookRoom: React.FC = () => {
             if (roomsError) throw roomsError;
             const { data: schedulesData, error: schedulesError } = schedulesResponse;
             if (schedulesError) throw schedulesError;
+            
             const scheduleMap = new Map<string, LectureSchedule[]>();
-            schedulesData.forEach(schedule => { if (schedule.room) { const normalizedName = normalizeRoomName(schedule.room); if (!scheduleMap.has(normalizedName)) scheduleMap.set(normalizedName, []); scheduleMap.get(normalizedName)?.push(schedule); }});
-            const roomsWithStatus = roomsData.map(room => {
-                const normalizedRoomName = normalizeRoomName(room.name);
-                const roomSchedules = scheduleMap.get(normalizedRoomName) || [];
-                let status: RoomWithStatus['status'] = 'Available';
-                if (roomSchedules.length > 0) {
-                    const isCurrentlyInUse = roomSchedules.some(schedule => {
-                        if (!schedule.start_time || !schedule.end_time) return false;
-                        try {
-                            const startTime = parse(schedule.start_time, 'HH:mm:ss', now);
-                            const endTime = parse(schedule.end_time, 'HH:mm:ss', now);
-                            return now >= startTime && now <= endTime;
-                        } catch (e) { return false; }
-                    });
-                    status = isCurrentlyInUse ? 'In Use' : 'Scheduled';
+            schedulesData.forEach(schedule => { 
+                if (schedule.room) { 
+                    const normalizedName = normalizeRoomName(schedule.room); 
+                    if (!scheduleMap.has(normalizedName)) scheduleMap.set(normalizedName, []); 
+                    scheduleMap.get(normalizedName)?.push(schedule); 
                 }
+            });
+            
+            const roomsWithStatus = roomsData.map(room => {
+                let status: RoomWithStatus['status'] = 'Available';
+                
+                // First check: Room availability from database
+                if (!room.is_available) {
+                    status = 'In Use';
+                } else {
+                    // Second check: If room is available, check lecture schedules
+                    const normalizedRoomName = normalizeRoomName(room.name);
+                    const roomSchedules = scheduleMap.get(normalizedRoomName) || [];
+                    
+                    if (roomSchedules.length > 0) {
+                        const isCurrentlyInUse = roomSchedules.some(schedule => {
+                            if (!schedule.start_time || !schedule.end_time) return false;
+                            try {
+                                const startTime = parse(schedule.start_time, 'HH:mm:ss', now);
+                                const endTime = parse(schedule.end_time, 'HH:mm:ss', now);
+                                return now >= startTime && now <= endTime;
+                            } catch (e) { return false; }
+                        });
+                        
+                        // If lecture schedule shows it's in use, override with 'In Use'
+                        // Otherwise, if there are scheduled classes but not currently active, mark as 'Scheduled'
+                        status = isCurrentlyInUse ? 'In Use' : 'Scheduled';
+                    }
+                    // If room.is_available is true and no schedules, status remains 'Available'
+                }
+                
                 return { ...room, department: room.department, status };
             });
             setRooms(roomsWithStatus as RoomWithStatus[]);
