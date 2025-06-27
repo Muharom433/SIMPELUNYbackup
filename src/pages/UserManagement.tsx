@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -677,6 +676,38 @@ const UserManagement: React.FC = () => {
               </div>
 
               <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+                {/* Username Field */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {getText('Username', 'Nama Pengguna')} *
+                  </label>
+                  <input
+                    {...form.register('username')}
+                    type="text"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {form.formState.errors.username && (
+                    <p className="mt-1 text-sm text-red-600">{form.formState.errors.username.message}</p>
+                  )}
+                </div>
+
+                {/* Email Field */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {getText('Email', 'Email')}
+                  </label>
+                  <input
+                    {...form.register('email')}
+                    type="email"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder={getText('Enter email address', 'Masukkan alamat email')}
+                  />
+                  {form.formState.errors.email && (
+                    <p className="mt-1 text-sm text-red-600">{form.formState.errors.email.message}</p>
+                  )}
+                </div>
+
+                {/* Full Name Field */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {getText('Full Name', 'Nama Lengkap')} *
@@ -691,6 +722,7 @@ const UserManagement: React.FC = () => {
                   )}
                 </div>
 
+                {/* Identity Number Field */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {getText('Identity Number', 'Nomor Identitas')} *
@@ -699,12 +731,14 @@ const UserManagement: React.FC = () => {
                     {...form.register('identity_number')}
                     type="text"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder={getText('NIM/NIP/NIK', 'NIM/NIP/NIK')}
                   />
                   {form.formState.errors.identity_number && (
                     <p className="mt-1 text-sm text-red-600">{form.formState.errors.identity_number.message}</p>
                   )}
                 </div>
 
+                {/* Phone Number Field */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {getText('Phone Number', 'Nomor Telepon')}
@@ -720,6 +754,7 @@ const UserManagement: React.FC = () => {
                   )}
                 </div>
 
+                {/* Role Field */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {getText('Role', 'Peran')} *
@@ -816,6 +851,7 @@ const UserManagement: React.FC = () => {
                   </div>
                 )}
 
+                {/* Password Field */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {getText('Password', 'Kata Sandi')} {editingUser ? getText('(leave blank to keep current)', '(biarkan kosong untuk mempertahankan yang sekarang)') : '*'}
@@ -824,12 +860,14 @@ const UserManagement: React.FC = () => {
                     {...form.register('password')}
                     type="password"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder={editingUser ? getText('Leave blank to keep current password', 'Biarkan kosong untuk mempertahankan password saat ini') : getText('Enter password', 'Masukkan password')}
                   />
                   {form.formState.errors.password && (
                     <p className="mt-1 text-sm text-red-600">{form.formState.errors.password.message}</p>
                   )}
                 </div>
 
+                {/* Form Actions */}
                 <div className="flex space-x-3 pt-4">
                   <button
                     type="button"
@@ -838,16 +876,21 @@ const UserManagement: React.FC = () => {
                       setEditingUser(null);
                       form.reset();
                     }}
-                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-200"
                   >
                     {getText('Cancel', 'Batal')}
                   </button>
                   <button
                     type="submit"
                     disabled={loading}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors duration-200"
                   >
-                    {loading ? getText('Saving...', 'Menyimpan...') : editingUser ? getText('Update', 'Perbarui') : getText('Create', 'Buat')}
+                    {loading 
+                      ? getText('Saving...', 'Menyimpan...') 
+                      : editingUser 
+                        ? getText('Update', 'Perbarui') 
+                        : getText('Create', 'Buat')
+                    }
                   </button>
                 </div>
               </form>
@@ -876,14 +919,14 @@ const UserManagement: React.FC = () => {
             <div className="flex space-x-3">
               <button
                 onClick={() => setShowDeleteConfirm(null)}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-200"
               >
                 {getText('Cancel', 'Batal')}
               </button>
               <button
                 onClick={() => handleDelete(showDeleteConfirm)}
                 disabled={loading}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors duration-200"
               >
                 {loading ? getText('Deleting...', 'Menghapus...') : getText('Delete', 'Hapus')}
               </button>
