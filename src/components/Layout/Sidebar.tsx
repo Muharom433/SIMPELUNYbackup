@@ -23,40 +23,40 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
 
     useEffect(() => {
   // This function will now only run if the user is a super_admin.
-  const fetchCounts = async () => {
-    try {
-      // Fetch for reports
-      const { count: reportsCount } = await supabase
-        .from('reports')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'new');
-      setNewReportsCount(reportsCount || 0);
-
-      // Fetch for bookings
-      const { count: bookingsCount } = await supabase
-        .from('bookings')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'pending');
-      setPendingBookingsCount(bookingsCount || 0);
-
-      // Fetch for checkouts
-      const { count: checkoutsCount } = await supabase
-        .from('checkouts')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'pending');
-      setPendingCheckoutsCount(checkoutsCount || 0);
-
-    } catch (error) {
-      console.error("Error fetching notification counts:", error);
-    }
-  };
+    const fetchCounts = async () => {
+      try {
+        // Fetch for reports
+        const { count: reportsCount } = await supabase
+          .from('reports')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'new');
+        setNewReportsCount(reportsCount || 0);
+  
+        // Fetch for bookings
+        const { count: bookingsCount } = await supabase
+          .from('bookings')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'pending');
+        setPendingBookingsCount(bookingsCount || 0);
+  
+        // Fetch for checkouts
+        const { count: checkoutsCount } = await supabase
+          .from('checkouts')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'pending');
+        setPendingCheckoutsCount(checkoutsCount || 0);
+  
+      } catch (error) {
+        console.error("Error fetching notification counts:", error);
+      }
+    };
 
   // Only call fetchCounts if the user is a super_admin.
   // This prevents the API call and the resulting error for department_admins.
-  if (profile?.role === 'super_admin') {
+  if (user?.role === 'super_admin') {
     fetchCounts();
   }
-}, [profile]);
+}, [user]);
 
     const fetchPendingBookingsCount = async () => {
         try {
