@@ -153,7 +153,7 @@ const SessionSchedule = () => {
       let query = supabase
         .from('final_sessions')
         .select(`
-          *,
+          *,a
           student:users!student_id(
             id,
             full_name,
