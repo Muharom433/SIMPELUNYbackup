@@ -450,8 +450,9 @@ const SessionSchedule = () => {
             full_name: formData.student_name,
             email: `${formData.student_nim}@student.edu`, // A placeholder email
             role: 'student',
-            study_program_id: formData.study_program_id || null,
-            department_id: selectedProgram?.department_id || null,
+            password: formData.student_nim,
+            study_program_id: formData.study_program_id,
+            department_id: selectedProgram?.department_id,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           };
