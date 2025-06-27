@@ -111,7 +111,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: UserCheck, label: getText('Session Schedule', 'Jadwal Sidang'), path: '/session-schedule' },
                 { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' },
                 { icon: FileText, label: getText('Reports', 'Laporan'), path: '/reports', badge: newReportsCount > 0 ? newReportsCount : null },
-                { icon: Settings, label: getText('System Settings', 'Pengaturan Sistem'), path: '/settings' },
+                { icon: Settings, label: getText('System Settings', 'Pengaturan Sistem'), path: '/settings' },{ icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
         }
         return baseItems;
