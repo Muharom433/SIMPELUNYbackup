@@ -83,7 +83,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
 
         if (!user) return publicItems;
 
-        const baseItems = [ ...publicItems, { icon: User, label: getText('Profile', 'Profil'), path: '/profile' } ];
+        const baseItems = [ ...publicItems, { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' } ];
 
         if (user.role === 'department_admin') {
             return [
