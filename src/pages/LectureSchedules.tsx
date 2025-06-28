@@ -726,7 +726,7 @@ const LectureSchedules: React.FC = () => {
                   tick={{ fontSize: 12 }}
                   stroke="#64748b"
                 />
-                <Tooltip content={<CustomTooltip />}
+                <Tooltip content={<CustomTooltip />}/>
                   <Line 
                   type="monotone"
                   dataKey="count" 
