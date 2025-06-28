@@ -8,7 +8,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
-import {Toast} from '../components/Toast/ToastHelper';
+import {ToastHelper} from '../components/Toast/ToastHelper';
 import { Room, Department, LectureSchedule, Equipment, StudyProgram } from '../types';
 import toast from 'react-hot-toast';
 import { format, addMinutes, parse } from 'date-fns';
