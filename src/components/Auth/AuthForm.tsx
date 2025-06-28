@@ -322,6 +322,9 @@ const AuthForm: React.FC = () => {
                   <h3 className="font-bold text-emerald-800 text-lg">
                     {getText('Quick Login Tips', 'Tips Login Cepat')}
                   </h3>
+                  <p className="text-emerald-600 text-sm">
+                    {getText('For students without account', 'Untuk mahasiswa tanpa akun')}
+                  </p>
                 </div>
               </div>
               
