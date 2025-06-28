@@ -1,5 +1,6 @@
-// src/contexts/LanguageContext.tsx
+// Update LanguageContext.tsx - tambahkan import sweetAlert
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { updateAlertLanguage } from '../utils/sweetAlert'; // Import SweetAlert function
 
 type Language = 'en' | 'id';
 
@@ -27,13 +28,16 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
     const savedLanguage = localStorage.getItem('language') as Language;
     if (savedLanguage && (savedLanguage === 'en' || savedLanguage === 'id')) {
       setCurrentLanguage(savedLanguage);
+      updateAlertLanguage(savedLanguage); // Update SweetAlert messages
+    } else {
+      updateAlertLanguage('en'); // Default to English
     }
   }, []);
 
   const setLanguage = (lang: Language) => {
     setCurrentLanguage(lang);
     localStorage.setItem('language', lang);
-    // Here you could also call i18n.changeLanguage(lang) if using react-i18next
+    updateAlertLanguage(lang); // Update SweetAlert messages when language changes
   };
 
   const getText = (en: string, id: string) => {
