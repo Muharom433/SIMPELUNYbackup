@@ -29,7 +29,9 @@ import {
   XCircle,
   Clock3,
   Filter,
-  CalendarCheck
+  CalendarCheck,
+  ChevronDown,
+  MapPin
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line } from 'recharts';
 import { supabase } from '../lib/supabase';
@@ -43,7 +45,7 @@ const scheduleSchema = z.object({
   course_name: z.string().min(2, 'Course name is required'),
   course_code: z.string().min(2, 'Course code is required'),
   lecturer: z.string().min(1, 'Lecturer name is required'),
-  room: z.string().min(1, 'Room name is required'),
+  room_id: z.string().min(1, 'Please select a room'),
   subject_study: z.string().min(1, 'Study program is required'),
   day: z.string().min(1, 'Day is required'),
   start_time: z.string().min(1, 'Start time is required'),
@@ -83,9 +85,19 @@ interface LectureSchedule {
   start_time: string | null;
   end_time: string | null;
   room: string | null;
+  room_id: string | null;
   amount: number | null;
   created_at: string;
   updated_at: string;
+}
+
+interface Room {
+  id: string;
+  name: string;
+  code: string;
+  capacity: number;
+  department_id: string | null;
+  is_available: boolean;
 }
 
 interface RescheduleRequest {
@@ -102,6 +114,7 @@ const LectureSchedules: React.FC = () => {
   const { profile } = useAuth();
   const { getText } = useLanguage();
   const [schedules, setSchedules] = useState<LectureSchedule[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
   const [rescheduleRequests, setRescheduleRequests] = useState<RescheduleRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -115,6 +128,8 @@ const LectureSchedules: React.FC = () => {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [rescheduleFilter, setRescheduleFilter] = useState<string>('pending');
+  const [roomSearchTerm, setRoomSearchTerm] = useState('');
+  const [showRoomDropdown, setShowRoomDropdown] = useState(false);
   
   const [sortConfig, setSortConfig] = useState<{ key: keyof LectureSchedule; direction: 'ascending' | 'descending' } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -136,34 +151,76 @@ const LectureSchedules: React.FC = () => {
   
   // Get unique rooms from schedules for filter dropdown
   const uniqueRooms = useMemo(() => {
-    const rooms = schedules
+    const roomsFromSchedules = schedules
       .map(schedule => schedule.room)
       .filter((room): room is string => Boolean(room))
       .filter((room, index, arr) => arr.indexOf(room) === index)
       .sort();
-    return rooms;
+    return roomsFromSchedules;
   }, [schedules]);
+
+  // Filter rooms for dropdown with search
+  const filteredRooms = useMemo(() => {
+    return rooms.filter(room => 
+      room.is_available && 
+      (room.name.toLowerCase().includes(roomSearchTerm.toLowerCase()) ||
+       room.code.toLowerCase().includes(roomSearchTerm.toLowerCase()))
+    ).sort((a, b) => a.name.localeCompare(b.name));
+  }, [rooms, roomSearchTerm]);
+
+  // Get selected room details
+  const selectedRoom = useMemo(() => {
+    const roomId = form.watch('room_id');
+    return rooms.find(room => room.id === roomId);
+  }, [rooms, form.watch('room_id')]);
 
   const dayNames = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
   useEffect(() => {
     fetchSchedules();
+    fetchRooms();
     fetchRescheduleRequests();
     const timer = setInterval(() => setCurrentTime(new Date()), 60000);
     return () => clearInterval(timer);
   }, []);
+
+  const fetchRooms = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('rooms')
+        .select('*')
+        .eq('is_available', true)
+        .order('name');
+      
+      if (error) throw error;
+      setRooms(data || []);
+    } catch (error: any) {
+      console.error('Error fetching rooms:', error);
+      toast.error(error.message || 'Failed to load rooms');
+    }
+  };
 
   const fetchSchedules = async () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from('lecture_schedules')
-        .select('*')
+        .select(`
+          *,
+          room:rooms(name, code, capacity)
+        `)
         .order('day', { ascending: true })
         .order('start_time', { ascending: true });
       
       if (error) throw error;
-      setSchedules(data || []);
+      
+      // Transform data to include room name for compatibility
+      const transformedData = (data || []).map(schedule => ({
+        ...schedule,
+        room: schedule.room?.name || schedule.room_id,
+      }));
+      
+      setSchedules(transformedData);
     } catch (error: any) {
       console.error('Error fetching schedules:', error);
       toast.error(error.message || 'Failed to load lecture schedules');
@@ -192,7 +249,7 @@ const LectureSchedules: React.FC = () => {
         course_name: data.course_name,
         course_code: data.course_code,
         lecturer: data.lecturer,
-        room: data.room,
+        room_id: data.room_id,
         subject_study: data.subject_study,
         day: data.day,
         start_time: data.start_time,
@@ -269,7 +326,7 @@ const LectureSchedules: React.FC = () => {
       course_name: schedule.course_name || '',
       course_code: schedule.course_code || '',
       lecturer: schedule.lecturer || '',
-      room: schedule.room || '',
+      room_id: schedule.room_id || '',
       subject_study: schedule.subject_study || '',
       day: schedule.day || '',
       start_time: schedule.start_time || '',
@@ -334,7 +391,6 @@ const LectureSchedules: React.FC = () => {
 
   const generatePDF = () => {
     try {
-      // Filter data yang belum selesai (is_done != true)
       const pendingRequests = rescheduleRequests.filter(request => request.is_done !== true);
       
       if (pendingRequests.length === 0) {
@@ -344,12 +400,10 @@ const LectureSchedules: React.FC = () => {
 
       const doc = new jsPDF();
       
-      // Header
       doc.setFontSize(18);
       doc.setTextColor(40, 40, 40);
       doc.text(getText('Reschedule Requests Report', 'Laporan Permintaan Reschedule'), 20, 30);
       
-      // Sub header
       doc.setFontSize(12);
       doc.setTextColor(100, 100, 100);
       const currentDate = new Date().toLocaleDateString('id-ID', {
@@ -360,16 +414,13 @@ const LectureSchedules: React.FC = () => {
       doc.text(getText(`Generated on: ${currentDate}`, `Dibuat pada: ${currentDate}`), 20, 45);
       doc.text(getText(`Total Pending Requests: ${pendingRequests.length}`, `Total Permintaan Belum Selesai: ${pendingRequests.length}`), 20, 55);
       
-      // Table header
       let yPosition = 75;
       const columnWidths = [15, 35, 25, 45, 35, 25];
       const columnPositions = [20, 35, 70, 95, 140, 175];
       
-      // Header background
       doc.setFillColor(59, 130, 246);
       doc.rect(20, yPosition - 8, 180, 15, 'F');
       
-      // Header text
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
@@ -389,13 +440,11 @@ const LectureSchedules: React.FC = () => {
       
       yPosition += 20;
       
-      // Table body
       doc.setTextColor(40, 40, 40);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       
       pendingRequests.forEach((request, index) => {
-        // Alternate row colors
         if (index % 2 === 0) {
           doc.setFillColor(245, 247, 250);
           doc.rect(20, yPosition - 8, 180, 12, 'F');
@@ -416,14 +465,12 @@ const LectureSchedules: React.FC = () => {
         
         yPosition += 12;
         
-        // Check for page break
         if (yPosition > 270) {
           doc.addPage();
           yPosition = 30;
         }
       });
       
-      // Footer
       const pageCount = doc.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
@@ -439,7 +486,6 @@ const LectureSchedules: React.FC = () => {
         );
       }
       
-      // Save PDF
       const fileName = getText(
         `Reschedule_Requests_${new Date().toISOString().split('T')[0]}.pdf`,
         `Permintaan_Reschedule_${new Date().toISOString().split('T')[0]}.pdf`
@@ -513,7 +559,6 @@ const LectureSchedules: React.FC = () => {
   const startIndex = (currentPage - 1) * rowsPerPage;
   const currentTableData = sortedSchedules.slice(startIndex, startIndex + rowsPerPage);
 
-  // Day intensity analysis - only for super admin
   const dayIntensityStats = useMemo(() => {
     if (profile?.role !== 'super_admin') return [];
     
@@ -681,8 +726,8 @@ const LectureSchedules: React.FC = () => {
                   tick={{ fontSize: 12 }}
                   stroke="#64748b"
                 />
-                <Tooltip content={<CustomTooltip />} />
-                <Line 
+                <Tooltip content={<CustomTooltip />}
+                  <Line 
                   type="monotone"
                   dataKey="count" 
                   stroke="#0d9488"
@@ -905,7 +950,10 @@ const LectureSchedules: React.FC = () => {
                         <div className="text-sm font-medium text-gray-900">{schedule.subject_study}</div>
                       </td>
                       <td className="px-3 md:px-6 py-4">
-                        <div className="text-sm font-medium text-gray-900">{schedule.room}</div>
+                        <div className="flex items-center gap-2">
+                          <MapPin className="h-4 w-4 text-gray-400" />
+                          <div className="text-sm font-medium text-gray-900">{schedule.room}</div>
+                        </div>
                       </td>
                       <td className="px-3 md:px-6 py-4">
                         <div>
@@ -917,8 +965,15 @@ const LectureSchedules: React.FC = () => {
                       </td>
                       <td className="px-3 md:px-6 py-4">
                         <div>
-                          <div className="text-sm text-gray-900">Semester {schedule.semester}</div>
-                          <div className="text-xs text-gray-500 capitalize">{getText(schedule.type === 'theory' ? 'Theory' : 'Practical', schedule.type === 'theory' ? 'Teori' : 'Praktik')}</div>
+                          <div className="text-sm text-gray-900">
+                            <span className="font-medium">{getText('Class', 'Kelas')}: </span>
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              {schedule.class}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {getText('Semester', 'Semester')} {schedule.semester} • {getText(schedule.type === 'theory' ? 'Theory' : 'Practical', schedule.type === 'theory' ? 'Teori' : 'Praktik')}
+                          </div>
                         </div>
                       </td>
                       <td className="px-3 md:px-6 py-4 text-right">
@@ -1045,16 +1100,76 @@ const LectureSchedules: React.FC = () => {
                   )}
                 </div>
                 
+                {/* Room Dropdown with Search */}
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">{getText('Room', 'Ruangan')} *</label>
-                  <input
-                    {...form.register('room')}
-                    type="text"
-                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
-                    placeholder="e.g. Lab. Komputer 03"
-                  />
-                  {form.formState.errors.room && (
-                    <p className="text-red-500 text-sm">{form.formState.errors.room.message}</p>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowRoomDropdown(!showRoomDropdown)}
+                      className="w-full border-2 border-gray-200 rounded-lg p-3 text-left focus:border-teal-500 focus:ring-0 transition-colors flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-gray-400" />
+                        <span className={selectedRoom ? 'text-gray-900' : 'text-gray-500'}>
+                          {selectedRoom 
+                            ? `${selectedRoom.name} (${selectedRoom.code}) - ${selectedRoom.capacity} ${getText('seats', 'kursi')}`
+                            : getText('Select room', 'Pilih ruangan')
+                          }
+                        </span>
+                      </div>
+                      <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${showRoomDropdown ? 'rotate-180' : ''}`} />
+                    </button>
+                    
+                    {showRoomDropdown && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-hidden">
+                        <div className="p-3 border-b border-gray-200">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                            <input
+                              type="text"
+                              placeholder={getText('Search rooms...', 'Cari ruangan...')}
+                              value={roomSearchTerm}
+                              onChange={(e) => setRoomSearchTerm(e.target.value)}
+                              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                            />
+                          </div>
+                        </div>
+                        <div className="max-h-40 overflow-y-auto">
+                          {filteredRooms.length === 0 ? (
+                            <div className="p-3 text-sm text-gray-500 text-center">
+                              {getText('No rooms found', 'Tidak ada ruangan ditemukan')}
+                            </div>
+                          ) : (
+                            filteredRooms.map((room) => (
+                              <button
+                                key={room.id}
+                                type="button"
+                                onClick={() => {
+                                  form.setValue('room_id', room.id);
+                                  setShowRoomDropdown(false);
+                                  setRoomSearchTerm('');
+                                }}
+                                className="w-full p-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0 transition-colors"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <div className="text-sm font-medium text-gray-900">{room.name}</div>
+                                    <div className="text-xs text-gray-500">{room.code}</div>
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {room.capacity} {getText('seats', 'kursi')}
+                                  </div>
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {form.formState.errors.room_id && (
+                    <p className="text-red-500 text-sm">{form.formState.errors.room_id.message}</p>
                   )}
                 </div>
               </div>
