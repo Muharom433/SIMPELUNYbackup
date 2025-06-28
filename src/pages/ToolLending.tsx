@@ -242,12 +242,11 @@ const ToolLending: React.FC = () => {
                         .from('users')
                         .insert({
                             username: data.identity_number,
-                            email: data.email || `${data.identity_number}@student.edu`,
                             full_name: data.full_name,
                             identity_number: data.identity_number,
                             phone_number: data.phone_number,
                             role: 'student',
-                            password: 'password123' // Default password
+                            password: data.identity_number,
                         })
                         .select('id')
                         .single();
