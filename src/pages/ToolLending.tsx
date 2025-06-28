@@ -5,12 +5,12 @@ import { z } from 'zod';
 import {
     Package, Plus, Minus, Search, User, Phone, Mail, Hash, Calendar, Clock, 
     CheckCircle, AlertCircle, Trash2, Loader2, Send, Eye, Building, 
-    ChevronDown, Settings, Wrench, Zap, ShoppingCart
+    ChevronDown, Settings, Wrench, Zap, ShoppingCart, GraduationCap, BookOpen
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Equipment, User as UserType } from '../types';
+import { Equipment, User as UserType, StudyProgram, Department } from '../types';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 
@@ -21,11 +21,12 @@ const LENDING_STATUS = {
     OVERDUE: 'overdue'
 };
 
+// Updated schema with mandatory study_program_id and removed optional email
 const lendingSchema = z.object({
     full_name: z.string().min(3, 'Full name must be at least 3 characters'),
     identity_number: z.string().min(5, 'Identity number must be at least 5 characters'),
     phone_number: z.string().min(10, 'Please enter a valid phone number'),
-    email: z.string().email('Please enter a valid email').optional().or(z.literal('')),
+    study_program_id: z.string().min(1, 'Please select a study program'),
     date: z.string().min(1, 'Please select lending date'),
 });
 
@@ -42,6 +43,12 @@ interface ExistingUser {
     full_name: string;
     email: string;
     phone_number?: string;
+    study_program_id?: string;
+    study_program?: StudyProgram & { department?: Department };
+}
+
+interface StudyProgramWithDepartment extends StudyProgram {
+    department?: Department;
 }
 
 const ToolLending: React.FC = () => {
@@ -57,6 +64,11 @@ const ToolLending: React.FC = () => {
     const [showIdentityDropdown, setShowIdentityDropdown] = useState(false);
     const [identitySearchTerm, setIdentitySearchTerm] = useState('');
     const [currentTime] = useState(new Date());
+    
+    // New state for study programs
+    const [studyPrograms, setStudyPrograms] = useState<StudyProgramWithDepartment[]>([]);
+    const [showStudyProgramDropdown, setShowStudyProgramDropdown] = useState(false);
+    const [studyProgramSearchTerm, setStudyProgramSearchTerm] = useState('');
 
     const form = useForm<LendingForm>({
         resolver: zodResolver(lendingSchema),
@@ -66,10 +78,12 @@ const ToolLending: React.FC = () => {
     });
 
     const watchIdentityNumber = form.watch('identity_number');
+    const watchStudyProgramId = form.watch('study_program_id');
 
     useEffect(() => {
         fetchAvailableEquipment();
         fetchExistingUsers();
+        fetchStudyPrograms();
     }, []);
 
     useEffect(() => {
@@ -79,7 +93,7 @@ const ToolLending: React.FC = () => {
                 try {
                     const { data: existingUser, error } = await supabase
                         .from('users')
-                        .select('id, full_name, phone_number, email, identity_number')
+                        .select('id, full_name, phone_number, email, identity_number, study_program_id, study_program:study_programs(*, department:departments(*))')
                         .eq('identity_number', watchIdentityNumber)
                         .maybeSingle();
 
@@ -94,8 +108,12 @@ const ToolLending: React.FC = () => {
                         if (existingUser.phone_number) {
                             form.setValue('phone_number', existingUser.phone_number);
                         }
-                        if (existingUser.email && !existingUser.email.includes('@student.edu')) {
-                            form.setValue('email', existingUser.email);
+                        if (existingUser.study_program_id) {
+                            form.setValue('study_program_id', existingUser.study_program_id);
+                            const selectedProgram = studyPrograms.find(sp => sp.id === existingUser.study_program_id);
+                            if (selectedProgram) {
+                                setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`);
+                            }
                         }
                         toast.success(getText('Data automatically filled from existing record!', 'Data otomatis terisi dari data yang sudah ada!'));
                     }
@@ -108,7 +126,16 @@ const ToolLending: React.FC = () => {
             const timeoutId = setTimeout(findExistingUser, 500);
             return () => clearTimeout(timeoutId);
         }
-    }, [watchIdentityNumber, profile, form, getText]);
+    }, [watchIdentityNumber, profile, form, getText, studyPrograms]);
+
+    useEffect(() => {
+        if (watchStudyProgramId) {
+            const selectedProgram = studyPrograms.find(sp => sp.id === watchStudyProgramId);
+            if (selectedProgram) {
+                setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`);
+            }
+        }
+    }, [watchStudyProgramId, studyPrograms]);
 
     const fetchAvailableEquipment = async () => {
         try {
@@ -136,7 +163,7 @@ const ToolLending: React.FC = () => {
             // Only fetch a limited number of recent users for dropdown suggestions
             const { data, error } = await supabase
                 .from('users')
-                .select('id, identity_number, full_name, email, phone_number')
+                .select('id, identity_number, full_name, email, phone_number, study_program_id, study_program:study_programs(*, department:departments(*))')
                 .eq('role', 'student')
                 .order('updated_at', { ascending: false })
                 .limit(50); // Limit to recent 50 users for performance
@@ -147,6 +174,32 @@ const ToolLending: React.FC = () => {
             console.error('Error fetching users for dropdown:', error);
             // Don't show error to user as this is just for convenience
         }
+    };
+
+    const fetchStudyPrograms = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('study_programs')
+                .select(`*, department:departments(*)`)
+                .order('name');
+            
+            if (error) throw error;
+            setStudyPrograms(data || []);
+        } catch (error) {
+            console.error('Error fetching study programs:', error);
+            toast.error(getText('Failed to load study programs.', 'Gagal memuat program studi.'));
+        }
+    };
+
+    // Password hashing function - based on AuthForm pattern
+    const hashPassword = async (password: string): Promise<string> => {
+        // Simple hash using Web Crypto API (same as would be used in AuthForm)
+        const encoder = new TextEncoder();
+        const data = encoder.encode(password);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashHex;
     };
 
     const addEquipment = (equipment: Equipment) => {
@@ -205,7 +258,7 @@ const ToolLending: React.FC = () => {
 
             let userId = profile?.id || null;
 
-            // If user is not logged in, handle user creation/finding (SAME LOGIC AS BOOKROOM)
+            // If user is not logged in, handle user creation/finding
             if (!profile) {
                 // Check if user already exists
                 const { data: existingUser, error: userCheckError } = await supabase
@@ -218,17 +271,21 @@ const ToolLending: React.FC = () => {
                     throw userCheckError;
                 }
 
+                // Get study program and department info
+                const selectedStudyProgram = studyPrograms.find(sp => sp.id === data.study_program_id);
+                const departmentId = selectedStudyProgram?.department_id;
+
                 if (existingUser) {
-                    // User exists, use their ID
+                    // User exists, use their ID and update their information
                     userId = existingUser.id;
                     
-                    // Update their information if provided
                     const { error: updateError } = await supabase
                         .from('users')
                         .update({
                             full_name: data.full_name,
                             phone_number: data.phone_number,
-                            email: data.email || `${data.identity_number}@student.edu`,
+                            study_program_id: data.study_program_id,
+                            department_id: departmentId,
                             updated_at: new Date().toISOString()
                         })
                         .eq('id', existingUser.id);
@@ -237,16 +294,21 @@ const ToolLending: React.FC = () => {
                         console.warn('Error updating user data:', updateError);
                     }
                 } else {
-                    // User doesn't exist, create new user
+                    // User doesn't exist, create new user with encrypted password
+                    const hashedPassword = await hashPassword(data.identity_number);
+                    
                     const { data: newUser, error: createUserError } = await supabase
                         .from('users')
                         .insert({
-                            username: data.identity_number,
+                            username: data.identity_number, // Username = identity number
+                            email: `${data.identity_number}@student.edu`,
                             full_name: data.full_name,
                             identity_number: data.identity_number,
                             phone_number: data.phone_number,
+                            study_program_id: data.study_program_id,
+                            department_id: departmentId,
                             role: 'student',
-                            password: data.identity_number,
+                            password: hashedPassword // Encrypted password = identity number
                         })
                         .select('id')
                         .single();
@@ -256,6 +318,15 @@ const ToolLending: React.FC = () => {
                     }
                     
                     userId = newUser.id;
+                    
+                    // Show success message for auto-registration
+                    toast.success(
+                        getText(
+                            'Account automatically created! You can login with your NIM as both username and password.',
+                            'Akun otomatis dibuat! Anda dapat login dengan NIM sebagai username dan password.'
+                        ),
+                        { duration: 6000 }
+                    );
                 }
             }
 
@@ -271,8 +342,8 @@ const ToolLending: React.FC = () => {
                 qty: quantities,
                 id_user: userId, // ALWAYS use id_user, never user_info
                 status: LENDING_STATUS.BORROW, // Automatically set status to 'borrow'
-                created_at: new Date().toISOString(), // Optional: tambahkan timestamp
-                updated_at: new Date().toISOString()  // Optional: tambahkan timestamp
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
             };
 
             console.log('Creating lending record with data:', lendingData); // Debug log
@@ -310,6 +381,7 @@ const ToolLending: React.FC = () => {
             });
             setSelectedEquipment([]);
             setIdentitySearchTerm('');
+            setStudyProgramSearchTerm('');
             
             // Refresh equipment list
             await fetchAvailableEquipment();
@@ -332,6 +404,12 @@ const ToolLending: React.FC = () => {
     const filteredIdentityNumbers = existingUsers.filter(user =>
         user.identity_number.toLowerCase().includes(identitySearchTerm.toLowerCase()) ||
         user.full_name.toLowerCase().includes(identitySearchTerm.toLowerCase())
+    );
+
+    const filteredStudyPrograms = studyPrograms.filter(program =>
+        program.name.toLowerCase().includes(studyProgramSearchTerm.toLowerCase()) ||
+        program.code.toLowerCase().includes(studyProgramSearchTerm.toLowerCase()) ||
+        program.department?.name.toLowerCase().includes(studyProgramSearchTerm.toLowerCase())
     );
 
     const categories = [...new Set(availableEquipment.map(eq => eq.category))];
@@ -640,6 +718,9 @@ const ToolLending: React.FC = () => {
                                                                 >
                                                                     <div className="font-semibold text-gray-800">{user.identity_number}</div>
                                                                     <div className="text-sm text-gray-600">{user.full_name}</div>
+                                                                    {user.study_program && (
+                                                                        <div className="text-xs text-gray-500">{user.study_program.name}</div>
+                                                                    )}
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -691,22 +772,73 @@ const ToolLending: React.FC = () => {
 
                                             <div>
                                                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                                    {getText('Email', 'Email')} ({getText('Optional', 'Opsional')})
+                                                    {getText('Study Program', 'Program Studi')} *
                                                 </label>
                                                 <div className="relative">
-                                                    <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                                    <GraduationCap className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 z-10" />
                                                     <input
-                                                        {...form.register('email')}
-                                                        type="email"
-                                                        placeholder="your.email@example.com"
-                                                        className="w-full pl-12 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all duration-200"
+                                                        type="text"
+                                                        placeholder={getText("Search and select your study program", "Cari dan pilih program studi Anda")}
+                                                        value={studyProgramSearchTerm}
+                                                        onChange={(e) => {
+                                                            setStudyProgramSearchTerm(e.target.value);
+                                                            setShowStudyProgramDropdown(true);
+                                                        }}
+                                                        onFocus={() => setShowStudyProgramDropdown(true)}
+                                                        className="w-full pl-12 pr-10 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all duration-200 py-3"
                                                     />
+                                                    <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                                    {showStudyProgramDropdown && (
+                                                        <div
+                                                            onMouseLeave={() => setShowStudyProgramDropdown(false)}
+                                                            className="absolute z-10 w-full mt-1 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-xl max-h-60 overflow-y-auto"
+                                                        >
+                                                            {filteredStudyPrograms.length > 0 ? (
+                                                                <div className="p-1">
+                                                                    {filteredStudyPrograms.map((program) => (
+                                                                        <div
+                                                                            key={program.id}
+                                                                            onClick={() => {
+                                                                                const displayText = `${program.name} (${program.code}) - ${program.department?.name}`;
+                                                                                setStudyProgramSearchTerm(displayText);
+                                                                                form.setValue('study_program_id', program.id);
+                                                                                setShowStudyProgramDropdown(false);
+                                                                            }}
+                                                                            className="px-4 py-3 hover:bg-green-50 cursor-pointer border-b border-gray-100/50 last:border-b-0 transition-colors duration-150 rounded-lg"
+                                                                        >
+                                                                            <div className="font-semibold text-gray-800">{program.name} ({program.code})</div>
+                                                                            <div className="text-sm text-gray-600">{program.department?.name}</div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="p-4 text-center text-gray-500">
+                                                                    {getText('No study programs found', 'Tidak ada program studi ditemukan')}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                {form.formState.errors.email && (
+                                                {form.formState.errors.study_program_id && (
                                                     <p className="mt-2 text-sm text-red-600 font-medium">
-                                                        {form.formState.errors.email.message}
+                                                        {form.formState.errors.study_program_id.message}
                                                     </p>
                                                 )}
+                                            </div>
+                                        </div>
+
+                                        {/* Auto-registration info */}
+                                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-xl p-4">
+                                            <div className="flex items-start space-x-3">
+                                                <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                                                <div className="text-sm text-blue-800">
+                                                    <p className="font-semibold">
+                                                        {getText('Auto Account Creation', 'Pembuatan Akun Otomatis')}
+                                                    </p>
+                                                    <p className="mt-1">
+                                                        {getText('If you don\'t have an account, one will be created automatically using your NIM as both username and password.', 'Jika Anda belum memiliki akun, akun akan dibuat otomatis menggunakan NIM sebagai username dan password.')}
+                                                    </p>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -780,6 +912,17 @@ const ToolLending: React.FC = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Dropdown click outside handler */}
+            {(showIdentityDropdown || showStudyProgramDropdown) && (
+                <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => {
+                        setShowIdentityDropdown(false);
+                        setShowStudyProgramDropdown(false);
+                    }}
+                />
+            )}
         </div>
     );
 };
