@@ -449,8 +449,8 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                 <Settings className="h-5 w-5" 
                   onClick={() => {
                     Swal.fire({
-  title: "Good job!",
-  text: "You clicked the button!",
+  title: getText('Success', 'Berhasil'),
+  text: getText('Success To Add User', 'Berhasil Menambah User'),
   icon: "success"
 });
                   }}/>
