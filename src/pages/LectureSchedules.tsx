@@ -170,10 +170,11 @@ const LectureSchedules: React.FC = () => {
   }, [rooms, roomSearchTerm]);
 
   // Get selected room details
-  const selectedRoom = useMemo(() => {
-    const roomId = form.watch('room_id');
-    return rooms.find(room => room.id === roomId);
-  }, [rooms, form.watch('room_id')]);
+ // ✅ Update selectedRoom computation
+const selectedRoom = useMemo(() => {
+  const roomValue = form.watch('room');
+  return rooms.find(room => room.id === roomValue);
+}, [rooms, form.watch('room')]);
 
   const dayNames = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
