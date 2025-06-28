@@ -139,7 +139,7 @@ const BookRoom: React.FC = () => {
             setRooms(roomsWithStatus as RoomWithStatus[]);
         } catch (error) { 
             console.error('Error fetching rooms with status:', error); 
-            toast.error(getText('Failed to load room status.', 'Gagal memuat status ruangan.'));
+            alert.error(getText('Failed to load room status.', 'Gagal memuat status ruangan.'));
         } finally { setLoading(false); }
     }, [getText]);
 
@@ -151,7 +151,7 @@ const BookRoom: React.FC = () => {
             if (error) throw error;
             setSchedulesForModal(data || []);
         } catch (error) { 
-            toast.error(getText("Failed to load schedule for this room.", "Gagal memuat jadwal untuk ruangan ini.")); 
+            alert.error(getText("Failed to load schedule for this room.", "Gagal memuat jadwal untuk ruangan ini.")); 
             setSchedulesForModal([]);
         } finally { setLoadingSchedules(false); }
     };
@@ -194,7 +194,7 @@ const BookRoom: React.FC = () => {
                     const selectedProgram = studyPrograms.find(sp => sp.id === existingUser.study_program_id); 
                     if (selectedProgram) setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`); 
                 } 
-                toast.success(getText('Data automatically filled!', 'Data otomatis terisi!')); 
+                alert.success(getText('Data automatically filled!', 'Data otomatis terisi!')); 
             } 
         } 
     }, [watchIdentityNumber, existingUsers, form, studyPrograms, getText]);
@@ -213,7 +213,7 @@ const BookRoom: React.FC = () => {
             setStudyPrograms(data || []); 
         } catch (error) { 
             console.error('Error fetching study programs:', error); 
-            toast.error(getText('Failed to load study programs.', 'Gagal memuat program studi.')); 
+            alert.error(getText('Failed to load study programs.', 'Gagal memuat program studi.')); 
         } 
     };
 
@@ -224,7 +224,7 @@ const BookRoom: React.FC = () => {
             setMasterEquipmentList(data || []); 
         } catch (error) { 
             console.error('Error fetching equipment:', error); 
-            toast.error(getText('Failed to load equipment.', 'Gagal memuat peralatan.')); 
+            alert.error(getText('Failed to load equipment.', 'Gagal memuat peralatan.')); 
         } 
     };
 
@@ -271,7 +271,7 @@ const BookRoom: React.FC = () => {
         const equipmentCount = checkedEquipment.size;
         
         // Show detailed success toast
-        toast.success(
+        alert.success(
             getText(
                 `✅ Booking submitted successfully!\n🏢 Room: ${roomName}\n⏰ Time: ${startTime}${equipmentCount > 0 ? `\n⚡ Equipment: ${equipmentCount} items` : ''}\n📝 Status: Pending approval`,
                 `✅ Pemesanan berhasil dikirim!\n🏢 Ruangan: ${roomName}\n⏰ Waktu: ${startTime}${equipmentCount > 0 ? `\n⚡ Peralatan: ${equipmentCount} item` : ''}\n📝 Status: Menunggu persetujuan`
@@ -317,7 +317,7 @@ const BookRoom: React.FC = () => {
     
     const onSubmit = async (data: BookingForm) => {
         if (!selectedRoom) { 
-            toast.error(getText('Please select a room', 'Silakan pilih ruangan')); 
+            alert.error(getText('Please select a room', 'Silakan pilih ruangan')); 
             return; 
         }
         
@@ -380,7 +380,7 @@ const BookRoom: React.FC = () => {
             
         } catch (error: any) { 
             console.error('Error creating booking:', error); 
-            toast.error(
+            alert.error(
                 error.message || getText('Failed to create booking', 'Gagal membuat pemesanan'),
                 {
                     duration: 5000,
