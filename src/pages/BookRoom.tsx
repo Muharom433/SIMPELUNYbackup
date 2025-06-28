@@ -194,8 +194,7 @@ const BookRoom: React.FC = () => {
                     form.setValue('study_program_id', existingUser.study_program_id); 
                     const selectedProgram = studyPrograms.find(sp => sp.id === existingUser.study_program_id); 
                     if (selectedProgram) setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`); 
-                } 
-                toast.success(getText('Data automatically filled!', 'Data otomatis terisi!')); 
+                }  
             } 
         } 
     }, [watchIdentityNumber, existingUsers, form, studyPrograms, getText]);
@@ -272,11 +271,7 @@ const BookRoom: React.FC = () => {
         const equipmentCount = checkedEquipment.size;
         
         // Show detailed success toast
-        toast.success(
-            getText(
-                `✅ Booking submitted successfully!\n🏢 Room: ${roomName}\n⏰ Time: ${startTime}${equipmentCount > 0 ? `\n⚡ Equipment: ${equipmentCount} items` : ''}\n📝 Status: Pending approval`,
-                `✅ Pemesanan berhasil dikirim!\n🏢 Ruangan: ${roomName}\n⏰ Waktu: ${startTime}${equipmentCount > 0 ? `\n⚡ Peralatan: ${equipmentCount} item` : ''}\n📝 Status: Menunggu persetujuan`
-            ),
+        alert.success('addSuccess'),
             {
                 duration: 6000,
                 style: {
