@@ -29,6 +29,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
+import { alert } from '../components/Alert/AlertHelper';
 import { useLanguage } from '../contexts/LanguageContext';
 
 // Schema for validating the session form data.
