@@ -6,19 +6,21 @@ import {
     Wrench, Plus, Search, Edit, Trash2, Eye, Package, AlertCircle, RefreshCw, X, 
     Camera, Cpu, Wifi, Zap, FlaskConical, Armchair, Shield,
     MapPin, Hash, Layers, CheckCircle, XCircle, Star, AlertTriangle, Building,
-    User, Phone, CreditCard, Clock, Calendar, Users, Activity, TrendingUp
+    User, Phone, CreditCard, Clock, Calendar, Users, Activity, TrendingUp,
+    ChevronDown, ChevronUp
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { Equipment, Room, Department, User as UserType } from '../types';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const equipmentSchema = z.object({
   name: z.string().min(2, 'Equipment name must be at least 2 characters'),
   code: z.string().min(2, 'Equipment code must be at least 2 characters'),
   category: z.string().min(1, 'Please select a category'),
-  rooms_id: z.string().optional().nullable(),
+  rooms_id: z.string().min(1, 'Please select a room'),
   is_mandatory: z.boolean().optional(),
   is_available: z.boolean().optional(),
   condition: z.enum(['GOOD', 'BROKEN', 'MAINTENANCE']).default('GOOD'),
@@ -53,6 +55,7 @@ interface LendingDetail {
 
 const ToolAdministration: React.FC = () => {
     const { profile } = useAuth();
+    const { getText } = useLanguage();
     const [equipment, setEquipment] = useState<EquipmentWithDetails[]>([]);
     const [rooms, setRooms] = useState<Room[]>([]);
     const [loading, setLoading] = useState(true);
@@ -65,6 +68,11 @@ const ToolAdministration: React.FC = () => {
     const [selectedEquipment, setSelectedEquipment] = useState<EquipmentWithDetails | null>(null);
     const [lendingDetails, setLendingDetails] = useState<LendingDetail[]>([]);
     const [loadingLending, setLoadingLending] = useState(false);
+    
+    // Room search dropdown states
+    const [roomSearchTerm, setRoomSearchTerm] = useState('');
+    const [showRoomDropdown, setShowRoomDropdown] = useState(false);
+    const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
 
     const form = useForm<EquipmentForm>({
         resolver: zodResolver(equipmentSchema),
@@ -89,26 +97,52 @@ const ToolAdministration: React.FC = () => {
     const fetchEquipment = async () => {
         try {
             setLoading(true);
-            const { data, error } = await supabase
+            
+            let query = supabase
                 .from('equipment')
-                .select(`*, rooms (*, department:departments(*))`)
-                .order('created_at', { ascending: false });
+                .select(`*, rooms (*, department:departments(*))`);
+
+            // Filter by department for department admin
+            if (profile?.role === 'department_admin' && profile.department_id) {
+                query = query.eq('rooms.department_id', profile.department_id);
+            }
+
+            const { data, error } = await query.order('created_at', { ascending: false });
 
             if (error) throw error;
-            setEquipment(data || []);
+            
+            // Additional filter for department admins - only show equipment with rooms in their department
+            let filteredData = data || [];
+            if (profile?.role === 'department_admin' && profile.department_id) {
+                filteredData = (data || []).filter(eq => 
+                    eq.rooms?.department?.id === profile.department_id
+                );
+            }
+            
+            setEquipment(filteredData);
         } catch (error) {
             console.error('Error fetching equipment:', error);
-            toast.error('Failed to load equipment');
-        } finally { setLoading(false); }
+            toast.error(getText('Failed to load equipment', 'Gagal memuat peralatan'));
+        } finally { 
+            setLoading(false); 
+        }
     };
 
     const fetchRooms = async () => {
         try {
-            const { data, error } = await supabase.from('rooms').select('*').order('name');
+            let query = supabase.from('rooms').select('*, department:departments(*)');
+            
+            // Filter by department for department admin
+            if (profile?.role === 'department_admin' && profile.department_id) {
+                query = query.eq('department_id', profile.department_id);
+            }
+            
+            const { data, error } = await query.order('name');
             if (error) throw error;
             setRooms(data || []);
         } catch (error) {
             console.error('Error fetching rooms:', error);
+            toast.error(getText('Failed to load rooms', 'Gagal memuat ruangan'));
         }
     };
 
@@ -263,7 +297,7 @@ const ToolAdministration: React.FC = () => {
             setLendingDetails(missingItemsOnly);
         } catch (error) {
             console.error('Error fetching lending details:', error);
-            toast.error('Failed to load lending details');
+            toast.error(getText('Failed to load lending details', 'Gagal memuat detail peminjaman'));
             setLendingDetails([]);
         } finally {
             setLoadingLending(false);
@@ -280,7 +314,7 @@ const ToolAdministration: React.FC = () => {
                 is_mandatory: data.is_mandatory,
                 is_available: data.is_available,
                 condition: data.condition,
-                rooms_id: data.rooms_id || null,
+                rooms_id: data.rooms_id,
                 Spesification: data.Spesification,
                 quantity: data.quantity,
                 unit: data.unit,
@@ -289,29 +323,33 @@ const ToolAdministration: React.FC = () => {
             if (editingEquipment) {
                 const { error } = await supabase.from('equipment').update(equipmentData).eq('id', editingEquipment.id);
                 if (error) throw error;
-                toast.success('Equipment updated successfully! 🎉');
+                toast.success(getText('Equipment updated successfully! 🎉', 'Peralatan berhasil diperbarui! 🎉'));
             } else {
                 const { error } = await supabase.from('equipment').insert([equipmentData]);
                 if (error) throw error;
-                toast.success('Equipment created successfully! ✨');
+                toast.success(getText('Equipment created successfully! ✨', 'Peralatan berhasil dibuat! ✨'));
             }
 
             setShowModal(false);
             setEditingEquipment(null);
+            setSelectedRoom(null);
             form.reset();
             fetchEquipment();
         } catch (error: any) {
             console.error('Error saving equipment:', error);
             if (error.code === '23505') { 
-                toast.error('Equipment code already exists! Please use a different code.'); 
+                toast.error(getText('Equipment code already exists! Please use a different code.', 'Kode peralatan sudah ada! Gunakan kode yang berbeda.')); 
             } else { 
-                toast.error(error.message || 'Failed to save equipment'); 
+                toast.error(error.message || getText('Failed to save equipment', 'Gagal menyimpan peralatan')); 
             }
-        } finally { setLoading(false); }
+        } finally { 
+            setLosetLoading(false); 
+        }
     };
 
     const handleEdit = (eq: EquipmentWithDetails) => {
         setEditingEquipment(eq);
+        setSelectedRoom(eq.rooms || null);
         form.reset({
             name: eq.name,
             code: eq.code,
@@ -332,19 +370,39 @@ const ToolAdministration: React.FC = () => {
             setLoading(true);
             const { error } = await supabase.from('equipment').delete().eq('id', equipmentId);
             if (error) throw error;
-            toast.success('Equipment deleted successfully! 🗑️');
+            toast.success(getText('Equipment deleted successfully! 🗑️', 'Peralatan berhasil dihapus! 🗑️'));
             setShowDeleteConfirm(null);
             fetchEquipment();
         } catch (error: any) {
             console.error('Error deleting equipment:', error);
-            toast.error(error.message || 'Failed to delete equipment');
-        } finally { setLoading(false); }
+            toast.error(error.message || getText('Failed to delete equipment', 'Gagal menghapus peralatan'));
+        } finally { 
+            setLoading(false); 
+        }
     };
 
     const handleViewDetails = (eq: EquipmentWithDetails) => {
         setSelectedEquipment(eq);
         fetchLendingDetails(eq.id);
     };
+
+    const handleRoomSelect = (room: Room) => {
+        setSelectedRoom(room);
+        form.setValue('rooms_id', room.id);
+        setRoomSearchTerm(room.name);
+        setShowRoomDropdown(false);
+    };
+
+    const clearRoomSelection = () => {
+        setSelectedRoom(null);
+        form.setValue('rooms_id', '');
+        setRoomSearchTerm('');
+    };
+
+    const filteredRooms = rooms.filter(room => 
+        room.name.toLowerCase().includes(roomSearchTerm.toLowerCase()) ||
+        room.code.toLowerCase().includes(roomSearchTerm.toLowerCase())
+    );
 
     const filteredEquipment = equipment.filter(eq => {
         const matchesSearch = eq.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -363,25 +421,25 @@ const ToolAdministration: React.FC = () => {
             case 'GOOD':
                 return {
                     icon: CheckCircle,
-                    label: 'GOOD',
+                    label: getText('GOOD', 'BAIK'),
                     className: 'bg-green-100 text-green-700 border border-green-200'
                 };
             case 'BROKEN':
                 return {
                     icon: XCircle,
-                    label: 'BROKEN',
+                    label: getText('BROKEN', 'RUSAK'),
                     className: 'bg-red-100 text-red-700 border border-red-200'
                 };
             case 'MAINTENANCE':
                 return {
                     icon: AlertTriangle,
-                    label: 'MAINTENANCE',
+                    label: getText('MAINTENANCE', 'PEMELIHARAAN'),
                     className: 'bg-yellow-100 text-yellow-700 border border-yellow-200'
                 };
             default:
                 return {
                     icon: AlertCircle,
-                    label: 'UNKNOWN',
+                    label: getText('UNKNOWN', 'TIDAK DIKETAHUI'),
                     className: 'bg-gray-100 text-gray-700 border border-gray-200'
                 };
         }
@@ -391,13 +449,13 @@ const ToolAdministration: React.FC = () => {
         if (is_available) {
             return {
                 icon: CheckCircle,
-                label: 'AVAILABLE',
+                label: getText('AVAILABLE', 'TERSEDIA'),
                 className: 'bg-blue-50 text-blue-700 border border-blue-200'
             };
         } else {
             return {
                 icon: XCircle,
-                label: 'IN USE',
+                label: getText('IN USE', 'SEDANG DIGUNAKAN'),
                 className: 'bg-gray-100 text-gray-600 border border-gray-200'
             };
         }
@@ -416,7 +474,7 @@ const ToolAdministration: React.FC = () => {
                 {is_mandatory && (
                     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
                         <Star className="h-3 w-3" />
-                        REQUIRED
+                        {getText('REQUIRED', 'WAJIB')}
                     </span>
                 )}
             </div>
@@ -428,8 +486,15 @@ const ToolAdministration: React.FC = () => {
             <div className="flex items-center justify-center h-64">
                 <div className="text-center">
                     <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
-                    <p className="text-gray-600">You don't have permission to access tool administration.</p>
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                        {getText('Access Denied', 'Akses Ditolak')}
+                    </h3>
+                    <p className="text-gray-600">
+                        {getText(
+                            "You don't have permission to access tool administration.", 
+                            'Anda tidak memiliki izin untuk mengakses administrasi alat.'
+                        )}
+                    </p>
                 </div>
             </div>
         );
@@ -445,27 +510,29 @@ const ToolAdministration: React.FC = () => {
                             <div className="p-2 bg-white bg-opacity-20 rounded-lg backdrop-blur-sm">
                                 <Wrench className="h-8 w-8" />
                             </div>
-                            <span>Equipment Management</span>
+                            <span>{getText('Equipment Management', 'Manajemen Peralatan')}</span>
                         </h1>
-                        <p className="text-lg opacity-90">Manage your laboratory and classroom equipment</p>
+                        <p className="text-lg opacity-90">
+                            {getText('Manage your laboratory and classroom equipment', 'Kelola peralatan laboratorium dan ruang kelas Anda')}
+                        </p>
                         <div className="mt-3 flex items-center space-x-4 text-sm">
                             <div className="flex items-center space-x-2 opacity-80">
                                 <Package className="h-4 w-4" />
-                                <span>Total: {equipment.length}</span>
+                                <span>{getText('Total', 'Total')}: {equipment.length}</span>
                             </div>
                             <div className="flex items-center space-x-2 opacity-80">
                                 <CheckCircle className="h-4 w-4" />
-                                <span>Available: {equipment.filter(eq => eq.is_available).length}</span>
+                                <span>{getText('Available', 'Tersedia')}: {equipment.filter(eq => eq.is_available).length}</span>
                             </div>
                             <div className="flex items-center space-x-2 opacity-80">
                                 <AlertTriangle className="h-4 w-4" />
-                                <span>Good Condition: {equipment.filter(eq => eq.condition === 'GOOD').length}</span>
+                                <span>{getText('Good Condition', 'Kondisi Baik')}: {equipment.filter(eq => eq.condition === 'GOOD').length}</span>
                             </div>
                         </div>
                     </div>
                     <div className="hidden lg:block text-right">
                         <div className="text-4xl font-bold opacity-90">{equipment.length}</div>
-                        <div className="text-sm opacity-70">Total Equipment</div>
+                        <div className="text-sm opacity-70">{getText('Total Equipment', 'Total Peralatan')}</div>
                     </div>
                 </div>
             </div>
@@ -477,7 +544,7 @@ const ToolAdministration: React.FC = () => {
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                         <input 
                             type="text" 
-                            placeholder="Search equipment..." 
+                            placeholder={getText('Search equipment...', 'Cari peralatan...')} 
                             value={searchTerm} 
                             onChange={(e) => setSearchTerm(e.target.value)} 
                             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
@@ -490,7 +557,7 @@ const ToolAdministration: React.FC = () => {
                             onChange={(e) => setCategoryFilter(e.target.value)} 
                             className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 appearance-none bg-white text-sm"
                         >
-                            <option value="all">All Categories</option>
+                            <option value="all">{getText('All Categories', 'Semua Kategori')}</option>
                             {categories.map(cat => (
                                 <option key={cat.name} value={cat.name}>{cat.name}</option>
                             ))}
@@ -501,7 +568,7 @@ const ToolAdministration: React.FC = () => {
                             onChange={(e) => setRoomFilter(e.target.value)} 
                             className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 appearance-none bg-white text-sm"
                         >
-                            <option value="all">All Locations</option>
+                            <option value="all">{getText('All Locations', 'Semua Lokasi')}</option>
                             {rooms.map(room => (
                                 <option key={room.id} value={room.id}>{room.name}</option>
                             ))}
@@ -510,7 +577,7 @@ const ToolAdministration: React.FC = () => {
                         <button 
                             onClick={() => fetchEquipment()} 
                             className="p-2 bg-gray-50 hover:bg-gray-100 border border-gray-300 rounded-lg transition-colors"
-                            title="Refresh"
+                            title={getText('Refresh', 'Segarkan')}
                         >
                             <RefreshCw className={`h-4 w-4 text-gray-600 ${loading ? 'animate-spin' : ''}`} />
                         </button>
@@ -518,13 +585,15 @@ const ToolAdministration: React.FC = () => {
                         <button 
                             onClick={() => { 
                                 setEditingEquipment(null); 
+                                setSelectedRoom(null);
+                                setRoomSearchTerm('');
                                 form.reset({ is_available: true, condition: 'GOOD', quantity: 1 }); 
                                 setShowModal(true); 
                             }} 
                             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
                         >
                             <Plus className="h-4 w-4" />
-                            <span>Add Equipment</span>
+                            <span>{getText('Add Equipment', 'Tambah Peralatan')}</span>
                         </button>
                     </div>
                 </div>
@@ -548,8 +617,10 @@ const ToolAdministration: React.FC = () => {
                 {!loading && filteredEquipment.length === 0 && (
                     <div className="col-span-full flex flex-col items-center justify-center py-16 text-gray-500">
                         <Package className="h-16 w-16 mb-4 opacity-50" />
-                        <h3 className="text-xl font-semibold mb-2">No Equipment Found</h3>
-                        <p>Try adjusting your search or filters</p>
+                        <h3 className="text-xl font-semibold mb-2">
+                            {getText('No Equipment Found', 'Tidak Ada Peralatan Ditemukan')}
+                        </h3>
+                        <p>{getText('Try adjusting your search or filters', 'Coba sesuaikan pencarian atau filter Anda')}</p>
                     </div>
                 )}
 
@@ -579,19 +650,19 @@ const ToolAdministration: React.FC = () => {
 
                                 <div className="space-y-2 text-sm mb-4">
                                     <div className="flex items-center justify-between">
-                                        <span className="text-gray-600">Category</span>
+                                        <span className="text-gray-600">{getText('Category', 'Kategori')}</span>
                                         <span className="font-medium text-gray-900">{eq.category}</span>
                                     </div>
                                     
                                     <div className="flex items-center justify-between">
-                                        <span className="text-gray-600">Location</span>
+                                        <span className="text-gray-600">{getText('Location', 'Lokasi')}</span>
                                         <span className="font-medium text-gray-900">
-                                            {eq.rooms?.name || 'Unassigned'}
+                                            {eq.rooms?.name || getText('Unassigned', 'Belum Ditentukan')}
                                         </span>
                                     </div>
                                     
                                     <div className="flex items-center justify-between">
-                                        <span className="text-gray-600">Quantity</span>
+                                        <span className="text-gray-600">{getText('Quantity', 'Jumlah')}</span>
                                         <span className="font-medium text-gray-900">
                                             {eq.quantity} {eq.unit}
                                         </span>
@@ -599,7 +670,7 @@ const ToolAdministration: React.FC = () => {
 
                                     {eq.rooms?.department?.name && (
                                         <div className="flex items-center justify-between">
-                                            <span className="text-gray-600">Department</span>
+                                            <span className="text-gray-600">{getText('Department', 'Departemen')}</span>
                                             <span className="font-medium text-gray-900">
                                                 {eq.rooms.department.name}
                                             </span>
@@ -611,24 +682,24 @@ const ToolAdministration: React.FC = () => {
                                     <button 
                                         onClick={() => handleViewDetails(eq)} 
                                         className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium transition-colors text-sm"
-                                        title="View Details & Lending"
+                                        title={getText('View Details & Lending', 'Lihat Detail & Peminjaman')}
                                     >
                                         <Eye className="h-4 w-4" />
-                                        <span>View</span>
+                                        <span>{getText('View', 'Lihat')}</span>
                                     </button>
                                     
                                     <div className="flex items-center space-x-1">
                                         <button 
                                             onClick={() => handleEdit(eq)} 
                                             className="p-2 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors"
-                                            title="Edit"
+                                            title={getText('Edit', 'Edit')}
                                         >
                                             <Edit className="h-3 w-3" />
                                         </button>
                                         <button 
                                             onClick={() => setShowDeleteConfirm(eq.id)} 
                                             className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                                            title="Delete"
+                                            title={getText('Delete', 'Hapus')}
                                         >
                                             <Trash2 className="h-3 w-3" />
                                         </button>
@@ -648,7 +719,10 @@ const ToolAdministration: React.FC = () => {
                             <div className="flex items-center justify-between">
                                 <h3 className="text-2xl font-bold flex items-center gap-3">
                                     <Wrench className="h-6 w-6" />
-                                    {editingEquipment ? 'Edit Equipment' : 'Add New Equipment'}
+                                    {editingEquipment ? 
+                                        getText('Edit Equipment', 'Edit Peralatan') : 
+                                        getText('Add New Equipment', 'Tambah Peralatan Baru')
+                                    }
                                 </h3>
                                 <button 
                                     onClick={() => setShowModal(false)}
@@ -662,11 +736,13 @@ const ToolAdministration: React.FC = () => {
                         <form onSubmit={form.handleSubmit(handleSubmit)} className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-700">Equipment Name *</label>
+                                    <label className="block text-sm font-semibold text-gray-700">
+                                        {getText('Equipment Name', 'Nama Peralatan')} *
+                                    </label>
                                     <input 
                                         {...form.register('name')} 
                                         className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors" 
-                                        placeholder="Enter equipment name"
+                                        placeholder={getText('Enter equipment name', 'Masukkan nama peralatan')}
                                     />
                                     {form.formState.errors.name && (
                                         <p className="text-red-500 text-sm flex items-center gap-1">
@@ -677,7 +753,9 @@ const ToolAdministration: React.FC = () => {
                                 </div>
                                 
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-700">Equipment Code *</label>
+                                    <label className="block text-sm font-semibold text-gray-700">
+                                        {getText('Equipment Code', 'Kode Peralatan')} *
+                                    </label>
                                     <input 
                                         {...form.register('code')} 
                                         className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors font-mono" 
@@ -693,12 +771,14 @@ const ToolAdministration: React.FC = () => {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="block text-sm font-semibold text-gray-700">Category *</label>
+                                <label className="block text-sm font-semibold text-gray-700">
+                                    {getText('Category', 'Kategori')} *
+                                </label>
                                 <select 
                                     {...form.register('category')} 
                                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
                                 >
-                                    <option value="">Select Category</option>
+                                    <option value="">{getText('Select Category', 'Pilih Kategori')}</option>
                                     {categories.map(cat => (
                                         <option key={cat.name} value={cat.name}>{cat.name}</option>
                                     ))}
@@ -711,22 +791,120 @@ const ToolAdministration: React.FC = () => {
                                 )}
                             </div>
 
+                            {/* Room Location with Search Dropdown */}
                             <div className="space-y-2">
-                                <label className="block text-sm font-semibold text-gray-700">Room Location</label>
-                                <select 
-                                    {...form.register('rooms_id')} 
-                                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
-                                >
-                                    <option value="">Not Assigned</option>
-                                    {rooms.map(room => (
-                                        <option key={room.id} value={room.id}>{room.name}</option>
-                                    ))}
-                                </select>
+                                <label className="block text-sm font-semibold text-gray-700">
+                                    {getText('Room Location', 'Lokasi Ruangan')} *
+                                </label>
+                                <div className="relative">
+                                    <div className="flex items-center">
+                                        <input
+                                            type="text"
+                                            value={roomSearchTerm}
+                                            onChange={(e) => {
+                                                setRoomSearchTerm(e.target.value);
+                                                setShowRoomDropdown(true);
+                                            }}
+                                            onFocus={() => setShowRoomDropdown(true)}
+                                            placeholder={getText(
+                                                'Search for a room...', 
+                                                'Cari ruangan...'
+                                            )}
+                                            className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors pr-20"
+                                        />
+                                        <div className="absolute right-2 flex items-center gap-1">
+                                            {selectedRoom && (
+                                                <button
+                                                    type="button"
+                                                    onClick={clearRoomSelection}
+                                                    className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                                                    title={getText('Clear selection', 'Hapus pilihan')}
+                                                >
+                                                    <X className="h-4 w-4" />
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowRoomDropdown(!showRoomDropdown)}
+                                                className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                                            >
+                                                {showRoomDropdown ? 
+                                                    <ChevronUp className="h-4 w-4" /> : 
+                                                    <ChevronDown className="h-4 w-4" />
+                                                }
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Dropdown */}
+                                    {showRoomDropdown && (
+                                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                            {filteredRooms.length === 0 ? (
+                                                <div className="p-3 text-gray-500 text-center">
+                                                    {getText('No rooms found', 'Tidak ada ruangan ditemukan')}
+                                                </div>
+                                            ) : (
+                                                filteredRooms.map((room) => (
+                                                    <button
+                                                        key={room.id}
+                                                        type="button"
+                                                        onClick={() => handleRoomSelect(room)}
+                                                        className={`w-full text-left p-3 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-colors ${
+                                                            selectedRoom?.id === room.id ? 'bg-blue-50 border-blue-200' : ''
+                                                        }`}
+                                                    >
+                                                        <div className="font-medium text-gray-900">{room.name}</div>
+                                                        <div className="text-sm text-gray-500">
+                                                            {getText('Code', 'Kode')}: {room.code} | {getText('Capacity', 'Kapasitas')}: {room.capacity}
+                                                            {room.department && (
+                                                                <span className="ml-2 text-blue-600">
+                                                                    ({room.department.name})
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </button>
+                                                ))
+                                            )}
+                                        </div>
+                                    )}
+                                    
+                                    {/* Selected Room Display */}
+                                    {selectedRoom && (
+                                        <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <div className="font-medium text-blue-900">{selectedRoom.name}</div>
+                                                    <div className="text-sm text-blue-600">
+                                                        {getText('Code', 'Kode')}: {selectedRoom.code} | {getText('Capacity', 'Kapasitas')}: {selectedRoom.capacity}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={clearRoomSelection}
+                                                    className="text-blue-400 hover:text-red-500 transition-colors"
+                                                >
+                                                    <X className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                                {form.formState.errors.rooms_id && (
+                                    <p className="text-red-500 text-sm flex items-center gap-1">
+                                        <AlertTriangle className="h-4 w-4" />
+                                        {profile?.role === 'department_admin' 
+                                            ? getText('Please select a room from your department', 'Pilih ruangan dari departemen Anda')
+                                            : getText('Please select a room', 'Pilih ruangan')
+                                        }
+                                    </p>
+                                )}
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-700">Quantity *</label>
+                                    <label className="block text-sm font-semibold text-gray-700">
+                                        {getText('Quantity', 'Jumlah')} *
+                                    </label>
                                     <input 
                                         type="number" 
                                         {...form.register('quantity', {valueAsNumber: true})} 
@@ -742,30 +920,33 @@ const ToolAdministration: React.FC = () => {
                                 </div>
                                 
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-700">Unit *</label>
+                                    <label className="block text-sm font-semibold text-gray-700">
+                                        {getText('Unit', 'Satuan')} *
+                                    </label>
                                     <input 
                                         {...form.register('unit')} 
-                                        placeholder="e.g. pcs, set, unit" 
+                                        placeholder={getText('e.g. pcs, set, unit', 'mis. pcs, set, unit')} 
                                         className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors" 
                                     />
                                     {form.formState.errors.unit && (
                                         <p className="text-red-500 text-sm flex items-center gap-1">
                                             <AlertTriangle className="h-4 w-4" />
                                             {form.formState.errors.unit.message}
-                                        </p>
-                                    )}
+                                        </p>)}
                                 </div>
                             </div>
 
                             <div className="space-y-2">
-                                <label className="block text-sm font-semibold text-gray-700">Condition *</label>
+                                <label className="block text-sm font-semibold text-gray-700">
+                                    {getText('Condition', 'Kondisi')} *
+                                </label>
                                 <select 
                                     {...form.register('condition')} 
                                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
                                 >
-                                    <option value="GOOD">Good Condition</option>
-                                    <option value="BROKEN">Broken</option>
-                                    <option value="MAINTENANCE">Under Maintenance</option>
+                                    <option value="GOOD">{getText('Good Condition', 'Kondisi Baik')}</option>
+                                    <option value="BROKEN">{getText('Broken', 'Rusak')}</option>
+                                    <option value="MAINTENANCE">{getText('Under Maintenance', 'Dalam Pemeliharaan')}</option>
                                 </select>
                                 {form.formState.errors.condition && (
                                     <p className="text-red-500 text-sm flex items-center gap-1">
@@ -776,12 +957,14 @@ const ToolAdministration: React.FC = () => {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="block text-sm font-semibold text-gray-700">Specification</label>
+                                <label className="block text-sm font-semibold text-gray-700">
+                                    {getText('Specification', 'Spesifikasi')}
+                                </label>
                                 <textarea 
                                     {...form.register('Spesification')} 
                                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors" 
                                     rows={4}
-                                    placeholder="Enter detailed specifications..."
+                                    placeholder={getText('Enter detailed specifications...', 'Masukkan spesifikasi detail...')}
                                 />
                             </div>
 
@@ -793,8 +976,12 @@ const ToolAdministration: React.FC = () => {
                                         className="h-5 w-5 text-amber-600 border-2 border-amber-300 rounded focus:ring-amber-500" 
                                     />
                                     <div className="ml-3">
-                                        <label className="text-sm font-semibold text-amber-800">Mandatory Equipment</label>
-                                        <p className="text-xs text-amber-600">Required for room bookings</p>
+                                        <label className="text-sm font-semibold text-amber-800">
+                                            {getText('Mandatory Equipment', 'Peralatan Wajib')}
+                                        </label>
+                                        <p className="text-xs text-amber-600">
+                                            {getText('Required for room bookings', 'Diperlukan untuk pemesanan ruangan')}
+                                        </p>
                                     </div>
                                 </div>
                                 
@@ -805,8 +992,12 @@ const ToolAdministration: React.FC = () => {
                                         className="h-5 w-5 text-green-600 border-2 border-green-300 rounded focus:ring-green-500" 
                                     />
                                     <div className="ml-3">
-                                        <label className="text-sm font-semibold text-green-800">Available for Lending</label>
-                                        <p className="text-xs text-green-600">Can be borrowed by users</p>
+                                        <label className="text-sm font-semibold text-green-800">
+                                            {getText('Available for Lending', 'Tersedia untuk Dipinjam')}
+                                        </label>
+                                        <p className="text-xs text-green-600">
+                                            {getText('Can be borrowed by users', 'Dapat dipinjam oleh pengguna')}
+                                        </p>
                                     </div>
                                 </div>
                             </div>
@@ -817,7 +1008,7 @@ const ToolAdministration: React.FC = () => {
                                     onClick={() => setShowModal(false)} 
                                     className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
                                 >
-                                    Cancel
+                                    {getText('Cancel', 'Batal')}
                                 </button>
                                 <button 
                                     type="submit" 
@@ -827,10 +1018,12 @@ const ToolAdministration: React.FC = () => {
                                     {loading ? (
                                         <div className="flex items-center gap-2">
                                             <RefreshCw className="h-4 w-4 animate-spin" />
-                                            Saving...
+                                            {getText('Saving...', 'Menyimpan...')}
                                         </div>
                                     ) : (
-                                        editingEquipment ? 'Update Equipment' : 'Create Equipment'
+                                        editingEquipment ? 
+                                        getText('Update Equipment', 'Perbarui Peralatan') : 
+                                        getText('Create Equipment', 'Buat Peralatan')
                                     )}
                                 </button>
                             </div>
@@ -868,11 +1061,13 @@ const ToolAdministration: React.FC = () => {
                                     <div>
                                         <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
                                             <Package className="h-5 w-5 text-blue-600" />
-                                            Equipment Details
+                                            {getText('Equipment Details', 'Detail Peralatan')}
                                         </h3>
                                         <div className="bg-gray-50 rounded-lg p-6 space-y-4">
                                             <div className="flex justify-between items-center">
-                                                <span className="text-sm font-semibold text-gray-600">Category</span>
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Category', 'Kategori')}
+                                                </span>
                                                 <div className="flex items-center gap-2">
                                                     {(() => {
                                                         const config = getCategoryConfig(selectedEquipment.category);
@@ -888,7 +1083,9 @@ const ToolAdministration: React.FC = () => {
                                             </div>
                                             
                                             <div className="flex justify-between items-center">
-                                                <span className="text-sm font-semibold text-gray-600">Condition</span>
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Condition', 'Kondisi')}
+                                                </span>
                                                 <div className="flex items-center gap-2">
                                                     {(() => {
                                                         const config = getConditionConfig(selectedEquipment.condition);
@@ -904,7 +1101,9 @@ const ToolAdministration: React.FC = () => {
                                             </div>
                                             
                                             <div className="flex justify-between items-center">
-                                                <span className="text-sm font-semibold text-gray-600">Status</span>
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Status', 'Status')}
+                                                </span>
                                                 <div className="flex items-center gap-2">
                                                     {(() => {
                                                         const config = getStatusConfig(selectedEquipment.is_available);
@@ -920,17 +1119,21 @@ const ToolAdministration: React.FC = () => {
                                             </div>
                                             
                                             <div className="flex justify-between items-center">
-                                                <span className="text-sm font-semibold text-gray-600">Location</span>
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Location', 'Lokasi')}
+                                                </span>
                                                 <div className="flex items-center gap-2">
                                                     <MapPin className="h-4 w-4 text-gray-600" />
                                                     <span className="font-semibold text-gray-900">
-                                                        {selectedEquipment.rooms?.name || 'Unassigned'}
+                                                        {selectedEquipment.rooms?.name || getText('Unassigned', 'Belum Ditentukan')}
                                                     </span>
                                                 </div>
                                             </div>
                                             
                                             <div className="flex justify-between items-center">
-                                                <span className="text-sm font-semibold text-gray-600">Department</span>
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Department', 'Departemen')}
+                                                </span>
                                                 <div className="flex items-center gap-2">
                                                     <Building className="h-4 w-4 text-gray-600" />
                                                     <span className="font-semibold text-gray-900">
@@ -940,7 +1143,9 @@ const ToolAdministration: React.FC = () => {
                                             </div>
                                             
                                             <div className="flex justify-between items-center">
-                                                <span className="text-sm font-semibold text-gray-600">Quantity</span>
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Quantity', 'Jumlah')}
+                                                </span>
                                                 <div className="flex items-center gap-2">
                                                     <Package className="h-4 w-4 text-gray-600" />
                                                     <span className="font-bold text-lg text-gray-900">
@@ -950,7 +1155,9 @@ const ToolAdministration: React.FC = () => {
                                             </div>
                                             
                                             <div className="flex justify-between items-center">
-                                                <span className="text-sm font-semibold text-gray-600">Created</span>
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Created', 'Dibuat')}
+                                                </span>
                                                 <span className="text-sm text-gray-700">
                                                     {format(new Date(selectedEquipment.created_at), 'MMM d, yyyy')}
                                                 </span>
@@ -962,7 +1169,7 @@ const ToolAdministration: React.FC = () => {
                                     <div>
                                         <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
                                             <Wrench className="h-5 w-5 text-blue-600" />
-                                            Quick Actions
+                                            {getText('Quick Actions', 'Aksi Cepat')}
                                         </h3>
                                         <div className="grid grid-cols-1 gap-3">
                                             <button 
@@ -973,7 +1180,9 @@ const ToolAdministration: React.FC = () => {
                                                 className="flex items-center justify-center gap-2 p-4 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg transition-colors"
                                             >
                                                 <Edit className="h-5 w-5" />
-                                                <span className="font-semibold">Edit Equipment</span>
+                                                <span className="font-semibold">
+                                                    {getText('Edit Equipment', 'Edit Peralatan')}
+                                                </span>
                                             </button>
                                             
                                             <button 
@@ -984,7 +1193,9 @@ const ToolAdministration: React.FC = () => {
                                                 className="flex items-center justify-center gap-2 p-4 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg transition-colors"
                                             >
                                                 <Trash2 className="h-5 w-5" />
-                                                <span className="font-semibold">Delete Equipment</span>
+                                                <span className="font-semibold">
+                                                    {getText('Delete Equipment', 'Hapus Peralatan')}
+                                                </span>
                                             </button>
                                         </div>
                                     </div>
@@ -995,20 +1206,29 @@ const ToolAdministration: React.FC = () => {
                                     <div>
                                         <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
                                             <AlertTriangle className="h-5 w-5 text-red-600" />
-                                            Missing Equipment Tracking
+                                            {getText('Missing Equipment Tracking', 'Pelacakan Peralatan Hilang')}
                                             {loadingLending && <RefreshCw className="h-4 w-4 animate-spin text-gray-400" />}
                                         </h3>
                                         
                                         {loadingLending ? (
                                             <div className="bg-gray-50 rounded-lg p-8 text-center">
                                                 <RefreshCw className="h-8 w-8 animate-spin text-gray-400 mx-auto mb-4" />
-                                                <p className="text-gray-600">Loading missing items details...</p>
+                                                <p className="text-gray-600">
+                                                    {getText('Loading missing items details...', 'Memuat detail barang hilang...')}
+                                                </p>
                                             </div>
                                         ) : lendingDetails.length === 0 ? (
                                             <div className="bg-green-50 rounded-lg p-8 text-center border border-green-200">
                                                 <CheckCircle className="h-16 w-16 text-green-400 mx-auto mb-4" />
-                                                <h4 className="text-lg font-medium text-green-800 mb-2">All Equipment Returned!</h4>
-                                                <p className="text-green-600">No missing items for this equipment. All borrowed items have been returned successfully.</p>
+                                                <h4 className="text-lg font-medium text-green-800 mb-2">
+                                                    {getText('All Equipment Returned!', 'Semua Peralatan Dikembalikan!')}
+                                                </h4>
+                                                <p className="text-green-600">
+                                                    {getText(
+                                                        'No missing items for this equipment. All borrowed items have been returned successfully.',
+                                                        'Tidak ada barang hilang untuk peralatan ini. Semua barang yang dipinjam telah dikembalikan dengan sukses.'
+                                                    )}
+                                                </p>
                                             </div>
                                         ) : (
                                             <div className="space-y-4">
@@ -1018,9 +1238,14 @@ const ToolAdministration: React.FC = () => {
                                                         <div className="flex items-center">
                                                             <AlertTriangle className="h-6 w-6 text-red-600 mr-3" />
                                                             <div>
-                                                                <h4 className="text-lg font-semibold text-red-800">Missing Equipment Alert</h4>
+                                                                <h4 className="text-lg font-semibold text-red-800">
+                                                                    {getText('Missing Equipment Alert', 'Peringatan Peralatan Hilang')}
+                                                                </h4>
                                                                 <p className="text-sm text-red-600">
-                                                                    The following records show equipment that has not been returned yet.
+                                                                    {getText(
+                                                                        'The following records show equipment that has not been returned yet.',
+                                                                        'Catatan berikut menunjukkan peralatan yang belum dikembalikan.'
+                                                                    )}
                                                                 </p>
                                                             </div>
                                                         </div>
@@ -1028,7 +1253,9 @@ const ToolAdministration: React.FC = () => {
                                                             <div className="text-2xl font-bold text-red-800">
                                                                 {lendingDetails.reduce((sum, detail) => sum + detail.missing_quantity, 0)}
                                                             </div>
-                                                            <div className="text-sm text-red-600">Missing Items</div>
+                                                            <div className="text-sm text-red-600">
+                                                                {getText('Missing Items', 'Barang Hilang')}
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1044,7 +1271,7 @@ const ToolAdministration: React.FC = () => {
                                                                     </div>
                                                                     <div className="flex-1">
                                                                         <h4 className="font-semibold text-gray-900">
-                                                                            {detail.user?.full_name || 'Unknown User'}
+                                                                            {detail.user?.full_name || getText('Unknown User', 'Pengguna Tidak Dikenal')}
                                                                         </h4>
                                                                         <div className="space-y-1 mt-2">
                                                                             <div className="flex items-center text-sm text-gray-600">
@@ -1053,21 +1280,21 @@ const ToolAdministration: React.FC = () => {
                                                                             </div>
                                                                             <div className="flex items-center text-sm text-gray-600">
                                                                                 <Phone className="h-4 w-4 mr-2" />
-                                                                                {detail.user?.phone_number || 'No phone'}
+                                                                                {detail.user?.phone_number || getText('No phone', 'Tidak ada telepon')}
                                                                             </div>
                                                                             <div className="flex items-center text-sm text-gray-600">
                                                                                 <Calendar className="h-4 w-4 mr-2" />
-                                                                                Borrowed: {format(new Date(detail.date), 'MMM d, yyyy h:mm a')}
+                                                                                {getText('Borrowed', 'Dipinjam')}: {format(new Date(detail.date), 'MMM d, yyyy h:mm a')}
                                                                             </div>
                                                                             {detail.checkout && (
                                                                                 <div className="flex items-center text-sm text-gray-600">
                                                                                     <Clock className="h-4 w-4 mr-2" />
-                                                                                    Expected Return: {format(new Date(detail.checkout.expected_return_date), 'MMM d, yyyy h:mm a')}
+                                                                                    {getText('Expected Return', 'Pengembalian Diharapkan')}: {format(new Date(detail.checkout.expected_return_date), 'MMM d, yyyy h:mm a')}
                                                                                 </div>
                                                                             )}
                                                                             <div className={`flex items-center text-sm font-medium ${detail.source === 'booking' ? 'text-purple-600' : 'text-blue-600'}`}>
                                                                                 {detail.source === 'booking' ? <Building className="h-4 w-4 mr-2" /> : <Users className="h-4 w-4 mr-2" />}
-                                                                                Source: {detail.source === 'booking' ? 'Room Booking' : 'Lending Tool'}
+                                                                                {getText('Source', 'Sumber')}: {detail.source === 'booking' ? getText('Room Booking', 'Pemesanan Ruangan') : getText('Lending Tool', 'Peminjaman Alat')}
                                                                             </div>
                                                                         </div>
                                                                     </div>
@@ -1076,11 +1303,13 @@ const ToolAdministration: React.FC = () => {
                                                                 <div className="text-right">
                                                                     <div className="text-center mb-3">
                                                                         <div className="text-3xl font-bold text-red-600">{detail.missing_quantity}</div>
-                                                                        <div className="text-sm text-red-600">Missing {selectedEquipment.unit}</div>
+                                                                        <div className="text-sm text-red-600">
+                                                                            {getText('Missing', 'Hilang')} {selectedEquipment.unit}
+                                                                        </div>
                                                                     </div>
                                                                     
                                                                     <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border bg-red-100 text-red-800 border-red-200">
-                                                                        NEEDS RETURN
+                                                                        {getText('NEEDS RETURN', 'PERLU DIKEMBALIKAN')}
                                                                     </span>
                                                                 </div>
                                                             </div>
@@ -1089,8 +1318,11 @@ const ToolAdministration: React.FC = () => {
                                                                 <div className="flex items-center">
                                                                     <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
                                                                     <span className="text-sm font-medium text-red-800">
-                                                                        {detail.missing_quantity} {selectedEquipment.unit} borrowed and needs to be returned
-                                                                        {detail.source === 'booking' ? ' (from room booking)' : ' (from lending tool)'}
+                                                                        {detail.missing_quantity} {selectedEquipment.unit} {getText('borrowed and needs to be returned', 'dipinjam dan perlu dikembalikan')}
+                                                                        {detail.source === 'booking' ? 
+                                                                            ` (${getText('from room booking', 'dari pemesanan ruangan')})` : 
+                                                                            ` (${getText('from lending tool', 'dari peminjaman alat')})`
+                                                                        }
                                                                     </span>
                                                                 </div>
                                                             </div>
@@ -1116,15 +1348,21 @@ const ToolAdministration: React.FC = () => {
                                 <AlertCircle className="h-8 w-8 text-red-600" />
                             </div>
                             <div className="ml-4">
-                                <h3 className="text-xl font-bold text-gray-900">Delete Equipment</h3>
-                                <p className="text-sm text-gray-600 mt-1">This action cannot be undone</p>
+                                <h3 className="text-xl font-bold text-gray-900">
+                                    {getText('Delete Equipment', 'Hapus Peralatan')}
+                                </h3>
+                                <p className="text-sm text-gray-600 mt-1">
+                                    {getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')}
+                                </p>
                             </div>
                         </div>
                         
                         <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
                             <p className="text-sm text-red-800">
-                                Are you sure you want to delete this equipment? This action will permanently remove 
-                                the equipment from the system and may affect related booking records.
+                                {getText(
+                                    'Are you sure you want to delete this equipment? This action will permanently remove the equipment from the system and may affect related booking records.',
+                                    'Apakah Anda yakin ingin menghapus peralatan ini? Tindakan ini akan menghapus peralatan secara permanen dari sistem dan mungkin mempengaruhi catatan pemesanan terkait.'
+                                )}
                             </p>
                         </div>
                         
@@ -1133,7 +1371,7 @@ const ToolAdministration: React.FC = () => {
                                 onClick={() => setShowDeleteConfirm(null)} 
                                 className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
                             >
-                                Cancel
+                                {getText('Cancel', 'Batal')}
                             </button>
                             <button 
                                 onClick={() => handleDelete(showDeleteConfirm)} 
@@ -1143,12 +1381,12 @@ const ToolAdministration: React.FC = () => {
                                 {loading ? (
                                     <div className="flex items-center justify-center gap-2">
                                         <RefreshCw className="h-4 w-4 animate-spin" />
-                                        Deleting...
+                                        {getText('Deleting...', 'Menghapus...')}
                                     </div>
                                 ) : (
                                     <div className="flex items-center justify-center gap-2">
                                         <Trash2 className="h-4 w-4" />
-                                        Delete Equipment
+                                        {getText('Delete Equipment', 'Hapus Peralatan')}
                                     </div>
                                 )}
                             </button>
