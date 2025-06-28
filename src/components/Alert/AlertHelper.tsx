@@ -60,7 +60,7 @@ export const updateAlertLanguage = (language: 'en' | 'id') => {
       deleteSuccess: 'Berhasil Menghapus Data',
       updateSuccess: 'Berhasil Mengupdate Data',
     
-      addSuccess: 'Failed To Add Data! Please check the requirment data',
+      addSuccess: 'Gagal Menambahkan Data! Mohon check kelengkapan',
       deleteSuccess: 'Failed To Delete the data',
       updateSuccess: 'Failed To Update the data',
       
