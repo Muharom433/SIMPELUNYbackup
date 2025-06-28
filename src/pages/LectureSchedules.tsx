@@ -71,6 +71,7 @@ const rescheduleSchema = z.object({
 type ScheduleForm = z.infer<typeof scheduleSchema>;
 type RescheduleForm = z.infer<typeof rescheduleSchema>;
 
+// ✅ Update interface
 interface LectureSchedule {
   id: string;
   subject_study: string | null;
@@ -85,8 +86,7 @@ interface LectureSchedule {
   day: string | null;
   start_time: string | null;
   end_time: string | null;
-  room: string | null;
-  room_id: string | null;
+  room: string | null; // Pastikan ini string, bukan room_id
   amount: number | null;
   created_at: string;
   updated_at: string;
