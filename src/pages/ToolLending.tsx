@@ -98,6 +98,7 @@ const ToolLending: React.FC = () => {
                         if (existingUser.email && !existingUser.email.includes('@student.edu')) {
                             form.setValue('email', existingUser.email);
                         }
+                        toast.success(getText('Data automatically filled from existing record!', 'Data otomatis terisi dari data yang sudah ada!'));
                     }
                 } catch (error) {
                     console.error('Error fetching user data:', error);
@@ -125,7 +126,7 @@ const ToolLending: React.FC = () => {
             setAvailableEquipment(data || []);
         } catch (error) {
             console.error('Error fetching equipment:', error);
-            alert.error(getText('Failed to load equipment.', 'Gagal memuat peralatan.'));
+            toast.error(getText('Failed to load equipment.', 'Gagal memuat peralatan.'));
         } finally {
             setLoading(false);
         }
@@ -161,7 +162,7 @@ const ToolLending: React.FC = () => {
                     )
                 );
             } else {
-                alert.error(`Maximum available quantity is ${equipment.quantity}`);
+                toast.error(`Maximum available quantity is ${equipment.quantity}`);
             }
         } else {
             setSelectedEquipment(prev => [...prev, { equipment, quantity: 1 }]);
@@ -183,7 +184,7 @@ const ToolLending: React.FC = () => {
                 )
             );
         } else {
-            alert.error(`Maximum available quantity is ${equipment.quantity}`);
+            toast.error(`Maximum available quantity is ${equipment.quantity}`);
         }
     };
 
@@ -193,7 +194,7 @@ const ToolLending: React.FC = () => {
 
     const onSubmit = async (data: LendingForm) => {
         if (selectedEquipment.length === 0) {
-            alert.error(getText('Please select at least one equipment', 'Silakan pilih minimal satu peralatan'));
+            toast.error(getText('Please select at least one equipment', 'Silakan pilih minimal satu peralatan'));
             return;
         }
 
@@ -303,7 +304,7 @@ const ToolLending: React.FC = () => {
                 }
             }
 
-            alert.success(getText('Equipment lending request submitted successfully!', 'Permintaan peminjaman peralatan berhasil dikirim!'));
+            toast.success(getText('Equipment lending request submitted successfully!', 'Permintaan peminjaman peralatan berhasil dikirim!'));
             
             // Reset form and selections
             form.reset({
@@ -317,7 +318,7 @@ const ToolLending: React.FC = () => {
 
         } catch (error: any) {
             console.error('Error creating lending request:', error);
-            alert.error(error.message || getText('Failed to create lending request', 'Gagal membuat permintaan peminjaman'));
+            toast.error(error.message || getText('Failed to create lending request', 'Gagal membuat permintaan peminjaman'));
         } finally {
             setSubmitting(false);
         }
