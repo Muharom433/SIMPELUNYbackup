@@ -1,6 +1,6 @@
 // Update LanguageContext.tsx - tambahkan import sweetAlert
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { updateAlertLanguage } from '../utils/sweetAlert'; // Import SweetAlert function
+import { updateAlertLanguage } from '../components/Alert/AlertHelper'; // Import SweetAlert function
 
 type Language = 'en' | 'id';
 
