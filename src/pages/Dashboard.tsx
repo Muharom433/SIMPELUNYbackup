@@ -392,7 +392,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                       style={{ animation: 'float 6s ease-in-out infinite 3s' }}
                     >
                       <img 
-                        src="/src/assets/Shape.png" 
+                        src={shapeImage } 
                         alt="Shaping Future" 
                         className="w-80 h-auto lg:w-104 drop-shadow-lg"
                         onError={(e) => {
