@@ -1098,77 +1098,78 @@ const handleSubmit = async (data: ScheduleForm) => {
                 </div>
                 
                 {/* Room Dropdown with Search */}
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">{getText('Room', 'Ruangan')} *</label>
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setShowRoomDropdown(!showRoomDropdown)}
-                      className="w-full border-2 border-gray-200 rounded-lg p-3 text-left focus:border-teal-500 focus:ring-0 transition-colors flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-2">
-                        <MapPin className="h-4 w-4 text-gray-400" />
-                        <span className={selectedRoom ? 'text-gray-900' : 'text-gray-500'}>
-                          {selectedRoom 
-                            ? `${selectedRoom.name} (${selectedRoom.code}) - ${selectedRoom.capacity} ${getText('seats', 'kursi')}`
-                            : getText('Select room', 'Pilih ruangan')
-                          }
-                        </span>
-                      </div>
-                      <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${showRoomDropdown ? 'rotate-180' : ''}`} />
-                    </button>
-                    
-                    {showRoomDropdown && (
-                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-hidden">
-                        <div className="p-3 border-b border-gray-200">
-                          <div className="relative">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                            <input
-                              type="text"
-                              placeholder={getText('Search rooms...', 'Cari ruangan...')}
-                              value={roomSearchTerm}
-                              onChange={(e) => setRoomSearchTerm(e.target.value)}
-                              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
-                            />
-                          </div>
-                        </div>
-                        <div className="max-h-40 overflow-y-auto">
-                          {filteredRooms.length === 0 ? (
-                            <div className="p-3 text-sm text-gray-500 text-center">
-                              {getText('No rooms found', 'Tidak ada ruangan ditemukan')}
-                            </div>
-                          ) : (
-                            filteredRooms.map((room) => (
-                              <button
-                                key={room.id}
-                                type="button"
-                                onClick={() => {
-                                  form.setValue('room_id', room.id);
-                                  setShowRoomDropdown(false);
-                                  setRoomSearchTerm('');
-                                }}
-                                className="w-full p-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0 transition-colors"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <div className="text-sm font-medium text-gray-900">{room.name}</div>
-                                    <div className="text-xs text-gray-500">{room.code}</div>
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {room.capacity} {getText('seats', 'kursi')}
-                                  </div>
-                                </div>
-                              </button>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    )}
+               // ✅ Update form field di modal
+<div className="space-y-2">
+  <label className="block text-sm font-semibold text-gray-700">{getText('Room', 'Ruangan')} *</label>
+  <div className="relative">
+    <button
+      type="button"
+      onClick={() => setShowRoomDropdown(!showRoomDropdown)}
+      className="w-full border-2 border-gray-200 rounded-lg p-3 text-left focus:border-teal-500 focus:ring-0 transition-colors flex items-center justify-between"
+    >
+      <div className="flex items-center gap-2">
+        <MapPin className="h-4 w-4 text-gray-400" />
+        <span className={selectedRoom ? 'text-gray-900' : 'text-gray-500'}>
+          {selectedRoom 
+            ? `${selectedRoom.name} (${selectedRoom.code}) - ${selectedRoom.capacity} ${getText('seats', 'kursi')}`
+            : getText('Select room', 'Pilih ruangan')
+          }
+        </span>
+      </div>
+      <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${showRoomDropdown ? 'rotate-180' : ''}`} />
+    </button>
+    
+    {showRoomDropdown && (
+      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-hidden">
+        <div className="p-3 border-b border-gray-200">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder={getText('Search rooms...', 'Cari ruangan...')}
+              value={roomSearchTerm}
+              onChange={(e) => setRoomSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+            />
+          </div>
+        </div>
+        <div className="max-h-40 overflow-y-auto">
+          {filteredRooms.length === 0 ? (
+            <div className="p-3 text-sm text-gray-500 text-center">
+              {getText('No rooms found', 'Tidak ada ruangan ditemukan')}
+            </div>
+          ) : (
+            filteredRooms.map((room) => (
+              <button
+                key={room.id}
+                type="button"
+                onClick={() => {
+                  form.setValue('room', room.id); // Simpan ID untuk sementara, nanti di-convert ke nama
+                  setShowRoomDropdown(false);
+                  setRoomSearchTerm('');
+                }}
+                className="w-full p-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">{room.name}</div>
+                    <div className="text-xs text-gray-500">{room.code}</div>
                   </div>
-                  {form.formState.errors.room_id && (
-                    <p className="text-red-500 text-sm">{form.formState.errors.room_id.message}</p>
-                  )}
+                  <div className="text-xs text-gray-500">
+                    {room.capacity} {getText('seats', 'kursi')}
+                  </div>
                 </div>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    )}
+  </div>
+  {form.formState.errors.room && (
+    <p className="text-red-500 text-sm">{form.formState.errors.room.message}</p>
+  )}
+</div>
               </div>
 
               <div className="space-y-2">
