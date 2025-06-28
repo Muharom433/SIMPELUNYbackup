@@ -1060,9 +1060,129 @@ const ToolAdministration: React.FC = () => {
                 </div>
             )}
             
-            {/* Continue with the rest of the component (Detail Modal, Delete Modal, etc.) */}
-            {/* Rest of the modals remain the same as they already have proper language support */}
-            
+            {/* Equipment Detail Modal with Enhanced Lending Tracking */}
+            {selectedEquipment && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+                        <div className="bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-600 p-6 text-white">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <h2 className="text-3xl font-bold mb-2">{selectedEquipment.name}</h2>
+                                    <div className="flex items-center gap-2">
+                                        <Hash className="h-4 w-4 opacity-80" />
+                                        <span className="font-mono text-lg opacity-90">{selectedEquipment.code}</span>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => setSelectedEquipment(null)} 
+                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                                >
+                                    <X className="h-6 w-6" />
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div className="p-8 overflow-y-auto flex-1">
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                {/* Equipment Details */}
+                                <div className="space-y-6">
+                                    <div>
+                                        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                            <Package className="h-5 w-5 text-blue-600" />
+                                            {getText('Equipment Details', 'Detail Peralatan')}
+                                        </h3>
+                                        <div className="bg-gray-50 rounded-lg p-6 space-y-4">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Category', 'Kategori')}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    {(() => {
+                                                        const config = getCategoryConfig(selectedEquipment.category);
+                                                        const CategoryIcon = config.icon;
+                                                        return (
+                                                            <>
+                                                                <CategoryIcon className="h-4 w-4 text-gray-600" />
+                                                                <span className="font-semibold text-gray-900">{selectedEquipment.category}</span>
+                                                            </>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Condition', 'Kondisi')}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    {(() => {
+                                                        const config = getConditionConfig(selectedEquipment.condition);
+                                                        const ConditionIcon = config.icon;
+                                                        return (
+                                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${config.className}`}>
+                                                                <ConditionIcon className="h-3 w-3" />
+                                                                {config.label}
+                                                            </span>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Status', 'Status')}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    {(() => {
+                                                        const config = getStatusConfig(selectedEquipment.is_available);
+                                                        const StatusIcon = config.icon;
+                                                        return (
+                                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${config.className}`}>
+                                                                <StatusIcon className="h-3 w-3" />
+                                                                {config.label}
+                                                            </span>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Location', 'Lokasi')}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    <MapPin className="h-4 w-4 text-gray-600" />
+                                                    <span className="font-semibold text-gray-900">
+                                                        {selectedEquipment.rooms?.name || getText('Unassigned', 'Belum Ditentukan')}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Department', 'Departemen')}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    <Building className="h-4 w-4 text-gray-600" />
+                                                    <span className="font-semibold text-gray-900">
+                                                        {selectedEquipment.rooms?.department?.name || 'N/A'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Quantity', 'Jumlah')}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    <Package className="h-4 w-4 text-gray-600" />
+                                                    <span className="font-bold text-lg text-gray-900">
+                                                        {selectedEquipment.quantity} {selectedEquipment.unit}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
         </div>
     );
 };
