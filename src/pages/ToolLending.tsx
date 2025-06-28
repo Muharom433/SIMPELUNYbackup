@@ -295,7 +295,7 @@ const ToolLending: React.FC = () => {
                             study_program_id: data.study_program_id,
                             department_id: departmentId,
                             role: 'student',
-                            password: data.identity_number // Password = identity number (plain text, sesuai sistem lama)
+                            password: data.identity_number 
                         })
                         .select('id')
                         .single();
