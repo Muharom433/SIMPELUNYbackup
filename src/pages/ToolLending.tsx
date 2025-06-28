@@ -709,7 +709,8 @@ const ToolLending: React.FC = () => {
                                                             {filteredIdentityNumbers.map((user) => (
                                                                 <div
                                                                     key={user.id}
-                                                                    onClick={() => {
+                                                                    onMouseDown={(e) => {
+                                                                        e.preventDefault(); // Mencegah onBlur dipanggil
                                                                         setIdentitySearchTerm(user.identity_number);
                                                                         form.setValue('identity_number', user.identity_number);
                                                                         setShowIdentityDropdown(false);
@@ -798,7 +799,8 @@ const ToolLending: React.FC = () => {
                                                                     {filteredStudyPrograms.map((program) => (
                                                                         <div
                                                                             key={program.id}
-                                                                            onClick={() => {
+                                                                            onMouseDown={(e) => {
+                                                                                e.preventDefault(); // Mencegah onBlur dipanggil
                                                                                 const displayText = `${program.name} (${program.code}) - ${program.department?.name}`;
                                                                                 setStudyProgramSearchTerm(displayText);
                                                                                 form.setValue('study_program_id', program.id);
