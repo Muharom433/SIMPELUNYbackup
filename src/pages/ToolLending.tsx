@@ -12,6 +12,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Equipment, User as UserType, StudyProgram, Department } from '../types';
 import toast from 'react-hot-toast';
+import { alert } from '../components/Alert/AlertHelper';
 import { format } from 'date-fns';
 
 // Constants for lending status
