@@ -116,7 +116,7 @@ const ToolLending: React.FC = () => {
                                 setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`);
                             }
                         }
-                        alert.success(getText('Data automatically filled from existing record!', 'Data otomatis terisi dari data yang sudah ada!'));
+                        
                     }
                 } catch (error) {
                     console.error('Error fetching user data:', error);
