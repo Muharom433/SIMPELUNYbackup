@@ -1182,7 +1182,245 @@ const ToolAdministration: React.FC = () => {
                                                 </div>
                                             </div>
                                             
-                                            <div className="flex justify-between items-center">
+                                            <div className="flex justify-between items-center"><span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Created', 'Dibuat')}
+                                                </span>
+                                                <span className="text-sm text-gray-700">
+                                                    {format(new Date(selectedEquipment.created_at), 'MMM d, yyyy')}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Quick Actions */}
+                                    <div>
+                                        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                            <Wrench className="h-5 w-5 text-blue-600" />
+                                            {getText('Quick Actions', 'Aksi Cepat')}
+                                        </h3>
+                                        <div className="grid grid-cols-1 gap-3">
+                                            <button 
+                                                onClick={() => {
+                                                    setSelectedEquipment(null);
+                                                    handleEdit(selectedEquipment);
+                                                }}
+                                                className="flex items-center justify-center gap-2 p-4 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg transition-colors"
+                                            >
+                                                <Edit className="h-5 w-5" />
+                                                <span className="font-semibold">
+                                                    {getText('Edit Equipment', 'Edit Peralatan')}
+                                                </span>
+                                            </button>
+                                            
+                                            <button 
+                                                onClick={() => {
+                                                    setSelectedEquipment(null);
+                                                    setShowDeleteConfirm(selectedEquipment.id);
+                                                }}
+                                                className="flex items-center justify-center gap-2 p-4 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg transition-colors"
+                                            >
+                                                <Trash2 className="h-5 w-5" />
+                                                <span className="font-semibold">
+                                                    {getText('Delete Equipment', 'Hapus Peralatan')}
+                                                </span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Enhanced Missing Items Tracking */}
+                                <div className="lg:col-span-2 space-y-6">
+                                    <div>
+                                        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                            <AlertTriangle className="h-5 w-5 text-red-600" />
+                                            {getText('Missing Equipment Tracking', 'Pelacakan Peralatan Hilang')}
+                                            {loadingLending && <RefreshCw className="h-4 w-4 animate-spin text-gray-400" />}
+                                        </h3>
+                                        
+                                        {loadingLending ? (
+                                            <div className="bg-gray-50 rounded-lg p-8 text-center">
+                                                <RefreshCw className="h-8 w-8 animate-spin text-gray-400 mx-auto mb-4" />
+                                                <p className="text-gray-600">
+                                                    {getText('Loading missing items details...', 'Memuat detail barang hilang...')}
+                                                </p>
+                                            </div>
+                                        ) : lendingDetails.length === 0 ? (
+                                            <div className="bg-green-50 rounded-lg p-8 text-center border border-green-200">
+                                                <CheckCircle className="h-16 w-16 text-green-400 mx-auto mb-4" />
+                                                <h4 className="text-lg font-medium text-green-800 mb-2">
+                                                    {getText('All Equipment Returned!', 'Semua Peralatan Dikembalikan!')}
+                                                </h4>
+                                                <p className="text-green-600">
+                                                    {getText(
+                                                        'No missing items for this equipment. All borrowed items have been returned successfully.',
+                                                        'Tidak ada barang hilang untuk peralatan ini. Semua barang yang dipinjam telah dikembalikan dengan sukses.'
+                                                    )}
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-4">
+                                                {/* Header for Missing Items */}
+                                                <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center">
+                                                            <AlertTriangle className="h-6 w-6 text-red-600 mr-3" />
+                                                            <div>
+                                                                <h4 className="text-lg font-semibold text-red-800">
+                                                                    {getText('Missing Equipment Alert', 'Peringatan Peralatan Hilang')}
+                                                                </h4>
+                                                                <p className="text-sm text-red-600">
+                                                                    {getText(
+                                                                        'The following records show equipment that has not been returned yet.',
+                                                                        'Catatan berikut menunjukkan peralatan yang belum dikembalikan.'
+                                                                    )}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <div className="text-2xl font-bold text-red-800">
+                                                                {lendingDetails.reduce((sum, detail) => sum + detail.missing_quantity, 0)}
+                                                            </div>
+                                                            <div className="text-sm text-red-600">
+                                                                {getText('Missing Items', 'Barang Hilang')}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Missing Items Records */}
+                                                <div className="space-y-3">
+                                                    {lendingDetails.map((detail) => (
+                                                        <div key={detail.id} className="border border-red-200 bg-red-50 rounded-lg p-4">
+                                                            <div className="flex items-start justify-between">
+                                                                <div className="flex items-start space-x-4">
+                                                                    <div className={`flex-shrink-0 h-12 w-12 rounded-full flex items-center justify-center ${detail.source === 'booking' ? 'bg-gradient-to-r from-purple-500 to-indigo-500' : 'bg-gradient-to-r from-red-500 to-pink-500'}`}>
+                                                                        {detail.source === 'booking' ? <Building className="h-6 w-6 text-white" /> : <User className="h-6 w-6 text-white" />}
+                                                                    </div>
+                                                                    <div className="flex-1">
+                                                                        <h4 className="font-semibold text-gray-900">
+                                                                            {detail.user?.full_name || getText('Unknown User', 'Pengguna Tidak Dikenal')}
+                                                                        </h4>
+                                                                        <div className="space-y-1 mt-2">
+                                                                            <div className="flex items-center text-sm text-gray-600">
+                                                                                <CreditCard className="h-4 w-4 mr-2" />
+                                                                                ID: {detail.user?.identity_number || 'N/A'}
+                                                                            </div>
+                                                                            <div className="flex items-center text-sm text-gray-600">
+                                                                                <Phone className="h-4 w-4 mr-2" />
+                                                                                {detail.user?.phone_number || getText('No phone', 'Tidak ada telepon')}
+                                                                            </div>
+                                                                            <div className="flex items-center text-sm text-gray-600">
+                                                                                <Calendar className="h-4 w-4 mr-2" />
+                                                                                {getText('Borrowed', 'Dipinjam')}: {format(new Date(detail.date), 'MMM d, yyyy h:mm a')}
+                                                                            </div>
+                                                                            {detail.checkout && (
+                                                                                <div className="flex items-center text-sm text-gray-600">
+                                                                                    <Clock className="h-4 w-4 mr-2" />
+                                                                                    {getText('Expected Return', 'Pengembalian Diharapkan')}: {format(new Date(detail.checkout.expected_return_date), 'MMM d, yyyy h:mm a')}
+                                                                                </div>
+                                                                            )}
+                                                                            <div className={`flex items-center text-sm font-medium ${detail.source === 'booking' ? 'text-purple-600' : 'text-blue-600'}`}>
+                                                                                {detail.source === 'booking' ? <Building className="h-4 w-4 mr-2" /> : <Users className="h-4 w-4 mr-2" />}
+                                                                                {getText('Source', 'Sumber')}: {detail.source === 'booking' ? getText('Room Booking', 'Pemesanan Ruangan') : getText('Lending Tool', 'Peminjaman Alat')}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                <div className="text-right">
+                                                                    <div className="text-center mb-3">
+                                                                        <div className="text-3xl font-bold text-red-600">{detail.missing_quantity}</div>
+                                                                        <div className="text-sm text-red-600">
+                                                                            {getText('Missing', 'Hilang')} {selectedEquipment.unit}
+                                                                        </div>
+                                                                    </div>
+                                                                    
+                                                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border bg-red-100 text-red-800 border-red-200">
+                                                                        {getText('NEEDS RETURN', 'PERLU DIKEMBALIKAN')}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            <div className="mt-4 p-3 bg-red-100 border border-red-200 rounded-md">
+                                                                <div className="flex items-center">
+                                                                    <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
+                                                                    <span className="text-sm font-medium text-red-800">
+                                                                        {detail.missing_quantity} {selectedEquipment.unit} {getText('borrowed and needs to be returned', 'dipinjam dan perlu dikembalikan')}
+                                                                        {detail.source === 'booking' ? 
+                                                                            ` (${getText('from room booking', 'dari pemesanan ruangan')})` : 
+                                                                            ` (${getText('from lending tool', 'dari peminjaman alat')})`
+                                                                        }
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* Delete Confirmation Modal */}
+            {showDeleteConfirm && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+                        <div className="flex items-center mb-6">
+                            <div className="flex-shrink-0 p-3 bg-red-100 rounded-full">
+                                <AlertCircle className="h-8 w-8 text-red-600" />
+                            </div>
+                            <div className="ml-4">
+                                <h3 className="text-xl font-bold text-gray-900">
+                                    {getText('Delete Equipment', 'Hapus Peralatan')}
+                                </h3>
+                                <p className="text-sm text-gray-600 mt-1">
+                                    {getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')}
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                            <p className="text-sm text-red-800">
+                                {getText(
+                                    'Are you sure you want to delete this equipment? This action will permanently remove the equipment from the system and may affect related booking records.',
+                                    'Apakah Anda yakin ingin menghapus peralatan ini? Tindakan ini akan menghapus peralatan secara permanen dari sistem dan mungkin mempengaruhi catatan pemesanan terkait.'
+                                )}
+                            </p>
+                        </div>
+                        
+                        <div className="flex space-x-3">
+                            <button 
+                                onClick={() => setShowDeleteConfirm(null)} 
+                                className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
+                            >
+                                {getText('Cancel', 'Batal')}
+                            </button>
+                            <button 
+                                onClick={() => handleDelete(showDeleteConfirm)} 
+                                disabled={loading} 
+                                className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-semibold transition-colors shadow-lg"
+                            >
+                                {loading ? (
+                                    <div className="flex items-center justify-center gap-2">
+                                        <RefreshCw className="h-4 w-4 animate-spin" />
+                                        {getText('Deleting...', 'Menghapus...')}
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center justify-center gap-2">
+                                        <Trash2 className="h-4 w-4" />
+                                        {getText('Delete Equipment', 'Hapus Peralatan')}
+                                    </div>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
