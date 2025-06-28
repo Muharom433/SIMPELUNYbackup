@@ -311,7 +311,7 @@ const CheckOut: React.FC = () => {
 
     } catch (error) {
       console.error('Error fetching records:', error);
-      toast.error(getText('Failed to load records', 'Gagal memuat data'));
+      alert.error(getText('Failed to load records', 'Gagal memuat data'));
     } finally {
       setLoading(false);
     }
@@ -344,13 +344,13 @@ const CheckOut: React.FC = () => {
 
     // Validate file type
     if (!file.type.startsWith('image/')) {
-      toast.error(getText('Please select an image file', 'Silakan pilih file gambar'));
+      alert.error(getText('Please select an image file', 'Silakan pilih file gambar'));
       return;
     }
 
     // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      toast.error(getText('Image size must be less than 5MB', 'Ukuran gambar harus kurang dari 5MB'));
+      alert.error(getText('Image size must be less than 5MB', 'Ukuran gambar harus kurang dari 5MB'));
       return;
     }
 
@@ -368,13 +368,13 @@ const CheckOut: React.FC = () => {
         const newAttachments = [...attachments, base64String];
         setAttachments(newAttachments);
         form.setValue('attachments', newAttachments);
-        toast.success(getText('Image uploaded successfully', 'Gambar berhasil diunggah'));
+        alert.success(getText('Image uploaded successfully', 'Gambar berhasil diunggah'));
       };
       reader.readAsDataURL(file);
       
     } catch (error) {
       console.error('Error uploading image:', error);
-      toast.error(getText('Failed to upload image', 'Gagal mengunggah gambar'));
+      alert.error(getText('Failed to upload image', 'Gagal mengunggah gambar'));
     } finally {
       setUploadingImage(false);
     }
@@ -391,7 +391,7 @@ const CheckOut: React.FC = () => {
       setLoading(true);
 
       if (!selectedRecord) {
-        toast.error(getText('Please select a record to check out', 'Silakan pilih data untuk check out'));
+        alert.error(getText('Please select a record to check out', 'Silakan pilih data untuk check out'));
         return;
       }
 
@@ -437,7 +437,7 @@ const CheckOut: React.FC = () => {
 
         if (lendingUpdateError) {
           console.error('Error updating lending tool status:', lendingUpdateError);
-          toast.error(getText('Checkout completed but failed to update lending tool status', 'Checkout selesai tapi gagal memperbarui status peminjaman alat'));
+          alert.error(getText('Checkout completed but failed to update lending tool status', 'Checkout selesai tapi gagal memperbarui status peminjaman alat'));
         } else {
           console.log('Lending tool status updated to completed');
         }
@@ -482,7 +482,7 @@ const CheckOut: React.FC = () => {
 
         if (bookingUpdateError) {
           console.error('Error updating booking status:', bookingUpdateError);
-          toast.error(getText('Checkout completed but failed to update booking status', 'Checkout selesai tapi gagal memperbarui status pemesanan'));
+          alert.error(getText('Checkout completed but failed to update booking status', 'Checkout selesai tapi gagal memperbarui status pemesanan'));
         } else {
           console.log('Booking status updated to completed');
         }
@@ -522,13 +522,13 @@ const CheckOut: React.FC = () => {
 
         if (reportError) {
           console.error('Error creating report:', reportError);
-          toast.error(getText('Checkout completed but failed to submit report', 'Checkout selesai tapi gagal mengirim laporan'));
+          alert.error(getText('Checkout completed but failed to submit report', 'Checkout selesai tapi gagal mengirim laporan'));
         } else {
           console.log('Issue report created successfully');
-          toast.success(getText('Checkout completed and issue reported successfully!', 'Checkout selesai dan masalah berhasil dilaporkan!'));
+          alert.success(getText('Checkout completed and issue reported successfully!', 'Checkout selesai dan masalah berhasil dilaporkan!'));
         }
       } else {
-        toast.success(getText('Checkout completed successfully!', 'Checkout berhasil diselesaikan!'));
+        alert.success(getText('Checkout completed successfully!', 'Checkout berhasil diselesaikan!'));
       }
 
       // Reset form and refresh data
@@ -547,7 +547,7 @@ const CheckOut: React.FC = () => {
 
     } catch (error: any) {
       console.error('Error processing checkout:', error);
-      toast.error(error.message || getText('Failed to process checkout', 'Gagal memproses checkout'));
+      alert.error(error.message || getText('Failed to process checkout', 'Gagal memproses checkout'));
     } finally {
       setLoading(false);
     }
