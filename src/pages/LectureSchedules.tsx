@@ -234,52 +234,57 @@ const fetchSchedules = async () => {
     }
   };
 
-  const handleSubmit = async (data: ScheduleForm) => {
-    try {
-      setLoading(true);
-      const scheduleData = {
-        course_name: data.course_name,
-        course_code: data.course_code,
-        lecturer: data.lecturer,
-        room_id: data.room_id,
-        subject_study: data.subject_study,
-        day: data.day,
-        start_time: data.start_time,
-        end_time: data.end_time,
-        semester: data.semester,
-        academics_year: data.academics_year,
-        type: data.type,
-        class: data.class,
-        amount: data.amount,
-        kurikulum: data.kurikulum,
-      };
+  // ✅ Update handleSubmit
+const handleSubmit = async (data: ScheduleForm) => {
+  try {
+    setLoading(true);
+    
+    // Dapatkan nama room dari rooms berdasarkan room_id yang dipilih
+    const selectedRoomData = rooms.find(r => r.id === data.room);
+    
+    const scheduleData = {
+      course_name: data.course_name,
+      course_code: data.course_code,
+      lecturer: data.lecturer,
+      room: selectedRoomData?.name || data.room, // Simpan nama room, bukan ID
+      subject_study: data.subject_study,
+      day: data.day,
+      start_time: data.start_time,
+      end_time: data.end_time,
+      semester: data.semester,
+      academics_year: data.academics_year,
+      type: data.type,
+      class: data.class,
+      amount: data.amount,
+      kurikulum: data.kurikulum,
+    };
 
-      if (editingSchedule) {
-        const { error } = await supabase
-          .from('lecture_schedules')
-          .update(scheduleData)
-          .eq('id', editingSchedule.id);
-        if (error) throw error;
-        toast.success(getText('Schedule updated successfully!', 'Jadwal berhasil diperbarui!'));
-      } else {
-        const { error } = await supabase
-          .from('lecture_schedules')
-          .insert(scheduleData);
-        if (error) throw error;
-        toast.success(getText('Schedule created successfully!', 'Jadwal berhasil dibuat!'));
-      }
-
-      setShowModal(false);
-      setEditingSchedule(null);
-      form.reset();
-      fetchSchedules();
-    } catch (error: any) {
-      console.error('Error saving schedule:', error);
-      toast.error(error.message || 'Failed to save schedule');
-    } finally {
-      setLoading(false);
+    if (editingSchedule) {
+      const { error } = await supabase
+        .from('lecture_schedules')
+        .update(scheduleData)
+        .eq('id', editingSchedule.id);
+      if (error) throw error;
+      toast.success(getText('Schedule updated successfully!', 'Jadwal berhasil diperbarui!'));
+    } else {
+      const { error } = await supabase
+        .from('lecture_schedules')
+        .insert(scheduleData);
+      if (error) throw error;
+      toast.success(getText('Schedule created successfully!', 'Jadwal berhasil dibuat!'));
     }
-  };
+
+    setShowModal(false);
+    setEditingSchedule(null);
+    form.reset();
+    fetchSchedules();
+  } catch (error: any) {
+    console.error('Error saving schedule:', error);
+    toast.error(error.message || 'Failed to save schedule');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleRescheduleSubmit = async (data: RescheduleForm) => {
     try {
