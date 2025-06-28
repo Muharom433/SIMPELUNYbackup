@@ -1,180 +1,70 @@
-// src/utils/sweetAlert.ts
+// src/utils/sweetAlert.ts - VERSI SIMPLE
 import Swal from 'sweetalert2';
 
-// Global messages yang bisa diubah berdasarkan bahasa
-export let ALERT_MESSAGES = {
-  // Success messages
-  bookingSuccess: 'Booking submitted successfully!',
-  bookingUpdated: 'Booking updated successfully',
-  bookingDeleted: 'Booking deleted successfully',
-  checkoutSuccess: 'Checkout completed successfully!',
-  lendingSuccess: 'Equipment lending request submitted successfully!',
-  examCreated: 'Exam created successfully',
-  examUpdated: 'Exam updated successfully',
-  examDeleted: 'Exam deleted successfully',
-  addSuccess: 'Success To Add Data! Thank you for submiting',
-  deleteSuccess: 'Success To Delete the data',
-  updateSuccess: 'Success To Update the data',
+// Global language state
+let currentLanguage: 'en' | 'id' = 'en';
 
-  addFailed: 'Failed To Add Data! Please check the requirment data',
-  deleteFailed: 'Failed To Delete the data',
-  updateFailed: 'Failed To Update the data',
-  
-  // Error messages
-  bookingFailed: 'Failed to create booking',
-  checkoutFailed: 'Failed to process checkout',
-  lendingFailed: 'Failed to create lending request',
-  loadFailed: 'Failed to load data',
-  updateFailed: 'Failed to update',
-  deleteFailed: 'Failed to delete',
-  selectRoom: 'Please select a room',
-  selectEquipment: 'Please select at least one equipment',
-  
-  // Confirm messages
-  confirmDelete: 'Are you sure?',
-  confirmDeleteText: 'You won\'t be able to revert this!',
-  confirmDeleteButton: 'Yes, delete it!',
-  cancelButton: 'Cancel',
-  
-  // Button texts
-  ok: 'OK',
-  success: 'Success!',
-  error: 'Error!',
-  warning: 'Warning!',
-};
-
-// Function to update messages based on language
+// Function to update language
 export const updateAlertLanguage = (language: 'en' | 'id') => {
-  if (language === 'id') {
-    ALERT_MESSAGES = {
-      // Success messages
-      bookingSuccess: 'Pemesanan berhasil dikirim!',
-      bookingUpdated: 'Pemesanan berhasil diperbarui',
-      bookingDeleted: 'Pemesanan berhasil dihapus',
-      checkoutSuccess: 'Checkout berhasil diselesaikan!',
-      lendingSuccess: 'Permintaan peminjaman peralatan berhasil dikirim!',
-      examCreated: 'Ujian berhasil dibuat',
-      examUpdated: 'Ujian berhasil diperbarui',
-      examDeleted: 'Ujian berhasil dihapus',
-      addSuccess: 'Berhasil Menambah Data! Luar biasa terimakasih',
-      deleteSuccess: 'Berhasil Menghapus Data',
-      updateSuccess: 'Berhasil Mengupdate Data',
-    
-      addFailed: 'Gagal Menambahkan Data! Mohon check kelengkapan',
-      deleteFailed: 'Gagal Menghapus Data',
-      updateFailed: 'Gagal Menghapus Data',
-      
-      // Error messages
-      bookingFailed: 'Gagal membuat pemesanan',
-      checkoutFailed: 'Gagal memproses checkout',
-      lendingFailed: 'Gagal membuat permintaan peminjaman',
-      loadFailed: 'Gagal memuat data',
-      updateFailed: 'Gagal memperbarui',
-      deleteFailed: 'Gagal menghapus',
-      selectRoom: 'Silakan pilih ruangan',
-      selectEquipment: 'Silakan pilih minimal satu peralatan',
-      
-      // Confirm messages
-      confirmDelete: 'Apakah Anda yakin?',
-      confirmDeleteText: 'Anda tidak akan bisa membatalkan ini!',
-      confirmDeleteButton: 'Ya, hapus!',
-      cancelButton: 'Batal',
-      
-      // Button texts
-      ok: 'OK',
-      success: 'Berhasil!',
-      error: 'Error!',
-      warning: 'Peringatan!',
-    };
-  } else {
-    // Reset to English (original values above)
-    ALERT_MESSAGES = {
-      bookingSuccess: 'Booking submitted successfully!',
-      bookingUpdated: 'Booking updated successfully',
-      bookingDeleted: 'Booking deleted successfully',
-      checkoutSuccess: 'Checkout completed successfully!',
-      lendingSuccess: 'Equipment lending request submitted successfully!',
-      examCreated: 'Exam created successfully',
-      examUpdated: 'Exam updated successfully',
-      examDeleted: 'Exam deleted successfully',
-      bookingFailed: 'Failed to create booking',
-      checkoutFailed: 'Failed to process checkout',
-      lendingFailed: 'Failed to create lending request',
-      loadFailed: 'Failed to load data',
-      updateFailed: 'Failed to update',
-      deleteFailed: 'Failed to delete',
-      selectRoom: 'Please select a room',
-      selectEquipment: 'Please select at least one equipment',
-      confirmDelete: 'Are you sure?',
-      confirmDeleteText: 'You won\'t be able to revert this!',
-      confirmDeleteButton: 'Yes, delete it!',
-      cancelButton: 'Cancel',
-      ok: 'OK',
-      success: 'Success!',
-      error: 'Error!',
-      warning: 'Warning!',
-    };
-  }
+  currentLanguage = language;
 };
 
-// Sweet Alert wrapper functions
-export const showSuccess = (message: string) => {
-  Swal.fire({
-    icon: 'success',
-    title: ALERT_MESSAGES.success,
-    text: message,
-    confirmButtonText: ALERT_MESSAGES.ok,
-    confirmButtonColor: '#10B981',
-    timer: 3000,
-    timerProgressBar: true,
-  });
-};
-
-export const showError = (message: string) => {
-  Swal.fire({
-    icon: 'error',
-    title: ALERT_MESSAGES.error,
-    text: message,
-    confirmButtonText: ALERT_MESSAGES.ok,
-    confirmButtonColor: '#EF4444',
-  });
-};
-
-export const showWarning = (message: string) => {
-  Swal.fire({
-    icon: 'warning',
-    title: ALERT_MESSAGES.warning,
-    text: message,
-    confirmButtonText: ALERT_MESSAGES.ok,
-    confirmButtonColor: '#F59E0B',
-  });
-};
-
-export const showConfirm = (onConfirm: () => void, customText?: string) => {
-  Swal.fire({
-    title: ALERT_MESSAGES.confirmDelete,
-    text: customText || ALERT_MESSAGES.confirmDeleteText,
-    icon: 'warning',
-    showCancelButton: true,
-    confirmButtonColor: '#EF4444',
-    cancelButtonColor: '#6B7280',
-    confirmButtonText: ALERT_MESSAGES.confirmDeleteButton,
-    cancelButtonText: ALERT_MESSAGES.cancelButton,
-  }).then((result) => {
-    if (result.isConfirmed) {
-      onConfirm();
-    }
-  });
-};
-
-// Quick use functions (using ALERT_MESSAGES keys)
+// Simple alert functions yang langsung terima 2 parameter
 export const alert = {
-  success: (messageKey: keyof typeof ALERT_MESSAGES) => showSuccess(ALERT_MESSAGES[messageKey]),
-  error: (messageKey: keyof typeof ALERT_MESSAGES) => showError(ALERT_MESSAGES[messageKey]),
-  warning: (messageKey: keyof typeof ALERT_MESSAGES) => showWarning(ALERT_MESSAGES[messageKey]),
-  
-  // Custom messages
-  successCustom: (message: string) => showSuccess(message),
-  errorCustom: (message: string) => showError(message),
-  warningCustom: (message: string) => showWarning(message),
+  success: (enText: string, idText: string = '') => {
+    const message = currentLanguage === 'id' && idText ? idText : enText;
+    Swal.fire({
+      icon: 'success',
+      title: currentLanguage === 'id' ? 'Berhasil!' : 'Success!',
+      text: message,
+      confirmButtonText: currentLanguage === 'id' ? 'OK' : 'OK',
+      confirmButtonColor: '#10B981',
+      timer: 3000,
+      timerProgressBar: true,
+    });
+  },
+
+  error: (enText: string, idText: string = '') => {
+    const message = currentLanguage === 'id' && idText ? idText : enText;
+    Swal.fire({
+      icon: 'error',
+      title: currentLanguage === 'id' ? 'Error!' : 'Error!',
+      text: message,
+      confirmButtonText: currentLanguage === 'id' ? 'OK' : 'OK',
+      confirmButtonColor: '#EF4444',
+    });
+  },
+
+  warning: (enText: string, idText: string = '') => {
+    const message = currentLanguage === 'id' && idText ? idText : enText;
+    Swal.fire({
+      icon: 'warning',
+      title: currentLanguage === 'id' ? 'Peringatan!' : 'Warning!',
+      text: message,
+      confirmButtonText: currentLanguage === 'id' ? 'OK' : 'OK',
+      confirmButtonColor: '#F59E0B',
+    });
+  },
+
+  confirm: (onConfirm: () => void, enText?: string, idText?: string) => {
+    const title = currentLanguage === 'id' ? 'Apakah Anda yakin?' : 'Are you sure?';
+    const text = currentLanguage === 'id' && idText ? idText : (enText || 'You won\'t be able to revert this!');
+    const confirmBtn = currentLanguage === 'id' ? 'Ya, hapus!' : 'Yes, delete it!';
+    const cancelBtn = currentLanguage === 'id' ? 'Batal' : 'Cancel';
+
+    Swal.fire({
+      title: title,
+      text: text,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#EF4444',
+      cancelButtonColor: '#6B7280',
+      confirmButtonText: confirmBtn,
+      cancelButtonText: cancelBtn,
+    }).then((result) => {
+      if (result.isConfirmed) {
+        onConfirm();
+      }
+    });
+  }
 };
