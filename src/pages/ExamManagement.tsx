@@ -482,8 +482,8 @@ const ExamManagement = () => {
                     .from('exams') 
                     .update(examData) 
                     .eq('id', editingExam.id); 
-                if (error) throw error; 
-                alert.success(getText('Exam updated successfully', 'Ujian berhasil diperbarui')); 
+                if (error) { throw error } else { 
+                alert.success(getText('Exam updated successfully', 'Ujian berhasil diperbarui')); }
                 setShowModal(false);
                 setEditingExam(null); 
             } else { 
