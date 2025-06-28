@@ -191,17 +191,6 @@ const ToolLending: React.FC = () => {
         }
     };
 
-    // Password hashing function - based on AuthForm pattern
-    const hashPassword = async (password: string): Promise<string> => {
-        // Simple hash using Web Crypto API (same as would be used in AuthForm)
-        const encoder = new TextEncoder();
-        const data = encoder.encode(password);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        return hashHex;
-    };
-
     const addEquipment = (equipment: Equipment) => {
         const existing = selectedEquipment.find(item => item.equipment.id === equipment.id);
         if (existing) {
@@ -294,9 +283,7 @@ const ToolLending: React.FC = () => {
                         console.warn('Error updating user data:', updateError);
                     }
                 } else {
-                    // User doesn't exist, create new user with encrypted password
-                    const hashedPassword = await hashPassword(data.identity_number);
-                    
+                    // User doesn't exist, create new user with identity_number as password
                     const { data: newUser, error: createUserError } = await supabase
                         .from('users')
                         .insert({
@@ -308,7 +295,7 @@ const ToolLending: React.FC = () => {
                             study_program_id: data.study_program_id,
                             department_id: departmentId,
                             role: 'student',
-                            password: hashedPassword // Encrypted password = identity number
+                            password: data.identity_number // Password = identity number (plain text, sesuai sistem lama)
                         })
                         .select('id')
                         .single();
@@ -644,8 +631,8 @@ const ToolLending: React.FC = () => {
                                                     <div className="flex items-center space-x-2 bg-white/80 rounded-lg px-3 py-1">
                                                         <button
                                                             onClick={() => updateQuantity(item.equipment.id, item.quantity - 1)}
-                                                            className="p-1 text-gray-600 hover:text-gray-800 transition-colors"
-                                                        >
+                                                            className="p-1 text-gray-600 hover:text-gray-800 transition-colors">
+                                                          >
                                                             <Minus className="h-3 w-3" />
                                                         </button>
                                                         <span className="font-bold text-gray-800 min-w-[2rem] text-center">
@@ -698,19 +685,18 @@ const ToolLending: React.FC = () => {
                                                             setShowIdentityDropdown(true);
                                                         }}
                                                         onFocus={() => setShowIdentityDropdown(true)}
-                                                        onBlur={() => setTimeout(() => setShowIdentityDropdown(false), 200)}
                                                         className="w-full px-4 py-3 pr-10 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all duration-200"
                                                     />
                                                     <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                                                     {showIdentityDropdown && filteredIdentityNumbers.length > 0 && (
                                                         <div
-                                                            className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
+                                                            onMouseLeave={() => setShowIdentityDropdown(false)}
+                                                            className="absolute z-10 w-full mt-1 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-xl max-h-60 overflow-y-auto"
                                                         >
                                                             {filteredIdentityNumbers.map((user) => (
                                                                 <div
                                                                     key={user.id}
-                                                                    onMouseDown={(e) => {
-                                                                        e.preventDefault(); // Mencegah onBlur dipanggil
+                                                                    onClick={() => {
                                                                         setIdentitySearchTerm(user.identity_number);
                                                                         form.setValue('identity_number', user.identity_number);
                                                                         setShowIdentityDropdown(false);
@@ -786,21 +772,20 @@ const ToolLending: React.FC = () => {
                                                             setShowStudyProgramDropdown(true);
                                                         }}
                                                         onFocus={() => setShowStudyProgramDropdown(true)}
-                                                        onBlur={() => setTimeout(() => setShowStudyProgramDropdown(false), 200)}
                                                         className="w-full pl-12 pr-10 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all duration-200 py-3"
                                                     />
                                                     <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                                                     {showStudyProgramDropdown && (
                                                         <div
-                                                            className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
+                                                            onMouseLeave={() => setShowStudyProgramDropdown(false)}
+                                                            className="absolute z-10 w-full mt-1 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-xl max-h-60 overflow-y-auto"
                                                         >
                                                             {filteredStudyPrograms.length > 0 ? (
                                                                 <div className="p-1">
                                                                     {filteredStudyPrograms.map((program) => (
                                                                         <div
                                                                             key={program.id}
-                                                                            onMouseDown={(e) => {
-                                                                                e.preventDefault(); // Mencegah onBlur dipanggil
+                                                                            onClick={() => {
                                                                                 const displayText = `${program.name} (${program.code}) - ${program.department?.name}`;
                                                                                 setStudyProgramSearchTerm(displayText);
                                                                                 form.setValue('study_program_id', program.id);
@@ -914,8 +899,6 @@ const ToolLending: React.FC = () => {
                     </div>
                 </div>
             </div>
-
-
         </div>
     );
 };
