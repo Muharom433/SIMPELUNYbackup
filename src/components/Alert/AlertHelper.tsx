@@ -18,7 +18,7 @@ export let ALERT_MESSAGES = {
 
   addFailed: 'Failed To Add Data! Please check the requirment data',
   deleteFailed: 'Failed To Delete the data',
-  updateSuccess: 'Failed To Update the data',
+  updateFailed: 'Failed To Update the data',
   
   // Error messages
   bookingFailed: 'Failed to create booking',
