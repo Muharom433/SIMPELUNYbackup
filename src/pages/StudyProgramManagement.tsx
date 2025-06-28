@@ -20,6 +20,7 @@ import {
   Award,
   TrendingUp,
   BarChart3,
+  Menu,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -53,6 +54,7 @@ const StudyProgramManagement: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [selectedProgram, setSelectedProgram] = useState<StudyProgramWithDepartment | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
 
   const form = useForm<StudyProgramForm>({
     resolver: zodResolver(studyProgramSchema),
@@ -67,7 +69,7 @@ const StudyProgramManagement: React.FC = () => {
     try {
       setLoading(true);
       
-      // Fetch study programs with department info
+      // Fetch study programs with department info and real student counts
       const { data: programsData, error: programsError } = await supabase
         .from('study_programs')
         .select(`
@@ -78,20 +80,25 @@ const StudyProgramManagement: React.FC = () => {
 
       if (programsError) throw programsError;
 
-      // Fetch student counts for each program
-      const { data: userCounts, error: userError } = await supabase
-        .from('users')
-        .select('id, role')
-        .eq('role', 'student');
+      // Get real student counts for each program
+      const programsWithStats = await Promise.all(
+        (programsData || []).map(async (program) => {
+          const { count, error: countError } = await supabase
+            .from('users')
+            .select('*', { count: 'exact', head: true })
+            .eq('role', 'student')
+            .eq('study_program_id', program.id);
 
-      if (userError) throw userError;
+          if (countError) {
+            console.error('Error fetching student count:', countError);
+          }
 
-      // For now, we'll simulate student counts since we don't have a direct relationship
-      // In a real app, you'd have a student_program table or similar
-      const programsWithStats = (programsData || []).map(program => ({
-        ...program,
-        student_count: Math.floor(Math.random() * 100) + 10, // Simulated data
-      }));
+          return {
+            ...program,
+            student_count: count || 0,
+          };
+        })
+      );
 
       setStudyPrograms(programsWithStats);
     } catch (error) {
@@ -228,62 +235,76 @@ const StudyProgramManagement: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 p-2 sm:p-4 lg:p-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-green-600 to-teal-600 rounded-xl p-6 text-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center space-x-3">
-              <GraduationCap className="h-8 w-8" />
+      <div className="bg-gradient-to-r from-green-600 to-teal-600 rounded-xl p-4 sm:p-6 text-white">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex-1">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold flex items-center gap-2 sm:gap-3">
+              <GraduationCap className="h-6 w-6 sm:h-8 sm:w-8" />
               <span>Study Program Management</span>
             </h1>
-            <p className="mt-2 opacity-90">
+            <p className="mt-2 opacity-90 text-sm sm:text-base">
               Manage academic study programs and curricula
             </p>
           </div>
-          <div className="hidden md:block text-right">
-            <div className="text-2xl font-bold">{studyPrograms.length}</div>
-            <div className="text-sm opacity-80">Total Programs</div>
+          <div className="flex items-center gap-4">
+            <div className="text-center">
+              <div className="text-xl sm:text-2xl font-bold">{studyPrograms.length}</div>
+              <div className="text-xs sm:text-sm opacity-80">Total Programs</div>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Controls */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-          <div className="flex flex-col sm:flex-row gap-4 flex-1">
-            {/* Search */}
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search study programs..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
-              />
-            </div>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+        <div className="space-y-4">
+          {/* Search Bar */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search study programs..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+            />
+          </div>
 
-            {/* Filters */}
-            <div className="flex gap-2">
-              <select
-                value={departmentFilter}
-                onChange={(e) => setDepartmentFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+          {/* Mobile Filters Toggle */}
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+            <div className="flex flex-wrap gap-2 sm:gap-4 w-full sm:w-auto">
+              {/* Department Filter - Always visible on desktop */}
+              <div className="hidden sm:block">
+                <select
+                  value={departmentFilter}
+                  onChange={(e) => setDepartmentFilter(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                >
+                  <option value="all">All Departments</option>
+                  {departments.map((dept) => (
+                    <option key={dept.id} value={dept.id}>
+                      {dept.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Mobile Filter Button */}
+              <button
+                onClick={() => setShowMobileFilters(!showMobileFilters)}
+                className="sm:hidden flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
-                <option value="all">All Departments</option>
-                {departments.map((dept) => (
-                  <option key={dept.id} value={dept.id}>
-                    {dept.name}
-                  </option>
-                ))}
-              </select>
+                <Filter className="h-4 w-4" />
+                <span>Filters</span>
+              </button>
 
               {/* View Mode Toggle */}
               <div className="flex border border-gray-300 rounded-lg overflow-hidden">
                 <button
                   onClick={() => setViewMode('grid')}
-                  className={`px-4 py-2 text-sm font-medium ${
+                  className={`px-3 py-2 text-sm font-medium ${
                     viewMode === 'grid'
                       ? 'bg-green-500 text-white'
                       : 'bg-white text-gray-700 hover:bg-gray-50'
@@ -293,7 +314,7 @@ const StudyProgramManagement: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setViewMode('table')}
-                  className={`px-4 py-2 text-sm font-medium ${
+                  className={`px-3 py-2 text-sm font-medium ${
                     viewMode === 'table'
                       ? 'bg-green-500 text-white'
                       : 'bg-white text-gray-700 hover:bg-gray-50'
@@ -303,29 +324,48 @@ const StudyProgramManagement: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={() => fetchStudyPrograms()}
+                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors duration-200"
+              >
+                <RefreshCw className="h-5 w-5" />
+              </button>
+
+              <button
+                onClick={() => {
+                  setEditingProgram(null);
+                  form.reset();
+                  setShowModal(true);
+                }}
+                className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 flex-1 sm:flex-initial justify-center"
+              >
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">Add Program</span>
+                <span className="sm:hidden">Add</span>
+              </button>
+            </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => fetchStudyPrograms()}
-              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors duration-200"
-            >
-              <RefreshCw className="h-5 w-5" />
-            </button>
-
-            <button
-              onClick={() => {
-                setEditingProgram(null);
-                form.reset();
-                setShowModal(true);
-              }}
-              className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Add Program</span>
-            </button>
-          </div>
+          {/* Mobile Filters Dropdown */}
+          {showMobileFilters && (
+            <div className="sm:hidden border-t pt-4">
+              <select
+                value={departmentFilter}
+                onChange={(e) => setDepartmentFilter(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              >
+                <option value="all">All Departments</option>
+                {departments.map((dept) => (
+                  <option key={dept.id} value={dept.id}>
+                    {dept.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -339,23 +379,23 @@ const StudyProgramManagement: React.FC = () => {
         </div>
       ) : viewMode === 'grid' ? (
         /* Grid View */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {filteredPrograms.map((program) => (
             <div
               key={program.id}
-              className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow duration-200"
+              className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6 hover:shadow-md transition-shadow duration-200"
             >
               <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <div className="h-12 w-12 bg-gradient-to-r from-green-500 to-teal-500 rounded-lg flex items-center justify-center">
-                    <BookOpen className="h-6 w-6 text-white" />
+                <div className="flex items-center space-x-3 flex-1 min-w-0">
+                  <div className="h-10 w-10 sm:h-12 sm:w-12 bg-gradient-to-r from-green-500 to-teal-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <BookOpen className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                   </div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">{program.name}</h3>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 truncate">{program.name}</h3>
                     <p className="text-sm text-gray-500">{program.code}</p>
                   </div>
                 </div>
-                <div className="flex items-center space-x-1">
+                <div className="flex items-center space-x-1 flex-shrink-0">
                   <button
                     onClick={() => handleViewDetails(program)}
                     className="p-1 text-gray-400 hover:text-gray-600 transition-colors duration-200"
@@ -378,52 +418,52 @@ const StudyProgramManagement: React.FC = () => {
               </div>
 
               <div className="mb-4">
-                <div className="flex items-center text-sm text-gray-600">
-                  <Building className="h-4 w-4 mr-1" />
-                  {program.department?.name}
+                <div className="flex items-center text-sm text-gray-600 truncate">
+                  <Building className="h-4 w-4 mr-1 flex-shrink-0" />
+                  <span className="truncate">{program.department?.name}</span>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{program.student_count}</div>
+                  <div className="text-xl sm:text-2xl font-bold text-green-600">{program.student_count}</div>
                   <div className="text-xs text-gray-500">Students</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">4</div>
+                  <div className="text-xl sm:text-2xl font-bold text-blue-600">4</div>
                   <div className="text-xs text-gray-500">Years</div>
                 </div>
               </div>
 
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-gray-500 truncate">
                 Created {format(new Date(program.created_at), 'MMM d, yyyy')}
               </div>
             </div>
           ))}
         </div>
       ) : (
-        /* Table View */
+        /* Table View - Mobile Responsive */
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[640px]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Program
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Code
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">
                     Department
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Students
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">
                     Created
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -431,48 +471,50 @@ const StudyProgramManagement: React.FC = () => {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredPrograms.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center">
+                    <td colSpan={6} className="px-4 sm:px-6 py-12 text-center">
                       <div className="text-gray-500">
                         <GraduationCap className="h-12 w-12 mx-auto mb-4 opacity-50" />
                         <p className="text-lg font-medium mb-2">No study programs found</p>
-                        <p>Try adjusting your search or create a new program</p>
+                        <p className="text-sm">Try adjusting your search or create a new program</p>
                       </div>
                     </td>
                   </tr>
                 ) : (
                   filteredPrograms.map((program) => (
                     <tr key={program.id} className="hover:bg-gray-50 transition-colors duration-200">
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
-                          <div className="h-10 w-10 bg-gradient-to-r from-green-500 to-teal-500 rounded-lg flex items-center justify-center">
-                            <BookOpen className="h-5 w-5 text-white" />
+                          <div className="h-8 w-8 sm:h-10 sm:w-10 bg-gradient-to-r from-green-500 to-teal-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <BookOpen className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                           </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900">{program.name}</div>
+                          <div className="ml-4 min-w-0">
+                            <div className="text-sm font-medium text-gray-900 truncate max-w-[150px] sm:max-w-none">
+                              {program.name}
+                            </div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                           {program.code}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900 hidden sm:table-cell">
                         <div className="flex items-center">
                           <Building className="h-4 w-4 text-gray-400 mr-1" />
-                          {program.department?.name}
+                          <span className="truncate max-w-[120px]">{program.department?.name}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         <div className="flex items-center">
                           <Users className="h-4 w-4 text-gray-400 mr-1" />
                           {program.student_count}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500 hidden lg:table-cell">
                         {format(new Date(program.created_at), 'MMM d, yyyy')}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end space-x-2">
                           <button
                             onClick={() => handleViewDetails(program)}
@@ -506,8 +548,8 @@ const StudyProgramManagement: React.FC = () => {
       {/* Add/Edit Study Program Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
-            <div className="p-6">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-4 sm:p-6">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold text-gray-900">
                   {editingProgram ? 'Edit Study Program' : 'Add New Study Program'}
@@ -586,7 +628,7 @@ const StudyProgramManagement: React.FC = () => {
                   )}
                 </div>
 
-                <div className="flex space-x-3 pt-4">
+                <div className="flex flex-col sm:flex-row gap-3 pt-4">
                   <button
                     type="button"
                     onClick={() => {
@@ -616,7 +658,7 @@ const StudyProgramManagement: React.FC = () => {
       {showDetailModal && selectedProgram && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold text-gray-900">Study Program Details</h3>
                 <button
@@ -631,14 +673,14 @@ const StudyProgramManagement: React.FC = () => {
                 {/* Basic Info */}
                 <div className="bg-gray-50 rounded-lg p-4">
                   <h4 className="text-lg font-medium text-gray-900 mb-3">{selectedProgram.name}</h4>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="text-gray-500">Code:</span>
                       <span className="ml-2 font-medium">{selectedProgram.code}</span>
                     </div>
                     <div>
                       <span className="text-gray-500">Department:</span>
-                      <span className="ml-2">{selectedProgram.department?.name}</span>
+                      <span className="ml-2 truncate">{selectedProgram.department?.name}</span>
                     </div>
                     <div>
                       <span className="text-gray-500">Created:</span>
@@ -652,15 +694,15 @@ const StudyProgramManagement: React.FC = () => {
                 </div>
 
                 {/* Statistics */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="bg-green-50 rounded-lg p-4 text-center">
-                    <Users className="h-8 w-8 text-green-600 mx-auto mb-2" />
-                    <div className="text-2xl font-bold text-green-600">{selectedProgram.student_count}</div>
+                    <Users className="h-6 w-6 sm:h-8 sm:w-8 text-green-600 mx-auto mb-2" />
+                    <div className="text-xl sm:text-2xl font-bold text-green-600">{selectedProgram.student_count}</div>
                     <div className="text-sm text-gray-600">Active Students</div>
                   </div>
                   <div className="bg-blue-50 rounded-lg p-4 text-center">
-                    <Award className="h-8 w-8 text-blue-600 mx-auto mb-2" />
-                    <div className="text-2xl font-bold text-blue-600">4</div>
+                    <Award className="h-6 w-6 sm:h-8 sm:w-8 text-blue-600 mx-auto mb-2" />
+                    <div className="text-xl sm:text-2xl font-bold text-blue-600">4</div>
                     <div className="text-sm text-gray-600">Years Duration</div>
                   </div>
                 </div>
@@ -684,7 +726,7 @@ const StudyProgramManagement: React.FC = () => {
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-4 sm:p-6">
             <div className="flex items-center mb-4">
               <div className="flex-shrink-0">
                 <AlertCircle className="h-6 w-6 text-red-600" />
@@ -696,7 +738,7 @@ const StudyProgramManagement: React.FC = () => {
             <p className="text-sm text-gray-500 mb-6">
               Are you sure you want to delete this study program? This action cannot be undone and will affect all associated students.
             </p>
-            <div className="flex space-x-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={() => setShowDeleteConfirm(null)}
                 className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-200"
