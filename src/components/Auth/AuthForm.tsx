@@ -323,7 +323,7 @@ const AuthForm: React.FC = () => {
                     {getText('Quick Login Tips', 'Tips Login Cepat')}
                   </h3>
                   <p className="text-emerald-600 text-sm">
-                    {getText('For students without account', 'Untuk mahasiswa tanpa akun')}
+                    {getText('For Students', 'Bagi Mahasiswa')}
                   </p>
                 </div>
               </div>
