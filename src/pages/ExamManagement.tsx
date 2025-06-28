@@ -260,13 +260,13 @@ const ExamManagement = () => {
             if (updateError) throw updateError; 
             setExamModeEnabled(newMode); 
             setExams([]); 
-            toast.success(getText(
+            alert.success(getText(
                 `Exam Mode has been ${newMode ? 'enabled' : 'disabled'} and all previous schedules have been cleared.`,
                 `Mode Ujian telah ${newMode ? 'diaktifkan' : 'dinonaktifkan'} dan semua jadwal sebelumnya telah dihapus.`
             )); 
         } catch (error: any) { 
             console.error('Error updating exam mode:', error); 
-            toast.error(getText('Failed to update exam mode.', 'Gagal memperbarui mode ujian.')); 
+            alert.error(getText('Failed to update exam mode.', 'Gagal memperbarui mode ujian.')); 
         } finally { 
             setLoading(false); 
             setShowClearConfirm(false); 
@@ -287,7 +287,7 @@ const ExamManagement = () => {
             setExams(data || []); 
         } catch (error: any) { 
             console.error('Error fetching exams:', error); 
-            toast.error(getText('Failed to load exams.', 'Gagal memuat ujian.')); 
+            alert.error(getText('Failed to load exams.', 'Gagal memuat ujian.')); 
         } 
     };
 
@@ -302,7 +302,7 @@ const ExamManagement = () => {
             setStudyPrograms(data || []); 
         } catch (error: any) { 
             console.error('Error fetching study programs:', error); 
-            toast.error(getText('Failed to load study programs.', 'Gagal memuat program studi.')); 
+            alert.error(getText('Failed to load study programs.', 'Gagal memuat program studi.')); 
         } 
     };
 
@@ -317,7 +317,7 @@ const ExamManagement = () => {
             setRooms(data || []); 
         } catch (error: any) { 
             console.error('Error fetching rooms:', error); 
-            toast.error(getText('Failed to load rooms.', 'Gagal memuat ruangan.')); 
+            alert.error(getText('Failed to load rooms.', 'Gagal memuat ruangan.')); 
         } 
     };
 
@@ -336,7 +336,7 @@ const ExamManagement = () => {
             setFilteredLecturers(data || []); 
         } catch (error: any) { 
             console.error('Error fetching lecturers:', error); 
-            toast.error(getText('Failed to load lecturers.', 'Gagal memuat dosen.')); 
+            alert.error(getText('Failed to load lecturers.', 'Gagal memuat dosen.')); 
         } 
     };
 
@@ -351,7 +351,7 @@ const ExamManagement = () => {
             setDepartments(data || []); 
         } catch (error: any) { 
             console.error('Error fetching departments:', error); 
-            toast.error(getText('Failed to load departments.', 'Gagal memuat departemen.')); 
+            alert.error(getText('Failed to load departments.', 'Gagal memuat departemen.')); 
         } 
     };
 
@@ -371,7 +371,7 @@ const ExamManagement = () => {
             setDepartmentHeads(data || []); 
         } catch (error: any) { 
             console.error('Error fetching department heads:', error); 
-            toast.error(getText('Failed to load department heads.', 'Gagal memuat kepala departemen.')); 
+            alert.error(getText('Failed to load department heads.', 'Gagal memuat kepala departemen.')); 
         } 
     };
 
@@ -483,7 +483,7 @@ const ExamManagement = () => {
                     .update(examData) 
                     .eq('id', editingExam.id); 
                 if (error) throw error; 
-                toast.success(getText('Exam updated successfully', 'Ujian berhasil diperbarui')); 
+                alert.success(getText('Exam updated successfully', 'Ujian berhasil diperbarui')); 
                 setShowModal(false);
                 setEditingExam(null); 
             } else { 
@@ -491,13 +491,13 @@ const ExamManagement = () => {
                     .from('exams') 
                     .insert([examData]); 
                 if (error) throw error; 
-                toast.success(getText('Exam created successfully', 'Ujian berhasil dibuat')); 
+                alert.success(getText('Exam created successfully', 'Ujian berhasil dibuat')); 
             } 
             
             fetchExams(); 
         } catch (error: any) { 
             console.error('Error saving exam:', error); 
-            toast.error(error.message || getText('Failed to save exam', 'Gagal menyimpan ujian')); 
+            alert.error(error.message || getText('Failed to save exam', 'Gagal menyimpan ujian')); 
         } finally { 
             setLoading(false); 
         } 
@@ -535,12 +535,12 @@ const ExamManagement = () => {
                 .delete() 
                 .eq('id', id); 
             if (error) throw error; 
-            toast.success(getText('Exam deleted successfully', 'Ujian berhasil dihapus')); 
+            alert.success(getText('Exam deleted successfully', 'Ujian berhasil dihapus')); 
             setShowDeleteConfirm(null); 
             fetchExams(); 
         } catch (error: any) { 
             console.error('Error deleting exam:', error); 
-            toast.error(error.message || getText('Failed to delete exam', 'Gagal menghapus ujian')); 
+            alert.error(error.message || getText('Failed to delete exam', 'Gagal menghapus ujian')); 
         } finally { 
             setLoading(false); 
         } 
@@ -606,12 +606,12 @@ const ExamManagement = () => {
                 departmentHead = departmentHeads.find(h => h.id === formData.department_head_id); 
             } 
             if (!selectedProgram || !departmentHead || !currentDepartment) { 
-                toast.error(getText("Please ensure all fields are selected and data is loaded.", "Pastikan semua field telah dipilih dan data telah dimuat.")); 
+                alert.error(getText("Please ensure all fields are selected and data is loaded.", "Pastikan semua field telah dipilih dan data telah dimuat.")); 
                 return; 
             } 
             const examsToPrint = exams.filter(exam => exam.study_program_id === formData.study_program_id && exam.department_id === departmentIdForQuery); 
             if (examsToPrint.length === 0) { 
-                toast.error(getText("No exams found for the selected criteria.", "Tidak ditemukan ujian untuk kriteria yang dipilih.")); 
+                alert.error(getText("No exams found for the selected criteria.", "Tidak ditemukan ujian untuk kriteria yang dipilih.")); 
                 return; 
             } 
             const doc = new jsPDF(); 
@@ -773,7 +773,7 @@ const ExamManagement = () => {
             setShowPrintModal(false);
         } catch (e: any) {
             console.error("PDF Generation Error:", e);
-            toast.error(getText("An unexpected error occurred while generating the PDF.", "Terjadi kesalahan tak terduga saat membuat PDF."));
+            alert.error(getText("An unexpected error occurred while generating the PDF.", "Terjadi kesalahan tak terduga saat membuat PDF."));
         }
     };
 
