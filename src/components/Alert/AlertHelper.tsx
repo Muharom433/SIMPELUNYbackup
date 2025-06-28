@@ -16,8 +16,8 @@ export let ALERT_MESSAGES = {
   deleteSuccess: 'Success To Delete the data',
   updateSuccess: 'Success To Update the data',
 
-  addSuccess: 'Failed To Add Data! Please check the requirment data',
-  deleteSuccess: 'Failed To Delete the data',
+  addFailed: 'Failed To Add Data! Please check the requirment data',
+  deleteFailed: 'Failed To Delete the data',
   updateSuccess: 'Failed To Update the data',
   
   // Error messages
