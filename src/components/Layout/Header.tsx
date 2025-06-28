@@ -445,7 +445,10 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
 
               {/* Settings */}
               <button className="hidden sm:block p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg">
-                <Settings className="h-5 w-5" />
+                <Settings className="h-5 w-5" 
+                  onClick={() => {
+                    toast.success("cocok")
+                  }}/>
               </button>
 
               {/* User Menu */}
