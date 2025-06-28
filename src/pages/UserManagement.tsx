@@ -248,7 +248,7 @@ const UserManagement: React.FC = () => {
       setUsers(data || []);
     } catch (error: any) {
       console.error('Error fetching users:', error);
-      toast.error(getText('Failed to load users', 'Gagal memuat pengguna'));
+      alert.error(getText('Failed to load users', 'Gagal memuat pengguna'));
     } finally {
       setLoading(false);
     }
@@ -267,7 +267,7 @@ const UserManagement: React.FC = () => {
       setDepartments(data || []);
     } catch (error: any) {
       console.error('Error fetching departments:', error);
-      toast.error(getText('Failed to load departments', 'Gagal memuat departemen'));
+      alert.error(getText('Failed to load departments', 'Gagal memuat departemen'));
     }
   };
 
@@ -289,7 +289,7 @@ const UserManagement: React.FC = () => {
       setStudyPrograms(data || []);
     } catch (error: any) {
       console.error('Error fetching study programs:', error);
-      toast.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
+      alert.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
     }
   };
 
@@ -312,7 +312,7 @@ const UserManagement: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Error fetching study programs by department:', error);
-      toast.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
+      alert.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
     }
   };
 
@@ -353,11 +353,11 @@ const UserManagement: React.FC = () => {
           .eq('id', editingUser.id);
         
         if (error) throw error;
-        toast.success(getText('User updated successfully', 'Pengguna berhasil diperbarui'));
+        alert.success(getText('User updated successfully', 'Pengguna berhasil diperbarui'));
       } else {
         // Create new user
         if (!data.password) {
-          toast.error(getText('Password is required for new users', 'Password diperlukan untuk pengguna baru'));
+          alert.error(getText('Password is required for new users', 'Password diperlukan untuk pengguna baru'));
           return;
         }
 
@@ -366,7 +366,7 @@ const UserManagement: React.FC = () => {
           .insert({ ...userData, password: data.password });
         
         if (error) throw error;
-        toast.success(getText('User created successfully', 'Pengguna berhasil dibuat'));
+        alert.success(getText('User created successfully', 'Pengguna berhasil dibuat'));
       }
 
       setShowModal(false);
@@ -377,16 +377,16 @@ const UserManagement: React.FC = () => {
       console.error('Error saving user:', error);
       if (error.code === '23505') {
         if (error.message.includes('username')) {
-          toast.error(getText('Username already exists', 'Username sudah ada'));
+          alert.error(getText('Username already exists', 'Username sudah ada'));
         } else if (error.message.includes('email')) {
-          toast.error(getText('Email already exists', 'Email sudah ada'));
+          alert.error(getText('Email already exists', 'Email sudah ada'));
         } else if (error.message.includes('identity_number')) {
-          toast.error(getText('Identity number already exists', 'Nomor identitas sudah ada'));
+          alert.error(getText('Identity number already exists', 'Nomor identitas sudah ada'));
         } else {
-          toast.error(getText('User with this information already exists', 'Pengguna dengan informasi ini sudah ada'));
+          alert.error(getText('User with this information already exists', 'Pengguna dengan informasi ini sudah ada'));
         }
       } else {
-        toast.error(error.message || getText('Failed to save user', 'Gagal menyimpan pengguna'));
+        alert.error(error.message || getText('Failed to save user', 'Gagal menyimpan pengguna'));
       }
     } finally {
       setLoading(false);
@@ -423,12 +423,12 @@ const UserManagement: React.FC = () => {
         .eq('id', userId);
       
       if (error) throw error;
-      toast.success(getText('User deleted successfully', 'Pengguna berhasil dihapus'));
+      alert.success(getText('User deleted successfully', 'Pengguna berhasil dihapus'));
       setShowDeleteConfirm(null);
       fetchUsers();
     } catch (error: any) {
       console.error('Error deleting user:', error);
-      toast.error(error.message || getText('Failed to delete user', 'Gagal menghapus pengguna'));
+      alert.error(error.message || getText('Failed to delete user', 'Gagal menghapus pengguna'));
     } finally {
       setLoading(false);
     }
