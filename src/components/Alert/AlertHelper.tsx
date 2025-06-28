@@ -56,6 +56,13 @@ export const updateAlertLanguage = (language: 'en' | 'id') => {
       examCreated: 'Ujian berhasil dibuat',
       examUpdated: 'Ujian berhasil diperbarui',
       examDeleted: 'Ujian berhasil dihapus',
+      addSuccess: 'Success To Add Data! Thank you for submiting',
+      deleteSuccess: 'Success To Delete the data',
+      updateSuccess: 'Success To Update the data',
+    
+      addSuccess: 'Failed To Add Data! Please check the requirment data',
+      deleteSuccess: 'Failed To Delete the data',
+      updateSuccess: 'Failed To Update the data',
       
       // Error messages
       bookingFailed: 'Gagal membuat pemesanan',
