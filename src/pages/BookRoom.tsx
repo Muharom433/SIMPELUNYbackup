@@ -275,23 +275,7 @@ const BookRoom: React.FC = () => {
             getText(
                 `✅ Booking submitted successfully!\n🏢 Room: ${roomName}\n⏰ Time: ${startTime}${equipmentCount > 0 ? `\n⚡ Equipment: ${equipmentCount} items` : ''}\n📝 Status: Pending approval`,
                 `✅ Pemesanan berhasil dikirim!\n🏢 Ruangan: ${roomName}\n⏰ Waktu: ${startTime}${equipmentCount > 0 ? `\n⚡ Peralatan: ${equipmentCount} item` : ''}\n📝 Status: Menunggu persetujuan`
-            ),
-            {
-                duration: 6000,
-                style: {
-                    background: '#10B981',
-                    color: '#FFFFFF',
-                    borderRadius: '12px',
-                    padding: '16px',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    boxShadow: '0 10px 25px rgba(16, 185, 129, 0.3)',
-                },
-                iconTheme: {
-                    primary: '#FFFFFF',
-                    secondary: '#10B981',
-                },
-            }
+            )
         );
 
         // Show additional info toast
