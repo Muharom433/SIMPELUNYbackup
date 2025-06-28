@@ -219,7 +219,7 @@ const SessionSchedule = () => {
       }
     } catch (error: any) {
       console.error('Error fetching sessions:', error);
-      toast.error(getText('Failed to load sessions.', 'Gagal memuat jadwal sidang.'));
+      alert.error(getText('Failed to load sessions.', 'Gagal memuat jadwal sidang.'));
     } finally {
       setLoading(false);
     }
@@ -245,7 +245,7 @@ const SessionSchedule = () => {
       setStudents(filtered);
     } catch (error: any) {
       console.error('Error fetching students:', error);
-      toast.error(getText('Failed to load students.', 'Gagal memuat mahasiswa.'));
+      alert.error(getText('Failed to load students.', 'Gagal memuat mahasiswa.'));
     }
   };
 
@@ -269,7 +269,7 @@ const SessionSchedule = () => {
       setLecturers(filtered);
     } catch (error: any) {
       console.error('Error fetching lecturers:', error);
-      toast.error(getText('Failed to load lecturers.', 'Gagal memuat dosen.'));
+      alert.error(getText('Failed to load lecturers.', 'Gagal memuat dosen.'));
     }
   };
 
@@ -282,7 +282,7 @@ const SessionSchedule = () => {
       setAvailableRooms(data || []);
     } catch (error: any) {
       console.error('Error fetching rooms:', error);
-      toast.error(getText('Failed to load rooms.', 'Gagal memuat ruangan.'));
+      alert.error(getText('Failed to load rooms.', 'Gagal memuat ruangan.'));
     }
   };
 
@@ -297,7 +297,7 @@ const SessionSchedule = () => {
       setStudyPrograms(data || []);
     } catch (error: any) {
       console.error('Error fetching study programs:', error);
-      toast.error(getText('Failed to load study programs.', 'Gagal memuat program studi.'));
+      alert.error(getText('Failed to load study programs.', 'Gagal memuat program studi.'));
     }
   };
 
@@ -312,7 +312,7 @@ const SessionSchedule = () => {
       setDepartments(data || []);
     } catch (error: any) {
       console.error('Error fetching departments:', error);
-      toast.error(getText('Failed to load departments.', 'Gagal memuat departemen.'));
+      alert.error(getText('Failed to load departments.', 'Gagal memuat departemen.'));
     }
   };
 
@@ -332,7 +332,7 @@ const SessionSchedule = () => {
       setDepartmentHeads(data || []);
     } catch (error: any) {
       console.error('Error fetching department heads:', error);
-      toast.error(getText('Failed to load department heads.', 'Gagal memuat kepala departemen.'));
+      alert.error(getText('Failed to load department heads.', 'Gagal memuat kepala departemen.'));
     }
   };
 
@@ -483,7 +483,7 @@ const SessionSchedule = () => {
           console.log('✅ Created new user record with ID:', newUser.id);
           finalStudentId = newUser.id;
           
-          toast.success(getText('New student registered successfully!', 'Mahasiswa baru berhasil didaftarkan!'));
+          alert.success(getText('New student registered successfully!', 'Mahasiswa baru berhasil didaftarkan!'));
         }
       }
 
@@ -511,11 +511,11 @@ const SessionSchedule = () => {
       if (editingSession) {
         const { error } = await supabase.from('final_sessions').update(sessionData).eq('id', editingSession.id);
         if (error) throw error;
-        toast.success(getText('Session updated successfully', 'Jadwal sidang berhasil diperbarui'));
+        alert.success(getText('Session updated successfully', 'Jadwal sidang berhasil diperbarui'));
       } else {
         const { error } = await supabase.from('final_sessions').insert([sessionData]);
         if (error) throw error;
-        toast.success(getText('Session created successfully', 'Jadwal sidang berhasil dibuat'));
+        alert.success(getText('Session created successfully', 'Jadwal sidang berhasil dibuat'));
       }
 
       // Cleanup and refresh data
@@ -525,7 +525,7 @@ const SessionSchedule = () => {
       fetchSessions();
     } catch (error: any) {
       console.error('Error saving session:', error);
-      toast.error(error.message || getText('Failed to save session', 'Gagal menyimpan jadwal sidang'));
+      alert.error(error.message || getText('Failed to save session', 'Gagal menyimpan jadwal sidang'));
     } finally {
       setSubmitting(false);
     }
@@ -568,12 +568,12 @@ const SessionSchedule = () => {
       setSubmitting(true);
       const { error } = await supabase.from('final_sessions').delete().eq('id', id);
       if (error) throw error;
-      toast.success(getText('Session deleted successfully', 'Jadwal sidang berhasil dihapus'));
+      alert.success(getText('Session deleted successfully', 'Jadwal sidang berhasil dihapus'));
       setShowDeleteConfirm(null);
       fetchSessions();
     } catch (error: any) {
       console.error('Error deleting session:', error);
-      toast.error(error.message || getText('Failed to delete session', 'Gagal menghapus jadwal sidang'));
+      alert.error(error.message || getText('Failed to delete session', 'Gagal menghapus jadwal sidang'));
     } finally {
       setSubmitting(false);
     }
@@ -592,7 +592,7 @@ const SessionSchedule = () => {
         : departmentHeads.find(h => h.id === printData.department_head_id);
 
       if (!selectedProgram || !departmentHead || !currentDepartment) {
-        toast.error(getText("Please ensure all fields are selected.", "Pastikan semua field telah dipilih."));
+        alert.error(getText("Please ensure all fields are selected.", "Pastikan semua field telah dipilih."));
         return;
       }
 
@@ -601,7 +601,7 @@ const SessionSchedule = () => {
       );
 
       if (sessionsToExport.length === 0) {
-        toast.error(getText("No sessions found for the selected criteria.", "Tidak ditemukan jadwal sidang untuk kriteria yang dipilih."));
+        alert.error(getText("No sessions found for the selected criteria.", "Tidak ditemukan jadwal sidang untuk kriteria yang dipilih."));
         return;
       }
 
@@ -671,7 +671,7 @@ const SessionSchedule = () => {
       setShowPrintModal(false);
     } catch (e: any) {
       console.error("PDF Generation Error:", e);
-      toast.error(getText("An error occurred while generating the PDF.", "Terjadi kesalahan saat membuat PDF."));
+      alert.error(getText("An error occurred while generating the PDF.", "Terjadi kesalahan saat membuat PDF."));
     }
   };
 
@@ -1014,7 +1014,7 @@ const SessionSchedule = () => {
                               }));
                               const program = studyPrograms.find(p => p.id === foundStudent.study_program_id);
                               if (program) setProgramSearch(program.name);
-                              toast.success(getText('Student data auto-filled!', 'Data mahasiswa otomatis terisi!'));
+                              alert.success(getText('Student data auto-filled!', 'Data mahasiswa otomatis terisi!'));
                             } else {
                               form.setValue('student_id', '');
                               setFormData(prev => ({ ...prev, student_name: '', student_nim: e.target.value, study_program_id: '' }));
@@ -1058,7 +1058,7 @@ const SessionSchedule = () => {
                                     const program = studyPrograms.find(p => p.id === student.study_program_id);
                                     if (program) setProgramSearch(program.name);
                                     setShowStudentDropdown(false);
-                                    toast.success(getText('Student data auto-filled!', 'Data mahasiswa otomatis terisi!'));
+                                    alert.success(getText('Student data auto-filled!', 'Data mahasiswa otomatis terisi!'));
                                   }}
                                   className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
                                 >
