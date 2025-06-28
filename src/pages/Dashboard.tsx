@@ -48,6 +48,10 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
+import peopleImage from '../assets/people.svg';
+import buildImage from '../assets/Build.png';
+import shapeImage from '../assets/Shape.png';
+
 
 interface DashboardStats {
   totalBookings: number;
