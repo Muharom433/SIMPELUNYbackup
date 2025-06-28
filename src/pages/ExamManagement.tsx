@@ -490,8 +490,8 @@ const ExamManagement = () => {
                 const { error } = await supabase 
                     .from('exams') 
                     .insert([examData]); 
-                if (error) throw error; 
-                alert.success(getText('Exam created successfully', 'Ujian berhasil dibuat')); 
+                if (error) { throw error } else{ 
+                alert.success(getText('Exam created successfully', 'Ujian berhasil dibuat')); }
             } 
             
             fetchExams(); 
