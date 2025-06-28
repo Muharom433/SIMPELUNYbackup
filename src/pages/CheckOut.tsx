@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
+import { alert } from '../components/Alert/AlertHelper';
 import { format } from 'date-fns';
 import { useLanguage } from '../contexts/LanguageContext';
 
