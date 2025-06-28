@@ -271,24 +271,7 @@ const BookRoom: React.FC = () => {
         const equipmentCount = checkedEquipment.size;
         
         // Show detailed success toast
-        alert.success('addSuccess'),
-            {
-                duration: 6000,
-                style: {
-                    background: '#10B981',
-                    color: '#FFFFFF',
-                    borderRadius: '12px',
-                    padding: '16px',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    boxShadow: '0 10px 25px rgba(16, 185, 129, 0.3)',
-                },
-                iconTheme: {
-                    primary: '#FFFFFF',
-                    secondary: '#10B981',
-                },
-            }
-        );
+        alert.success('addSuccess');
 
         // Show additional info toast
         setTimeout(() => {
