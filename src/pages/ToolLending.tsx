@@ -191,17 +191,6 @@ const ToolLending: React.FC = () => {
         }
     };
 
-    // Password hashing function - based on AuthForm pattern
-    const hashPassword = async (password: string): Promise<string> => {
-        // Simple hash using Web Crypto API (same as would be used in AuthForm)
-        const encoder = new TextEncoder();
-        const data = encoder.encode(password);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        return hashHex;
-    };
-
     const addEquipment = (equipment: Equipment) => {
         const existing = selectedEquipment.find(item => item.equipment.id === equipment.id);
         if (existing) {
@@ -295,20 +284,18 @@ const ToolLending: React.FC = () => {
                     }
                 } else {
                     // User doesn't exist, create new user with encrypted password
-                    const hashedPassword = await hashPassword(data.identity_number);
                     
                     const { data: newUser, error: createUserError } = await supabase
                         .from('users')
                         .insert({
                             username: data.identity_number, // Username = identity number
-                            email: `${data.identity_number}@student.edu`,
                             full_name: data.full_name,
                             identity_number: data.identity_number,
                             phone_number: data.phone_number,
                             study_program_id: data.study_program_id,
                             department_id: departmentId,
                             role: 'student',
-                            password: hashedPassword // Encrypted password = identity number
+                            password: data.identity_number, // Encrypted password = identity number
                         })
                         .select('id')
                         .single();
