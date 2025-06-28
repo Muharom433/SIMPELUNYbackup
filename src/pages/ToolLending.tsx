@@ -116,7 +116,7 @@ const ToolLending: React.FC = () => {
                                 setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`);
                             }
                         }
-                        toast.success(getText('Data automatically filled from existing record!', 'Data otomatis terisi dari data yang sudah ada!'));
+                        alert.success(getText('Data automatically filled from existing record!', 'Data otomatis terisi dari data yang sudah ada!'));
                     }
                 } catch (error) {
                     console.error('Error fetching user data:', error);
@@ -153,7 +153,7 @@ const ToolLending: React.FC = () => {
             setAvailableEquipment(data || []);
         } catch (error) {
             console.error('Error fetching equipment:', error);
-            toast.error(getText('Failed to load equipment.', 'Gagal memuat peralatan.'));
+            alert.error(getText('Failed to load equipment.', 'Gagal memuat peralatan.'));
         } finally {
             setLoading(false);
         }
@@ -188,7 +188,7 @@ const ToolLending: React.FC = () => {
             setStudyPrograms(data || []);
         } catch (error) {
             console.error('Error fetching study programs:', error);
-            toast.error(getText('Failed to load study programs.', 'Gagal memuat program studi.'));
+            alert.error(getText('Failed to load study programs.', 'Gagal memuat program studi.'));
         }
     };
 
@@ -204,7 +204,7 @@ const ToolLending: React.FC = () => {
                     )
                 );
             } else {
-                toast.error(`Maximum available quantity is ${equipment.quantity}`);
+                alert.error(`Maximum available quantity is ${equipment.quantity}`);
             }
         } else {
             setSelectedEquipment(prev => [...prev, { equipment, quantity: 1 }]);
@@ -226,7 +226,7 @@ const ToolLending: React.FC = () => {
                 )
             );
         } else {
-            toast.error(`Maximum available quantity is ${equipment.quantity}`);
+            alert.error(`Maximum available quantity is ${equipment.quantity}`);
         }
     };
 
@@ -236,7 +236,7 @@ const ToolLending: React.FC = () => {
 
     const onSubmit = async (data: LendingForm) => {
         if (selectedEquipment.length === 0) {
-            toast.error(getText('Please select at least one equipment', 'Silakan pilih minimal satu peralatan'));
+            alert.error(getText('Please select at least one equipment', 'Silakan pilih minimal satu peralatan'));
             return;
         }
 
@@ -308,7 +308,7 @@ const ToolLending: React.FC = () => {
                     userId = newUser.id;
                     
                     // Show success message for auto-registration
-                    toast.success(
+                    alert.success(
                         getText(
                             'Account automatically created! You can login with your NIM as both username and password.',
                             'Akun otomatis dibuat! Anda dapat login dengan NIM sebagai username dan password.'
@@ -361,7 +361,7 @@ const ToolLending: React.FC = () => {
                 }
             }
 
-            toast.success(getText('Equipment lending request submitted successfully!', 'Permintaan peminjaman peralatan berhasil dikirim!'));
+            alert.success(getText('Equipment lending request submitted successfully!', 'Permintaan peminjaman peralatan berhasil dikirim!'));
             
             // Reset form and selections
             form.reset({
@@ -376,7 +376,7 @@ const ToolLending: React.FC = () => {
 
         } catch (error: any) {
             console.error('Error creating lending request:', error);
-            toast.error(error.message || getText('Failed to create lending request', 'Gagal membuat permintaan peminjaman'));
+            alert.error(error.message || getText('Failed to create lending request', 'Gagal membuat permintaan peminjaman'));
         } finally {
             setSubmitting(false);
         }
