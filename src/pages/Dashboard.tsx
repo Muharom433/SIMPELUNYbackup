@@ -368,7 +368,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                       style={{ animation: 'float 6s ease-in-out infinite' }}
                     >
                       <img 
-                        src="/src/assets/Build.png" 
+                        src={buildImage} 
                         alt="Building Career" 
                         className="w-80 h-auto lg:w-104 drop-shadow-lg"
                         onError={(e) => {
