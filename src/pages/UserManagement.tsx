@@ -21,6 +21,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
 import toast from 'react-hot-toast';
+import { alert } from '../components/Alert/AlertHelper';
 import { format } from 'date-fns';
 
 // User schema for form validation
