@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { Booking, Room, User as UserType, Department, Equipment } from '../types';
 import toast from 'react-hot-toast';
+import { alert } from '../components/Alert/AlertHelper';
 import { format } from 'date-fns';
 
 interface BookingWithDetails extends Booking {
