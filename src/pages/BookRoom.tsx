@@ -8,11 +8,10 @@ import {
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
-import { ToastHelper } from '../components/Toast/ToastHelper';
 import { Room, Department, LectureSchedule, Equipment, StudyProgram } from '../types';
 import toast from 'react-hot-toast';
-import { format, addMinutes, parse } from 'date-fns';
 import { alert } from '../components/Alert/AlertHelper';
+import { format, addMinutes, parse } from 'date-fns';
 import { id as localeID } from 'date-fns/locale';
 
 const bookingSchema = z.object({
@@ -140,7 +139,7 @@ const BookRoom: React.FC = () => {
             setRooms(roomsWithStatus as RoomWithStatus[]);
         } catch (error) { 
             console.error('Error fetching rooms with status:', error); 
-            alert.error(getText('Failed to load room status.', 'Gagal memuat status ruangan.'));
+            toast.error(getText('Failed to load room status.', 'Gagal memuat status ruangan.'));
         } finally { setLoading(false); }
     }, [getText]);
 
@@ -152,7 +151,7 @@ const BookRoom: React.FC = () => {
             if (error) throw error;
             setSchedulesForModal(data || []);
         } catch (error) { 
-            alert.error(getText("Failed to load schedule for this room.", "Gagal memuat jadwal untuk ruangan ini.")); 
+            toast.error(getText("Failed to load schedule for this room.", "Gagal memuat jadwal untuk ruangan ini.")); 
             setSchedulesForModal([]);
         } finally { setLoadingSchedules(false); }
     };
@@ -194,7 +193,8 @@ const BookRoom: React.FC = () => {
                     form.setValue('study_program_id', existingUser.study_program_id); 
                     const selectedProgram = studyPrograms.find(sp => sp.id === existingUser.study_program_id); 
                     if (selectedProgram) setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`); 
-                }  
+                } 
+                toast.success(getText('Data automatically filled!', 'Data otomatis terisi!')); 
             } 
         } 
     }, [watchIdentityNumber, existingUsers, form, studyPrograms, getText]);
@@ -213,7 +213,7 @@ const BookRoom: React.FC = () => {
             setStudyPrograms(data || []); 
         } catch (error) { 
             console.error('Error fetching study programs:', error); 
-            alert.error(getText('Failed to load study programs.', 'Gagal memuat program studi.')); 
+            toast.error(getText('Failed to load study programs.', 'Gagal memuat program studi.')); 
         } 
     };
 
@@ -224,7 +224,7 @@ const BookRoom: React.FC = () => {
             setMasterEquipmentList(data || []); 
         } catch (error) { 
             console.error('Error fetching equipment:', error); 
-            alert.error(getText('Failed to load equipment.', 'Gagal memuat peralatan.')); 
+            toast.error(getText('Failed to load equipment.', 'Gagal memuat peralatan.')); 
         } 
     };
 
@@ -271,7 +271,28 @@ const BookRoom: React.FC = () => {
         const equipmentCount = checkedEquipment.size;
         
         // Show detailed success toast
-        alert.success('addSuccess');
+        toast.success(
+            getText(
+                `✅ Booking submitted successfully!\n🏢 Room: ${roomName}\n⏰ Time: ${startTime}${equipmentCount > 0 ? `\n⚡ Equipment: ${equipmentCount} items` : ''}\n📝 Status: Pending approval`,
+                `✅ Pemesanan berhasil dikirim!\n🏢 Ruangan: ${roomName}\n⏰ Waktu: ${startTime}${equipmentCount > 0 ? `\n⚡ Peralatan: ${equipmentCount} item` : ''}\n📝 Status: Menunggu persetujuan`
+            ),
+            {
+                duration: 6000,
+                style: {
+                    background: '#10B981',
+                    color: '#FFFFFF',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    boxShadow: '0 10px 25px rgba(16, 185, 129, 0.3)',
+                },
+                iconTheme: {
+                    primary: '#FFFFFF',
+                    secondary: '#10B981',
+                },
+            }
+        );
 
         // Show additional info toast
         setTimeout(() => {
@@ -296,7 +317,7 @@ const BookRoom: React.FC = () => {
     
     const onSubmit = async (data: BookingForm) => {
         if (!selectedRoom) { 
-            alert.error('addFailed'); 
+            toast.error(getText('Please select a room', 'Silakan pilih ruangan')); 
             return; 
         }
         
@@ -359,7 +380,21 @@ const BookRoom: React.FC = () => {
             
         } catch (error: any) { 
             console.error('Error creating booking:', error); 
-            alert.error('addFailed'); 
+            toast.error(
+                error.message || getText('Failed to create booking', 'Gagal membuat pemesanan'),
+                {
+                    duration: 5000,
+                    style: {
+                        background: '#EF4444',
+                        color: '#FFFFFF',
+                        borderRadius: '12px',
+                        padding: '16px',
+                        fontSize: '14px',
+                        fontWeight: '500',
+                        boxShadow: '0 10px 25px rgba(239, 68, 68, 0.3)',
+                    },
+                }
+            ); 
         } finally { 
             setSubmitting(false); 
         }
