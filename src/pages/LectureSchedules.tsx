@@ -199,7 +199,7 @@ const selectedRoom = useMemo(() => {
       setRooms(data || []);
     } catch (error: any) {
       console.error('Error fetching rooms:', error);
-      toast.error(error.message || 'Failed to load rooms');
+      alert.error(error.message || 'Failed to load rooms');
     }
   };
 
@@ -217,7 +217,7 @@ const fetchSchedules = async () => {
     setSchedules(data || []);
   } catch (error: any) {
     console.error('Error fetching schedules:', error);
-    toast.error(error.message || 'Failed to load lecture schedules');
+    alert.error(error.message || 'Failed to load lecture schedules');
   } finally {
     setLoading(false);
   }
@@ -267,13 +267,13 @@ const handleSubmit = async (data: ScheduleForm) => {
         .update(scheduleData)
         .eq('id', editingSchedule.id);
       if (error) throw error;
-      toast.success(getText('Schedule updated successfully!', 'Jadwal berhasil diperbarui!'));
+      alert.success(getText('Schedule updated successfully!', 'Jadwal berhasil diperbarui!'));
     } else {
       const { error } = await supabase
         .from('lecture_schedules')
         .insert(scheduleData);
       if (error) throw error;
-      toast.success(getText('Schedule created successfully!', 'Jadwal berhasil dibuat!'));
+      alert.success(getText('Schedule created successfully!', 'Jadwal berhasil dibuat!'));
     }
 
     setShowModal(false);
@@ -282,7 +282,7 @@ const handleSubmit = async (data: ScheduleForm) => {
     fetchSchedules();
   } catch (error: any) {
     console.error('Error saving schedule:', error);
-    toast.error(error.message || 'Failed to save schedule');
+    alert.error(error.message || 'Failed to save schedule');
   } finally {
     setLoading(false);
   }
@@ -306,14 +306,14 @@ const handleSubmit = async (data: ScheduleForm) => {
       
       if (error) throw error;
       
-      toast.success(getText('Reschedule request submitted successfully!', 'Permintaan reschedule berhasil dikirim!'));
+      alert.success(getText('Reschedule request submitted successfully!', 'Permintaan reschedule berhasil dikirim!'));
       
       setShowRescheduleModal(false);
       rescheduleForm.reset();
       fetchRescheduleRequests();
     } catch (error: any) {
       console.error('Error submitting reschedule request:', error);
-      toast.error(error.message || 'Failed to submit reschedule request');
+      alert.error(error.message || 'Failed to submit reschedule request');
     } finally {
       setLoading(false);
     }
@@ -349,12 +349,12 @@ const handleSubmit = async (data: ScheduleForm) => {
         .eq('id', scheduleId);
       
       if (error) throw error;
-      toast.success(getText('Schedule deleted successfully!', 'Jadwal berhasil dihapus!'));
+      alert.success(getText('Schedule deleted successfully!', 'Jadwal berhasil dihapus!'));
       setShowDeleteConfirm(null);
       fetchSchedules();
     } catch (error: any) {
       console.error('Error deleting schedule:', error);
-      toast.error(error.message || 'Failed to delete schedule');
+      alert.error(error.message || 'Failed to delete schedule');
     } finally {
       setLoading(false);
     }
@@ -375,14 +375,14 @@ const handleSubmit = async (data: ScheduleForm) => {
       
       if (error) throw error;
       
-      toast.success(getText(
+      alert.success(getText(
         `Reschedule request ${isDone ? 'completed' : 'unchecked'} successfully!`,
         `Permintaan reschedule berhasil ${isDone ? 'diselesaikan' : 'dibatalkan'}!`
       ));
       fetchRescheduleRequests();
     } catch (error: any) {
       console.error('Error processing reschedule request:', error);
-      toast.error(error.message || 'Failed to process reschedule request');
+      alert.error(error.message || 'Failed to process reschedule request');
     } finally {
       setLoading(false);
     }
@@ -393,7 +393,7 @@ const handleSubmit = async (data: ScheduleForm) => {
       const pendingRequests = rescheduleRequests.filter(request => request.is_done !== true);
       
       if (pendingRequests.length === 0) {
-        toast.error(getText('No pending reschedule requests to export', 'Tidak ada permintaan reschedule yang belum selesai untuk diekspor'));
+        alert.error(getText('No pending reschedule requests to export', 'Tidak ada permintaan reschedule yang belum selesai untuk diekspor'));
         return;
       }
 
@@ -492,14 +492,14 @@ const handleSubmit = async (data: ScheduleForm) => {
       
       doc.save(fileName);
       
-      toast.success(getText(
+      alert.success(getText(
         `PDF exported successfully! (${pendingRequests.length} pending requests)`,
         `PDF berhasil diekspor! (${pendingRequests.length} permintaan belum selesai)`
       ));
       
     } catch (error) {
       console.error('Error generating PDF:', error);
-      toast.error(getText('Failed to generate PDF', 'Gagal membuat PDF'));
+      alert.error(getText('Failed to generate PDF', 'Gagal membuat PDF'));
     }
   };
 
