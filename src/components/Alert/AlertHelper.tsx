@@ -15,6 +15,10 @@ export let ALERT_MESSAGES = {
   addSuccess: 'Success To Add Data! Thank you for submiting',
   deleteSuccess: 'Success To Delete the data',
   updateSuccess: 'Success To Update the data',
+
+  addSuccess: 'Success To Add Data! Please check the requirment data',
+  deleteSuccess: 'Success To Delete the data',
+  updateSuccess: 'Success To Update the data',
   
   // Error messages
   bookingFailed: 'Failed to create booking',
