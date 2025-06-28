@@ -275,7 +275,6 @@ const ExamManagement = () => {
 
     const fetchExams = async () => { 
         try { 
-          alert.success(getText('Exam created successfully', 'Ujian berhasil dibuat'));
             let query = supabase
                 .from('exams')
                 .select('*, room:rooms(*), lecturer:users!lecturer_id(*), department:departments(*), study_program:study_programs(*)'); 
