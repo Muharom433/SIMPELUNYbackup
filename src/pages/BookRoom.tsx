@@ -359,21 +359,7 @@ const BookRoom: React.FC = () => {
             
         } catch (error: any) { 
             console.error('Error creating booking:', error); 
-            alert.error(
-                error.message || getText('Failed to create booking', 'Gagal membuat pemesanan'),
-                {
-                    duration: 5000,
-                    style: {
-                        background: '#EF4444',
-                        color: '#FFFFFF',
-                        borderRadius: '12px',
-                        padding: '16px',
-                        fontSize: '14px',
-                        fontWeight: '500',
-                        boxShadow: '0 10px 25px rgba(239, 68, 68, 0.3)',
-                    },
-                }
-            ); 
+            alert.error('addFailed'); 
         } finally { 
             setSubmitting(false); 
         }
