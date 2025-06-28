@@ -98,6 +98,29 @@ export const useLanguage = () => {
   return context;
 };
 
+const getText = useCallback((english: string, indonesian: string): string => {
+  const result = language === 'en' ? english : indonesian;
+  console.log('getText called:', { english, indonesian, language, result }); // Debug log
+  
+  // Pastikan selalu return string
+  if (typeof result !== 'string') {
+    console.error('getText returning non-string:', result);
+    return english; // Fallback ke English
+  }
+  
+  return result;
+}, [language]);
+
+// Alternative debug approach - cek apakah context loaded
+const isContextReady = language !== null && language !== undefined;
+console.log('Language context ready:', isContextReady, 'Current language:', language);
+
+if (!isContextReady) {
+  console.warn('Language context not ready yet');
+}
+
+return { language, setLanguage, getText, isContextReady };
+
 // Translation constants for common UI elements
 export const translations = {
   // Common
