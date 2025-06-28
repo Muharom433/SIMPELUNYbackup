@@ -92,6 +92,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: UserCheck, label: getText('Session Schedule', 'Jadwal Sidang'), path: '/session-schedule' },
                 { icon: Users, label: getText('User Management', 'Data Dosen/Mahasiswa'), path: '/users' },
                 { icon: Clock, label: getText('Lecture Schedules', 'Jadwal Kuliah'), path: '/schedules' },
+                { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' }, // Added tool administration for department admin
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
         }
@@ -120,7 +121,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
     const menuItems = getMenuItems();
 
     return (
-        <div id="mobile-sidebar" className={`h-full w-80 bg-white border-r border-gray-200 flex flex-col ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} transition-transform duration-300 ease-in-out`}>
+        <div id="mobile-sidebar" className={`h-full w-80 bg-white border-r border-gray-200 flex flex-col ${isOpen ? 'translate-x-0' : '-translate-x-0 lg:translate-x-0'} transition-transform duration-300 ease-in-out`}>
             <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200/50 flex-shrink-0">
                 <div className="flex items-center space-x-3 min-w-0 flex-1">
                     <div className="p-2 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl shadow-lg flex-shrink-0"><Sparkles className="h-6 w-6 sm:h-8 sm:w-8 text-white" /></div>
