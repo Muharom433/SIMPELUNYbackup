@@ -98,7 +98,6 @@ const ToolLending: React.FC = () => {
                         if (existingUser.email && !existingUser.email.includes('@student.edu')) {
                             form.setValue('email', existingUser.email);
                         }
-                        alert.success('bookingSuccess');
                     }
                 } catch (error) {
                     console.error('Error fetching user data:', error);
