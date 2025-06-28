@@ -31,6 +31,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
+import { alert } from '../components/Alert/AlertHelper';
 import logoUNY from '../assets/logouny.png';
 import { useLanguage } from '../contexts/LanguageContext';
 
