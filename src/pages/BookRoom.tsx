@@ -193,8 +193,7 @@ const BookRoom: React.FC = () => {
                     form.setValue('study_program_id', existingUser.study_program_id); 
                     const selectedProgram = studyPrograms.find(sp => sp.id === existingUser.study_program_id); 
                     if (selectedProgram) setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`); 
-                } 
-                alert.success(getText('Data automatically filled!', 'Data otomatis terisi!')); 
+                }  
             } 
         } 
     }, [watchIdentityNumber, existingUsers, form, studyPrograms, getText]);
