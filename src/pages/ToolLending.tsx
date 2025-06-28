@@ -811,15 +811,7 @@ const ToolLending: React.FC = () => {
                                                     </p>
                                                 )}
                                             </div>
-                                        </div>
-
-                                        {/* Auto-registration info */}
-                                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-xl p-4">
-                                            <div className="flex items-start space-x-3">
-                                                <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                                              
-                                            </div>
-                                        </div>
+                                        </div>                               
                                     </div>
                                 )}
 
