@@ -631,8 +631,7 @@ const ToolLending: React.FC = () => {
                                                     <div className="flex items-center space-x-2 bg-white/80 rounded-lg px-3 py-1">
                                                         <button
                                                             onClick={() => updateQuantity(item.equipment.id, item.quantity - 1)}
-                                                            className="p-1 text-gray-600 hover:text-gray-800 transition-colors">
-                                                          >
+                                                            className="p-1 text-gray-600 hover:text-gray-800 transition-colors" >
                                                             <Minus className="h-3 w-3" />
                                                         </button>
                                                         <span className="font-bold text-gray-800 min-w-[2rem] text-center">
