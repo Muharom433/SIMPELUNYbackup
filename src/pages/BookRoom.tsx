@@ -12,6 +12,7 @@ import { ToastHelper } from '../components/Toast/ToastHelper';
 import { Room, Department, LectureSchedule, Equipment, StudyProgram } from '../types';
 import toast from 'react-hot-toast';
 import { format, addMinutes, parse } from 'date-fns';
+import { alert } from '../components/Alert/AlertHelper';
 import { id as localeID } from 'date-fns/locale';
 
 const bookingSchema = z.object({
