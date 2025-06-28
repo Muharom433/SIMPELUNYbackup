@@ -61,8 +61,8 @@ export const updateAlertLanguage = (language: 'en' | 'id') => {
       updateSuccess: 'Berhasil Mengupdate Data',
     
       addSuccess: 'Gagal Menambahkan Data! Mohon check kelengkapan',
-      deleteSuccess: 'Failed To Delete the data',
-      updateSuccess: 'Failed To Update the data',
+      deleteSuccess: 'Gagal Menghapus Data',
+      updateSuccess: 'Gagal Menghapus Data',
       
       // Error messages
       bookingFailed: 'Gagal membuat pemesanan',
