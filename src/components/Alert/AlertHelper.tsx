@@ -57,7 +57,7 @@ export const updateAlertLanguage = (language: 'en' | 'id') => {
       examUpdated: 'Ujian berhasil diperbarui',
       examDeleted: 'Ujian berhasil dihapus',
       addSuccess: 'Berhasil Menambah Data! Luar biasa terimakasih',
-      deleteSuccess: 'Success To Delete the data',
+      deleteSuccess: 'Berhasil Menghapus Data',
       updateSuccess: 'Success To Update the data',
     
       addSuccess: 'Failed To Add Data! Please check the requirment data',
