@@ -200,34 +200,25 @@ const LectureSchedules: React.FC = () => {
     }
   };
 
-  const fetchSchedules = async () => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('lecture_schedules')
-        .select(`
-          *,
-          room:rooms(name, code, capacity)
-        `)
-        .order('day', { ascending: true })
-        .order('start_time', { ascending: true });
-      
-      if (error) throw error;
-      
-      // Transform data to include room name for compatibility
-      const transformedData = (data || []).map(schedule => ({
-        ...schedule,
-        room: schedule.room?.name || schedule.room_id,
-      }));
-      
-      setSchedules(transformedData);
-    } catch (error: any) {
-      console.error('Error fetching schedules:', error);
-      toast.error(error.message || 'Failed to load lecture schedules');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ✅ KODE YANG BENAR - tanpa JOIN
+const fetchSchedules = async () => {
+  try {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('lecture_schedules')
+      .select('*')
+      .order('day', { ascending: true })
+      .order('start_time', { ascending: true });
+    
+    if (error) throw error;
+    setSchedules(data || []);
+  } catch (error: any) {
+    console.error('Error fetching schedules:', error);
+    toast.error(error.message || 'Failed to load lecture schedules');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const fetchRescheduleRequests = async () => {
     try {
