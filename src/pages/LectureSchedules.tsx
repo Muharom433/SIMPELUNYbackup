@@ -41,11 +41,12 @@ import ExcelUploadModal from '../components/ExcelUpload/ExcelUploadModal';
 import { useLanguage } from '../contexts/LanguageContext';
 import jsPDF from 'jspdf';
 
+// ✅ Update schema validation
 const scheduleSchema = z.object({
   course_name: z.string().min(2, 'Course name is required'),
   course_code: z.string().min(2, 'Course code is required'),
   lecturer: z.string().min(1, 'Lecturer name is required'),
-  room_id: z.string().min(1, 'Please select a room'),
+  room: z.string().min(1, 'Room name is required'), // Ganti dari room_id ke room
   subject_study: z.string().min(1, 'Study program is required'),
   day: z.string().min(1, 'Day is required'),
   start_time: z.string().min(1, 'Start time is required'),
