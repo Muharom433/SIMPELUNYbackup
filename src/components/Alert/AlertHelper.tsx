@@ -14,6 +14,7 @@ export let ALERT_MESSAGES = {
   examDeleted: 'Exam deleted successfully',
   addSuccess: 'Success To Add Data! Thank you for submiting',
   deleteSuccess: 'Success To Delete the data',
+  updateSuccess: 'Success To Update the data',
   
   // Error messages
   bookingFailed: 'Failed to create booking',
