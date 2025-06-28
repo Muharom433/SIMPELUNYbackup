@@ -821,9 +821,6 @@ const ToolLending: React.FC = () => {
                                                     <p className="font-semibold">
                                                         {getText('Auto Account Creation', 'Pembuatan Akun Otomatis')}
                                                     </p>
-                                                    <p className="mt-1">
-                                                        {getText('If you don\'t have an account, one will be created automatically using your NIM as both username and password.', 'Jika Anda belum memiliki akun, akun akan dibuat otomatis menggunakan NIM sebagai username dan password.')}
-                                                    </p>
                                                 </div>
                                             </div>
                                         </div>
