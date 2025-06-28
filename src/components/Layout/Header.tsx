@@ -18,7 +18,7 @@ import {
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { toast } from 'react-hot-toast';
+import Swal from 'sweetalert2';
 import { useLanguage } from '../../contexts/LanguageContext';
 
 interface HeaderProps {
