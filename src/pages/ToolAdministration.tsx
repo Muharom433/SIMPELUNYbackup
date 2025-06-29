@@ -16,7 +16,7 @@ import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { useLanguage } from '../contexts/LanguageContext';
 
-// Update schema to make rooms_id required for department admins
+// Schema validation with mandatory room for department admin
 const equipmentSchema = z.object({
   name: z.string().min(2, 'Equipment name must be at least 2 characters'),
   code: z.string().min(2, 'Equipment code must be at least 2 characters'),
@@ -90,65 +90,165 @@ const ToolAdministration: React.FC = () => {
         { name: 'Safety', icon: Shield, color: 'from-orange-400 to-red-400', bgColor: 'bg-orange-50', textColor: 'text-orange-600' }
     ];
 
+    // Debug logging for department admin
     useEffect(() => {
-        fetchEquipment();
-        fetchRooms();
-    }, []);
+        if (profile?.role === 'department_admin') {
+            console.log('🔍 Department Admin Profile:', {
+                role: profile.role,
+                department_id: profile.department_id,
+                full_name: profile.full_name,
+                email: profile.email
+            });
+        }
+    }, [profile]);
+
+    useEffect(() => {
+        if (profile) {
+            fetchRooms();
+            fetchEquipment();
+        }
+    }, [profile]);
+
+    const fetchRooms = async () => {
+        try {
+            console.log('🏢 Fetching rooms for profile:', profile?.role, profile?.department_id);
+            
+            if (profile?.role === 'department_admin' && profile.department_id) {
+                // For department admin, only get rooms in their department
+                const { data, error } = await supabase
+                    .from('rooms')
+                    .select('*, department:departments(*)')
+                    .eq('department_id', profile.department_id)
+                    .order('name');
+                
+                if (error) throw error;
+                console.log('🏢 Department admin rooms:', data?.length, 'rooms found');
+                console.log('🏢 Rooms data:', data);
+                setRooms(data || []);
+                
+                if (!data || data.length === 0) {
+                    toast.error(getText(
+                        'No rooms found in your department. Please contact administrator.',
+                        'Tidak ada ruangan ditemukan di departemen Anda. Silakan hubungi administrator.'
+                    ));
+                }
+            } else if (profile?.role === 'super_admin') {
+                // For super admin, get all rooms
+                const { data, error } = await supabase
+                    .from('rooms')
+                    .select('*, department:departments(*)')
+                    .order('name');
+                
+                if (error) throw error;
+                console.log('🏢 Super admin rooms:', data?.length, 'rooms found');
+                setRooms(data || []);
+            } else {
+                // For other roles, no rooms
+                console.log('🏢 No rooms for role:', profile?.role);
+                setRooms([]);
+            }
+        } catch (error) {
+            console.error('❌ Error fetching rooms:', error);
+            toast.error(getText('Failed to load rooms', 'Gagal memuat ruangan'));
+            setRooms([]);
+        }
+    };
 
     const fetchEquipment = async () => {
         try {
             setLoading(true);
+            console.log('🔧 Fetching equipment for profile:', profile?.role, profile?.department_id);
             
-            let query = supabase
-                .from('equipment')
-                .select(`*, rooms (*, department:departments(*))`);
-
-            // Filter equipment for department admin - only show equipment with rooms in their department
             if (profile?.role === 'department_admin' && profile.department_id) {
-                // First get rooms in the department
-                const { data: departmentRooms } = await supabase
+                // Step 1: Get all room IDs in the department
+                const { data: departmentRooms, error: roomError } = await supabase
                     .from('rooms')
-                    .select('id')
+                    .select('id, name, code')
                     .eq('department_id', profile.department_id);
+                
+                if (roomError) throw roomError;
+                
+                console.log('🔧 Department rooms for equipment:', departmentRooms?.length, 'rooms');
+                console.log('🔧 Room IDs:', departmentRooms?.map(r => r.id));
                 
                 if (departmentRooms && departmentRooms.length > 0) {
                     const roomIds = departmentRooms.map(room => room.id);
-                    query = query.in('rooms_id', roomIds);
+                    
+                    // Step 2: Get equipment only from those rooms
+                    const { data, error } = await supabase
+                        .from('equipment')
+                        .select(`
+                            *,
+                            rooms (
+                                id,
+                                name,
+                                code,
+                                department_id,
+                                department:departments(
+                                    id,
+                                    name,
+                                    code
+                                )
+                            )
+                        `)
+                        .in('rooms_id', roomIds)
+                        .not('rooms_id', 'is', null)
+                        .order('created_at', { ascending: false });
+                    
+                    if (error) throw error;
+                    console.log('🔧 Department admin equipment:', data?.length, 'items found');
+                    console.log('🔧 Equipment data:', data);
+                    setEquipment(data || []);
+                    
+                    if (!data || data.length === 0) {
+                        toast.info(getText(
+                            'No equipment found in your department rooms. Add some equipment to get started.',
+                            'Tidak ada peralatan ditemukan di ruangan departemen Anda. Tambahkan peralatan untuk memulai.'
+                        ));
+                    }
                 } else {
-                    // No rooms in department, return empty
+                    // No rooms in department, no equipment
+                    console.log('🔧 No rooms in department, no equipment shown');
                     setEquipment([]);
-                    setLoading(false);
-                    return;
+                    toast.warning(getText(
+                        'No rooms assigned to your department. Please contact administrator.',
+                        'Tidak ada ruangan yang ditugaskan ke departemen Anda. Silakan hubungi administrator.'
+                    ));
                 }
+            } else if (profile?.role === 'super_admin') {
+                // For super admin, get all equipment
+                const { data, error } = await supabase
+                    .from('equipment')
+                    .select(`
+                        *,
+                        rooms (
+                            id,
+                            name,
+                            code,
+                            department_id,
+                            department:departments(
+                                id,
+                                name,
+                                code
+                            )
+                        )
+                    `)
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+                console.log('🔧 Super admin equipment:', data?.length, 'items found');
+                setEquipment(data || []);
+            } else {
+                // For other roles, no equipment
+                console.log('🔧 No equipment for role:', profile?.role);
+                setEquipment([]);
             }
-
-            const { data, error } = await query.order('created_at', { ascending: false });
-
-            if (error) throw error;
-            setEquipment(data || []);
         } catch (error) {
-            console.error('Error fetching equipment:', error);
+            console.error('❌ Error fetching equipment:', error);
             toast.error(getText('Failed to load equipment', 'Gagal memuat peralatan'));
+            setEquipment([]);
         } finally { 
             setLoading(false); 
-        }
-    };
-
-    const fetchRooms = async () => {
-        try {
-            let query = supabase.from('rooms').select('*, department:departments(*)');
-            
-            // Filter rooms for department admin - only show rooms in their department
-            if (profile?.role === 'department_admin' && profile.department_id) {
-                query = query.eq('department_id', profile.department_id);
-            }
-            
-            const { data, error } = await query.order('name');
-            if (error) throw error;
-            setRooms(data || []);
-        } catch (error) {
-            console.error('Error fetching rooms:', error);
-            toast.error(getText('Failed to load rooms', 'Gagal memuat ruangan'));
         }
     };
 
@@ -246,12 +346,10 @@ const ToolAdministration: React.FC = () => {
                                     lendingDetail.missing_quantity = 0;
                                 }
                             } else {
-                                // No checkout items found, assume nothing returned yet
                                 lendingDetail.returned_quantity = 0;
                                 lendingDetail.missing_quantity = lendingDetail.borrowed_quantity;
                             }
                         } else {
-                            // No checkout record, equipment is still borrowed
                             lendingDetail.returned_quantity = 0;
                             lendingDetail.missing_quantity = lendingDetail.borrowed_quantity;
                             lendingDetail.status = 'active';
@@ -270,9 +368,9 @@ const ToolAdministration: React.FC = () => {
                     const lendingDetail: LendingDetail = {
                         id: `booking-${booking.id}`,
                         date: booking.start_time,
-                        borrowed_quantity: 1, // Default quantity for bookings
-                        returned_quantity: 0, // Assume not returned for bookings
-                        missing_quantity: 1, // Default missing for approved bookings
+                        borrowed_quantity: 1,
+                        returned_quantity: 0,
+                        missing_quantity: 1,
                         status: 'active',
                         created_at: booking.created_at,
                         source: 'booking',
@@ -313,6 +411,19 @@ const ToolAdministration: React.FC = () => {
     const handleSubmit = async (data: EquipmentForm) => {
         try {
             setLoading(true);
+            
+            // Validate room belongs to department for department admin
+            if (profile?.role === 'department_admin' && profile.department_id) {
+                const selectedRoomData = rooms.find(r => r.id === data.rooms_id);
+                if (!selectedRoomData || selectedRoomData.department_id !== profile.department_id) {
+                    toast.error(getText(
+                        'You can only assign equipment to rooms in your department.',
+                        'Anda hanya dapat menugaskan peralatan ke ruangan di departemen Anda.'
+                    ));
+                    return;
+                }
+            }
+            
             const equipmentData = {
                 name: data.name,
                 code: data.code.toUpperCase(),
@@ -407,10 +518,27 @@ const ToolAdministration: React.FC = () => {
         setRoomSearchTerm('');
     };
 
-    const filteredRooms = rooms.filter(room => 
-        room.name.toLowerCase().includes(roomSearchTerm.toLowerCase()) ||
-        room.code.toLowerCase().includes(roomSearchTerm.toLowerCase())
-    );
+    // Filter rooms for department admin
+    const filteredRooms = rooms.filter(room => {
+        const matchesSearch = room.name.toLowerCase().includes(roomSearchTerm.toLowerCase()) ||
+                            room.code.toLowerCase().includes(roomSearchTerm.toLowerCase());
+        
+        // Additional check for department admin
+        if (profile?.role === 'department_admin' && profile.department_id) {
+            const matchesDepartment = room.department_id === profile.department_id;
+            return matchesSearch && matchesDepartment;
+        }
+        
+        return matchesSearch;
+    });
+
+    // Filter rooms for main filter dropdown
+    const availableRoomsForFilter = rooms.filter(room => {
+        if (profile?.role === 'department_admin' && profile.department_id) {
+            return room.department_id === profile.department_id;
+        }
+        return true;
+    });
 
     const filteredEquipment = equipment.filter(eq => {
         const matchesSearch = eq.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -489,6 +617,21 @@ const ToolAdministration: React.FC = () => {
         );
     };
 
+    // Show loading state while profile is being loaded
+    if (!profile) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <div className="text-center">
+                    <RefreshCw className="h-8 w-8 animate-spin text-blue-500 mx-auto mb-4" />
+                    <p className="text-gray-600">
+                        {getText('Loading profile...', 'Memuat profil...')}
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    // Enhanced access control check
     if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
         return (
             <div className="flex items-center justify-center h-64">
@@ -503,6 +646,32 @@ const ToolAdministration: React.FC = () => {
                             'Anda tidak memiliki izin untuk mengakses administrasi alat.'
                         )}
                     </p>
+                    <div className="mt-4 text-sm text-gray-500">
+                        {getText('Current role', 'Peran saat ini')}: {profile?.role || 'None'}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // Check if department admin has department_id
+    if (profile?.role === 'department_admin' && !profile.department_id) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <div className="text-center">
+                    <AlertCircle className="h-16 w-16 text-amber-500 mx-auto mb-4" />
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                        {getText('Department Not Assigned', 'Departemen Belum Ditentukan')}
+                    </h3>
+                    <p className="text-gray-600">
+                        {getText(
+                            'Your account is not assigned to any department. Please contact the system administrator.',
+                            'Akun Anda belum ditugaskan ke departemen manapun. Silakan hubungi administrator sistem.'
+                        )}
+                    </p>
+                    <div className="mt-4 text-sm text-gray-500">
+                        {getText('User ID', 'ID Pengguna')}: {profile.id}
+                    </div>
                 </div>
             </div>
         );
@@ -522,8 +691,12 @@ const ToolAdministration: React.FC = () => {
                         </h1>
                         <p className="text-lg opacity-90">
                             {getText('Manage your laboratory and classroom equipment', 'Kelola peralatan laboratorium dan ruang kelas Anda')}
-                        </p>
-                        <div className="mt-3 flex items-center space-x-4 text-sm">
+                            {profile?.role === 'department_admin' && (
+                                <span className="block text-sm mt-1">
+                                    {getText('Department', 'Departemen')}: {rooms[0]?.department?.name || 'Loading...'}
+                                </span>
+                            )}
+                        </p><div className="mt-3 flex items-center space-x-4 text-sm">
                             <div className="flex items-center space-x-2 opacity-80">
                                 <Package className="h-4 w-4" />
                                 <span>{getText('Total', 'Total')}: {equipment.length}</span>
@@ -536,11 +709,20 @@ const ToolAdministration: React.FC = () => {
                                 <AlertTriangle className="h-4 w-4" />
                                 <span>{getText('Good Condition', 'Kondisi Baik')}: {equipment.filter(eq => eq.condition === 'GOOD').length}</span>
                             </div>
+                            <div className="flex items-center space-x-2 opacity-80">
+                                <Building className="h-4 w-4" />
+                                <span>{getText('Rooms', 'Ruangan')}: {rooms.length}</span>
+                            </div>
                         </div>
                     </div>
                     <div className="hidden lg:block text-right">
                         <div className="text-4xl font-bold opacity-90">{equipment.length}</div>
                         <div className="text-sm opacity-70">{getText('Total Equipment', 'Total Peralatan')}</div>
+                        {profile?.role === 'department_admin' && (
+                            <div className="text-xs opacity-60 mt-1">
+                                {getText('Your Department Only', 'Hanya Departemen Anda')}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -577,13 +759,18 @@ const ToolAdministration: React.FC = () => {
                             className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 appearance-none bg-white text-sm"
                         >
                             <option value="all">{getText('All Locations', 'Semua Lokasi')}</option>
-                            {rooms.map(room => (
-                                <option key={room.id} value={room.id}>{room.name}</option>
+                            {availableRoomsForFilter.map(room => (
+                                <option key={room.id} value={room.id}>
+                                    {room.name} {room.department?.name && `(${room.department.name})`}
+                                </option>
                             ))}
                         </select>
 
                         <button 
-                            onClick={() => fetchEquipment()} 
+                            onClick={() => {
+                                fetchRooms();
+                                fetchEquipment();
+                            }} 
                             className="p-2 bg-gray-50 hover:bg-gray-100 border border-gray-300 rounded-lg transition-colors"
                             title={getText('Refresh', 'Segarkan')}
                         >
@@ -599,12 +786,34 @@ const ToolAdministration: React.FC = () => {
                                 setShowModal(true); 
                             }} 
                             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                            disabled={rooms.length === 0}
                         >
                             <Plus className="h-4 w-4" />
                             <span>{getText('Add Equipment', 'Tambah Peralatan')}</span>
                         </button>
                     </div>
                 </div>
+                
+                {/* Department Info for Department Admin */}
+                {profile?.role === 'department_admin' && (
+                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="flex items-center gap-2 text-blue-800">
+                            <Building className="h-4 w-4" />
+                            <span className="font-medium">
+                                {getText('Department Filter Active', 'Filter Departemen Aktif')}: 
+                            </span>
+                            <span className="font-bold">
+                                {rooms[0]?.department?.name || getText('Loading department...', 'Memuat departemen...')}
+                            </span>
+                        </div>
+                        <div className="text-xs text-blue-600 mt-1">
+                            {getText(
+                                'You can only see and manage equipment in rooms assigned to your department.',
+                                'Anda hanya dapat melihat dan mengelola peralatan di ruangan yang ditugaskan ke departemen Anda.'
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Equipment Grid */}
@@ -626,9 +835,39 @@ const ToolAdministration: React.FC = () => {
                     <div className="col-span-full flex flex-col items-center justify-center py-16 text-gray-500">
                         <Package className="h-16 w-16 mb-4 opacity-50" />
                         <h3 className="text-xl font-semibold mb-2">
-                            {getText('No Equipment Found', 'Tidak Ada Peralatan Ditemukan')}
+                            {equipment.length === 0 
+                                ? getText('No Equipment Found', 'Tidak Ada Peralatan Ditemukan')
+                                : getText('No Equipment Match Filter', 'Tidak Ada Peralatan yang Cocok dengan Filter')
+                            }
                         </h3>
-                        <p>{getText('Try adjusting your search or filters', 'Coba sesuaikan pencarian atau filter Anda')}</p>
+                        <p className="text-center max-w-md">
+                            {equipment.length === 0 
+                                ? (profile?.role === 'department_admin' 
+                                    ? getText(
+                                        'No equipment found in your department rooms. Add equipment to rooms assigned to your department to get started.',
+                                        'Tidak ada peralatan ditemukan di ruangan departemen Anda. Tambahkan peralatan ke ruangan yang ditugaskan ke departemen Anda untuk memulai.'
+                                      )
+                                    : getText('Add some equipment to get started', 'Tambahkan peralatan untuk memulai')
+                                  )
+                                : getText('Try adjusting your search or filters', 'Coba sesuaikan pencarian atau filter Anda')
+                            }
+                        </p>
+                        {rooms.length === 0 && profile?.role === 'department_admin' && (
+                            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                                <div className="flex items-center gap-2 text-amber-800">
+                                    <AlertTriangle className="h-5 w-5" />
+                                    <span className="font-medium">
+                                        {getText('No Rooms Available', 'Tidak Ada Ruangan Tersedia')}
+                                    </span>
+                                </div>
+                                <p className="text-sm text-amber-700 mt-1">
+                                    {getText(
+                                        'No rooms are assigned to your department. Contact the system administrator to assign rooms to your department.',
+                                        'Tidak ada ruangan yang ditugaskan ke departemen Anda. Hubungi administrator sistem untuk menugaskan ruangan ke departemen Anda.'
+                                    )}
+                                </p>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -664,7 +903,7 @@ const ToolAdministration: React.FC = () => {
                                     
                                     <div className="flex items-center justify-between">
                                         <span className="text-gray-600">{getText('Location', 'Lokasi')}</span>
-                                        <span className="font-medium text-gray-900">
+                                        <span className="font-medium text-gray-900 text-right">
                                             {eq.rooms?.name || getText('Unassigned', 'Belum Ditentukan')}
                                         </span>
                                     </div>
@@ -679,7 +918,7 @@ const ToolAdministration: React.FC = () => {
                                     {eq.rooms?.department?.name && (
                                         <div className="flex items-center justify-between">
                                             <span className="text-gray-600">{getText('Department', 'Departemen')}</span>
-                                            <span className="font-medium text-gray-900">
+                                            <span className="font-medium text-blue-600 text-right">
                                                 {eq.rooms.department.name}
                                             </span>
                                         </div>
@@ -731,6 +970,11 @@ const ToolAdministration: React.FC = () => {
                                         getText('Edit Equipment', 'Edit Peralatan') : 
                                         getText('Add New Equipment', 'Tambah Peralatan Baru')
                                     }
+                                    {profile?.role === 'department_admin' && (
+                                        <span className="text-sm opacity-80 ml-2">
+                                            ({rooms[0]?.department?.name})
+                                        </span>
+                                    )}
                                 </h3>
                                 <button 
                                     onClick={() => setShowModal(false)}
@@ -799,13 +1043,16 @@ const ToolAdministration: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* Room Location with Search Dropdown - MANDATORY for Department Admin */}
+                            {/* Room Location with Search Dropdown - MANDATORY */}
                             <div className="space-y-2">
                                 <label className="block text-sm font-semibold text-gray-700">
                                     {getText('Room Location', 'Lokasi Ruangan')} *
+                                    <span className="text-red-500 ml-1">
+                                        ({getText('Required', 'Wajib')})
+                                    </span>
                                     {profile?.role === 'department_admin' && (
-                                        <span className="text-red-500 ml-1">
-                                            ({getText('Required for department admin', 'Wajib untuk admin departemen')})
+                                        <span className="text-blue-600 text-xs block mt-1">
+                                            {getText('Only rooms in your department', 'Hanya ruangan di departemen Anda')}
                                         </span>
                                     )}
                                 </label>
@@ -828,6 +1075,7 @@ const ToolAdministration: React.FC = () => {
                                                     : 'Cari ruangan...'
                                             )}
                                             className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors pr-20"
+                                            disabled={rooms.length === 0}
                                         />
                                         <div className="absolute right-2 flex items-center gap-1">
                                             {selectedRoom && (
@@ -844,6 +1092,7 @@ const ToolAdministration: React.FC = () => {
                                                 type="button"
                                                 onClick={() => setShowRoomDropdown(!showRoomDropdown)}
                                                 className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                                                disabled={rooms.length === 0}
                                             >
                                                 {showRoomDropdown ? 
                                                     <ChevronUp className="h-4 w-4" /> : 
@@ -856,14 +1105,25 @@ const ToolAdministration: React.FC = () => {
                                     {/* Dropdown */}
                                     {showRoomDropdown && (
                                         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                                            {filteredRooms.length === 0 ? (
+                                            {rooms.length === 0 ? (
+                                                <div className="p-3 text-gray-500 text-center">
+                                                    <AlertTriangle className="h-5 w-5 mx-auto mb-2 text-amber-500" />
+                                                    <div className="font-medium">
+                                                        {getText('No rooms available', 'Tidak ada ruangan tersedia')}
+                                                    </div>
+                                                    <div className="text-xs mt-1">
+                                                        {profile?.role === 'department_admin' 
+                                                            ? getText('No rooms assigned to your department', 'Tidak ada ruangan yang ditugaskan ke departemen Anda')
+                                                            : getText('Contact administrator', 'Hubungi administrator')
+                                                        }
+                                                    </div>
+                                                </div>
+                                            ) : filteredRooms.length === 0 ? (
                                                 <div className="p-3 text-gray-500 text-center">
                                                     {getText('No rooms found', 'Tidak ada ruangan ditemukan')}
-                                                    {profile?.role === 'department_admin' && (
-                                                        <div className="text-xs mt-1">
-                                                            {getText('Only rooms in your department are shown', 'Hanya ruangan di departemen Anda yang ditampilkan')}
-                                                        </div>
-                                                    )}
+                                                    <div className="text-xs mt-1">
+                                                        {getText('Try different search terms', 'Coba kata kunci pencarian yang berbeda')}
+                                                    </div>
                                                 </div>
                                             ) : (
                                                 filteredRooms.map((room) => (
@@ -879,7 +1139,7 @@ const ToolAdministration: React.FC = () => {
                                                         <div className="text-sm text-gray-500">
                                                             {getText('Code', 'Kode')}: {room.code} | {getText('Capacity', 'Kapasitas')}: {room.capacity}
                                                             {room.department && (
-                                                                <span className="ml-2 text-blue-600">
+                                                                <span className="ml-2 text-blue-600 font-medium">
                                                                     ({room.department.name})
                                                                 </span>
                                                             )}
@@ -892,14 +1152,17 @@ const ToolAdministration: React.FC = () => {
                                     
                                     {/* Selected Room Display */}
                                     {selectedRoom && (
-                                        <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                                        <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                                             <div className="flex items-center justify-between">
                                                 <div>
-                                                    <div className="font-medium text-blue-900">{selectedRoom.name}</div>
+                                                    <div className="font-medium text-blue-900 flex items-center gap-2">
+                                                        <MapPin className="h-4 w-4" />
+                                                        {selectedRoom.name}
+                                                    </div>
                                                     <div className="text-sm text-blue-600">
                                                         {getText('Code', 'Kode')}: {selectedRoom.code} | {getText('Capacity', 'Kapasitas')}: {selectedRoom.capacity}
                                                         {selectedRoom.department && (
-                                                            <span className="ml-2">
+                                                            <span className="ml-2 font-medium">
                                                                 ({selectedRoom.department.name})
                                                             </span>
                                                         )}
@@ -919,15 +1182,19 @@ const ToolAdministration: React.FC = () => {
                                 {form.formState.errors.rooms_id && (
                                     <p className="text-red-500 text-sm flex items-center gap-1">
                                         <AlertTriangle className="h-4 w-4" />
+                                        {getText('Please select a room location', 'Pilih lokasi ruangan')}
+                                    </p>
+                                )}
+                                {rooms.length === 0 && (
+                                    <p className="text-amber-600 text-sm flex items-center gap-1">
+                                        <AlertTriangle className="h-4 w-4" />
                                         {profile?.role === 'department_admin' 
-                                            ? getText('Please select a room from your department', 'Pilih ruangan dari departemen Anda')
-                                            : getText('Please select a room', 'Pilih ruangan')
+                                            ? getText('No rooms available in your department. Contact administrator.', 'Tidak ada ruangan tersedia di departemen Anda. Hubungi administrator.')
+                                            : getText('No rooms available. Contact administrator.', 'Tidak ada ruangan tersedia. Hubungi administrator.')
                                         }
                                     </p>
                                 )}
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            </div><div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-2">
                                     <label className="block text-sm font-semibold text-gray-700">
                                         {getText('Quantity', 'Jumlah')} *
@@ -1040,7 +1307,7 @@ const ToolAdministration: React.FC = () => {
                                 </button>
                                 <button 
                                     type="submit" 
-                                    disabled={loading} 
+                                    disabled={loading || rooms.length === 0} 
                                     className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-semibold transition-all shadow-lg"
                                 >
                                     {loading ? (
@@ -1071,6 +1338,11 @@ const ToolAdministration: React.FC = () => {
                                     <div className="flex items-center gap-2">
                                         <Hash className="h-4 w-4 opacity-80" />
                                         <span className="font-mono text-lg opacity-90">{selectedEquipment.code}</span>
+                                        {selectedEquipment.rooms?.department && (
+                                            <span className="ml-4 px-2 py-1 bg-white bg-opacity-20 rounded text-sm">
+                                                {selectedEquipment.rooms.department.name}
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                                 <button 
@@ -1164,7 +1436,7 @@ const ToolAdministration: React.FC = () => {
                                                 </span>
                                                 <div className="flex items-center gap-2">
                                                     <Building className="h-4 w-4 text-gray-600" />
-                                                    <span className="font-semibold text-gray-900">
+                                                    <span className="font-semibold text-blue-600">
                                                         {selectedEquipment.rooms?.department?.name || 'N/A'}
                                                     </span>
                                                 </div>
@@ -1182,7 +1454,8 @@ const ToolAdministration: React.FC = () => {
                                                 </div>
                                             </div>
                                             
-                                            <div className="flex justify-between items-center"><span className="text-sm font-semibold text-gray-600">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">
                                                     {getText('Created', 'Dibuat')}
                                                 </span>
                                                 <span className="text-sm text-gray-700">
