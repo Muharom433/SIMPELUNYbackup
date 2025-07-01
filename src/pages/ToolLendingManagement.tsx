@@ -29,7 +29,7 @@ interface LendingRecord {
     equipment_details?: Equipment[];
 }
 
-const ToolAdministration: React.FC = () => {
+const ToolLendingManagement: React.FC = () => {
     const { profile } = useAuth();
     const { getText } = useLanguage();
     const [lendingRecords, setLendingRecords] = useState<LendingRecord[]>([]);
