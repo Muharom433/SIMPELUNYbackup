@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
     Wrench, Search, Eye, Edit, Trash2, RefreshCw, Download, User, Package, 
     AlertCircle, Calendar, Clock, X, Phone, Mail, Hash, Building, Users, 
-    CheckCircle, XCircle, Plus, Minus, Settings, Loader2
+    CheckCircle, XCircle, Plus, Minus, Settings, Loader2, MapPin
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -19,6 +19,7 @@ interface LendingRecord {
     date: string;
     id_equipment: string[];
     qty: number[];
+    room_location?: string; // Made optional
     user_info?: {
         full_name: string;
         identity_number: string;
@@ -36,11 +37,13 @@ const ToolAdministration: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [dateFilter, setDateFilter] = useState<string>('all');
+    const [locationFilter, setLocationFilter] = useState<string>('all');
     const [selectedRecord, setSelectedRecord] = useState<LendingRecord | null>(null);
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
     const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
     const [allEquipment, setAllEquipment] = useState<Equipment[]>([]);
+    const [roomLocations, setRoomLocations] = useState<string[]>([]);
 
     useEffect(() => {
         fetchLendingRecords();
@@ -85,6 +88,13 @@ const ToolAdministration: React.FC = () => {
 
             if (lendingError) throw lendingError;
             if (!lendingData) { setLendingRecords([]); setLoading(false); return; }
+
+            // Extract unique room locations for filter
+            const locations = [...new Set(lendingData
+                .map(record => record.room_location)
+                .filter(Boolean)
+            )] as string[];
+            setRoomLocations(locations);
 
             // Fetch user details and equipment details for each record
             const recordsWithDetails = await Promise.all(
@@ -191,11 +201,13 @@ const ToolAdministration: React.FC = () => {
         const userName = record.user?.full_name || record.user_info?.full_name || '';
         const userIdentity = record.user?.identity_number || record.user_info?.identity_number || '';
         const equipmentNames = record.equipment_details?.map(eq => eq.name).join(' ') || '';
+        const roomLocation = record.room_location || '';
         
         const matchesSearch = 
             userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
             userIdentity.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            equipmentNames.toLowerCase().includes(searchTerm.toLowerCase());
+            equipmentNames.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            roomLocation.toLowerCase().includes(searchTerm.toLowerCase());
         
         let matchesDate = true;
         if (dateFilter !== 'all') {
@@ -214,8 +226,17 @@ const ToolAdministration: React.FC = () => {
                 case 'past': matchesDate = recordDate < today; break;
             }
         }
+
+        let matchesLocation = true;
+        if (locationFilter !== 'all') {
+            if (locationFilter === 'no_room') {
+                matchesLocation = !record.room_location;
+            } else {
+                matchesLocation = record.room_location === locationFilter;
+            }
+        }
         
-        return matchesSearch && matchesDate;
+        return matchesSearch && matchesDate && matchesLocation;
     });
 
     const getTotalItemsInRecord = (record: LendingRecord) => {
@@ -231,7 +252,7 @@ const ToolAdministration: React.FC = () => {
                record.user?.identity_number || record.user_info?.identity_number || 'No contact';
     };
 
-    if (profile?.role !== 'super_admin') {
+    if (profile?.role !== 'super_admin' && profile?.role !== 'admin') {
         return (
             <div className="flex items-center justify-center h-64">
                 <div className="text-center">
@@ -256,6 +277,12 @@ const ToolAdministration: React.FC = () => {
                         <p className="mt-2 opacity-90">
                             {getText('Manage equipment lending records and monitor usage', 'Kelola data peminjaman peralatan dan pantau penggunaan')}
                         </p>
+                        {profile?.role === 'super_admin' && (
+                            <div className="mt-2 flex items-center space-x-2 text-sm bg-white bg-opacity-20 rounded-lg px-3 py-1 w-fit">
+                                <Settings className="h-4 w-4" />
+                                <span>{getText('Super Admin - Room location optional', 'Super Admin - Lokasi ruangan opsional')}</span>
+                            </div>
+                        )}
                     </div>
                     <div className="hidden md:block text-right">
                         <div className="text-2xl font-bold">{lendingRecords.length}</div>
@@ -265,7 +292,7 @@ const ToolAdministration: React.FC = () => {
             </div>
 
             {/* Statistics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
                 {[
                     { 
                         label: getText('Total Lendings', 'Total Peminjaman'), 
@@ -300,6 +327,12 @@ const ToolAdministration: React.FC = () => {
                         count: new Set(lendingRecords.map(r => r.id_user || r.user_info?.identity_number)).size, 
                         color: 'bg-orange-500', 
                         icon: Users 
+                    },
+                    { 
+                        label: getText('With Room Info', 'Dengan Info Ruang'), 
+                        count: lendingRecords.filter(r => r.room_location).length, 
+                        color: 'bg-indigo-500', 
+                        icon: MapPin 
                     }
                 ].map((stat, index) => (
                     <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -324,7 +357,7 @@ const ToolAdministration: React.FC = () => {
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                             <input
                                 type="text"
-                                placeholder={getText("Search by user name, ID, or equipment...", "Cari berdasarkan nama, ID, atau peralatan...")}
+                                placeholder={getText("Search by user name, ID, equipment, or room...", "Cari berdasarkan nama, ID, peralatan, atau ruangan...")}
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
@@ -340,6 +373,17 @@ const ToolAdministration: React.FC = () => {
                             <option value="tomorrow">{getText('Tomorrow', 'Besok')}</option>
                             <option value="week">{getText('This Week', 'Minggu Ini')}</option>
                             <option value="past">{getText('Past Records', 'Data Lalu')}</option>
+                        </select>
+                        <select
+                            value={locationFilter}
+                            onChange={(e) => setLocationFilter(e.target.value)}
+                            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        >
+                            <option value="all">{getText('All Locations', 'Semua Lokasi')}</option>
+                            <option value="no_room">{getText('No Room Info', 'Tanpa Info Ruang')}</option>
+                            {roomLocations.map(location => (
+                                <option key={location} value={location}>{location}</option>
+                            ))}
                         </select>
                     </div>
                     <div className="flex items-center space-x-2">
@@ -371,6 +415,9 @@ const ToolAdministration: React.FC = () => {
                                     {getText('Equipment', 'Peralatan')}
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    {getText('Room Location', 'Lokasi Ruang')}
+                                </th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     {getText('Lending Date', 'Tanggal Pinjam')}
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -384,7 +431,7 @@ const ToolAdministration: React.FC = () => {
                         <tbody className="bg-white divide-y divide-gray-200">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-12 text-center">
+                                    <td colSpan={6} className="px-6 py-12 text-center">
                                         <div className="flex items-center justify-center">
                                             <RefreshCw className="h-6 w-6 animate-spin text-green-600 mr-2" />
                                             <span className="text-gray-600">{getText('Loading records...', 'Memuat data...')}</span>
@@ -393,7 +440,7 @@ const ToolAdministration: React.FC = () => {
                                 </tr>
                             ) : filteredRecords.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-12 text-center">
+                                    <td colSpan={6} className="px-6 py-12 text-center">
                                         <div className="text-gray-500">
                                             <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
                                             <p className="text-lg font-medium mb-2">
@@ -449,6 +496,21 @@ const ToolAdministration: React.FC = () => {
                                                         </div>
                                                     )}
                                                 </div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                {record.room_location ? (
+                                                    <div className="flex items-center">
+                                                        <MapPin className="h-4 w-4 text-gray-400 mr-2" />
+                                                        <span className="text-sm text-gray-900">{record.room_location}</span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center">
+                                                        <MapPin className="h-4 w-4 text-gray-300 mr-2" />
+                                                        <span className="text-sm text-gray-400 italic">
+                                                            {getText('No room specified', 'Ruang tidak ditentukan')}
+                                                        </span>
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div>
@@ -570,7 +632,7 @@ const ToolAdministration: React.FC = () => {
                                         {getText('Lending Information', 'Informasi Peminjaman')}
                                     </h4>
                                     <div className="bg-green-50 rounded-lg p-4">
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                             <div>
                                                 <label className="text-sm font-medium text-gray-600">
                                                     {getText('Lending Date', 'Tanggal Pinjam')}
@@ -593,6 +655,24 @@ const ToolAdministration: React.FC = () => {
                                                 </label>
                                                 <p className="text-gray-900 font-medium">
                                                     {getTotalItemsInRecord(selectedRecord)} {getText('items', 'item')}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <label className="text-sm font-medium text-gray-600">
+                                                    {getText('Room Location', 'Lokasi Ruang')}
+                                                </label>
+                                                <p className="text-gray-900 font-medium">
+                                                    {selectedRecord.room_location ? (
+                                                        <span className="flex items-center">
+                                                            <MapPin className="h-4 w-4 text-green-600 mr-1" />
+                                                            {selectedRecord.room_location}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="flex items-center text-gray-500 italic">
+                                                            <MapPin className="h-4 w-4 text-gray-400 mr-1" />
+                                                            {getText('Not specified', 'Tidak ditentukan')}
+                                                        </span>
+                                                    )}
                                                 </p>
                                             </div>
                                         </div>
@@ -636,6 +716,31 @@ const ToolAdministration: React.FC = () => {
                                         ))}
                                     </div>
                                 </div>
+
+                                {/* Additional Information for Super Admin */}
+                                {profile?.role === 'super_admin' && (
+                                    <div>
+                                        <h4 className="text-lg font-medium text-gray-900 mb-4">
+                                            {getText('Administrative Notes', 'Catatan Administratif')}
+                                        </h4>
+                                        <div className="bg-yellow-50 rounded-lg p-4">
+                                            <div className="flex items-start space-x-3">
+                                                <Settings className="h-5 w-5 text-yellow-600 mt-0.5" />
+                                                <div className="text-sm text-gray-700">
+                                                    <p className="font-medium mb-2">
+                                                        {getText('Super Admin Privileges', 'Hak Istimewa Super Admin')}
+                                                    </p>
+                                                    <ul className="space-y-1 text-xs">
+                                                        <li>• {getText('Room location field is optional for super admin', 'Field lokasi ruang opsional untuk super admin')}</li>
+                                                        <li>• {getText('Can delete any lending record', 'Dapat menghapus data peminjaman apa pun')}</li>
+                                                        <li>• {getText('Can view all lending records across departments', 'Dapat melihat semua data peminjaman lintas departemen')}</li>
+                                                        <li>• {getText('Equipment quantities will be restored upon deletion', 'Jumlah peralatan akan dipulihkan saat penghapusan')}</li>
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -687,6 +792,30 @@ const ToolAdministration: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            {/* Info Banner for Room Location Policy */}
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <div className="flex items-start space-x-3">
+                    <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" />
+                    <div className="text-sm">
+                        <p className="font-medium text-blue-900 mb-1">
+                            {getText('Room Location Policy', 'Kebijakan Lokasi Ruang')}
+                        </p>
+                        <p className="text-blue-700">
+                            {profile?.role === 'super_admin' 
+                                ? getText(
+                                    'As a Super Admin, you can view all lending records. Room location information is optional and some records may not have this data.',
+                                    'Sebagai Super Admin, Anda dapat melihat semua data peminjaman. Informasi lokasi ruang bersifat opsional dan beberapa data mungkin tidak memiliki informasi ini.'
+                                )
+                                : getText(
+                                    'Room location information helps track equipment usage across different departments and locations.',
+                                    'Informasi lokasi ruang membantu melacak penggunaan peralatan di berbagai departemen dan lokasi.'
+                                )
+                            }
+                        </p>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 };
