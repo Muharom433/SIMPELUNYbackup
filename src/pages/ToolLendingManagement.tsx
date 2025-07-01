@@ -1,639 +1,1184 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import {
-    Wrench, Search, Eye, Edit, Trash2, RefreshCw, Download, User, Package, 
-    AlertCircle, Calendar, Clock, X, Phone, Mail, Hash, Building, Users, 
-    CheckCircle, XCircle, Plus, Minus, Settings, Loader2
+    Wrench, Plus, Search, Edit, Trash2, Eye, Package, AlertCircle, RefreshCw, X, 
+    Camera, Cpu, Wifi, Zap, FlaskConical, Armchair, Shield,
+    MapPin, Hash, Layers, CheckCircle, XCircle, Star, AlertTriangle, Building,
+    User, Phone, CreditCard, Clock, Calendar, Users, Activity, TrendingUp,
+    ChevronDown, ChevronUp, Info
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { useLanguage } from '../contexts/LanguageContext';
-import { Equipment, User as UserType } from '../types';
+import { Equipment, Room, Department, User as UserType } from '../types';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
+import { useLanguage } from '../contexts/LanguageContext';
 
-interface LendingRecord {
+// Conditional schema based on user role
+const createEquipmentSchema = (userRole: string) => {
+  const baseSchema = {
+    name: z.string().min(2, 'Equipment name must be at least 2 characters'),
+    code: z.string().min(2, 'Equipment code must be at least 2 characters'),
+    category: z.string().min(1, 'Please select a category'),
+    is_mandatory: z.boolean().optional(),
+    is_available: z.boolean().optional(),
+    condition: z.enum(['GOOD', 'BROKEN', 'MAINTENANCE']).default('GOOD'),
+    Spesification: z.string().optional(),
+    quantity: z.number().min(0, 'Quantity cannot be negative'),
+    unit: z.string().min(1, 'Unit is required (e.g., pcs, set)'),
+  };
+
+  // Conditional rooms_id validation
+  if (userRole === 'super_admin') {
+    return z.object({
+      ...baseSchema,
+      rooms_id: z.string().optional().nullable(), // Optional for super admin
+    });
+  } else {
+    return z.object({
+      ...baseSchema,
+      rooms_id: z.string().min(1, 'Please select a room location'), // Required for department admin
+    });
+  }
+};
+
+interface EquipmentWithDetails extends Equipment {
+  rooms?: Room & { department: Department };
+}
+
+interface LendingDetail {
+  id: string;
+  date: string;
+  borrowed_quantity: number;
+  returned_quantity: number;
+  missing_quantity: number;
+  status: 'active' | 'returned' | 'overdue';
+  created_at: string;
+  user?: UserType;
+  checkout?: {
     id: string;
-    created_at: string;
-    updated_at: string;
-    id_user: string | null;
-    date: string;
-    id_equipment: string[];
-    qty: number[];
-    user_info?: {
-        full_name: string;
-        identity_number: string;
-        phone_number?: string;
-        email?: string;
-    };
-    user?: UserType;
-    equipment_details?: Equipment[];
+    checkout_date: string;
+    expected_return_date: string;
+    status: string;
+  };
+  source?: 'lending_tool' | 'booking';
 }
 
 const ToolAdministration: React.FC = () => {
     const { profile } = useAuth();
     const { getText } = useLanguage();
-    const [lendingRecords, setLendingRecords] = useState<LendingRecord[]>([]);
+    
+    // Create conditional schema based on user role
+    const equipmentSchema = useMemo(() => 
+        createEquipmentSchema(profile?.role || 'department_admin'), 
+        [profile?.role]
+    );
+    
+    type EquipmentForm = z.infer<typeof equipmentSchema>;
+    
+    const [equipment, setEquipment] = useState<EquipmentWithDetails[]>([]);
+    const [rooms, setRooms] = useState<Room[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-    const [dateFilter, setDateFilter] = useState<string>('all');
-    const [selectedRecord, setSelectedRecord] = useState<LendingRecord | null>(null);
-    const [showDetailModal, setShowDetailModal] = useState(false);
+    const [categoryFilter, setCategoryFilter] = useState<string>('all');
+    const [roomFilter, setRoomFilter] = useState<string>('all');
+    const [showModal, setShowModal] = useState(false);
+    const [editingEquipment, setEditingEquipment] = useState<EquipmentWithDetails | null>(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-    const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
-    const [allEquipment, setAllEquipment] = useState<Equipment[]>([]);
+    const [selectedEquipment, setSelectedEquipment] = useState<EquipmentWithDetails | null>(null);
+    const [lendingDetails, setLendingDetails] = useState<LendingDetail[]>([]);
+    const [loadingLending, setLoadingLending] = useState(false);
+
+    // Room search dropdown states
+    const [roomSearchTerm, setRoomSearchTerm] = useState('');
+    const [showRoomDropdown, setShowRoomDropdown] = useState(false);
+    const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+
+    const form = useForm<EquipmentForm>({
+        resolver: zodResolver(equipmentSchema),
+        defaultValues: { is_mandatory: false, is_available: true, condition: 'GOOD', quantity: 1 },
+    });
+
+    const categories = [
+        { name: 'Audio Visual', icon: Camera, color: 'from-violet-400 to-purple-400', bgColor: 'bg-violet-50', textColor: 'text-violet-600' },
+        { name: 'Computing', icon: Cpu, color: 'from-blue-400 to-indigo-400', bgColor: 'bg-blue-50', textColor: 'text-blue-600' },
+        { name: 'Connectivity', icon: Wifi, color: 'from-emerald-400 to-green-400', bgColor: 'bg-emerald-50', textColor: 'text-emerald-600' },
+        { name: 'Power', icon: Zap, color: 'from-amber-400 to-yellow-400', bgColor: 'bg-amber-50', textColor: 'text-amber-600' },
+        { name: 'Laboratory', icon: FlaskConical, color: 'from-rose-400 to-pink-400', bgColor: 'bg-rose-50', textColor: 'text-rose-600' },
+        { name: 'Furniture', icon: Armchair, color: 'from-slate-400 to-gray-400', bgColor: 'bg-slate-50', textColor: 'text-slate-600' },
+        { name: 'Safety', icon: Shield, color: 'from-orange-400 to-red-400', bgColor: 'bg-orange-50', textColor: 'text-orange-600' }
+    ];
+
+    // Debug logging for department admin
+    useEffect(() => {
+        if (profile?.role === 'department_admin') {
+            console.log('🔍 Department Admin Profile:', {
+                role: profile.role,
+                department_id: profile.department_id,
+                full_name: profile.full_name,
+                email: profile.email
+            });
+        }
+    }, [profile]);
 
     useEffect(() => {
-        fetchLendingRecords();
-        fetchAllEquipment();
-        
-        // Real-time subscription
-        const subscription = supabase
-            .channel('tool-administration')
-            .on('postgres_changes', 
-                { event: '*', schema: 'public', table: 'lending_tool' }, 
-                () => { fetchLendingRecords(); }
-            )
-            .subscribe();
+        if (profile) {
+            fetchRooms();
+            fetchEquipment();
+        }
+    }, [profile]);
 
-        return () => {
-            subscription.unsubscribe();
-        };
-    }, []);
-
-    const fetchAllEquipment = async () => {
+    const fetchRooms = async () => {
         try {
-            const { data, error } = await supabase
-                .from('equipment')
-                .select('*')
-                .order('name');
-
-            if (error) throw error;
-            setAllEquipment(data || []);
+            console.log('🏢 Fetching rooms for profile:', profile?.role, profile?.department_id);
+            
+            if (profile?.role === 'department_admin' && profile.department_id) {
+                // For department admin, only get rooms in their department
+                const { data, error } = await supabase
+                    .from('rooms')
+                    .select('*, department:departments(*)')
+                    .eq('department_id', profile.department_id)
+                    .order('name');
+                
+                if (error) throw error;
+                console.log('🏢 Department admin rooms:', data?.length, 'rooms found');
+                console.log('🏢 Rooms data:', data);
+                setRooms(data || []);
+                
+                if (!data || data.length === 0) {
+                    toast.error(getText(
+                        'No rooms found in your department. Please contact administrator.',
+                        'Tidak ada ruangan ditemukan di departemen Anda. Silakan hubungi administrator.'
+                    ));
+                }
+            } else if (profile?.role === 'super_admin') {
+                // For super admin, get all rooms
+                const { data, error } = await supabase
+                    .from('rooms')
+                    .select('*, department:departments(*)')
+                    .order('name');
+                
+                if (error) throw error;
+                console.log('🏢 Super admin rooms:', data?.length, 'rooms found');
+                setRooms(data || []);
+            } else {
+                // For other roles, no rooms
+                console.log('🏢 No rooms for role:', profile?.role);
+                setRooms([]);
+            }
         } catch (error) {
-            console.error('Error fetching equipment:', error);
+            console.error('❌ Error fetching rooms:', error);
+            toast.error(getText('Failed to load rooms', 'Gagal memuat ruangan'));
+            setRooms([]);
         }
     };
 
-    const fetchLendingRecords = async () => {
+    const fetchEquipment = async () => {
         try {
             setLoading(true);
+            console.log('🔧 Fetching equipment for profile:', profile?.role, profile?.department_id);
             
+            if (profile?.role === 'department_admin' && profile.department_id) {
+                // Step 1: Get all room IDs in the department
+                const { data: departmentRooms, error: roomError } = await supabase
+                    .from('rooms')
+                    .select('id, name, code')
+                    .eq('department_id', profile.department_id);
+                
+                if (roomError) throw roomError;
+                
+                console.log('🔧 Department rooms for equipment:', departmentRooms?.length, 'rooms');
+                console.log('🔧 Room IDs:', departmentRooms?.map(r => r.id));
+                
+                if (departmentRooms && departmentRooms.length > 0) {
+                    const roomIds = departmentRooms.map(room => room.id);
+                    
+                    // Step 2: Get equipment only from those rooms
+                    const { data, error } = await supabase
+                        .from('equipment')
+                        .select(`
+                            *,
+                            rooms (
+                                id,
+                                name,
+                                code,
+                                department_id,
+                                department:departments(
+                                    id,
+                                    name,
+                                    code
+                                )
+                            )
+                        `)
+                        .in('rooms_id', roomIds)
+                        .not('rooms_id', 'is', null)
+                        .order('created_at', { ascending: false });
+                    
+                    if (error) throw error;
+                    console.log('🔧 Department admin equipment:', data?.length, 'items found');
+                    console.log('🔧 Equipment data:', data);
+                    setEquipment(data || []);
+                    
+                    if (!data || data.length === 0) {
+                        toast.info(getText(
+                            'No equipment found in your department rooms. Add some equipment to get started.',
+                            'Tidak ada peralatan ditemukan di ruangan departemen Anda. Tambahkan peralatan untuk memulai.'
+                        ));
+                    }
+                } else {
+                    // No rooms in department, no equipment
+                    console.log('🔧 No rooms in department, no equipment shown');
+                    setEquipment([]);
+                    toast.warning(getText(
+                        'No rooms assigned to your department. Please contact administrator.',
+                        'Tidak ada ruangan yang ditugaskan ke departemen Anda. Silakan hubungi administrator.'
+                    ));
+                }
+            } else if (profile?.role === 'super_admin') {
+                // For super admin, get all equipment (including those without rooms)
+                const { data, error } = await supabase
+                    .from('equipment')
+                    .select(`
+                        *,
+                        rooms (
+                            id,
+                            name,
+                            code,
+                            department_id,
+                            department:departments(
+                                id,
+                                name,
+                                code
+                            )
+                        )
+                    `)
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+                console.log('🔧 Super admin equipment:', data?.length, 'items found');
+                setEquipment(data || []);
+            } else {
+                // For other roles, no equipment
+                console.log('🔧 No equipment for role:', profile?.role);
+                setEquipment([]);
+            }
+        } catch (error) {
+            console.error('❌ Error fetching equipment:', error);
+            toast.error(getText('Failed to load equipment', 'Gagal memuat peralatan'));
+            setEquipment([]);
+        } finally { 
+            setLoading(false); 
+        }
+    };
+
+    const fetchLendingDetails = async (equipmentId: string) => {
+        try {
+            setLoadingLending(true);
+            
+            // Fetch all lending tool records for this equipment
             const { data: lendingData, error: lendingError } = await supabase
                 .from('lending_tool')
                 .select('*')
+                .contains('id_equipment', [equipmentId])
                 .order('created_at', { ascending: false });
 
             if (lendingError) throw lendingError;
-            if (!lendingData) { setLendingRecords([]); setLoading(false); return; }
 
-            // Fetch user details and equipment details for each record
-            const recordsWithDetails = await Promise.all(
-                lendingData.map(async (record) => {
-                    let user: UserType | null = null;
-                    let equipmentDetails: Equipment[] = [];
+            // Fetch approved bookings that include this equipment
+            const { data: bookingData, error: bookingError } = await supabase
+                .from('bookings')
+                .select('*, user:users(id, full_name, identity_number, email, phone_number)')
+                .eq('status', 'approved')
+                .contains('equipment_requested', [equipmentId])
+                .order('created_at', { ascending: false });
 
-                    // Fetch user data if exists
-                    if (record.id_user) {
-                        const { data: userData } = await supabase
-                            .from('users')
-                            .select('id, full_name, identity_number, email, role, phone_number')
-                            .eq('id', record.id_user)
-                            .maybeSingle();
-                        if (userData) user = userData;
-                    }
+            if (bookingError) throw bookingError;
 
-                    // Fetch equipment details
-                    if (record.id_equipment && record.id_equipment.length > 0) {
-                        const { data: equipmentData } = await supabase
-                            .from('equipment')
-                            .select('*')
-                            .in('id', record.id_equipment);
-                        
-                        if (equipmentData) {
-                            // Sort equipment to match the order in id_equipment array
-                            equipmentDetails = record.id_equipment.map(id => 
-                                equipmentData.find(eq => eq.id === id)
-                            ).filter(Boolean) as Equipment[];
+            let allLendingDetails: LendingDetail[] = [];
+
+            // Process lending_tool records
+            if (lendingData && lendingData.length > 0) {
+                const detailedLendings = await Promise.all(
+                    lendingData.map(async (lending) => {
+                        let lendingDetail: LendingDetail = {
+                            id: lending.id,
+                            date: lending.date,
+                            borrowed_quantity: 0,
+                            returned_quantity: 0,
+                            missing_quantity: 0,
+                            status: 'active',
+                            created_at: lending.created_at,
+                            source: 'lending_tool'
+                        };
+
+                        // Find the equipment index in the arrays
+                        const equipmentIndex = lending.id_equipment.findIndex((id: string) => id === equipmentId);
+                        if (equipmentIndex !== -1) {
+                            lendingDetail.borrowed_quantity = lending.qty[equipmentIndex] || 0;
                         }
-                    }
 
-                    return { 
-                        ...record, 
-                        user, 
-                        equipment_details: equipmentDetails 
+                        // Fetch user information
+                        if (lending.id_user) {
+                            const { data: userData } = await supabase
+                                .from('users')
+                                .select('id, full_name, identity_number, email, phone_number')
+                                .eq('id', lending.id_user)
+                                .single();
+                            
+                            if (userData) {
+                                lendingDetail.user = userData;
+                            }
+                        }
+
+                        // Fetch checkout information to determine status and returned quantities
+                        const { data: checkoutData } = await supabase
+                            .from('checkouts')
+                            .select('*')
+                            .eq('lendingTool_id', lending.id)
+                            .eq('type', 'things')
+                            .order('created_at', { ascending: false })
+                            .limit(1);
+
+                        if (checkoutData && checkoutData.length > 0) {
+                            const checkout = checkoutData[0];
+                            lendingDetail.checkout = {
+                                id: checkout.id,
+                                checkout_date: checkout.checkout_date,
+                                expected_return_date: checkout.expected_return_date,
+                                status: checkout.status
+                            };
+
+                            // Fetch checkout items to get returned quantities
+                            const { data: checkoutItems } = await supabase
+                                .from('checkout_items')
+                                .select('*')
+                                .eq('checkout_id', checkout.id)
+                                .eq('equipment_id', equipmentId);
+
+                            if (checkoutItems && checkoutItems.length > 0) {
+                                const item = checkoutItems[0];
+                                lendingDetail.returned_quantity = item.quantity || 0;
+                                lendingDetail.missing_quantity = lendingDetail.borrowed_quantity - lendingDetail.returned_quantity;
+                                
+                                if (lendingDetail.missing_quantity <= 0) {
+                                    lendingDetail.status = 'returned';
+                                    lendingDetail.missing_quantity = 0;
+                                }
+                            } else {
+                                lendingDetail.returned_quantity = 0;
+                                lendingDetail.missing_quantity = lendingDetail.borrowed_quantity;
+                            }
+                        } else {
+                            lendingDetail.returned_quantity = 0;
+                            lendingDetail.missing_quantity = lendingDetail.borrowed_quantity;
+                            lendingDetail.status = 'active';
+                        }
+
+                        return lendingDetail;
+                    })
+                );
+                
+                allLendingDetails = [...allLendingDetails, ...detailedLendings];
+            }
+
+            // Process booking records
+            if (bookingData && bookingData.length > 0) {
+                const bookingLendings = bookingData.map((booking) => {
+                    const lendingDetail: LendingDetail = {
+                        id: `booking-${booking.id}`,
+                        date: booking.start_time,
+                        borrowed_quantity: 1,
+                        returned_quantity: 0,
+                        missing_quantity: 1,
+                        status: 'active',
+                        created_at: booking.created_at,
+                        source: 'booking',
+                        user: booking.user || (booking.user_info ? {
+                            id: 'temp',
+                            full_name: booking.user_info.full_name,
+                            identity_number: booking.user_info.identity_number,
+                            email: booking.user_info.email || null,
+                            phone_number: booking.user_info.phone_number || null
+                        } : undefined),
+                        checkout: {
+                            id: `booking-checkout-${booking.id}`,
+                            checkout_date: booking.start_time,
+                            expected_return_date: booking.end_time,
+                            status: 'active'
+                        }
                     };
-                })
-            );
 
-            setLendingRecords(recordsWithDetails);
+                    return lendingDetail;
+                });
 
+                allLendingDetails = [...allLendingDetails, ...bookingLendings];
+            }
+
+            // Filter to show only records with missing items
+            const missingItemsOnly = allLendingDetails.filter(detail => detail.missing_quantity > 0);
+            
+            setLendingDetails(missingItemsOnly);
         } catch (error) {
-            console.error('Error fetching lending records:', error);
-            toast.error(getText('Failed to load lending records', 'Gagal memuat data peminjaman'));
+            console.error('Error fetching lending details:', error);
+            toast.error(getText('Failed to load lending details', 'Gagal memuat detail peminjaman'));
+            setLendingDetails([]);
         } finally {
-            setLoading(false);
+            setLoadingLending(false);
         }
     };
 
-    const handleDelete = async (recordId: string) => {
+    const handleSubmit = async (data: EquipmentForm) => {
         try {
-            setProcessingIds(prev => new Set(prev).add(recordId));
+            setLoading(true);
             
-            // Find the record to get equipment details
-            const recordToDelete = lendingRecords.find(r => r.id === recordId);
-            if (!recordToDelete) throw new Error("Record not found");
-
-            // Restore equipment quantities
-            for (let i = 0; i < recordToDelete.id_equipment.length; i++) {
-                const equipmentId = recordToDelete.id_equipment[i];
-                const quantity = recordToDelete.qty[i];
-                
-                const equipment = allEquipment.find(eq => eq.id === equipmentId);
-                if (equipment) {
-                    const newQuantity = equipment.quantity + quantity;
-                    
-                    await supabase
-                        .from('equipment')
-                        .update({ 
-                            quantity: newQuantity,
-                            is_available: true // Always set to available when quantity > 0
-                        })
-                        .eq('id', equipmentId);
+            // Validate room belongs to department for department admin
+            if (profile?.role === 'department_admin' && profile.department_id && data.rooms_id) {
+                const selectedRoomData = rooms.find(r => r.id === data.rooms_id);
+                if (!selectedRoomData || selectedRoomData.department_id !== profile.department_id) {
+                    toast.error(getText(
+                        'You can only assign equipment to rooms in your department.',
+                        'Anda hanya dapat menugaskan peralatan ke ruangan di departemen Anda.'
+                    ));
+                    return;
                 }
             }
             
-            // Delete the lending record
-            const { error } = await supabase
-                .from('lending_tool')
-                .delete()
-                .eq('id', recordId);
+            const equipmentData = {
+                name: data.name,
+                code: data.code.toUpperCase(),
+                category: data.category,
+                is_mandatory: data.is_mandatory,
+                is_available: data.is_available,
+                condition: data.condition,
+                rooms_id: data.rooms_id || null, // Allow null for super admin
+                Spesification: data.Spesification,
+                quantity: data.quantity,
+                unit: data.unit,
+            };
 
-            if (error) throw error;
-            
-            toast.success(getText('Lending record deleted successfully', 'Data peminjaman berhasil dihapus'));
-            setShowDeleteConfirm(null);
-            await fetchLendingRecords();
-            await fetchAllEquipment(); // Refresh equipment list
-            
+            if (editingEquipment) {
+                const { error } = await supabase.from('equipment').update(equipmentData).eq('id', editingEquipment.id);
+                if (error) throw error;
+                toast.success(getText('Equipment updated successfully! 🎉', 'Peralatan berhasil diperbarui! 🎉'));
+            } else {
+                const { error } = await supabase.from('equipment').insert([equipmentData]);
+                if (error) throw error;
+                toast.success(getText('Equipment created successfully! ✨', 'Peralatan berhasil dibuat! ✨'));
+            }
+
+            setShowModal(false);
+            setEditingEquipment(null);
+            setSelectedRoom(null);
+            setRoomSearchTerm('');
+            form.reset();
+            fetchEquipment();
         } catch (error: any) {
-            console.error('Error deleting lending record:', error);
-            toast.error(error.message || getText('Failed to delete lending record', 'Gagal menghapus data peminjaman'));
-        } finally {
-            setProcessingIds(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(recordId);
-                return newSet;
-            });
+            console.error('Error saving equipment:', error);
+            if (error.code === '23505') { 
+                toast.error(getText('Equipment code already exists! Please use a different code.', 'Kode peralatan sudah ada! Gunakan kode yang berbeda.')); 
+            } else { 
+                toast.error(error.message || getText('Failed to save equipment', 'Gagal menyimpan peralatan')); 
+            }
+        } finally { 
+            setLoading(false); 
         }
     };
 
-    const filteredRecords = lendingRecords.filter(record => {
-        const userName = record.user?.full_name || record.user_info?.full_name || '';
-        const userIdentity = record.user?.identity_number || record.user_info?.identity_number || '';
-        const equipmentNames = record.equipment_details?.map(eq => eq.name).join(' ') || '';
-        
-        const matchesSearch = 
-            userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            userIdentity.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            equipmentNames.toLowerCase().includes(searchTerm.toLowerCase());
-        
-        let matchesDate = true;
-        if (dateFilter !== 'all') {
-            const recordDate = new Date(record.date);
-            const today = new Date();
-            today.setHours(0,0,0,0);
-            const tomorrow = new Date(today);
-            tomorrow.setDate(tomorrow.getDate() + 1);
-            const nextWeek = new Date(today);
-            nextWeek.setDate(nextWeek.getDate() + 7);
+    const handleEdit = (eq: EquipmentWithDetails) => {
+        setEditingEquipment(eq);
+        setSelectedRoom(eq.rooms || null);
+        setRoomSearchTerm(eq.rooms?.name || (eq.rooms_id ? '' : getText('No Room Assigned', 'Tanpa Ruangan')));
+        form.reset({
+            name: eq.name,
+            code: eq.code,
+            category: eq.category,
+            is_mandatory: eq.is_mandatory,
+            is_available: eq.is_available,
+            condition: eq.condition,
+            rooms_id: eq.rooms_id || '',
+            Spesification: eq.Spesification || '',
+            quantity: eq.quantity,
+            unit: eq.unit,
+        });
+        setShowModal(true);
+    };
 
-            switch (dateFilter) {
-                case 'today': matchesDate = recordDate.toDateString() === today.toDateString(); break;
-                case 'tomorrow': matchesDate = recordDate.toDateString() === tomorrow.toDateString(); break;
-                case 'week': matchesDate = recordDate >= today && recordDate <= nextWeek; break;
-                case 'past': matchesDate = recordDate < today; break;
-            }
+    const handleDelete = async (equipmentId: string) => {
+        try {
+            setLoading(true);
+            const { error } = await supabase.from('equipment').delete().eq('id', equipmentId);
+            if (error) throw error;
+            toast.success(getText('Equipment deleted successfully! 🗑️', 'Peralatan berhasil dihapus! 🗑️'));
+            setShowDeleteConfirm(null);
+            fetchEquipment();
+        } catch (error: any) {
+            console.error('Error deleting equipment:', error);
+            toast.error(error.message || getText('Failed to delete equipment', 'Gagal menghapus peralatan'));
+        } finally { 
+            setLoading(false); 
+        }
+    };
+
+    const handleViewDetails = (eq: EquipmentWithDetails) => {
+        setSelectedEquipment(eq);
+        fetchLendingDetails(eq.id);
+    };
+
+    const handleRoomSelect = (room: Room) => {
+        setSelectedRoom(room);
+        form.setValue('rooms_id', room.id);
+        setRoomSearchTerm(room.name);
+        setShowRoomDropdown(false);
+    };
+
+    const clearRoomSelection = () => {
+        setSelectedRoom(null);
+        form.setValue('rooms_id', '');
+        setRoomSearchTerm('');
+    };
+
+    const handleNoRoomAssignment = () => {
+        setSelectedRoom(null);
+        form.setValue('rooms_id', '');
+        setRoomSearchTerm(getText('No Room Assigned', 'Tanpa Ruangan'));
+        setShowRoomDropdown(false);
+    };
+
+    // Filter rooms for department admin
+    const filteredRooms = rooms.filter(room => {
+        const matchesSearch = room.name.toLowerCase().includes(roomSearchTerm.toLowerCase()) ||
+                            room.code.toLowerCase().includes(roomSearchTerm.toLowerCase());
+        
+        // Additional check for department admin
+        if (profile?.role === 'department_admin' && profile.department_id) {
+            const matchesDepartment = room.department_id === profile.department_id;
+            return matchesSearch && matchesDepartment;
         }
         
-        return matchesSearch && matchesDate;
+        return matchesSearch;
     });
 
-    const getTotalItemsInRecord = (record: LendingRecord) => {
-        return record.qty.reduce((total, qty) => total + qty, 0);
+    // Filter rooms for main filter dropdown
+    const availableRoomsForFilter = rooms.filter(room => {
+        if (profile?.role === 'department_admin' && profile.department_id) {
+            return room.department_id === profile.department_id;
+        }
+        return true;
+    });
+
+    const filteredEquipment = equipment.filter(eq => {
+        const matchesSearch = eq.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                            eq.code.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesCategory = categoryFilter === 'all' || eq.category === categoryFilter;
+        const matchesRoom = roomFilter === 'all' || eq.rooms_id === roomFilter;
+        return matchesSearch && matchesCategory && matchesRoom;
+    });
+
+    const getCategoryConfig = (categoryName: string) => {
+        return categories.find(cat => cat.name === categoryName) || categories[0];
     };
 
-    const getUserDisplayName = (record: LendingRecord) => {
-        return record.user?.full_name || record.user_info?.full_name || 'Unknown User';
+    const getConditionConfig = (condition: string) => {
+        switch (condition) {
+            case 'GOOD':
+                return {
+                    icon: CheckCircle,
+                    label: getText('GOOD', 'BAIK'),
+                    className: 'bg-green-100 text-green-700 border border-green-200'
+                };
+            case 'BROKEN':
+                return {
+                    icon: XCircle,
+                    label: getText('BROKEN', 'RUSAK'),
+                    className: 'bg-red-100 text-red-700 border border-red-200'
+                };
+            case 'MAINTENANCE':
+                return {
+                    icon: AlertTriangle,
+                    label: getText('MAINTENANCE', 'PEMELIHARAAN'),
+                    className: 'bg-yellow-100 text-yellow-700 border border-yellow-200'
+                };
+            default:
+                return {
+                    icon: AlertCircle,
+                    label: getText('UNKNOWN', 'TIDAK DIKETAHUI'),
+                    className: 'bg-gray-100 text-gray-700 border border-gray-200'
+                };
+        }
     };
 
-    const getUserContact = (record: LendingRecord) => {
-        return record.user?.phone_number || record.user_info?.phone_number || 
-               record.user?.identity_number || record.user_info?.identity_number || 'No contact';
+    const getStatusConfig = (is_available: boolean) => {
+        if (is_available) {
+            return {
+                icon: CheckCircle,
+                label: getText('AVAILABLE', 'TERSEDIA'),
+                className: 'bg-blue-50 text-blue-700 border border-blue-200'
+            };
+        } else {
+            return {
+                icon: XCircle,
+                label: getText('IN USE', 'SEDANG DIGUNAKAN'),
+                className: 'bg-gray-100 text-gray-600 border border-gray-200'
+            };
+        }
     };
 
-    if (profile?.role !== 'super_admin') {
+    const getStatusChip = (condition: string, is_mandatory: boolean = false) => {
+        const conditionConfig = getConditionConfig(condition);
+        const ConditionIcon = conditionConfig.icon;
+        
+        return (
+            <div className="flex flex-col gap-1">
+                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${conditionConfig.className}`}>
+                    <ConditionIcon className="h-3 w-3" />
+                    {conditionConfig.label}
+                </span>
+                {is_mandatory && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                        <Star className="h-3 w-3" />
+                        {getText('REQUIRED', 'WAJIB')}
+                    </span>
+                )}
+            </div>
+        );
+    };
+
+    // Show loading state while profile is being loaded
+    if (!profile) {
         return (
             <div className="flex items-center justify-center h-64">
                 <div className="text-center">
-                    <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Access Denied</h3>
-                    <p className="text-gray-600">You don't have permission to access tool administration.</p>
+                    <RefreshCw className="h-8 w-8 animate-spin text-blue-500 mx-auto mb-4" />
+                    <p className="text-gray-600">
+                        {getText('Loading profile...', 'Memuat profil...')}
+                    </p>
                 </div>
             </div>
         );
     }
 
-    return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-green-600 to-emerald-600 rounded-xl p-6 text-white">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-3xl font-bold flex items-center space-x-3">
-                            <Wrench className="h-8 w-8" />
-                            <span>{getText('Tool Administration', 'Administrasi Alat')}</span>
-                        </h1>
-                        <p className="mt-2 opacity-90">
-                            {getText('Manage equipment lending records and monitor usage', 'Kelola data peminjaman peralatan dan pantau penggunaan')}
-                        </p>
-                    </div>
-                    <div className="hidden md:block text-right">
-                        <div className="text-2xl font-bold">{lendingRecords.length}</div>
-                        <div className="text-sm opacity-80">{getText('Total Records', 'Total Data')}</div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Statistics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                {[
-                    { 
-                        label: getText('Total Lendings', 'Total Peminjaman'), 
-                        count: lendingRecords.length, 
-                        color: 'bg-blue-500', 
-                        icon: Package 
-                    },
-                    { 
-                        label: getText('Today', 'Hari Ini'), 
-                        count: lendingRecords.filter(r => {
-                            const recordDate = new Date(r.date);
-                            const today = new Date();
-                            return recordDate.toDateString() === today.toDateString();
-                        }).length, 
-                        color: 'bg-green-500', 
-                        icon: Calendar 
-                    },
-                    { 
-                        label: getText('This Week', 'Minggu Ini'), 
-                        count: lendingRecords.filter(r => {
-                            const recordDate = new Date(r.date);
-                            const today = new Date();
-                            const weekAgo = new Date(today);
-                            weekAgo.setDate(weekAgo.getDate() - 7);
-                            return recordDate >= weekAgo && recordDate <= today;
-                        }).length, 
-                        color: 'bg-purple-500', 
-                        icon: Clock 
-                    },
-                    { 
-                        label: getText('Unique Users', 'Pengguna Unik'), 
-                        count: new Set(lendingRecords.map(r => r.id_user || r.user_info?.identity_number)).size, 
-                        color: 'bg-orange-500', 
-                        icon: Users 
-                    }
-                ].map((stat, index) => (
-                    <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm font-medium text-gray-600">{stat.label}</p>
-                                <p className="text-3xl font-bold text-gray-900">{stat.count}</p>
-                            </div>
-                            <div className={`${stat.color} p-3 rounded-xl`}>
-                                <stat.icon className="h-6 w-6 text-white" />
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Filters */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-                    <div className="flex flex-col sm:flex-row gap-4 flex-1">
-                        <div className="relative flex-1 max-w-md">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                            <input
-                                type="text"
-                                placeholder={getText("Search by user name, ID, or equipment...", "Cari berdasarkan nama, ID, atau peralatan...")}
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                            />
-                        </div>
-                        <select
-                            value={dateFilter}
-                            onChange={(e) => setDateFilter(e.target.value)}
-                            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                        >
-                            <option value="all">{getText('All Dates', 'Semua Tanggal')}</option>
-                            <option value="today">{getText('Today', 'Hari Ini')}</option>
-                            <option value="tomorrow">{getText('Tomorrow', 'Besok')}</option>
-                            <option value="week">{getText('This Week', 'Minggu Ini')}</option>
-                            <option value="past">{getText('Past Records', 'Data Lalu')}</option>
-                        </select>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                        <button
-                            onClick={() => fetchLendingRecords()}
-                            disabled={loading}
-                            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors duration-200 disabled:opacity-50"
-                        >
-                            <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
-                        </button>
-                        <button className="flex items-center space-x-2 px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-200">
-                            <Download className="h-4 w-4" />
-                            <span>{getText('Export', 'Ekspor')}</span>
-                        </button>
+    // Enhanced access control check
+    if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <div className="text-center">
+                    <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                        {getText('Access Denied', 'Akses Ditolak')}
+                    </h3>
+                    <p className="text-gray-600">
+                        {getText(
+                            "You don't have permission to access tool administration.", 
+                            'Anda tidak memiliki izin untuk mengakses administrasi alat.'
+                        )}
+                    </p>
+                    <div className="mt-4 text-sm text-gray-500">
+                        {getText('Current role', 'Peran saat ini')}: {profile?.role || 'None'}
                     </div>
                 </div>
             </div>
+        );
+    }
 
-            {/* Records Table */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full">
-                        <thead className="bg-gray-50 border-b border-gray-200">
-                            <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {getText('User Information', 'Informasi Pengguna')}
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {getText('Equipment', 'Peralatan')}
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {getText('Lending Date', 'Tanggal Pinjam')}
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {getText('Total Items', 'Total Item')}
-                                </th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {getText('Actions', 'Aksi')}
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {loading ? (
-                                <tr>
-                                    <td colSpan={5} className="px-6 py-12 text-center">
-                                        <div className="flex items-center justify-center">
-                                            <RefreshCw className="h-6 w-6 animate-spin text-green-600 mr-2" />
-                                            <span className="text-gray-600">{getText('Loading records...', 'Memuat data...')}</span>
+    // Check if department admin has department_id
+    if (profile?.role === 'department_admin' && !profile.department_id) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <div className="text-center">
+                    <AlertCircle className="h-16 w-16 text-amber-500 mx-auto mb-4" />
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                        {getText('Department Not Assigned', 'Departemen Belum Ditentukan')}
+                    </h3>
+                    <p className="text-gray-600">
+                        {getText(
+                            'Your account is not assigned to any department. Please contact the system administrator.',
+                            'Akun Anda belum ditugaskan ke departemen manapun. Silakan hubungi administrator sistem.'
+                        )}
+                    </p>
+                    <div className="mt-4 text-sm text-gray-500">
+                        {getText('User ID', 'ID Pengguna')}: {profile.id}
+                    </div>
+                  </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setRoomSearchTerm('')}
+                                                    className="text-gray-400 hover:text-red-500 transition-colors"
+                                                >
+                                                    <X className="h-4 w-4" />
+                                                </button>
+                                            </div>
                                         </div>
-                                    </td>
-                                </tr>
-                            ) : filteredRecords.length === 0 ? (
-                                <tr>
-                                    <td colSpan={5} className="px-6 py-12 text-center">
-                                        <div className="text-gray-500">
-                                            <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                                            <p className="text-lg font-medium mb-2">
-                                                {getText('No lending records found', 'Tidak ada data peminjaman')}
-                                            </p>
-                                            <p>{getText('Try adjusting your search or filters', 'Coba sesuaikan pencarian atau filter')}</p>
-                                            {lendingRecords.length > 0 && (
-                                                <p className="text-sm mt-2">
-                                                    {getText('Total records in database:', 'Total data dalam database:')} {lendingRecords.length}
-                                                </p>
-                                            )}
-                                        </div>
-                                    </td>
-                                </tr>
-                            ) : (
-                                filteredRecords.map((record) => {
-                                    const isProcessing = processingIds.has(record.id);
-                                    return (
-                                        <tr key={record.id} className="hover:bg-gray-50 transition-colors duration-200">
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <div className="flex items-center">
-                                                    <div className="h-10 w-10 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center">
-                                                        <User className="h-5 w-5 text-white" />
-                                                    </div>
-                                                    <div className="ml-4">
-                                                        <div className="text-sm font-medium text-gray-900">
-                                                            {getUserDisplayName(record)}
-                                                        </div>
-                                                        <div className="text-sm text-gray-500">
-                                                            {getUserContact(record)}
-                                                        </div>
-                                                        {(record.user?.email || record.user_info?.email) && (
-                                                            <div className="text-xs text-gray-400">
-                                                                {record.user?.email || record.user_info?.email}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <div className="space-y-1">
-                                                    {record.equipment_details?.slice(0, 2).map((equipment, index) => (
-                                                        <div key={equipment.id} className="text-sm">
-                                                            <span className="font-medium text-gray-900">{equipment.name}</span>
-                                                            <span className="text-gray-500 ml-2">
-                                                                ({record.qty[index]} {equipment.unit || 'pcs'})
-                                                            </span>
-                                                        </div>
-                                                    ))}
-                                                    {record.equipment_details && record.equipment_details.length > 2 && (
-                                                        <div className="text-xs text-gray-500">
-                                                            +{record.equipment_details.length - 2} {getText('more items', 'item lainnya')}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <div>
-                                                    <div className="text-sm font-medium text-gray-900">
-                                                        {format(new Date(record.date), 'MMM d, yyyy')}
-                                                    </div>
-                                                    <div className="text-sm text-gray-500">
-                                                        {format(new Date(record.date), 'h:mm a')}
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                                                    {getTotalItemsInRecord(record)} {getText('items', 'item')}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                <div className="flex items-center justify-end space-x-2">
-                                                    <button
-                                                        onClick={() => {
-                                                            setSelectedRecord(record);
-                                                            setShowDetailModal(true);
-                                                        }}
-                                                        className="text-gray-600 hover:text-gray-900 p-1 rounded transition-colors duration-200"
-                                                        title={getText('View Details', 'Lihat Detail')}
-                                                    >
-                                                        <Eye className="h-4 w-4" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setShowDeleteConfirm(record.id)}
-                                                        disabled={isProcessing}
-                                                        className="text-red-600 hover:text-red-900 p-1 rounded transition-colors duration-200 disabled:opacity-50"
-                                                        title={getText('Delete Record', 'Hapus Data')}
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    );
-                                })
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+                                    ) : null}
+                                </div>
+                                
+                                {/* Conditional error message */}
+                                {form.formState.errors.rooms_id && profile?.role === 'department_admin' && (
+                                    <p className="text-red-500 text-sm flex items-center gap-1">
+                                        <AlertTriangle className="h-4 w-4" />
+                                        {getText('Please select a room location', 'Pilih lokasi ruangan')}
+                                    </p>
+                                )}
+                                
+                                {/* Warning for department admin */}
+                                {rooms.length === 0 && profile?.role === 'department_admin' && (
+                                    <p className="text-amber-600 text-sm flex items-center gap-1">
+                                        <AlertTriangle className="h-4 w-4" />
+                                        {getText('No rooms available in your department. Contact administrator.', 'Tidak ada ruangan tersedia di departemen Anda. Hubungi administrator.')}
+                                    </p>
+                                )}
+                                
+                                {/* Info for super admin */}
+                                {profile?.role === 'super_admin' && (
+                                    <p className="text-blue-600 text-xs flex items-center gap-1 mt-1">
+                                        <Info className="h-3 w-3" />
+                                        {getText(
+                                            'Super admins can create equipment without room assignment for general inventory.',
+                                            'Super admin dapat membuat peralatan tanpa penugasan ruangan untuk inventaris umum.'
+                                        )}
+                                    </p>
+                                )}
+                            </div>
 
-            {/* Detail Modal */}
-            {showDetailModal && selectedRecord && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-semibold text-gray-700">
+                                        {getText('Quantity', 'Jumlah')} *
+                                    </label>
+                                    <input 
+                                        type="number" 
+                                        {...form.register('quantity', {valueAsNumber: true})} 
+                                        className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors" 
+                                        min="0"
+                                    />
+                                    {form.formState.errors.quantity && (
+                                        <p className="text-red-500 text-sm flex items-center gap-1">
+                                            <AlertTriangle className="h-4 w-4" />
+                                            {form.formState.errors.quantity.message}
+                                        </p>
+                                    )}
+                                </div>
+                                
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-semibold text-gray-700">
+                                        {getText('Unit', 'Satuan')} *
+                                    </label>
+                                    <input 
+                                        {...form.register('unit')} 
+                                        placeholder={getText('e.g. pcs, set, unit', 'mis. pcs, set, unit')} 
+                                        className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors" 
+                                    />
+                                    {form.formState.errors.unit && (
+                                        <p className="text-red-500 text-sm flex items-center gap-1">
+                                            <AlertTriangle className="h-4 w-4" />
+                                            {form.formState.errors.unit.message}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-semibold text-gray-700">
+                                    {getText('Condition', 'Kondisi')} *
+                                </label>
+                                <select 
+                                    {...form.register('condition')} 
+                                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
+                                >
+                                    <option value="GOOD">{getText('Good Condition', 'Kondisi Baik')}</option>
+                                    <option value="BROKEN">{getText('Broken', 'Rusak')}</option>
+                                    <option value="MAINTENANCE">{getText('Under Maintenance', 'Dalam Pemeliharaan')}</option>
+                                </select>
+                                {form.formState.errors.condition && (
+                                    <p className="text-red-500 text-sm flex items-center gap-1">
+                                        <AlertTriangle className="h-4 w-4" />
+                                        {form.formState.errors.condition.message}
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-semibold text-gray-700">
+                                    {getText('Specification', 'Spesifikasi')}
+                                </label>
+                                <textarea 
+                                    {...form.register('Spesification')} 
+                                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors" 
+                                    rows={4}
+                                    placeholder={getText('Enter detailed specifications...', 'Masukkan spesifikasi detail...')}
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="flex items-center p-4 bg-amber-50 rounded-lg border border-amber-200">
+                                    <input 
+                                        {...form.register('is_mandatory')} 
+                                        type="checkbox" 
+                                        className="h-5 w-5 text-amber-600 border-2 border-amber-300 rounded focus:ring-amber-500" 
+                                    />
+                                    <div className="ml-3">
+                                        <label className="text-sm font-semibold text-amber-800">
+                                            {getText('Mandatory Equipment', 'Peralatan Wajib')}
+                                        </label>
+                                        <p className="text-xs text-amber-600">
+                                            {getText('Required for room bookings', 'Diperlukan untuk pemesanan ruangan')}
+                                        </p>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex items-center p-4 bg-green-50 rounded-lg border border-green-200">
+                                    <input 
+                                        {...form.register('is_available')} 
+                                        type="checkbox" 
+                                        className="h-5 w-5 text-green-600 border-2 border-green-300 rounded focus:ring-green-500" 
+                                    />
+                                    <div className="ml-3">
+                                        <label className="text-sm font-semibold text-green-800">
+                                            {getText('Available for Lending', 'Tersedia untuk Dipinjam')}
+                                        </label>
+                                        <p className="text-xs text-green-600">
+                                            {getText('Can be borrowed by users', 'Dapat dipinjam oleh pengguna')}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
+                                <button 
+                                    type="button" 
+                                    onClick={() => setShowModal(false)} 
+                                    className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
+                                >
+                                    {getText('Cancel', 'Batal')}
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    disabled={loading || (profile?.role === 'department_admin' && rooms.length === 0)} 
+                                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-semibold transition-all shadow-lg"
+                                >
+                                    {loading ? (
+                                        <div className="flex items-center gap-2">
+                                            <RefreshCw className="h-4 w-4 animate-spin" />
+                                            {getText('Saving...', 'Menyimpan...')}
+                                        </div>
+                                    ) : (
+                                        editingEquipment ? 
+                                        getText('Update Equipment', 'Perbarui Peralatan') : 
+                                        getText('Create Equipment', 'Buat Peralatan')
+                                    )}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+            
+            {/* Equipment Detail Modal with Enhanced Lending Tracking */}
+            {selectedEquipment && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-                        <div className="p-6">
-                            <div className="flex items-center justify-between mb-6">
-                                <h3 className="text-xl font-semibold text-gray-900">
-                                    {getText('Lending Record Details', 'Detail Data Peminjaman')}
-                                </h3>
-                                <button
-                                    onClick={() => setShowDetailModal(false)}
-                                    className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
+                    <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+                        <div className="bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-600 p-6 text-white">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <h2 className="text-3xl font-bold mb-2">{selectedEquipment.name}</h2>
+                                    <div className="flex items-center gap-2">
+                                        <Hash className="h-4 w-4 opacity-80" />
+                                        <span className="font-mono text-lg opacity-90">{selectedEquipment.code}</span>
+                                        {selectedEquipment.rooms?.department && (
+                                            <span className="ml-4 px-2 py-1 bg-white bg-opacity-20 rounded text-sm">
+                                                {selectedEquipment.rooms.department.name}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => setSelectedEquipment(null)} 
+                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
                                 >
                                     <X className="h-6 w-6" />
                                 </button>
                             </div>
-
-                            <div className="space-y-6">
-                                {/* User Information */}
-                                <div>
-                                    <h4 className="text-lg font-medium text-gray-900 mb-4">
-                                        {getText('User Information', 'Informasi Pengguna')}
-                                    </h4>
-                                    <div className="bg-blue-50 rounded-lg p-4">
-                                        <div className="flex items-center space-x-4">
-                                            <div className="h-12 w-12 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
-                                                <User className="h-6 w-6 text-white" />
-                                            </div>
-                                            <div className="flex-1">
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                    <div>
-                                                        <label className="text-sm font-medium text-gray-600">
-                                                            {getText('Full Name', 'Nama Lengkap')}
-                                                        </label>
-                                                        <p className="text-gray-900 font-medium">
-                                                            {getUserDisplayName(selectedRecord)}
-                                                        </p>
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-sm font-medium text-gray-600">
-                                                            {getText('Identity Number', 'Nomor Identitas')}
-                                                        </label>
-                                                        <p className="text-gray-900 font-medium">
-                                                            {selectedRecord.user?.identity_number || selectedRecord.user_info?.identity_number || 'N/A'}
-                                                        </p>
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-sm font-medium text-gray-600">
-                                                            {getText('Phone Number', 'Nomor Telepon')}
-                                                        </label>
-                                                        <p className="text-gray-900 font-medium">
-                                                            {selectedRecord.user?.phone_number || selectedRecord.user_info?.phone_number || 'N/A'}
-                                                        </p>
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-sm font-medium text-gray-600">
-                                                            {getText('Email', 'Email')}
-                                                        </label>
-                                                        <p className="text-gray-900 font-medium">
-                                                            {selectedRecord.user?.email || selectedRecord.user_info?.email || 'N/A'}
-                                                        </p>
-                                                    </div>
+                        </div>
+                        
+                        <div className="p-8 overflow-y-auto flex-1">
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                {/* Equipment Details */}
+                                <div className="space-y-6">
+                                    <div>
+                                        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                            <Package className="h-5 w-5 text-blue-600" />
+                                            {getText('Equipment Details', 'Detail Peralatan')}
+                                        </h3>
+                                        <div className="bg-gray-50 rounded-lg p-6 space-y-4">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Category', 'Kategori')}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    {(() => {
+                                                        const config = getCategoryConfig(selectedEquipment.category);
+                                                        const CategoryIcon = config.icon;
+                                                        return (
+                                                            <>
+                                                                <CategoryIcon className="h-4 w-4 text-gray-600" />
+                                                                <span className="font-semibold text-gray-900">{selectedEquipment.category}</span>
+                                                            </>
+                                                        );
+                                                    })()}
                                                 </div>
                                             </div>
+                                            
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Condition', 'Kondisi')}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    {(() => {
+                                                        const config = getConditionConfig(selectedEquipment.condition);
+                                                        const ConditionIcon = config.icon;
+                                                        return (
+                                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${config.className}`}>
+                                                                <ConditionIcon className="h-3 w-3" />
+                                                                {config.label}
+                                                            </span>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Status', 'Status')}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    {(() => {
+                                                        const config = getStatusConfig(selectedEquipment.is_available);
+                                                        const StatusIcon = config.icon;
+                                                        return (
+                                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${config.className}`}>
+                                                                <StatusIcon className="h-3 w-3" />
+                                                                {config.label}
+                                                            </span>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Location', 'Lokasi')}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    <MapPin className="h-4 w-4 text-gray-600" />
+                                                    <span className="font-semibold text-gray-900">
+                                                        {selectedEquipment.rooms?.name || getText('Unassigned', 'Belum Ditentukan')}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Department', 'Departemen')}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    <Building className="h-4 w-4 text-gray-600" />
+                                                    <span className="font-semibold text-blue-600">
+                                                        {selectedEquipment.rooms?.department?.name || 'N/A'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Quantity', 'Jumlah')}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    <Package className="h-4 w-4 text-gray-600" />
+                                                    <span className="font-bold text-lg text-gray-900">
+                                                        {selectedEquipment.quantity} {selectedEquipment.unit}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-gray-600">
+                                                    {getText('Created', 'Dibuat')}
+                                                </span>
+                                                <span className="text-sm text-gray-700">
+                                                    {format(new Date(selectedEquipment.created_at), 'MMM d, yyyy')}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Quick Actions */}
+                                    <div>
+                                        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                            <Wrench className="h-5 w-5 text-blue-600" />
+                                            {getText('Quick Actions', 'Aksi Cepat')}
+                                        </h3>
+                                        <div className="grid grid-cols-1 gap-3">
+                                            <button 
+                                                onClick={() => {
+                                                    setSelectedEquipment(null);
+                                                    handleEdit(selectedEquipment);
+                                                }}
+                                                className="flex items-center justify-center gap-2 p-4 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg transition-colors"
+                                            >
+                                                <Edit className="h-5 w-5" />
+                                                <span className="font-semibold">
+                                                    {getText('Edit Equipment', 'Edit Peralatan')}
+                                                </span>
+                                            </button>
+                                            
+                                            <button 
+                                                onClick={() => {
+                                                    setSelectedEquipment(null);
+                                                    setShowDeleteConfirm(selectedEquipment.id);
+                                                }}
+                                                className="flex items-center justify-center gap-2 p-4 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg transition-colors"
+                                            >
+                                                <Trash2 className="h-5 w-5" />
+                                                <span className="font-semibold">
+                                                    {getText('Delete Equipment', 'Hapus Peralatan')}
+                                                </span>
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Lending Information */}
-                                <div>
-                                    <h4 className="text-lg font-medium text-gray-900 mb-4">
-                                        {getText('Lending Information', 'Informasi Peminjaman')}
-                                    </h4>
-                                    <div className="bg-green-50 rounded-lg p-4">
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                            <div>
-                                                <label className="text-sm font-medium text-gray-600">
-                                                    {getText('Lending Date', 'Tanggal Pinjam')}
-                                                </label>
-                                                <p className="text-gray-900 font-medium">
-                                                    {format(new Date(selectedRecord.date), 'MMM d, yyyy h:mm a')}
+                                {/* Enhanced Missing Items Tracking */}
+                                <div className="lg:col-span-2 space-y-6">
+                                    <div>
+                                        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                            <AlertTriangle className="h-5 w-5 text-red-600" />
+                                            {getText('Missing Equipment Tracking', 'Pelacakan Peralatan Hilang')}
+                                            {loadingLending && <RefreshCw className="h-4 w-4 animate-spin text-gray-400" />}
+                                        </h3>
+                                        
+                                        {loadingLending ? (
+                                            <div className="bg-gray-50 rounded-lg p-8 text-center">
+                                                <RefreshCw className="h-8 w-8 animate-spin text-gray-400 mx-auto mb-4" />
+                                                <p className="text-gray-600">
+                                                    {getText('Loading missing items details...', 'Memuat detail barang hilang...')}
                                                 </p>
                                             </div>
-                                            <div>
-                                                <label className="text-sm font-medium text-gray-600">
-                                                    {getText('Record Created', 'Data Dibuat')}
-                                                </label>
-                                                <p className="text-gray-900 font-medium">
-                                                    {format(new Date(selectedRecord.created_at), 'MMM d, yyyy h:mm a')}
+                                        ) : lendingDetails.length === 0 ? (
+                                            <div className="bg-green-50 rounded-lg p-8 text-center border border-green-200">
+                                                <CheckCircle className="h-16 w-16 text-green-400 mx-auto mb-4" />
+                                                <h4 className="text-lg font-medium text-green-800 mb-2">
+                                                    {getText('All Equipment Returned!', 'Semua Peralatan Dikembalikan!')}
+                                                </h4>
+                                                <p className="text-green-600">
+                                                    {getText(
+                                                        'No missing items for this equipment. All borrowed items have been returned successfully.',
+                                                        'Tidak ada barang hilang untuk peralatan ini. Semua barang yang dipinjam telah dikembalikan dengan sukses.'
+                                                    )}
                                                 </p>
                                             </div>
-                                            <div>
-                                                <label className="text-sm font-medium text-gray-600">
-                                                    {getText('Total Items', 'Total Item')}
-                                                </label>
-                                                <p className="text-gray-900 font-medium">
-                                                    {getTotalItemsInRecord(selectedRecord)} {getText('items', 'item')}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Equipment Details */}
-                                <div>
-                                    <h4 className="text-lg font-medium text-gray-900 mb-4">
-                                        {getText('Equipment Details', 'Detail Peralatan')}
-                                    </h4>
-                                    <div className="space-y-3">
-                                        {selectedRecord.equipment_details?.map((equipment, index) => (
-                                            <div key={equipment.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                                                <div className="flex items-center space-x-4">
-                                                    <div className="h-10 w-10 bg-gradient-to-r from-gray-500 to-gray-600 rounded-lg flex items-center justify-center">
-                                                        <Package className="h-5 w-5 text-white" />
-                                                    </div>
-                                                    <div>
-                                                        <h5 className="font-medium text-gray-900">{equipment.name}</h5>
-                                                        <p className="text-sm text-gray-600">{equipment.code}</p>
-                                                        <div className="flex items-center space-x-4 mt-1">
-                                                            <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
-                                                                {equipment.category}
-                                                            </span>
-                                                            <span className="text-xs text-gray-500">
-                                                                {getText('Condition:', 'Kondisi:')} {equipment.condition || 'Good'}
-                                                            </span>
+                                        ) : (
+                                            <div className="space-y-4">
+                                                {/* Header for Missing Items */}
+                                                <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center">
+                                                            <AlertTriangle className="h-6 w-6 text-red-600 mr-3" />
+                                                            <div>
+                                                                <h4 className="text-lg font-semibold text-red-800">
+                                                                    {getText('Missing Equipment Alert', 'Peringatan Peralatan Hilang')}
+                                                                </h4>
+                                                                <p className="text-sm text-red-600">
+                                                                    {getText(
+                                                                        'The following records show equipment that has not been returned yet.',
+                                                                        'Catatan berikut menunjukkan peralatan yang belum dikembalikan.'
+                                                                    )}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <div className="text-2xl font-bold text-red-800">
+                                                                {lendingDetails.reduce((sum, detail) => sum + detail.missing_quantity, 0)}
+                                                            </div>
+                                                            <div className="text-sm text-red-600">
+                                                                {getText('Missing Items', 'Barang Hilang')}
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div className="text-right">
-                                                    <div className="text-lg font-bold text-gray-900">
-                                                        {selectedRecord.qty[index]}
-                                                    </div>
-                                                    <div className="text-sm text-gray-500">
-                                                        {equipment.unit || 'pcs'}
-                                                    </div>
+
+                                                {/* Missing Items Records */}
+                                                <div className="space-y-3">
+                                                    {lendingDetails.map((detail) => (
+                                                        <div key={detail.id} className="border border-red-200 bg-red-50 rounded-lg p-4">
+                                                            <div className="flex items-start justify-between">
+                                                                <div className="flex items-start space-x-4">
+                                                                    <div className={`flex-shrink-0 h-12 w-12 rounded-full flex items-center justify-center ${detail.source === 'booking' ? 'bg-gradient-to-r from-purple-500 to-indigo-500' : 'bg-gradient-to-r from-red-500 to-pink-500'}`}>
+                                                                        {detail.source === 'booking' ? <Building className="h-6 w-6 text-white" /> : <User className="h-6 w-6 text-white" />}
+                                                                    </div>
+                                                                    <div className="flex-1">
+                                                                        <h4 className="font-semibold text-gray-900">
+                                                                            {detail.user?.full_name || getText('Unknown User', 'Pengguna Tidak Dikenal')}
+                                                                        </h4>
+                                                                        <div className="space-y-1 mt-2">
+                                                                            <div className="flex items-center text-sm text-gray-600">
+                                                                                <CreditCard className="h-4 w-4 mr-2" />
+                                                                                ID: {detail.user?.identity_number || 'N/A'}
+                                                                            </div>
+                                                                            <div className="flex items-center text-sm text-gray-600">
+                                                                                <Phone className="h-4 w-4 mr-2" />
+                                                                                {detail.user?.phone_number || getText('No phone', 'Tidak ada telepon')}
+                                                                            </div>
+                                                                            <div className="flex items-center text-sm text-gray-600">
+                                                                                <Calendar className="h-4 w-4 mr-2" />
+                                                                                {getText('Borrowed', 'Dipinjam')}: {format(new Date(detail.date), 'MMM d, yyyy h:mm a')}
+                                                                            </div>
+                                                                            {detail.checkout && (
+                                                                                <div className="flex items-center text-sm text-gray-600">
+                                                                                    <Clock className="h-4 w-4 mr-2" />
+                                                                                    {getText('Expected Return', 'Pengembalian Diharapkan')}: {format(new Date(detail.checkout.expected_return_date), 'MMM d, yyyy h:mm a')}
+                                                                                </div>
+                                                                            )}
+                                                                            <div className={`flex items-center text-sm font-medium ${detail.source === 'booking' ? 'text-purple-600' : 'text-blue-600'}`}>
+                                                                                {detail.source === 'booking' ? <Building className="h-4 w-4 mr-2" /> : <Users className="h-4 w-4 mr-2" />}
+                                                                                {getText('Source', 'Sumber')}: {detail.source === 'booking' ? getText('Room Booking', 'Pemesanan Ruangan') : getText('Lending Tool', 'Peminjaman Alat')}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                <div className="text-right">
+                                                                    <div className="text-center mb-3">
+                                                                        <div className="text-3xl font-bold text-red-600">{detail.missing_quantity}</div>
+                                                                        <div className="text-sm text-red-600">
+                                                                            {getText('Missing', 'Hilang')} {selectedEquipment.unit}
+                                                                        </div>
+                                                                    </div>
+                                                                    
+                                                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border bg-red-100 text-red-800 border-red-200">
+                                                                        {getText('NEEDS RETURN', 'PERLU DIKEMBALIKAN')}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            <div className="mt-4 p-3 bg-red-100 border border-red-200 rounded-md">
+                                                                <div className="flex items-center">
+                                                                    <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
+                                                                    <span className="text-sm font-medium text-red-800">
+                                                                        {detail.missing_quantity} {selectedEquipment.unit} {getText('borrowed and needs to be returned', 'dipinjam dan perlu dikembalikan')}
+                                                                        {detail.source === 'booking' ? 
+                                                                            ` (${getText('from room booking', 'dari pemesanan ruangan')})` : 
+                                                                            ` (${getText('from lending tool', 'dari peminjaman alat')})`
+                                                                        }
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             </div>
-                                        ))}
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -641,54 +1186,40 @@ const ToolAdministration: React.FC = () => {
                     </div>
                 </div>
             )}
-
+            
             {/* Delete Confirmation Modal */}
             {showDeleteConfirm && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-                        <div className="flex items-center mb-4">
-                            <div className="flex-shrink-0">
-                                <AlertCircle className="h-6 w-6 text-red-600" />
+                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+                        <div className="flex items-center mb-6">
+                            <div className="flex-shrink-0 p-3 bg-red-100 rounded-full">
+                                <AlertCircle className="h-8 w-8 text-red-600" />
                             </div>
-                            <div className="ml-3">
-                                <h3 className="text-lg font-medium text-gray-900">
-                                    {getText('Delete Lending Record', 'Hapus Data Peminjaman')}
+                            <div className="ml-4">
+                                <h3 className="text-xl font-bold text-gray-900">
+                                    {getText('Delete Equipment', 'Hapus Peralatan')}
                                 </h3>
+                                <p className="text-sm text-gray-600 mt-1">
+                                    {getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')}
+                                </p>
                             </div>
                         </div>
-                        <p className="text-sm text-gray-500 mb-6">
-                            {getText(
-                                'Are you sure you want to delete this lending record? This will restore the equipment quantities and cannot be undone.',
-                                'Apakah Anda yakin ingin menghapus data peminjaman ini? Ini akan mengembalikan jumlah peralatan dan tidak dapat dibatalkan.'
-                            )}
-                        </p>
+                        
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                            <p className="text-sm text-red-800">
+                                {getText(
+                                    'Are you sure you want to delete this equipment? This action will permanently remove the equipment from the system and may affect related booking records.',
+                                    'Apakah Anda yakin ingin menghapus peralatan ini? Tindakan ini akan menghapus peralatan secara permanen dari sistem dan mungkin mempengaruhi catatan pemesanan terkait.'
+                                )}
+                            </p>
+                        </div>
+                        
                         <div className="flex space-x-3">
-                            <button
-                                onClick={() => setShowDeleteConfirm(null)}
-                                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-200"
+                            <button 
+                                onClick={() => setShowDeleteConfirm(null)} 
+                                className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
                             >
                                 {getText('Cancel', 'Batal')}
                             </button>
-                            <button
+                            <button 
                                 onClick={() => handleDelete(showDeleteConfirm)}
-                                disabled={processingIds.has(showDeleteConfirm)}
-                                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-                            >
-                                {processingIds.has(showDeleteConfirm) ? (
-                                    <div className="flex items-center justify-center">
-                                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                        {getText('Deleting...', 'Menghapus...')}
-                                    </div>
-                                ) : (
-                                    getText('Delete', 'Hapus')
-                                )}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
-export default ToolAdministration;
