@@ -573,7 +573,181 @@ const ProgressSidebar = () => (
   </div>
 );
 
-  
+  const StudentInformationStep = () => (
+  <div className="max-w-4xl mx-auto space-y-6">
+    <div className="text-center mb-8">
+      <h3 className="text-2xl font-bold text-gray-900 mb-2">
+        {getText('Student Information', 'Informasi Mahasiswa')}
+      </h3>
+      <p className="text-gray-600">
+        {getText('Please select or enter student details for the examination', 'Silakan pilih atau masukkan detail mahasiswa untuk sidang')}
+      </p>
+    </div>
+    
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {getText("Student NIM", "NIM Mahasiswa")} *
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder={getText("Enter or search NIM...", "Masukkan atau cari NIM...")}
+              value={studentSearch}
+              onChange={(e) => {
+                setStudentSearch(e.target.value);
+                setShowStudentDropdown(true);
+                
+                const foundStudent = students.find(s => s.identity_number === e.target.value);
+                if (foundStudent) {
+                  form.setValue('student_id', foundStudent.id);
+                  setFormData(prev => ({
+                    ...prev,
+                    student_name: foundStudent.full_name,
+                    student_nim: foundStudent.identity_number,
+                    study_program_id: foundStudent.study_program_id || ''
+                  }));
+                  const program = studyPrograms.find(p => p.id === foundStudent.study_program_id);
+                  if (program) setProgramSearch(program.name);
+                } else {
+                  form.setValue('student_id', '');
+                  setFormData(prev => ({ ...prev, student_name: '', student_nim: e.target.value, study_program_id: '' }));
+                  setProgramSearch('');
+                }
+              }}
+              onFocus={() => setShowStudentDropdown(true)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+            />
+            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+            
+            {showStudentDropdown && studentSearch && (
+              <div 
+                className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-xl shadow-xl max-h-60 overflow-y-auto"
+                onMouseLeave={() => setShowStudentDropdown(false)}
+              >
+                {students
+                  .filter(student => 
+                    student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
+                    student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
+                  )
+                  .slice(0, 5)
+                  .map(student => (
+                    <button
+                      key={student.id}
+                      type="button"
+                      onClick={() => {
+                        setStudentSearch(student.identity_number);
+                        form.setValue('student_id', student.id);
+                        setFormData(prev => ({
+                          ...prev,
+                          student_name: student.full_name,
+                          student_nim: student.identity_number,
+                          study_program_id: student.study_program_id || ''
+                        }));
+                        const program = studyPrograms.find(p => p.id === student.study_program_id);
+                        if (program) setProgramSearch(program.name);
+                        setShowStudentDropdown(false);
+                      }}
+                      className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                    >
+                      <div className="font-medium text-gray-900">{student.full_name}</div>
+                      <div className="text-sm text-gray-500">{student.identity_number}</div>
+                    </button>
+                  ))
+                }
+                {students.filter(student => 
+                  student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
+                  student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
+                ).length === 0 && (
+                  <div className="px-4 py-3 text-gray-500 text-sm text-center">
+                    {getText('No students found - you can enter manually', 'Tidak ada mahasiswa ditemukan - Anda bisa input manual')}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {getText("Student Name", "Nama Mahasiswa")} *
+          </label>
+          <input
+            type="text"
+            value={formData.student_name}
+            onChange={(e) => setFormData(prev => ({ ...prev, student_name: e.target.value }))}
+            placeholder={getText("Enter student name...", "Masukkan nama mahasiswa...")}
+            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {getText("Study Program", "Program Studi")} *
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              value={programSearch}
+              onChange={(e) => {
+                setProgramSearch(e.target.value);
+                setShowProgramDropdown(true);
+              }}
+              onFocus={() => setShowProgramDropdown(true)}
+              placeholder={getText("Search study program...", "Cari program studi...")}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+            />
+            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+            
+            {showProgramDropdown && (
+              <div 
+                className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-xl shadow-xl max-h-60 overflow-y-auto"
+                onMouseLeave={() => setShowProgramDropdown(false)}
+              >
+                {studyPrograms
+                  .filter(program => 
+                    program.name.toLowerCase().includes(programSearch.toLowerCase())
+                  )
+                  .slice(0, 5)
+                  .map(program => (
+                    <button
+                      key={program.id}
+                      type="button"
+                      onClick={() => {
+                        setFormData(prev => ({ ...prev, study_program_id: program.id }));
+                        setProgramSearch(program.name);
+                        setShowProgramDropdown(false);
+                      }}
+                      className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                    >
+                      {program.name}
+                    </button>
+                  ))
+                }
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      
+      {studentSearch && !form.getValues('student_id') && formData.student_nim && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
+          <div className="flex items-start space-x-3">
+            <User className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-blue-800">
+              <p className="font-semibold">
+                {getText('New Student Registration', 'Pendaftaran Mahasiswa Baru')}
+              </p>
+              <p className="mt-1">
+                {getText('Student not found in database. A new student account will be automatically created when you save this session.', 'Mahasiswa tidak ditemukan di database. Akun mahasiswa baru akan otomatis dibuat saat Anda menyimpan jadwal sidang ini.')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   const ScheduleInformationStep = () => (
     <div className="space-y-6">
@@ -656,7 +830,100 @@ const ProgressSidebar = () => (
           {getText('Complete the examination setup with room, title and committee', 'Lengkapi pengaturan sidang dengan ruangan, judul dan panitia')}
         </p>
       </div>
-      
+
+       {/* Room Selection */}
+      <div className="space-y-4">
+  <h4 className="text-lg font-semibold text-gray-800 flex items-center space-x-2">
+   <Building className="h-5 w-5 text-blue-500" />
+          <span>{getText('Room', 'Ruangan')}</span>
+  </h4>
+  <div className="relative">
+    <button
+      type="button"
+      onClick={() => setShowRoomDropdown(!showRoomDropdown)}
+      className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-white text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 flex items-center justify-between"
+    >
+      <span className={form.getValues('room_id') ? 'text-gray-900' : 'text-gray-500'}>
+        {form.getValues('room_id') 
+          ? availableRooms.find(r => r.id === form.getValues('room_id'))?.name + 
+            ` - ${availableRooms.find(r => r.id === form.getValues('room_id'))?.code} (Capacity: ${availableRooms.find(r => r.id === form.getValues('room_id'))?.capacity})`
+          : getText('Select room...', 'Pilih ruangan...')
+        }
+      </span>
+      <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${showRoomDropdown ? 'rotate-180' : ''}`} />
+    </button>
+    
+    {showRoomDropdown && (
+      <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-xl shadow-xl overflow-hidden">
+        {/* Search Input di dalam dropdown */}
+        <div className="p-3 border-b border-gray-200">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder={getText('Search rooms...', 'Cari ruangan...')}
+              value={roomSearch}
+              onChange={(e) => setRoomSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              autoFocus
+            />
+          </div>
+        </div>
+        
+        {/* Options List dengan scroll */}
+        <div className="max-h-60 overflow-y-auto">
+          {availableRooms
+            .filter(room => 
+              room.name.toLowerCase().includes(roomSearch.toLowerCase()) ||
+              room.code.toLowerCase().includes(roomSearch.toLowerCase())
+            )
+            .map(room => (
+              <button
+                key={room.id}
+                type="button"
+                onClick={() => {
+                  form.setValue('room_id', room.id);
+                  setShowRoomDropdown(false);
+                  setRoomSearch('');
+                }}
+                className="w-full px-4 py-3 text-left hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-colors duration-150 focus:bg-blue-50 focus:outline-none"
+              >
+                <div className="font-medium text-gray-900">{room.name}</div>
+                <div className="text-sm text-gray-500">{room.code} • Capacity: {room.capacity}</div>
+              </button>
+            ))
+          }
+          {availableRooms.filter(room => 
+            room.name.toLowerCase().includes(roomSearch.toLowerCase()) ||
+            room.code.toLowerCase().includes(roomSearch.toLowerCase())
+          ).length === 0 && (
+            <div className="px-4 py-6 text-center text-gray-500 text-sm">
+              {getText('No rooms found', 'Tidak ada ruangan ditemukan')}
+            </div>
+          )}
+        </div>
+      </div>
+    )}
+    
+    {/* Click outside to close */}
+    {showRoomDropdown && (
+      <div 
+        className="fixed inset-0 z-10" 
+        onClick={() => setShowRoomDropdown(false)}
+      />
+    )}
+  </div>
+  
+  {form.formState.errors.room_id && (
+    <p className="mt-1 text-sm text-red-600">{form.formState.errors.room_id.message}</p>
+  )}
+  
+  {watchStartTime && watchEndTime && watchDate && (
+    <p className="mt-2 text-sm text-gray-600 text-center">
+      💡 {availableRooms.length} {getText('available rooms', 'ruangan tersedia')}
+    </p>
+  )}
+      </div>
      
 
       {/* Thesis Title */}
