@@ -749,77 +749,76 @@ const ProgressSidebar = () => (
   </div>
 );
 
-
   const ScheduleInformationStep = () => (
-    <div className="space-y-6">
-      <div className="text-center mb-6">
-        <h3 className="text-2xl font-bold text-gray-900 mb-2">
-          {getText('When will the examination be?', 'Kapan sidang akan dilaksanakan?')}
-        </h3>
-        <p className="text-gray-600">
-          {getText('Please set the date and time for the examination', 'Silakan tentukan tanggal dan waktu sidang')}
-        </p>
+  <div className="space-y-4 md:space-y-6">
+    <div className="text-center mb-4 md:mb-6">
+      <h3 className="text-lg md:text-2xl font-bold text-gray-900 mb-2">
+        {getText('When will the examination be?', 'Kapan sidang akan dilaksanakan?')}
+      </h3>
+      <p className="text-sm md:text-base text-gray-600">
+        {getText('Please set the date and time for the examination', 'Silakan tentukan tanggal dan waktu sidang')}
+      </p>
+    </div>
+    
+    <div className="space-y-4 md:grid md:grid-cols-3 md:gap-6 md:space-y-0 max-w-2xl mx-auto">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          {getText("Date", "Tanggal")} *
+        </label>
+        <input
+          {...form.register('date')}
+          type="date"
+          className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
+        />
+        {form.formState.errors.date && (
+          <p className="mt-1 text-xs md:text-sm text-red-600">{form.formState.errors.date.message}</p>
+        )}
       </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-2xl mx-auto">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            {getText("Date", "Tanggal")} *
-          </label>
-          <input
-            {...form.register('date')}
-            type="date"
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
-          />
-          {form.formState.errors.date && (
-            <p className="mt-1 text-sm text-red-600">{form.formState.errors.date.message}</p>
-          )}
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            {getText("Start Time", "Waktu Mulai")} *
-          </label>
-          <input
-            {...form.register('start_time')}
-            type="time"
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
-          />
-          {form.formState.errors.start_time && (
-            <p className="mt-1 text-sm text-red-600">{form.formState.errors.start_time.message}</p>
-          )}
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            {getText("End Time", "Waktu Selesai")} *
-          </label>
-          <input
-            {...form.register('end_time')}
-            type="time"
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
-          />
-          {form.formState.errors.end_time && (
-            <p className="mt-1 text-sm text-red-600">{form.formState.errors.end_time.message}</p>
-          )}
-        </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          {getText("Start Time", "Waktu Mulai")} *
+        </label>
+        <input
+          {...form.register('start_time')}
+          type="time"
+          className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
+        />
+        {form.formState.errors.start_time && (
+          <p className="mt-1 text-xs md:text-sm text-red-600">{form.formState.errors.start_time.message}</p>
+        )}
       </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          {getText("End Time", "Waktu Selesai")} *
+        </label>
+        <input
+          {...form.register('end_time')}
+          type="time"
+          className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
+        />
+        {form.formState.errors.end_time && (
+          <p className="mt-1 text-xs md:text-sm text-red-600">{form.formState.errors.end_time.message}</p>
+        )}
+      </div>
+    </div>
 
-      {watchDate && (
-        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4 max-w-md mx-auto">
-          <div className="flex items-center space-x-3">
-            <Calendar className="h-5 w-5 text-green-600" />
-            <div className="text-sm text-green-800">
-              <p className="font-semibold">
-                {getText('Selected Date', 'Tanggal Terpilih')}
-              </p>
-              <p className="mt-1">
-                {format(new Date(watchDate), 'EEEE, MMMM d, yyyy')}
-              </p>
-            </div>
+    {watchDate && (
+      <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg md:rounded-xl p-3 md:p-4 max-w-md mx-auto">
+        <div className="flex items-center space-x-2 md:space-x-3">
+          <Calendar className="h-4 w-4 md:h-5 md:w-5 text-green-600" />
+          <div className="text-xs md:text-sm text-green-800">
+            <p className="font-semibold">
+              {getText('Selected Date', 'Tanggal Terpilih')}
+            </p>
+            <p className="mt-1">
+              {format(new Date(watchDate), 'EEEE, MMMM d, yyyy')}
+            </p>
           </div>
         </div>
-      )}
-    </div>
-  );
+      </div>
+    )}
+  </div>
+);
 
   const RoomAndDetailsStep = () => (
     <div className="space-y-8">
