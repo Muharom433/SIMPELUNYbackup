@@ -1279,7 +1279,6 @@ const ToolAdministration: React.FC = () => {
                                     ))}
                                 </select>
                                 {form.formState.errors.category && (
-                                    <p className="text-red-500 text-sm flex items-center gap{form.formState.errors.category && (
                                     <p className="text-red-500 text-sm flex items-center gap-1">
                                         <AlertTriangle className="h-4 w-4" />
                                         {form.formState.errors.category.message}
