@@ -801,10 +801,10 @@ const ProgressSidebar = () => (
       {/* Room Selection */}
       <div className="space-y-4">
 <div>
-  <label className="block text-sm font-medium text-gray-700 mb-2">
+  <h4 className="text-lg font-semibold text-gray-800 flex items-center space-x-2">
    <Building className="h-5 w-5 text-blue-500" />
           <span>{getText('Room', 'Ruangan')}</span>
-  </label>
+  </h4>
   <div className="relative">
     <button
       type="button"
