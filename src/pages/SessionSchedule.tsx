@@ -554,17 +554,17 @@ const ProgressSidebar = () => (
 );
 
   const StudentInformationStep = () => (
-    <div className="space-y-6">
-      <div className="text-center mb-6">
-        <h3 className="text-2xl font-bold text-gray-900 mb-2">
-          {getText('Student Information', 'Informasi Mahasiswa')}
-        </h3>
-        <p className="text-gray-600">
-          {getText('Please select or enter student details for the examination', 'Silakan pilih atau masukkan detail mahasiswa untuk sidang')}
-        </p>
-      </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+  <div className="max-w-4xl mx-auto space-y-6">
+    <div className="text-center mb-8">
+      <h3 className="text-2xl font-bold text-gray-900 mb-2">
+        {getText('Student Information', 'Informasi Mahasiswa')}
+      </h3>
+      <p className="text-gray-600">
+        {getText('Please select or enter student details for the examination', 'Silakan pilih atau masukkan detail mahasiswa untuk sidang')}
+      </p>
+    </div>
+    
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Student NIM", "NIM Mahasiswa")} *
