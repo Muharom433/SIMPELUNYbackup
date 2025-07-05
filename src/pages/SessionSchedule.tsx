@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -86,7 +86,7 @@ const SessionScheduleProgressive = () => {
     study_program_id: ''
   });
 
-  const form = useForm({
+  const form = useForm<SessionFormData>({
     resolver: zodResolver(sessionSchema),
     defaultValues: {
       student_id: '',
@@ -129,24 +129,7 @@ const SessionScheduleProgressive = () => {
     }
   ];
 
-  useEffect(() => {
-    if (profile) {
-      fetchSessions();
-      fetchStudents();
-      fetchLecturers();
-      fetchRooms();
-      fetchStudyPrograms();
-    }
-  }, [profile]);
-
-  useEffect(() => {
-    if (watchDate && watchStartTime && watchEndTime) {
-      checkAvailableRooms(watchDate, watchStartTime, watchEndTime);
-    } else {
-      setAvailableRooms(rooms);
-    }
-  }, [watchDate, watchStartTime, watchEndTime, rooms]);
-
+  // Fetch data functions remain the same...
   const fetchSessions = async () => {
     try {
       setLoading(true);
@@ -264,6 +247,24 @@ const SessionScheduleProgressive = () => {
       alert.error(getText('Failed to load study programs.', 'Gagal memuat program studi.'));
     }
   };
+
+  useEffect(() => {
+    if (profile) {
+      fetchSessions();
+      fetchStudents();
+      fetchLecturers();
+      fetchRooms();
+      fetchStudyPrograms();
+    }
+  }, [profile]);
+
+  useEffect(() => {
+    if (watchDate && watchStartTime && watchEndTime) {
+      checkAvailableRooms(watchDate, watchStartTime, watchEndTime);
+    } else {
+      setAvailableRooms(rooms);
+    }
+  }, [watchDate, watchStartTime, watchEndTime, rooms]);
 
   const checkAvailableRooms = async (date, startTime, endTime) => {
     try {
@@ -391,10 +392,26 @@ const SessionScheduleProgressive = () => {
   const StudentInformationStep = () => {
     const [studentSearch, setStudentSearch] = useState('');
     const [dropdownOpen, setDropdownOpen] = useState(false);
-    const [focused, setFocused] = useState(false);
     const [programSearch, setProgramSearch] = useState('');
     const [showProgramDropdown, setShowProgramDropdown] = useState(false);
     const [selectedProgramDisplay, setSelectedProgramDisplay] = useState('');
+    const dropdownRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+        if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node) && 
+            inputRef.current && !inputRef.current.contains(event.target as Node)) {
+          setDropdownOpen(false);
+        }
+      };
+
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }, []);
 
     useEffect(() => {
       if (formData.study_program_id) {
@@ -411,27 +428,29 @@ const SessionScheduleProgressive = () => {
       setStudentSearch(formData.student_nim || '');
     }, [formData.student_nim]);
 
-   const filteredStudents = useMemo(() => 
-  students.filter(student => 
-    student && 
-    student.identity_number && 
-    student.full_name &&
-    (
-      student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
-      student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
-    )
-  ), 
-  [students, studentSearch]
-);
+    const filteredStudents = useMemo(() => 
+      students.filter(student => 
+        student && 
+        student.identity_number && 
+        student.full_name &&
+        (
+          student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
+          student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
+        )
+      ), 
+      [students, studentSearch]
+    );
 
     const filteredPrograms = useMemo(() =>
       studyPrograms.filter(program =>
-        program && program.name &&
+        program && 
+        program.name &&
         program.name.toLowerCase().includes(programSearch.toLowerCase())
-      ), [studyPrograms, programSearch]
+      ), 
+      [studyPrograms, programSearch]
     );
 
-    const handleStudentSelect = useCallback((student) => {
+    const handleStudentSelect = useCallback((student: any) => {
       setStudentSearch(student.identity_number);
       setFormData(prev => ({
         ...prev,
@@ -450,13 +469,16 @@ const SessionScheduleProgressive = () => {
       }
     }, [form, studyPrograms]);
 
-    const handleNimChange = (e) => {
+    const handleNimChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value;
       setStudentSearch(value);
       setFormData(prev => ({ ...prev, student_nim: value }));
       
-      if (focused && value.length > 0) {
+      // Always open dropdown when typing
+      if (value.length > 0) {
         setDropdownOpen(true);
+      } else {
+        setDropdownOpen(false);
       }
     };
 
@@ -479,17 +501,16 @@ const SessionScheduleProgressive = () => {
             </label>
             <div className="relative">
               <input
+                ref={inputRef}
                 type="text"
                 placeholder={getText("Search student by NIM or name...", "Cari mahasiswa berdasarkan NIM atau nama...")}
                 value={studentSearch}
                 onChange={handleNimChange}
                 onFocus={() => {
-                  setFocused(true);
-                  if (studentSearch.length > 0) setDropdownOpen(true);
+                  if (studentSearch.length > 0) {
+                    setDropdownOpen(true);
+                  }
                 }}
-                onBlur={() => setTimeout(() => {
-                  if (!dropdownOpen) setFocused(false);
-                }, 300)}
                 className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
               />
               <ChevronDown 
@@ -499,13 +520,12 @@ const SessionScheduleProgressive = () => {
               
               {dropdownOpen && filteredStudents.length > 0 && (
                 <div 
+                  ref={dropdownRef}
                   className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
-                  onMouseDown={(e) => e.preventDefault()}
                 >
                   {filteredStudents.map((student) => (
                     <div
                       key={student.id}
-                      onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleStudentSelect(student)}
                       className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
                     >
@@ -712,31 +732,42 @@ const SessionScheduleProgressive = () => {
 
     const filteredLecturersForSupervisor = useMemo(() =>
       lecturers.filter(lecturer =>
-        lecturer && lecturer.full_name &&
+        lecturer && 
+        lecturer.full_name &&
         lecturer.full_name.toLowerCase().includes(supervisorSearch.toLowerCase())
-      ), [lecturers, supervisorSearch]
+      ), 
+      [lecturers, supervisorSearch]
     );
 
     const filteredLecturersForExaminer = useMemo(() =>
       lecturers.filter(lecturer =>
-        lecturer && lecturer.full_name &&
+        lecturer && 
+        lecturer.full_name &&
         lecturer.full_name.toLowerCase().includes(examinerSearch.toLowerCase())
-      ), [lecturers, examinerSearch]
+      ), 
+      [lecturers, examinerSearch]
     );
 
     const filteredLecturersForSecretary = useMemo(() =>
       lecturers.filter(lecturer =>
-        lecturer && lecturer.full_name &&
+        lecturer && 
+        lecturer.full_name &&
         lecturer.full_name.toLowerCase().includes(secretarySearch.toLowerCase())
-      ), [lecturers, secretarySearch]
+      ), 
+      [lecturers, secretarySearch]
     );
 
     const filteredRooms = useMemo(() =>
       availableRooms.filter(room =>
-        room && room.name && room.code &&
-        (room.name.toLowerCase().includes(roomSearch.toLowerCase()) ||
-         room.code.toLowerCase().includes(roomSearch.toLowerCase()))
-      ), [availableRooms, roomSearch]
+        room && 
+        room.name && 
+        room.code &&
+        (
+          room.name.toLowerCase().includes(roomSearch.toLowerCase()) ||
+          room.code.toLowerCase().includes(roomSearch.toLowerCase())
+        )
+      ), 
+      [availableRooms, roomSearch]
     );
 
     useEffect(() => {
@@ -1070,7 +1101,7 @@ const SessionScheduleProgressive = () => {
     }
   };
 
-  const handleSubmit = async (data) => {
+  const handleSubmit = async (data: SessionFormData) => {
     try {
       setSubmitting(true);
 
@@ -1174,7 +1205,7 @@ const SessionScheduleProgressive = () => {
     setCompletedSteps(new Set());
   };
 
-  const handleEdit = (session) => {
+  const handleEdit = (session: any) => {
     setEditingSession(session);
     
     form.reset({
@@ -1198,7 +1229,7 @@ const SessionScheduleProgressive = () => {
     setShowModal(true);
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id: string) => {
     try {
       setSubmitting(true);
       const { error } = await supabase.from('final_sessions').delete().eq('id', id);
@@ -1302,7 +1333,7 @@ const SessionScheduleProgressive = () => {
                   </td>
                 </tr>
               ) : (
-                sessions.map((session) => (
+                sessions.map((session: any) => (
                   <tr key={session.id} className="hover:bg-gray-50 transition-colors duration-200">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
