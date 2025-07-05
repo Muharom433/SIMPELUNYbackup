@@ -489,74 +489,69 @@ const SessionScheduleProgressive = () => {
   };
 
   // Enhanced Progress Indicator like the image
-  const ProgressIndicator = () => (
-    <div className="mb-8">
-      <div className="flex items-center justify-between relative">
-        {/* Progress Line Background */}
-        <div className="absolute top-6 left-6 right-6 h-0.5 bg-gray-200 z-0"></div>
+  // Ganti ProgressIndicator yang ada dengan ini:
+const ProgressSidebar = () => (
+  <div className="w-80 bg-gradient-to-b from-blue-50 to-indigo-50 border-r border-gray-200 p-6">
+    <div className="space-y-8">
+      {steps.map((step, index) => {
+        const isCompleted = completedSteps.has(step.id);
+        const isCurrent = currentStep === step.id;
+        const isAccessible = step.id === 1 || completedSteps.has(step.id - 1);
         
-        {steps.map((step, index) => {
-          const isCompleted = completedSteps.has(step.id);
-          const isCurrent = currentStep === step.id;
-          const isAccessible = step.id === 1 || completedSteps.has(step.id - 1);
-          
-          return (
-            <div key={step.id} className="flex flex-col items-center relative z-10">
+        return (
+          <div key={step.id} className="relative">
+            {/* Connecting Line */}
+            {index < steps.length - 1 && (
+              <div className={`absolute left-6 top-12 w-0.5 h-16 ${
+                isCompleted ? 'bg-blue-500' : 'bg-gray-200'
+              }`} />
+            )}
+            
+            <button
+              onClick={() => isAccessible && setCurrentStep(step.id)}
+              disabled={!isAccessible}
+              className={`w-full text-left flex items-start space-x-4 p-3 rounded-xl transition-all duration-200 ${
+                isCurrent ? 'bg-white shadow-md' : 'hover:bg-white/50'
+              }`}
+            >
               {/* Step Circle */}
-              <button
-                onClick={() => isAccessible && setCurrentStep(step.id)}
-                disabled={!isAccessible}
-                className={`w-12 h-12 rounded-full flex items-center justify-center mb-3 transition-all duration-300 border-2 ${
-                  isCompleted
-                    ? 'bg-blue-500 border-blue-500 text-white shadow-lg'
-                    : isCurrent
-                    ? 'bg-white border-blue-500 text-blue-500 shadow-lg ring-4 ring-blue-100'
-                    : isAccessible
-                    ? 'bg-white border-gray-300 text-gray-400 hover:border-blue-300'
-                    : 'bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed'
-                }`}
-              >
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
+                isCompleted
+                  ? 'bg-blue-500 text-white'
+                  : isCurrent
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 text-gray-400'
+              }`}>
                 {isCompleted ? (
-                  <CheckCircle2 className="h-6 w-6" />
+                  <Check className="h-6 w-6" />
                 ) : (
                   <step.icon className="h-5 w-5" />
                 )}
-              </button>
+              </div>
               
-              {/* Step Info */}
-              <div className="text-center max-w-32">
-                <div className={`text-sm font-semibold mb-1 ${
+              {/* Step Content */}
+              <div className="flex-1 min-w-0">
+                <div className={`text-sm font-medium ${
                   isCurrent ? 'text-blue-600' : isCompleted ? 'text-blue-600' : 'text-gray-500'
                 }`}>
                   Step {step.id}
                 </div>
-                <div className={`text-sm font-medium leading-tight ${
-                  isCurrent ? 'text-gray-900' : isCompleted ? 'text-gray-700' : 'text-gray-500'
+                <div className={`text-base font-semibold mt-1 ${
+                  isCurrent ? 'text-gray-900' : 'text-gray-600'
                 }`}>
                   {step.title}
                 </div>
-                <div className={`text-xs mt-1 leading-tight ${
-                  isCurrent ? 'text-gray-600' : 'text-gray-400'
-                }`}>
-                  {step.subtitle}
+                <div className="text-sm text-gray-500 mt-1">
+                  {step.description}
                 </div>
               </div>
-
-              {/* Progress Line Active */}
-              {index < steps.length - 1 && (
-                <div 
-                  className={`absolute top-6 left-6 h-0.5 transition-all duration-500 ${
-                    completedSteps.has(step.id) ? 'bg-blue-500' : 'bg-transparent'
-                  }`}
-                  style={{ width: 'calc(100% + 48px)' }}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
+            </button>
+          </div>
+        );
+      })}
     </div>
-  );
+  </div>
+);
 
   const StudentInformationStep = () => (
     <div className="space-y-6">
