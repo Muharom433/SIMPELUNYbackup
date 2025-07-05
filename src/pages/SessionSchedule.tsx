@@ -389,7 +389,7 @@ const SessionScheduleProgressive = () => {
     }
   }, [currentStep]);
 
-  const StudentInformationStep = () => {
+ const StudentInformationStep = () => {
   const [studentSearch, setStudentSearch] = useState('');
   const [showStudentDropdown, setShowStudentDropdown] = useState(false);
   const [programSearch, setProgramSearch] = useState('');
