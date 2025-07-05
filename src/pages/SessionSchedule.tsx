@@ -800,7 +800,6 @@ const ProgressSidebar = () => (
       
       {/* Room Selection */}
       <div className="space-y-4">
-       // GANTI bagian Room Selection dengan dropdown search ini:
 <div>
   <label className="block text-sm font-medium text-gray-700 mb-2">
     {getText("Room", "Ruangan")} *
