@@ -1202,7 +1202,6 @@ const ProgressSidebar = () => (
       </div>
 
       {/* Progressive Form Modal */}
-      // Ganti bagian modal content dengan:
 {showModal && profile?.role === 'department_admin' && (
   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl h-[90vh] flex overflow-hidden">
