@@ -802,7 +802,8 @@ const ProgressSidebar = () => (
       <div className="space-y-4">
 <div>
   <label className="block text-sm font-medium text-gray-700 mb-2">
-    {getText("Room", "Ruangan")} *
+   <Building className="h-5 w-5 text-blue-500" />
+          <span>{getText('Room', 'Ruangan')}</span>
   </label>
   <div className="relative">
     <button
