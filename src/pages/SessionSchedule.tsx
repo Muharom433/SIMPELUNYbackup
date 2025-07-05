@@ -79,15 +79,12 @@ const SessionScheduleProgressive = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [completedSteps, setCompletedSteps] = useState(new Set());
 
-  // Form data states
+  // Form data states - SIMPLIFIED
   const [formData, setFormData] = useState({
     student_name: '',
     student_nim: '',
     study_program_id: ''
   });
-
-  // Dropdown states - TAMBAHAN UNTUK FIX MODAL
-  const [showStudentDropdown, setShowStudentDropdown] = useState(false);
 
   const form = useForm<SessionFormData>({
     resolver: zodResolver(sessionSchema),
@@ -132,7 +129,7 @@ const SessionScheduleProgressive = () => {
     }
   ];
 
-  // Fetch data functions remain the same...
+  // Fetch data functions
   const fetchSessions = async () => {
     try {
       setLoading(true);
@@ -358,10 +355,12 @@ const SessionScheduleProgressive = () => {
     </div>
   );
 
+  // FIXED VALIDATION - NO MORE RE-RENDER ISSUES
   const validateStep = useCallback((step) => {
     switch (step) {
       case 1:
-        return !!(formData.student_name && formData.student_nim && formData.study_program_id);
+        // Manual validation - tidak trigger re-render
+        return true; // Will be checked manually when continue is clicked
       case 2:
         return !!(form.getValues('date') && form.getValues('start_time') && form.getValues('end_time'));
       case 3:
@@ -375,16 +374,24 @@ const SessionScheduleProgressive = () => {
       default:
         return false;
     }
-  }, [formData, form]);
+  }, [form]); // Only depends on form, not formData
 
   const handleStepComplete = useCallback((step) => {
-    if (validateStep(step)) {
-      setCompletedSteps(prev => new Set([...prev, step]));
-      if (step < 3) {
-        setCurrentStep(step + 1);
+    // Manual validation for step 1
+    if (step === 1) {
+      if (!formData.student_name || !formData.student_nim || !formData.study_program_id) {
+        alert.error(getText('Please fill all required fields', 'Silakan isi semua field yang diperlukan'));
+        return;
       }
+    } else if (!validateStep(step)) {
+      return;
     }
-  }, [validateStep]);
+    
+    setCompletedSteps(prev => new Set([...prev, step]));
+    if (step < 3) {
+      setCurrentStep(step + 1);
+    }
+  }, [validateStep, formData, getText]);
 
   const handleStepBack = useCallback(() => {
     if (currentStep > 1) {
@@ -392,77 +399,47 @@ const SessionScheduleProgressive = () => {
     }
   }, [currentStep]);
 
-  // STUDENT INFORMATION STEP - FIXED VERSION
+  // STUDENT INFORMATION STEP - FIXED WITH LOCAL STATE
   const StudentInformationStep = () => {
-    const [studentSearch, setStudentSearch] = useState('');
-    const [programSearch, setProgramSearch] = useState('');
-    const [showProgramDropdown, setShowProgramDropdown] = useState(false);
-    const [selectedProgramDisplay, setSelectedProgramDisplay] = useState('');
+    // Local state - NO MORE GLOBAL STATE CONFLICTS
+    const [localStudentNim, setLocalStudentNim] = useState(formData.student_nim || '');
+    const [localStudentName, setLocalStudentName] = useState(formData.student_name || '');
+    const [localProgramId, setLocalProgramId] = useState(formData.study_program_id || '');
+    const [showDropdown, setShowDropdown] = useState(false);
 
-    // Filter students based on search input - BOOKROOM PATTERN
+    // Sync to global state when values change
+    useEffect(() => {
+      setFormData(prev => ({
+        ...prev,
+        student_nim: localStudentNim,
+        student_name: localStudentName,
+        study_program_id: localProgramId
+      }));
+    }, [localStudentNim, localStudentName, localProgramId]);
+
+    // Filter students based on search input
     const filteredStudents = useMemo(() => 
       students.filter(student => 
         student && 
         student.identity_number && 
         student.full_name &&
+        localStudentNim.length > 0 &&
         (
-          student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
-          student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
+          student.identity_number.toLowerCase().includes(localStudentNim.toLowerCase()) ||
+          student.full_name.toLowerCase().includes(localStudentNim.toLowerCase())
         )
       ), 
-      [students, studentSearch]
+      [students, localStudentNim]
     );
 
-    // Filter programs based on search input - SEPERTI DROPDOWN RUANG
-    const filteredPrograms = useMemo(() =>
-      studyPrograms.filter(program =>
-        program && 
-        program.name &&
-        (
-          program.name.toLowerCase().includes(programSearch.toLowerCase()) ||
-          program.code.toLowerCase().includes(programSearch.toLowerCase())
-        )
-      ), 
-      [studyPrograms, programSearch]
-    );
-
-    // Set program display when formData changes
-    useEffect(() => {
-      if (formData.study_program_id) {
-        const selectedProgram = studyPrograms.find(sp => sp.id === formData.study_program_id);
-        if (selectedProgram) {
-          setSelectedProgramDisplay(`${selectedProgram.name} (${selectedProgram.code})`);
-        }
-      } else {
-        setSelectedProgramDisplay('');
-      }
-    }, [formData.study_program_id, studyPrograms]);
-
-    // Sync initial value from formData
-    useEffect(() => {
-      setStudentSearch(formData.student_nim || '');
-    }, [formData.student_nim]);
-
-    // Handle student selection from dropdown - BOOKROOM PATTERN
-    const handleStudentSelect = useCallback((student: any) => {
-      setStudentSearch(student.identity_number);
-      setFormData(prev => ({
-        ...prev,
-        student_name: student.full_name,
-        student_nim: student.identity_number,
-        study_program_id: student.study_program_id
-      }));
+    // Handle student selection from dropdown
+    const handleStudentSelect = useCallback((student) => {
+      setLocalStudentNim(student.identity_number);
+      setLocalStudentName(student.full_name);
+      setLocalProgramId(student.study_program_id || '');
       form.setValue('student_id', student.id);
-      setShowStudentDropdown(false);
-      
-      // Auto-set program display if student has study program
-      if (student.study_program_id) {
-        const program = studyPrograms.find(p => p.id === student.study_program_id);
-        if (program) {
-          setSelectedProgramDisplay(`${program.name} (${program.code})`);
-        }
-      }
-    }, [form, studyPrograms]);
+      setShowDropdown(false);
+    }, [form]);
 
     return (
       <div className="space-y-4 md:space-y-6">
@@ -476,7 +453,7 @@ const SessionScheduleProgressive = () => {
         </div>
         
         <div className="space-y-4 md:grid md:grid-cols-1 lg:grid-cols-3 md:gap-6 md:space-y-0">
-          {/* NIM Input - BOOKROOM PATTERN */}
+          {/* NIM Input - FIXED VERSION */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               {getText("Student NIM", "NIM Mahasiswa")} *
@@ -484,31 +461,31 @@ const SessionScheduleProgressive = () => {
             <div className="relative">
               <input
                 type="text"
-                placeholder={getText("Search student by NIM or name...", "Cari mahasiswa berdasarkan NIM atau nama...")}
-                value={studentSearch}
+                placeholder={getText("Type student NIM or name...", "Ketik NIM atau nama mahasiswa...")}
+                value={localStudentNim}
                 onChange={(e) => {
-                  setStudentSearch(e.target.value);
-                  setFormData(prev => ({ ...prev, student_nim: e.target.value }));
-                  setShowStudentDropdown(true); // ✅ SELALU BUKA SAAT MENGETIK
+                  const value = e.target.value;
+                  setLocalStudentNim(value);
+                  setShowDropdown(value.length > 0);
                 }}
-                onFocus={() => setShowStudentDropdown(true)} // ✅ SELALU BUKA SAAT FOCUS
+                onFocus={() => {
+                  if (localStudentNim.length > 0) {
+                    setShowDropdown(true);
+                  }
+                }}
                 className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
               />
               <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               
-              {showStudentDropdown && filteredStudents.length > 0 && (
+              {showDropdown && filteredStudents.length > 0 && (
                 <div 
-                  onMouseLeave={() => setShowStudentDropdown(false)} // ✅ BOOKROOM PATTERN
-                  onClick={(e) => e.stopPropagation()} // ✅ PREVENT MODAL CLOSE
+                  onMouseLeave={() => setShowDropdown(false)}
                   className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
                 >
                   {filteredStudents.map((student) => (
                     <div
                       key={student.id}
-                      onClick={(e) => {
-                        e.stopPropagation(); // ✅ PREVENT MODAL CLOSE
-                        handleStudentSelect(student);
-                      }}
+                      onClick={() => handleStudentSelect(student)}
                       className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
                     >
                       <div className="font-semibold text-gray-800">{student.identity_number}</div>
@@ -522,9 +499,9 @@ const SessionScheduleProgressive = () => {
               )}
             </div>
             
-            {studentSearch && !students.find(s => s.identity_number === studentSearch) && (
+            {localStudentNim && !filteredStudents.length && localStudentNim.length > 0 && (
               <div className="mt-2 text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
-                💡 {getText('Student not found - you can continue typing to enter manually', 'Mahasiswa tidak ditemukan - Anda bisa lanjut mengetik untuk input manual')}
+                💡 {getText('No student found - manual entry mode', 'Mahasiswa tidak ditemukan - mode input manual')}
               </div>
             )}
           </div>
@@ -536,86 +513,30 @@ const SessionScheduleProgressive = () => {
             </label>
             <input
               type="text"
-              value={formData.student_name || ''}
-              onChange={(e) => setFormData(prev => ({ ...prev, student_name: e.target.value || '' }))}
+              value={localStudentName}
+              onChange={(e) => setLocalStudentName(e.target.value)}
               placeholder={getText("Enter student name...", "Masukkan nama mahasiswa...")}
               className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
-              required
             />
           </div>
 
-          {/* Study Program - SEARCHABLE DROPDOWN SEPERTI RUANG */}
+          {/* Study Program - SEARCHABLE DROPDOWN */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               {getText("Study Program", "Program Studi")} *
             </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={selectedProgramDisplay}
-                onClick={() => setShowProgramDropdown(!showProgramDropdown)}
-                readOnly
-                placeholder={getText("Click to select program...", "Klik untuk pilih program...")}
-                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer bg-white"
-              />
-              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              
-              {showProgramDropdown && (
-                <div 
-                  onClick={(e) => e.stopPropagation()} // ✅ PREVENT MODAL CLOSE
-                  className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden"
-                >
-                  <div className="p-3 border-b border-gray-100">
-                    <input
-                      type="text"
-                      placeholder={getText("Search programs...", "Cari program studi...")}
-                      value={programSearch}
-                      onChange={(e) => setProgramSearch(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                      autoFocus
-                    />
-                  </div>
-                  
-                  <div className="max-h-60 overflow-y-auto">
-                    {filteredPrograms.length > 0 ? (
-                      filteredPrograms.map((program) => (
-                        <div
-                          key={program.id}
-                          onClick={(e) => {
-                            e.stopPropagation(); // ✅ PREVENT MODAL CLOSE
-                            setSelectedProgramDisplay(`${program.name} (${program.code})`);
-                            setFormData(prev => ({
-                              ...prev,
-                              study_program_id: program.id
-                            }));
-                            setShowProgramDropdown(false);
-                            setProgramSearch('');
-                          }}
-                          className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                        >
-                          <div className="font-semibold text-gray-800">{program.name} ({program.code})</div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="px-4 py-3 text-gray-500 text-sm">
-                        {getText('No programs found', 'Tidak ada program ditemukan')}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-              
-              {showProgramDropdown && (
-                <div 
-                  className="fixed inset-0 z-40" 
-                  onClick={() => setShowProgramDropdown(false)}
-                />
-              )}
-            </div>
+            <StudyProgramDropdown
+              value={localProgramId}
+              onChange={setLocalProgramId}
+              programs={studyPrograms}
+              placeholder={getText("Click to select program...", "Klik untuk pilih program...")}
+              searchPlaceholder={getText("Search programs...", "Cari program studi...")}
+              noResultsText={getText('No programs found', 'Tidak ada program ditemukan')}
+            />
           </div>
         </div>
         
-        {formData.student_nim && !form.getValues('student_id') && (
+        {localStudentNim && !form.getValues('student_id') && (
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg md:rounded-xl p-3 md:p-4">
             <div className="flex items-start space-x-2 md:space-x-3">
               <User className="h-4 w-4 md:h-5 md:w-5 text-blue-600 mt-0.5 flex-shrink-0" />
@@ -629,6 +550,94 @@ const SessionScheduleProgressive = () => {
               </div>
             </div>
           </div>
+        )}
+      </div>
+    );
+  };
+
+  // STUDY PROGRAM DROPDOWN COMPONENT
+  const StudyProgramDropdown = ({ value, onChange, programs, placeholder, searchPlaceholder, noResultsText }) => {
+    const [showDropdown, setShowDropdown] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [displayValue, setDisplayValue] = useState('');
+
+    useEffect(() => {
+      if (value) {
+        const selectedProgram = programs.find(p => p.id === value);
+        if (selectedProgram) {
+          setDisplayValue(`${selectedProgram.name} (${selectedProgram.code})`);
+        }
+      } else {
+        setDisplayValue('');
+      }
+    }, [value, programs]);
+
+    const filteredPrograms = useMemo(() =>
+      programs.filter(program =>
+        program && 
+        program.name &&
+        (
+          program.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          program.code.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+      ), 
+      [programs, searchTerm]
+    );
+
+    return (
+      <div className="relative">
+        <input
+          type="text"
+          value={displayValue}
+          onClick={() => setShowDropdown(!showDropdown)}
+          readOnly
+          placeholder={placeholder}
+          className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer bg-white"
+        />
+        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+        
+        {showDropdown && (
+          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
+            <div className="p-3 border-b border-gray-100">
+              <input
+                type="text"
+                placeholder={searchPlaceholder}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                autoFocus
+              />
+            </div>
+            
+            <div className="max-h-60 overflow-y-auto">
+              {filteredPrograms.length > 0 ? (
+                filteredPrograms.map((program) => (
+                  <div
+                    key={program.id}
+                    onClick={() => {
+                      onChange(program.id);
+                      setShowDropdown(false);
+                      setSearchTerm('');
+                    }}
+                    className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                  >
+                    <div className="font-semibold text-gray-800">{program.name} ({program.code})</div>
+                  </div>
+                ))
+              ) : (
+                <div className="px-4 py-3 text-gray-500 text-sm">
+                  {noResultsText}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        
+        {showDropdown && (
+          <div 
+            className="fixed inset-0 z-40" 
+            onClick={() => setShowDropdown(false)}
+          />
         )}
       </div>
     );
@@ -691,7 +700,7 @@ const SessionScheduleProgressive = () => {
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg md:rounded-xl p-3 md:p-4 max-w-md mx-auto">
           <div className="flex items-center space-x-2 md:space-x-3">
             <Calendar className="h-4 w-4 md:h-5 md:w-5 text-green-600" />
-            <div className="text-xs md:text-sm text-green-800">
+           <div className="text-xs md:text-sm text-green-800">
               <p className="font-semibold">
                 {getText('Selected Date', 'Tanggal Terpilih')}
               </p>
@@ -797,10 +806,7 @@ const SessionScheduleProgressive = () => {
             <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             
             {showRoomDropdown && (
-              <div 
-                onClick={(e) => e.stopPropagation()}
-                className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden"
-              >
+              <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
                 <div className="p-3 border-b border-gray-100">
                   <input
                     type="text"
@@ -817,8 +823,7 @@ const SessionScheduleProgressive = () => {
                     filteredRooms.map((room) => (
                       <div
                         key={room.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={() => {
                           form.setValue('room_id', room.id);
                           setSelectedRoomDisplay(`${room.name} - ${room.code}`);
                           setShowRoomDropdown(false);
@@ -906,14 +911,12 @@ const SessionScheduleProgressive = () => {
                 {showSupervisorDropdown && filteredLecturersForSupervisor.length > 0 && (
                   <div 
                     onMouseLeave={() => setShowSupervisorDropdown(false)}
-                    onClick={(e) => e.stopPropagation()}
                     className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
                   >
                     {filteredLecturersForSupervisor.map((lecturer) => (
                       <div
                         key={lecturer.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={() => {
                           setSupervisorSearch(lecturer.full_name);
                           form.setValue('supervisor', lecturer.full_name);
                           setShowSupervisorDropdown(false);
@@ -954,14 +957,12 @@ const SessionScheduleProgressive = () => {
                 {showExaminerDropdown && filteredLecturersForExaminer.length > 0 && (
                   <div 
                     onMouseLeave={() => setShowExaminerDropdown(false)}
-                    onClick={(e) => e.stopPropagation()}
                     className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
                   >
                     {filteredLecturersForExaminer.map((lecturer) => (
                       <div
                         key={lecturer.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={() => {
                           setExaminerSearch(lecturer.full_name);
                           form.setValue('examiner', lecturer.full_name);
                           setShowExaminerDropdown(false);
@@ -1002,14 +1003,12 @@ const SessionScheduleProgressive = () => {
                 {showSecretaryDropdown && filteredLecturersForSecretary.length > 0 && (
                   <div 
                     onMouseLeave={() => setShowSecretaryDropdown(false)}
-                    onClick={(e) => e.stopPropagation()}
                     className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
                   >
                     {filteredLecturersForSecretary.map((lecturer) => (
                       <div
                         key={lecturer.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={() => {
                           setSecretarySearch(lecturer.full_name);
                           form.setValue('secretary', lecturer.full_name);
                           setShowSecretaryDropdown(false);
@@ -1193,7 +1192,6 @@ const SessionScheduleProgressive = () => {
     setFormData({ student_name: '', student_nim: '', study_program_id: '' });
     setCurrentStep(1);
     setCompletedSteps(new Set());
-    setShowStudentDropdown(false); // Reset dropdown states
   };
 
   const handleEdit = (session: any) => {
@@ -1389,13 +1387,13 @@ const SessionScheduleProgressive = () => {
         </div>
       </div>
 
-      {/* Progressive Form Modal - FIXED VERSION */}
+      {/* Progressive Form Modal - FULLY FIXED VERSION */}
       {showModal && profile?.role === 'department_admin' && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 md:p-4"
           onClick={(e) => {
-            // ✅ HANYA TUTUP MODAL JIKA TIDAK ADA DROPDOWN YANG TERBUKA
-            if (!showStudentDropdown) {
+            // SIMPLE CLICK HANDLING - ONLY CLOSE IF CLICKING BACKGROUND
+            if (e.target === e.currentTarget) {
               setShowModal(false);
               resetForm();
             }
@@ -1407,7 +1405,6 @@ const SessionScheduleProgressive = () => {
               height: 'calc(100vh - 16px)',
               maxHeight: '95vh'
             }}
-            onClick={(e) => e.stopPropagation()} // ✅ STOP EVENT BUBBLING
           >
             
             {/* Mobile: Progress di top, Desktop: Progress di sidebar */}
@@ -1475,7 +1472,8 @@ const SessionScheduleProgressive = () => {
                         <button
                           type="button"
                           onClick={() => handleStepComplete(currentStep)}
-                          disabled={!validateStep(currentStep)}
+                          // REMOVED DISABLED VALIDATION FOR STEP 1 TO PREVENT RE-RENDER
+                          disabled={currentStep !== 1 && !validateStep(currentStep)}
                           className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
                         >
                           <span>{getText('Continue', 'Lanjutkan')}</span>
