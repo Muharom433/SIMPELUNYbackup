@@ -397,19 +397,26 @@ const SessionScheduleProgressive = () => {
   }, [currentStep]);
 
   // STUDENT INFORMATION STEP - FIXED (KEEPING ORIGINAL LOGIC BUT FIXING JUMPING)
-  // GANTI StudentInformationStep() yang lama dengan ini:
+  // GANTI StudentInformationStep() dengan ini - ANTI JUMPING REAL FIX:
 
 const StudentInformationStep = () => {
-  // State lokal untuk input NIM - SIMPLE
-  const [nimInput, setNimInput] = useState(formData.student_nim || '');
+  // State input yang INDEPENDENT - tidak terkait formData
+  const [nimInputValue, setNimInputValue] = useState('');
   const [showNimDropdown, setShowNimDropdown] = useState(false);
   
-  // Program studi dropdown states (tetap sama)
+  // Program studi states
   const [programSearch, setProgramSearch] = useState('');
   const [showProgramDropdown, setShowProgramDropdown] = useState(false);
   const [selectedProgramDisplay, setSelectedProgramDisplay] = useState('');
 
-  // Set program display saat formData berubah
+  // Initialize nim input SEKALI SAJA saat component mount
+  useEffect(() => {
+    if (formData.student_nim && !nimInputValue) {
+      setNimInputValue(formData.student_nim);
+    }
+  }, []); // EMPTY DEPENDENCY - hanya sekali
+
+  // Set program display
   useEffect(() => {
     if (formData.study_program_id) {
       const selectedProgram = studyPrograms.find(sp => sp.id === formData.study_program_id);
@@ -421,15 +428,15 @@ const StudentInformationStep = () => {
     }
   }, [formData.study_program_id, studyPrograms]);
 
-  // Filter students dari array yang SUDAH ADA
+  // Filter students - SIMPLE dari array yang sudah ada
   const filteredStudents = useMemo(() => {
-    if (!nimInput || nimInput.length < 2) return [];
+    if (!nimInputValue || nimInputValue.length < 2) return [];
     return students.filter(student => 
       student && student.identity_number && student.full_name &&
-      (student.identity_number.toLowerCase().includes(nimInput.toLowerCase()) ||
-       student.full_name.toLowerCase().includes(nimInput.toLowerCase()))
+      (student.identity_number.toLowerCase().includes(nimInputValue.toLowerCase()) ||
+       student.full_name.toLowerCase().includes(nimInputValue.toLowerCase()))
     );
-  }, [students, nimInput]);
+  }, [students, nimInputValue]);
 
   // Filter programs
   const filteredPrograms = useMemo(() =>
@@ -439,54 +446,51 @@ const StudentInformationStep = () => {
     ), [studyPrograms, programSearch]
   );
 
-  // Handle NIM input change - FIXED ANTI JUMPING
-  const handleNimChange = useCallback((value) => {
-    setNimInput(value); // Update input display
+  // Handle typing di NIM input - TIDAK ADA AUTO-FILL LANGSUNG
+  const handleNimTyping = (value) => {
+    setNimInputValue(value); // Update display saja
+    setShowNimDropdown(value.length > 0);
     
-    // Update formData nim
+    // Update formData nim saja - JANGAN auto-fill yang lain dulu
     setFormData(prev => ({
       ...prev,
       student_nim: value
     }));
-    
-    // Cek exact match dari array students
-    const exactMatch = students.find(s => s.identity_number === value);
-    
-    if (exactMatch) {
-      // Auto-fill jika exact match
-      setFormData(prev => ({
-        ...prev,
-        student_name: exactMatch.full_name,
-        student_nim: exactMatch.identity_number,
-        study_program_id: exactMatch.study_program_id
-      }));
-      form.setValue('student_id', exactMatch.id);
-      
-      // Set program display
-      if (exactMatch.study_program_id) {
-        const program = studyPrograms.find(p => p.id === exactMatch.study_program_id);
-        if (program) {
-          setSelectedProgramDisplay(`${program.name} (${program.code})`);
-        }
-      }
-    } else {
-      // Reset jika tidak ada match
-      setFormData(prev => ({
-        ...prev,
-        student_name: '',
-        study_program_id: ''
-      }));
-      form.setValue('student_id', '');
-      setSelectedProgramDisplay('');
-    }
-    
-    // Show dropdown
-    setShowNimDropdown(value.length > 0);
-  }, [students, form, studyPrograms]);
+  };
 
-  // Handle select student dari dropdown
-  const handleSelectStudent = useCallback((student) => {
-    setNimInput(student.identity_number);
+  // Handle blur - cek auto-fill baru disini
+  const handleNimBlur = () => {
+    setTimeout(() => {
+      setShowNimDropdown(false);
+      
+      // Baru cek auto-fill saat blur
+      const exactMatch = students.find(s => s.identity_number === nimInputValue);
+      if (exactMatch) {
+        setFormData(prev => ({
+          ...prev,
+          student_name: exactMatch.full_name,
+          student_nim: exactMatch.identity_number,
+          study_program_id: exactMatch.study_program_id
+        }));
+        form.setValue('student_id', exactMatch.id);
+        
+        // Set program display
+        if (exactMatch.study_program_id) {
+          const program = studyPrograms.find(p => p.id === exactMatch.study_program_id);
+          if (program) {
+            setSelectedProgramDisplay(`${program.name} (${program.code})`);
+          }
+        }
+      } else {
+        // Reset jika tidak ada match
+        form.setValue('student_id', '');
+      }
+    }, 200);
+  };
+
+  // Handle select dari dropdown
+  const handleSelectStudent = (student) => {
+    setNimInputValue(student.identity_number);
     setFormData(prev => ({
       ...prev,
       student_name: student.full_name,
@@ -503,7 +507,7 @@ const StudentInformationStep = () => {
         setSelectedProgramDisplay(`${program.name} (${program.code})`);
       }
     }
-  }, [form, studyPrograms]);
+  };
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -518,7 +522,7 @@ const StudentInformationStep = () => {
       
       <div className="space-y-4 md:grid md:grid-cols-1 lg:grid-cols-3 md:gap-6 md:space-y-0">
         
-        {/* NIM INPUT - FIXED */}
+        {/* NIM INPUT - ANTI JUMPING */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Student NIM", "NIM Mahasiswa")} *
@@ -527,10 +531,10 @@ const StudentInformationStep = () => {
             <input
               type="text"
               placeholder={getText("Enter NIM or search student...", "Masukkan NIM atau cari mahasiswa...")}
-              value={nimInput}
-              onChange={(e) => handleNimChange(e.target.value)}
-              onFocus={() => setShowNimDropdown(nimInput.length > 0)}
-              onBlur={() => setTimeout(() => setShowNimDropdown(false), 200)}
+              value={nimInputValue}
+              onChange={(e) => handleNimTyping(e.target.value)}
+              onFocus={() => setShowNimDropdown(nimInputValue.length > 0)}
+              onBlur={handleNimBlur}
               className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
             />
             <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -557,13 +561,13 @@ const StudentInformationStep = () => {
           </div>
           
           {/* Status */}
-          {nimInput && !students.find(s => s.identity_number === nimInput) && (
+          {nimInputValue && !students.find(s => s.identity_number === nimInputValue) && (
             <div className="mt-2 text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
               💡 {getText('New student - enter manually', 'Mahasiswa baru - input manual')}
             </div>
           )}
           
-          {nimInput && students.find(s => s.identity_number === nimInput) && (
+          {nimInputValue && students.find(s => s.identity_number === nimInputValue) && (
             <div className="mt-2 text-xs text-green-600 bg-green-50 px-3 py-2 rounded-lg flex items-center space-x-1">
               <CheckCircle2 className="h-3 w-3" />
               <span>{getText('Student found', 'Mahasiswa ditemukan')}</span>
@@ -571,7 +575,7 @@ const StudentInformationStep = () => {
           )}
         </div>
 
-        {/* Student Name - TETAP SAMA */}
+        {/* SISANYA TETAP SAMA... */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Student Name", "Nama Mahasiswa")} *
@@ -586,7 +590,6 @@ const StudentInformationStep = () => {
           />
         </div>
 
-        {/* Study Program - SEARCH DROPDOWN SEPERTI RUANGAN */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Study Program", "Program Studi")} *
@@ -632,9 +635,6 @@ const StudentInformationStep = () => {
                         className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
                       >
                         <div className="font-semibold text-gray-800">{program.name} ({program.code})</div>
-                        {program.department && (
-                          <div className="text-sm text-gray-600">{program.department.name}</div>
-                        )}
                       </div>
                     ))
                   ) : (
@@ -656,7 +656,6 @@ const StudentInformationStep = () => {
         </div>
       </div>
       
-      {/* Info box untuk mahasiswa baru - TETAP SAMA */}
       {formData.student_nim && !form.getValues('student_id') && (
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg md:rounded-xl p-3 md:p-4">
           <div className="flex items-start space-x-2 md:space-x-3">
