@@ -800,29 +800,33 @@ const ProgressSidebar = () => (
       
       {/* Room Selection */}
       <div className="space-y-4">
-        <div>
+       import Select from 'react-select';
+
+// Component:
+<div>
   <label className="block text-sm font-medium text-gray-700 mb-2">
     {getText("Room", "Ruangan")} *
   </label>
-  <select
-    {...form.register('room_id')}
-    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white"
-  >
-    <option value="">{getText('Select room...', 'Pilih ruangan...')}</option>
-    {availableRooms.map(room => (
-      <option key={room.id} value={room.id}>
-        {room.name} - {room.code} (Capacity: {room.capacity})
-      </option>
-    ))}
-  </select>
-  {form.formState.errors.room_id && (
-    <p className="mt-1 text-sm text-red-600">{form.formState.errors.room_id.message}</p>
-  )}
-  {watchStartTime && watchEndTime && watchDate && (
-    <p className="mt-2 text-sm text-gray-600 text-center">
-      💡 {availableRooms.length} {getText('available rooms', 'ruangan tersedia')}
-    </p>
-  )}
+  <Select
+    options={availableRooms.map(room => ({
+      value: room.id,
+      label: `${room.name} - ${room.code} (Capacity: ${room.capacity})`
+    }))}
+    value={availableRooms
+      .filter(room => room.id === form.getValues('room_id'))
+      .map(room => ({
+        value: room.id,
+        label: `${room.name} - ${room.code} (Capacity: ${room.capacity})`
+      }))[0] || null
+    }
+    onChange={(selected) => {
+      form.setValue('room_id', selected?.value || '');
+    }}
+    placeholder={getText('Search and select room...', 'Cari dan pilih ruangan...')}
+    isSearchable
+    className="text-sm"
+    classNamePrefix="react-select"
+  />
 </div>
       </div>
 
