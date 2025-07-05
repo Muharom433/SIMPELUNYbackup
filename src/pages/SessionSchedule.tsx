@@ -586,7 +586,7 @@ const StudentInformationStep = () => (
     </div>
     
     <div className="space-y-4 md:grid md:grid-cols-1 lg:grid-cols-3 md:gap-6 md:space-y-0">
-      {/* Student NIM - HYBRID: React-Select + Manual Input */}
+      {/* Student NIM - FIXED with null checks */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           {getText("Student NIM", "NIM Mahasiswa")} *
@@ -595,13 +595,16 @@ const StudentInformationStep = () => (
           name="student_id"
           control={form.control}
           render={({ field }) => {
-            const studentOptions = students.map(student => ({
-              value: student.id,
-              label: `${student.identity_number} - ${student.full_name}`,
-              student: student
-            }));
+            // SAFE data processing dengan null checks
+            const studentOptions = (students || [])
+              .filter(student => student && student.identity_number && student.full_name)
+              .map(student => ({
+                value: student.id,
+                label: `${student.identity_number} - ${student.full_name}`,
+                student: student
+              }));
             
-            const currentValue = studentOptions.find(option => option.value === field.value);
+            const currentValue = studentOptions.find(option => option.value === field.value) || null;
             
             return (
               <Select
@@ -611,16 +614,15 @@ const StudentInformationStep = () => (
                 onChange={(option) => {
                   if (option) {
                     field.onChange(option.value);
-                    // Auto-fill data mahasiswa
+                    // Auto-fill data mahasiswa dengan null checks
                     setFormData(prev => ({
                       ...prev,
-                      student_name: option.student.full_name,
-                      student_nim: option.student.identity_number,
-                      study_program_id: option.student.study_program_id || ''
+                      student_name: option.student?.full_name || '',
+                      student_nim: option.student?.identity_number || '',
+                      study_program_id: option.student?.study_program_id || ''
                     }));
                   } else {
                     field.onChange('');
-                    // Clear semua data tapi biarkan user input manual
                     setFormData(prev => ({ ...prev, student_name: '', study_program_id: '' }));
                   }
                 }}
@@ -640,13 +642,13 @@ const StudentInformationStep = () => (
           }}
         />
         
-        {/* Manual NIM Input - Muncul jika tidak ada student yang dipilih */}
+        {/* Manual NIM Input */}
         {!form.getValues('student_id') && (
           <div className="mt-2">
             <input
               type="text"
-              value={formData.student_nim}
-              onChange={(e) => setFormData(prev => ({ ...prev, student_nim: e.target.value }))}
+              value={formData.student_nim || ''}
+              onChange={(e) => setFormData(prev => ({ ...prev, student_nim: e.target.value || '' }))}
               placeholder={getText("Or enter NIM manually...", "Atau masukkan NIM manual...")}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-blue-50"
             />
@@ -654,35 +656,36 @@ const StudentInformationStep = () => (
         )}
       </div>
 
-      {/* Student Name - Manual Input */}
+      {/* Student Name */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           {getText("Student Name", "Nama Mahasiswa")} *
         </label>
         <input
           type="text"
-          value={formData.student_name}
-          onChange={(e) => setFormData(prev => ({ ...prev, student_name: e.target.value }))}
+          value={formData.student_name || ''}
+          onChange={(e) => setFormData(prev => ({ ...prev, student_name: e.target.value || '' }))}
           placeholder={getText("Enter student name...", "Masukkan nama mahasiswa...")}
           className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
           required
         />
       </div>
 
-      {/* Study Program - React-Select */}
+      {/* Study Program - FIXED */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           {getText("Study Program", "Program Studi")} *
         </label>
-        <Controller
-          control={form.control}
-          render={() => {
-            const programOptions = studyPrograms.map(program => ({
-              value: program.id,
-              label: program.name
-            }));
+        <div>
+          {(() => {
+            const programOptions = (studyPrograms || [])
+              .filter(program => program && program.name)
+              .map(program => ({
+                value: program.id,
+                label: program.name
+              }));
             
-            const currentValue = programOptions.find(option => option.value === formData.study_program_id);
+            const currentValue = programOptions.find(option => option.value === formData.study_program_id) || null;
             
             return (
               <Select
@@ -707,8 +710,8 @@ const StudentInformationStep = () => (
                 noOptionsMessage={() => getText('No programs found', 'Tidak ada program ditemukan')}
               />
             );
-          }}
-        />
+          })()}
+        </div>
       </div>
     </div>
     
