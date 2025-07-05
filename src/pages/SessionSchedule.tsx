@@ -586,7 +586,7 @@ const StudentInformationStep = () => (
     </div>
     
     <div className="space-y-4 md:grid md:grid-cols-1 lg:grid-cols-3 md:gap-6 md:space-y-0">
-      {/* Student NIM - MENGGUNAKAN REACT-SELECT */}
+      {/* Student NIM - HYBRID: React-Select + Manual Input */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           {getText("Student NIM", "NIM Mahasiswa")} *
@@ -618,13 +618,10 @@ const StudentInformationStep = () => (
                       student_nim: option.student.identity_number,
                       study_program_id: option.student.study_program_id || ''
                     }));
-                    const program = studyPrograms.find(p => p.id === option.student.study_program_id);
-                    if (program) {
-                      form.setValue('study_program_id', program.id);
-                    }
                   } else {
                     field.onChange('');
-                    setFormData(prev => ({ ...prev, student_name: '', student_nim: '', study_program_id: '' }));
+                    // Clear semua data tapi biarkan user input manual
+                    setFormData(prev => ({ ...prev, student_name: '', study_program_id: '' }));
                   }
                 }}
                 placeholder={getText("Search student by NIM or name...", "Cari mahasiswa berdasarkan NIM atau nama...")}
@@ -637,14 +634,27 @@ const StudentInformationStep = () => (
                     borderColor: '#d1d5db',
                   }),
                 }}
-                noOptionsMessage={() => getText('No students found', 'Tidak ada mahasiswa ditemukan')}
+                noOptionsMessage={() => getText('Student not found - you can enter manually below', 'Mahasiswa tidak ditemukan - Anda bisa input manual di bawah')}
               />
             );
           }}
         />
+        
+        {/* Manual NIM Input - Muncul jika tidak ada student yang dipilih */}
+        {!form.getValues('student_id') && (
+          <div className="mt-2">
+            <input
+              type="text"
+              value={formData.student_nim}
+              onChange={(e) => setFormData(prev => ({ ...prev, student_nim: e.target.value }))}
+              placeholder={getText("Or enter NIM manually...", "Atau masukkan NIM manual...")}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-blue-50"
+            />
+          </div>
+        )}
       </div>
 
-      {/* Student Name - INPUT BIASA */}
+      {/* Student Name - Manual Input */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           {getText("Student Name", "Nama Mahasiswa")} *
@@ -659,15 +669,14 @@ const StudentInformationStep = () => (
         />
       </div>
 
-      {/* Study Program - MENGGUNAKAN REACT-SELECT */}
+      {/* Study Program - React-Select */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           {getText("Study Program", "Program Studi")} *
         </label>
         <Controller
-          name="study_program_id"
           control={form.control}
-          render={({ field }) => {
+          render={() => {
             const programOptions = studyPrograms.map(program => ({
               value: program.id,
               label: program.name
@@ -680,11 +689,10 @@ const StudentInformationStep = () => (
                 options={programOptions}
                 value={currentValue}
                 onChange={(option) => {
-                  if (option) {
-                    setFormData(prev => ({ ...prev, study_program_id: option.value }));
-                  } else {
-                    setFormData(prev => ({ ...prev, study_program_id: '' }));
-                  }
+                  setFormData(prev => ({ 
+                    ...prev, 
+                    study_program_id: option ? option.value : '' 
+                  }));
                 }}
                 placeholder={getText("Search study program...", "Cari program studi...")}
                 isClearable
@@ -722,7 +730,6 @@ const StudentInformationStep = () => (
     )}
   </div>
 );
-
 // 2. ScheduleInformationStep - NO CHANGES NEEDED (tidak ada dropdown)
 const ScheduleInformationStep = () => (
   <div className="space-y-4 md:space-y-6">
