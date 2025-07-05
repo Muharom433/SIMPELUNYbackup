@@ -730,7 +730,7 @@ const StudentInformationStep = () => (
     )}
   </div>
 );
-// 2. ScheduleInformationStep - NO CHANGES NEEDED (tidak ada dropdown)
+  
 const ScheduleInformationStep = () => (
   <div className="space-y-4 md:space-y-6">
     <div className="text-center mb-4 md:mb-6">
