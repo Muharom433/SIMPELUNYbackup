@@ -32,8 +32,6 @@ import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
 import { alert } from '../components/Alert/AlertHelper';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Controller } from 'react-hook-form';
-import Select from 'react-select';
 
 // Schema for validating the session form data
 const sessionSchema = z.object({
@@ -89,21 +87,17 @@ const SessionScheduleProgressive = () => {
     study_program_id: ''
   });
 
-  // Search states
-  const [studentSearch, setStudentSearch] = useState('');
-  const [supervisorSearch, setSupervisorSearch] = useState('');
-  const [examinerSearch, setExaminerSearch] = useState('');
-  const [secretarySearch, setSecretarySearch] = useState('');
-  const [roomSearch, setRoomSearch] = useState('');
-  const [programSearch, setProgramSearch] = useState('');
-
-  // Dropdown visibility states
+  // BookRoom-style dropdown states
+  const [studentSearchTerm, setStudentSearchTerm] = useState('');
   const [showStudentDropdown, setShowStudentDropdown] = useState(false);
-  const [showSupervisorDropdown, setShowSupervisorDropdown] = useState(false);
-  const [showExaminerDropdown, setShowExaminerDropdown] = useState(false);
-  const [showSecretaryDropdown, setShowSecretaryDropdown] = useState(false);
-  const [showRoomDropdown, setShowRoomDropdown] = useState(false);
+  const [programSearch, setProgramSearch] = useState('');
   const [showProgramDropdown, setShowProgramDropdown] = useState(false);
+  const [supervisorSearch, setSupervisorSearch] = useState('');
+  const [showSupervisorDropdown, setShowSupervisorDropdown] = useState(false);
+  const [examinerSearch, setExaminerSearch] = useState('');
+  const [showExaminerDropdown, setShowExaminerDropdown] = useState(false);
+  const [secretarySearch, setSecretarySearch] = useState('');
+  const [showSecretaryDropdown, setShowSecretaryDropdown] = useState(false);
 
   // Initialize react-hook-form
   const form = useForm({
@@ -125,6 +119,90 @@ const SessionScheduleProgressive = () => {
   const watchDate = form.watch('date');
   const watchStartTime = form.watch('start_time');
   const watchEndTime = form.watch('end_time');
+
+  // Filter functions for dropdowns
+  const filteredStudents = students.filter(student => 
+    student && student.identity_number && student.full_name &&
+    (student.identity_number.toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+     student.full_name.toLowerCase().includes(studentSearchTerm.toLowerCase()))
+  );
+
+  const filteredLecturersForSupervisor = lecturers.filter(lecturer =>
+    lecturer && lecturer.full_name &&
+    lecturer.full_name.toLowerCase().includes(supervisorSearch.toLowerCase())
+  );
+
+  const filteredLecturersForExaminer = lecturers.filter(lecturer =>
+    lecturer && lecturer.full_name &&
+    lecturer.full_name.toLowerCase().includes(examinerSearch.toLowerCase())
+  );
+
+  const filteredLecturersForSecretary = lecturers.filter(lecturer =>
+    lecturer && lecturer.full_name &&
+    lecturer.full_name.toLowerCase().includes(secretarySearch.toLowerCase())
+  );
+
+  // Auto-fill when student is found
+  useEffect(() => {
+    if (studentSearchTerm && studentSearchTerm.length >= 5) {
+      const existingStudent = students.find(student => 
+        student.identity_number === studentSearchTerm
+      );
+      
+      if (existingStudent) {
+        setFormData(prev => ({
+          ...prev,
+          student_name: existingStudent.full_name,
+          student_nim: existingStudent.identity_number,
+          study_program_id: existingStudent.study_program_id
+        }));
+        form.setValue('student_id', existingStudent.id);
+        
+        // Update program search display
+        const program = studyPrograms.find(p => p.id === existingStudent.study_program_id);
+        if (program) {
+          setProgramSearch(`${program.name} (${program.code})`);
+        }
+      }
+    }
+  }, [studentSearchTerm, students, form, studyPrograms]);
+
+  // Update program search when formData changes
+  useEffect(() => {
+    if (formData.study_program_id) {
+      const selectedProgram = studyPrograms.find(sp => sp.id === formData.study_program_id);
+      if (selectedProgram) {
+        setProgramSearch(`${selectedProgram.name} (${selectedProgram.code})`);
+      }
+    }
+  }, [formData.study_program_id, studyPrograms]);
+
+  const handleStudentSelect = (student) => {
+    setStudentSearchTerm(student.identity_number);
+    setFormData(prev => ({
+      ...prev,
+      student_name: student.full_name,
+      student_nim: student.identity_number,
+      study_program_id: student.study_program_id
+    }));
+    form.setValue('student_id', student.id);
+    setShowStudentDropdown(false);
+  };
+
+  const handleManualNimChange = (value) => {
+    setStudentSearchTerm(value);
+    setFormData(prev => ({
+      ...prev,
+      student_nim: value,
+      // Reset other fields if not found in database
+      ...(students.find(s => s.identity_number === value) ? {} : {
+        student_name: '',
+        study_program_id: ''
+      })
+    }));
+    form.setValue('student_id', '');
+    setShowStudentDropdown(true);
+  };
 
   // Progress steps configuration
   const steps = [
@@ -217,6 +295,7 @@ const SessionScheduleProgressive = () => {
       setLoading(false);
     }
   };
+
   const fetchStudents = async () => {
     try {
       let query = supabase
@@ -342,40 +421,41 @@ const SessionScheduleProgressive = () => {
       setAvailableRooms(rooms);
     }
   };
+
   const MobileProgressIndicator = () => (
-  <div className="flex items-center justify-between">
-    {steps.map((step, index) => {
-      const isCompleted = completedSteps.has(step.id);
-      const isCurrent = currentStep === step.id;
-      
-      return (
-        <React.Fragment key={step.id}>
-          <div className="flex flex-col items-center">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
-              isCompleted
-                ? 'bg-blue-500 text-white'
-                : isCurrent
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-200 text-gray-400'
-            }`}>
-              {isCompleted ? <Check className="h-4 w-4" /> : step.id}
+    <div className="flex items-center justify-between">
+      {steps.map((step, index) => {
+        const isCompleted = completedSteps.has(step.id);
+        const isCurrent = currentStep === step.id;
+        
+        return (
+          <React.Fragment key={step.id}>
+            <div className="flex flex-col items-center">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
+                isCompleted
+                  ? 'bg-blue-500 text-white'
+                  : isCurrent
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 text-gray-400'
+              }`}>
+                {isCompleted ? <Check className="h-4 w-4" /> : step.id}
+              </div>
+              <div className={`text-xs mt-1 text-center max-w-16 ${
+                isCurrent || isCompleted ? 'text-blue-600 font-medium' : 'text-gray-400'
+              }`}>
+                {step.title.split(' ')[0]}
+              </div>
             </div>
-            <div className={`text-xs mt-1 text-center max-w-16 ${
-              isCurrent || isCompleted ? 'text-blue-600 font-medium' : 'text-gray-400'
-            }`}>
-              {step.title.split(' ')[0]} {/* Hanya kata pertama */}
-            </div>
-          </div>
-          {index < steps.length - 1 && (
-            <div className={`flex-1 h-0.5 mx-2 ${
-              isCompleted ? 'bg-blue-500' : 'bg-gray-200'
-            }`} />
-          )}
-        </React.Fragment>
-      );
-    })}
-  </div>
-);
+            {index < steps.length - 1 && (
+              <div className={`flex-1 h-0.5 mx-2 ${
+                isCompleted ? 'bg-blue-500' : 'bg-gray-200'
+              }`} />
+            )}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
 
   // Progress validation functions
   const validateStep = (step) => {
@@ -515,561 +595,479 @@ const SessionScheduleProgressive = () => {
     setFormData({ student_name: '', student_nim: '', study_program_id: '' });
     setCurrentStep(1);
     setCompletedSteps(new Set());
-    setStudentSearch('');
+    setStudentSearchTerm('');
+    setProgramSearch('');
     setSupervisorSearch('');
     setExaminerSearch('');
     setSecretarySearch('');
-    setRoomSearch('');
-    setProgramSearch('');
   };
 
-  // Enhanced Progress Indicator like the image
-  // Ganti ProgressIndicator yang ada dengan ini:
-const ProgressSidebar = () => (
-  <div className="w-72 bg-white border-r-2 border-blue-100 p-6">
-    <div className="mb-8">
-      <h3 className="text-lg font-bold text-gray-900">Session Creation</h3>
-      <p className="text-sm text-gray-500 mt-1">Follow the steps below</p>
-    </div>
+  const ProgressSidebar = () => (
+    <div className="w-72 bg-white border-r-2 border-blue-100 p-6">
+      <div className="mb-8">
+        <h3 className="text-lg font-bold text-gray-900">Session Creation</h3>
+        <p className="text-sm text-gray-500 mt-1">Follow the steps below</p>
+      </div>
 
-    <div className="space-y-6">
-      {steps.map((step, index) => {
-        const isCompleted = completedSteps.has(step.id);
-        const isCurrent = currentStep === step.id;
-        
-        return (
-          <div key={step.id} className="relative flex items-start">
-            {/* Vertical Line */}
-            {index < steps.length - 1 && (
-              <div className={`absolute left-6 top-12 w-0.5 h-16 ${
-                isCompleted ? 'bg-blue-500' : 'bg-gray-200'
-              }`} />
-            )}
-            
-            {/* Circle */}
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 relative z-10 ${
-              isCompleted
-                ? 'bg-blue-500 border-blue-500 text-white'
-                : isCurrent
-                ? 'bg-white border-blue-500 text-blue-500 ring-4 ring-blue-100'
-                : 'bg-white border-gray-300 text-gray-400'
-            }`}>
-              {isCompleted ? <Check className="h-5 w-5" /> : <step.icon className="h-5 w-5" />}
-            </div>
-            
-            {/* Content */}
-            <div className="ml-4">
-              <div className={`text-sm font-medium ${isCurrent || isCompleted ? 'text-blue-600' : 'text-gray-400'}`}>
-                Step {step.id}
+      <div className="space-y-6">
+        {steps.map((step, index) => {
+          const isCompleted = completedSteps.has(step.id);
+          const isCurrent = currentStep === step.id;
+          
+          return (
+            <div key={step.id} className="relative flex items-start">
+              {index < steps.length - 1 && (
+                <div className={`absolute left-6 top-12 w-0.5 h-16 ${
+                  isCompleted ? 'bg-blue-500' : 'bg-gray-200'
+                }`} />
+              )}
+              
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 relative z-10 ${
+                isCompleted
+                  ? 'bg-blue-500 border-blue-500 text-white'
+                  : isCurrent
+                  ? 'bg-white border-blue-500 text-blue-500 ring-4 ring-blue-100'
+                  : 'bg-white border-gray-300 text-gray-400'
+              }`}>
+                {isCompleted ? <Check className="h-5 w-5" /> : <step.icon className="h-5 w-5" />}
               </div>
-              <div className={`font-semibold ${isCurrent || isCompleted ? 'text-gray-900' : 'text-gray-500'}`}>
-                {step.title}
+              
+              <div className="ml-4">
+                <div className={`text-sm font-medium ${isCurrent || isCompleted ? 'text-blue-600' : 'text-gray-400'}`}>
+                  Step {step.id}
+                </div>
+                <div className={`font-semibold ${isCurrent || isCompleted ? 'text-gray-900' : 'text-gray-500'}`}>
+                  {step.title}
+                </div>
+                <div className="text-sm text-gray-500 mt-1">{step.description}</div>
               </div>
-              <div className="text-sm text-gray-500 mt-1">{step.description}</div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
-  </div>
-);
+  );
 
-const StudentInformationStep = () => (
-  <div className="space-y-4 md:space-y-6">
-    <div className="text-center mb-4 md:mb-8">
-      <h3 className="text-lg md:text-2xl font-bold text-gray-900 mb-2">
-        {getText('Student Information', 'Informasi Mahasiswa')}
-      </h3>
-      <p className="text-sm md:text-base text-gray-600">
-        {getText('Please select or enter student details for the examination', 'Silakan pilih atau masukkan detail mahasiswa untuk sidang')}
-      </p>
-    </div>
-    
-    <div className="space-y-4 md:grid md:grid-cols-1 lg:grid-cols-3 md:gap-6 md:space-y-0">
-      {/* Student NIM - FIXED with null checks */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          {getText("Student NIM", "NIM Mahasiswa")} *
-        </label>
-        <Controller
-          name="student_id"
-          control={form.control}
-          render={({ field }) => {
-            // SAFE data processing dengan null checks
-            const studentOptions = (students || [])
-              .filter(student => student && student.identity_number && student.full_name)
-              .map(student => ({
-                value: student.id,
-                label: `${student.identity_number} - ${student.full_name}`,
-                student: student
-              }));
-            
-            const currentValue = studentOptions.find(option => option.value === field.value) || null;
-            
-            return (
-              <Select
-                {...field}
-                options={studentOptions}
-                value={currentValue}
-                onChange={(option) => {
-                  if (option) {
-                    field.onChange(option.value);
-                    // Auto-fill data mahasiswa dengan null checks
-                    setFormData(prev => ({
-                      ...prev,
-                      student_name: option.student?.full_name || '',
-                      student_nim: option.student?.identity_number || '',
-                      study_program_id: option.student?.study_program_id || ''
-                    }));
-                  } else {
-                    field.onChange('');
-                    setFormData(prev => ({ ...prev, student_name: '', study_program_id: '' }));
-                  }
-                }}
-                placeholder={getText("Search student by NIM or name...", "Cari mahasiswa berdasarkan NIM atau nama...")}
-                isClearable
-                isSearchable
-                styles={{
-                  control: (provided) => ({
-                    ...provided,
-                    minHeight: '42px',
-                    borderColor: '#d1d5db',
-                  }),
-                }}
-                noOptionsMessage={() => getText('Student not found - you can enter manually below', 'Mahasiswa tidak ditemukan - Anda bisa input manual di bawah')}
-              />
-            );
-          }}
-        />
-        
-        {/* Manual NIM Input */}
-        {!form.getValues('student_id') && (
-          <div className="mt-2">
+  const StudentInformationStep = () => (
+    <div className="space-y-4 md:space-y-6">
+      <div className="text-center mb-4 md:mb-8">
+        <h3 className="text-lg md:text-2xl font-bold text-gray-900 mb-2">
+          {getText('Student Information', 'Informasi Mahasiswa')}
+        </h3>
+        <p className="text-sm md:text-base text-gray-600">
+          {getText('Please select or enter student details for the examination', 'Silakan pilih atau masukkan detail mahasiswa untuk sidang')}
+        </p>
+      </div>
+      
+      <div className="space-y-4 md:grid md:grid-cols-1 lg:grid-cols-3 md:gap-6 md:space-y-0">
+        {/* Student NIM - BookRoom Style */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {getText("Student NIM", "NIM Mahasiswa")} *
+          </label>
+          <div className="relative">
             <input
               type="text"
-              value={formData.student_nim || ''}
-              onChange={(e) => setFormData(prev => ({ ...prev, student_nim: e.target.value || '' }))}
-              placeholder={getText("Or enter NIM manually...", "Atau masukkan NIM manual...")}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-blue-50"
+              placeholder={getText("Search student by NIM or name...", "Cari mahasiswa berdasarkan NIM atau nama...")}
+              value={studentSearchTerm}
+              onChange={(e) => handleManualNimChange(e.target.value)}
+              onFocus={() => setShowStudentDropdown(true)}
+              className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
             />
+            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            
+            {showStudentDropdown && filteredStudents.length > 0 && (
+              <div 
+                onMouseLeave={() => setShowStudentDropdown(false)}
+                className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
+              >
+                {filteredStudents.map((student) => (
+                  <div
+                    key={student.id}
+                    onClick={() => handleStudentSelect(student)}
+                    className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                  >
+                    <div className="font-semibold text-gray-800">{student.identity_number}</div>
+                    <div className="text-sm text-gray-600">{student.full_name}</div>
+                    {student.study_program && (
+                      <div className="text-xs text-gray-500">{student.study_program.name}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+          
+          {/* Show hint when typing manually */}
+          {studentSearchTerm && !students.find(s => s.identity_number === studentSearchTerm) && (
+            <div className="mt-2 text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
+              💡 {getText('Student not found - you can continue typing to enter manually', 'Mahasiswa tidak ditemukan - Anda bisa lanjut mengetik untuk input manual')}
+            </div>
+          )}
+        </div>
 
-      {/* Student Name */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          {getText("Student Name", "Nama Mahasiswa")} *
-        </label>
-        <input
-          type="text"
-          value={formData.student_name || ''}
-          onChange={(e) => setFormData(prev => ({ ...prev, student_name: e.target.value || '' }))}
-          placeholder={getText("Enter student name...", "Masukkan nama mahasiswa...")}
-          className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
-          required
-        />
-      </div>
-
-      {/* Study Program - FIXED */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          {getText("Study Program", "Program Studi")} *
-        </label>
+        {/* Student Name */}
         <div>
-          {(() => {
-            const programOptions = (studyPrograms || [])
-              .filter(program => program && program.name)
-              .map(program => ({
-                value: program.id,
-                label: program.name
-              }));
-            
-            const currentValue = programOptions.find(option => option.value === formData.study_program_id) || null;
-            
-            return (
-              <Select
-                options={programOptions}
-                value={currentValue}
-                onChange={(option) => {
-                  setFormData(prev => ({ 
-                    ...prev, 
-                    study_program_id: option ? option.value : '' 
-                  }));
-                }}
-                placeholder={getText("Search study program...", "Cari program studi...")}
-                isClearable
-                isSearchable
-                styles={{
-                  control: (provided) => ({
-                    ...provided,
-                    minHeight: '42px',
-                    borderColor: '#d1d5db',
-                  }),
-                }}
-                noOptionsMessage={() => getText('No programs found', 'Tidak ada program ditemukan')}
-              />
-            );
-          })()}
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {getText("Student Name", "Nama Mahasiswa")} *
+          </label>
+          <input
+            type="text"
+            value={formData.student_name || ''}
+            onChange={(e) => setFormData(prev => ({ ...prev, student_name: e.target.value || '' }))}
+            placeholder={getText("Enter student name...", "Masukkan nama mahasiswa...")}
+            className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
+            required
+          />
         </div>
-      </div>
-    </div>
-    
-    {/* Info box for manual entry */}
-    {formData.student_nim && !form.getValues('student_id') && (
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg md:rounded-xl p-3 md:p-4">
-        <div className="flex items-start space-x-2 md:space-x-3">
-          <User className="h-4 w-4 md:h-5 md:w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-          <div className="text-xs md:text-sm text-blue-800">
-            <p className="font-semibold">
-              {getText('New Student Registration', 'Pendaftaran Mahasiswa Baru')}
-            </p>
-            <p className="mt-1">
-              {getText('Student not found in database. A new student account will be automatically created when you save this session.', 'Mahasiswa tidak ditemukan di database. Akun mahasiswa baru akan otomatis dibuat saat Anda menyimpan jadwal sidang ini.')}
-            </p>
+
+        {/* Study Program - BookRoom Style */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {getText("Study Program", "Program Studi")} *
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder={getText("Search and select study program", "Cari dan pilih program studi")}
+              value={programSearch}
+              onChange={(e) => {
+                setProgramSearch(e.target.value);
+                setShowProgramDropdown(true);
+              }}
+              onFocus={() => setShowProgramDropdown(true)}
+              className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+            />
+            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            
+            {showProgramDropdown && (
+              <div 
+                onMouseLeave={() => setShowProgramDropdown(false)}
+                className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
+              >
+                {studyPrograms
+                  .filter(program => program.name.toLowerCase().includes(programSearch.toLowerCase()))
+                  .map((program) => (
+                    <div
+                      key={program.id}
+                      onClick={() => {
+                        const displayText = `${program.name} (${program.code})`;
+                        setProgramSearch(displayText);
+                        setFormData(prev => ({
+                          ...prev,
+                          study_program_id: program.id
+                        }));
+                        setShowProgramDropdown(false);
+                      }}
+                      className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                    >
+                      <div className="font-semibold text-gray-800">{program.name} ({program.code})</div>
+                    </div>
+                  ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
-    )}
-  </div>
-);
-  
-const ScheduleInformationStep = () => (
-  <div className="space-y-4 md:space-y-6">
-    <div className="text-center mb-4 md:mb-6">
-      <h3 className="text-lg md:text-2xl font-bold text-gray-900 mb-2">
-        {getText('When will the examination be?', 'Kapan sidang akan dilaksanakan?')}
-      </h3>
-      <p className="text-sm md:text-base text-gray-600">
-        {getText('Please set the date and time for the examination', 'Silakan tentukan tanggal dan waktu sidang')}
-      </p>
-    </div>
-    
-    <div className="space-y-4 md:grid md:grid-cols-3 md:gap-6 md:space-y-0 max-w-2xl mx-auto">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          {getText("Date", "Tanggal")} *
-        </label>
-        <input
-          {...form.register('date')}
-          type="date"
-          className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
-        />
-        {form.formState.errors.date && (
-          <p className="mt-1 text-xs md:text-sm text-red-600">{form.formState.errors.date.message}</p>
-        )}
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          {getText("Start Time", "Waktu Mulai")} *
-        </label>
-        <input
-          {...form.register('start_time')}
-          type="time"
-          className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
-        />
-        {form.formState.errors.start_time && (
-          <p className="mt-1 text-xs md:text-sm text-red-600">{form.formState.errors.start_time.message}</p>
-        )}
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          {getText("End Time", "Waktu Selesai")} *
-        </label>
-        <input
-          {...form.register('end_time')}
-          type="time"
-          className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
-        />
-        {form.formState.errors.end_time && (
-          <p className="mt-1 text-xs md:text-sm text-red-600">{form.formState.errors.end_time.message}</p>
-        )}
-      </div>
-    </div>
-
-    {watchDate && (
-      <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg md:rounded-xl p-3 md:p-4 max-w-md mx-auto">
-        <div className="flex items-center space-x-2 md:space-x-3">
-          <Calendar className="h-4 w-4 md:h-5 md:w-5 text-green-600" />
-          <div className="text-xs md:text-sm text-green-800">
-            <p className="font-semibold">
-              {getText('Selected Date', 'Tanggal Terpilih')}
-            </p>
-            <p className="mt-1">
-              {format(new Date(watchDate), 'EEEE, MMMM d, yyyy')}
-            </p>
+      
+      {/* Info box for manual entry */}
+      {formData.student_nim && !form.getValues('student_id') && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg md:rounded-xl p-3 md:p-4">
+          <div className="flex items-start space-x-2 md:space-x-3">
+            <User className="h-4 w-4 md:h-5 md:w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="text-xs md:text-sm text-blue-800">
+              <p className="font-semibold">
+                {getText('New Student Registration', 'Pendaftaran Mahasiswa Baru')}
+              </p>
+              <p className="mt-1">
+                {getText('Student not found in database. A new student account will be automatically created when you save this session.', 'Mahasiswa tidak ditemukan di database. Akun mahasiswa baru akan otomatis dibuat saat Anda menyimpan jadwal sidang ini.')}
+              </p>
+            </div>
           </div>
         </div>
-      </div>
-    )}
-  </div>
-);
-const RoomAndDetailsStep = () => (
-  <div className="space-y-6">
-    <div className="text-center mb-6">
-      <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-2">
-        {getText('Room & Examination Details', 'Ruangan & Detail Sidang')}
-      </h3>
-      <p className="text-sm md:text-base text-gray-600">
-        {getText('Complete the examination setup with room, title and committee', 'Lengkapi pengaturan sidang dengan ruangan, judul dan panitia')}
-      </p>
-    </div>
-
-    {/* Room Selection */}
-    <div className="space-y-3">
-      <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
-        <Building className="h-4 w-4 text-blue-500" />
-        <span>{getText('Room', 'Ruangan')}</span>
-      </h4>
-      <div>
-        <Controller
-          name="room_id"
-          control={form.control}
-          render={({ field }) => {
-            const roomOptions = (availableRooms || [])
-              .filter(room => room && room.name && room.code)
-              .map(room => ({
-                value: room.id,
-                label: `${room.name} - ${room.code} (Kapasitas: ${room.capacity || 'N/A'})`
-              }));
-            
-            const currentValue = roomOptions.find(option => option.value === field.value) || null;
-            
-            return (
-              <Select
-                {...field}
-                options={roomOptions}
-                value={currentValue}
-                onChange={(option) => field.onChange(option ? option.value : '')}
-                placeholder={getText('Search and select room...', 'Cari dan pilih ruangan...')}
-                isClearable
-                isSearchable
-                styles={{
-                  control: (provided) => ({
-                    ...provided,
-                    minHeight: '42px',
-                    borderColor: '#d1d5db',
-                  }),
-                }}
-                noOptionsMessage={() => getText('No rooms available', 'Tidak ada ruangan tersedia')}
-              />
-            );
-          }}
-        />
-        {form.formState.errors.room_id && (
-          <p className="mt-1 text-xs text-red-600">{form.formState.errors.room_id.message}</p>
-        )}
-        
-        {watchStartTime && watchEndTime && watchDate && (
-          <p className="mt-2 text-xs text-gray-600 text-center">
-            💡 {(availableRooms || []).length} {getText('available rooms', 'ruangan tersedia')}
-          </p>
-        )}
-      </div>
-    </div>
-
-    {/* Thesis Title */}
-    <div className="space-y-3">
-      <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
-        <BookOpen className="h-4 w-4 text-blue-500" />
-        <span>{getText('Thesis Title', 'Judul Skripsi/Tesis')}</span>
-      </h4>
-      <textarea
-        {...form.register('title')}
-        rows={3}
-        className="w-full px-3 md:px-4 py-2.5 md:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm resize-none"
-        placeholder={getText("Enter the complete thesis title...", "Masukkan judul lengkap skripsi/tesis...")}
-      />
-      {form.formState.errors.title && (
-        <p className="mt-1 text-xs text-red-600">{form.formState.errors.title.message}</p>
       )}
     </div>
-
-    {/* Committee Members - FIXED */}
-    <div className="space-y-3">
-      <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
-        <Users className="h-4 w-4 text-blue-500" />
-        <span>{getText('Examination Committee', 'Panitia Sidang')}</span>
-      </h4>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        
-        {/* Supervisor - FIXED */}
+  );
+    
+  const ScheduleInformationStep = () => (
+    <div className="space-y-4 md:space-y-6">
+      <div className="text-center mb-4 md:mb-6">
+        <h3 className="text-lg md:text-2xl font-bold text-gray-900 mb-2">
+          {getText('When will the examination be?', 'Kapan sidang akan dilaksanakan?')}
+        </h3>
+        <p className="text-sm md:text-base text-gray-600">
+          {getText('Please set the date and time for the examination', 'Silakan tentukan tanggal dan waktu sidang')}
+        </p>
+      </div>
+      
+      <div className="space-y-4 md:grid md:grid-cols-3 md:gap-6 md:space-y-0 max-w-2xl mx-auto">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            {getText("Supervisor", "Pembimbing")} *
+            {getText("Date", "Tanggal")} *
           </label>
-          <Controller
-            name="supervisor"
-            control={form.control}
-            render={({ field }) => {
-              const lecturerOptions = (lecturers || [])
-                .filter(lecturer => lecturer && lecturer.full_name)
-                .map(lecturer => ({
-                  value: lecturer.full_name,
-                  label: lecturer.full_name
-                }));
-              
-              const currentValue = lecturerOptions.find(option => option.value === field.value) || null;
-              const isCustomValue = field.value && !currentValue;
-              
-              return (
-                <div>
-                  <Select
-                    options={lecturerOptions}
-                    value={currentValue}
-                    onChange={(option) => {
-                      field.onChange(option ? option.value : '');
-                    }}
-                    placeholder={getText("Search supervisor...", "Cari pembimbing...")}
-                    isClearable
-                    isSearchable
-                    styles={{
-                      control: (provided) => ({
-                        ...provided,
-                        minHeight: '42px',
-                        borderColor: '#d1d5db',
-                      }),
-                    }}
-                    noOptionsMessage={() => getText('Lecturer not found - you can enter manually below', 'Dosen tidak ditemukan - Anda bisa input manual di bawah')}
-                  />
-                  
-                  {(!currentValue || isCustomValue) && (
-                    <input
-                      type="text"
-                      value={field.value || ''}
-                      onChange={(e) => field.onChange(e.target.value || '')}
-                      placeholder={getText("Or enter supervisor name manually...", "Atau masukkan nama pembimbing manual...")}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm mt-2 bg-blue-50"
-                    />
-                  )}
-                </div>
-              );
-            }}
+          <input
+            {...form.register('date')}
+            type="date"
+            className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
           />
-          {form.formState.errors.supervisor && (
-            <p className="mt-1 text-xs text-red-600">{form.formState.errors.supervisor.message}</p>
+          {form.formState.errors.date && (
+            <p className="mt-1 text-xs md:text-sm text-red-600">{form.formState.errors.date.message}</p>
           )}
         </div>
-        
-        {/* Examiner - FIXED */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            {getText("Examiner", "Penguji")} *
+            {getText("Start Time", "Waktu Mulai")} *
           </label>
-          <Controller
-            name="examiner"
-            control={form.control}
-            render={({ field }) => {
-              const lecturerOptions = (lecturers || [])
-                .filter(lecturer => lecturer && lecturer.full_name)
-                .map(lecturer => ({
-                  value: lecturer.full_name,
-                  label: lecturer.full_name
-                }));
-              
-              const currentValue = lecturerOptions.find(option => option.value === field.value) || null;
-              const isCustomValue = field.value && !currentValue;
-              
-              return (
-                <div>
-                  <Select
-                    options={lecturerOptions}
-                    value={currentValue}
-                    onChange={(option) => {
-                      field.onChange(option ? option.value : '');
-                    }}
-                    placeholder={getText("Search examiner...", "Cari penguji...")}
-                    isClearable
-                    isSearchable
-                    styles={{
-                      control: (provided) => ({
-                        ...provided,
-                        minHeight: '42px',
-                        borderColor: '#d1d5db',
-                      }),
-                    }}
-                    noOptionsMessage={() => getText('Lecturer not found - you can enter manually below', 'Dosen tidak ditemukan - Anda bisa input manual di bawah')}
-                  />
-                  
-                  {(!currentValue || isCustomValue) && (
-                    <input
-                      type="text"
-                      value={field.value || ''}
-                      onChange={(e) => field.onChange(e.target.value || '')}
-                      placeholder={getText("Or enter examiner name manually...", "Atau masukkan nama penguji manual...")}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm mt-2 bg-blue-50"
-                    />
-                  )}
-                </div>
-              );
-            }}
+          <input
+            {...form.register('start_time')}
+            type="time"
+            className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
           />
-          {form.formState.errors.examiner && (
-            <p className="mt-1 text-xs text-red-600">{form.formState.errors.examiner.message}</p>
+          {form.formState.errors.start_time && (
+            <p className="mt-1 text-xs md:text-sm text-red-600">{form.formState.errors.start_time.message}</p>
           )}
         </div>
-        
-        {/* Secretary - FIXED */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            {getText("Secretary", "Sekretaris")} *
+            {getText("End Time", "Waktu Selesai")} *
           </label>
-          <Controller
-            name="secretary"
-            control={form.control}
-            render={({ field }) => {
-              const lecturerOptions = (lecturers || [])
-                .filter(lecturer => lecturer && lecturer.full_name)
-                .map(lecturer => ({
-                  value: lecturer.full_name,
-                  label: lecturer.full_name
-                }));
-              
-              const currentValue = lecturerOptions.find(option => option.value === field.value) || null;
-              const isCustomValue = field.value && !currentValue;
-              
-              return (
-                <div>
-                  <Select
-                    options={lecturerOptions}
-                    value={currentValue}
-                    onChange={(option) => {
-                      field.onChange(option ? option.value : '');
-                    }}
-                    placeholder={getText("Search secretary...", "Cari sekretaris...")}
-                    isClearable
-                    isSearchable
-                    styles={{
-                      control: (provided) => ({
-                        ...provided,
-                        minHeight: '42px',
-                        borderColor: '#d1d5db',
-                      }),
-                    }}
-                    noOptionsMessage={() => getText('Lecturer not found - you can enter manually below', 'Dosen tidak ditemukan - Anda bisa input manual di bawah')}
-                  />
-                  
-                  {(!currentValue || isCustomValue) && (
-                    <input
-                      type="text"
-                      value={field.value || ''}
-                      onChange={(e) => field.onChange(e.target.value || '')}
-                      placeholder={getText("Or enter secretary name manually...", "Atau masukkan nama sekretaris manual...")}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm mt-2 bg-blue-50"
-                    />
-                  )}
-                </div>
-              );
-            }}
+          <input
+            {...form.register('end_time')}
+            type="time"
+            className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
           />
-          {form.formState.errors.secretary && (
-            <p className="mt-1 text-xs text-red-600">{form.formState.errors.secretary.message}</p>
+          {form.formState.errors.end_time && (
+            <p className="mt-1 text-xs md:text-sm text-red-600">{form.formState.errors.end_time.message}</p>
           )}
         </div>
       </div>
+
+      {watchDate && (
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg md:rounded-xl p-3 md:p-4 max-w-md mx-auto">
+          <div className="flex items-center space-x-2 md:space-x-3">
+            <Calendar className="h-4 w-4 md:h-5 md:w-5 text-green-600" />
+            <div className="text-xs md:text-sm text-green-800">
+              <p className="font-semibold">
+                {getText('Selected Date', 'Tanggal Terpilih')}
+              </p>
+              <p className="mt-1">
+                {format(new Date(watchDate), 'EEEE, MMMM d, yyyy')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  </div>
-);
+  );
+
+  const RoomAndDetailsStep = () => (
+    <div className="space-y-6">
+      <div className="text-center mb-6">
+        <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-2">
+          {getText('Room & Examination Details', 'Ruangan & Detail Sidang')}
+        </h3>
+        <p className="text-sm md:text-base text-gray-600">
+          {getText('Complete the examination setup with room, title and committee', 'Lengkapi pengaturan sidang dengan ruangan, judul dan panitia')}
+        </p>
+      </div>
+
+      {/* Room Selection - BookRoom Style */}
+      <div className="space-y-3">
+        <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
+          <Building className="h-4 w-4 text-blue-500" />
+          <span>{getText('Room', 'Ruangan')}</span>
+        </h4>
+        <div className="relative">
+          <select
+            {...form.register('room_id')}
+            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+          >
+            <option value="">{getText('Select room...', 'Pilih ruangan...')}</option>
+            {availableRooms.map(room => (
+              <option key={room.id} value={room.id}>
+                {room.name} - {room.code} (Kapasitas: {room.capacity || 'N/A'})
+              </option>
+            ))}
+          </select>
+          {form.formState.errors.room_id && (
+            <p className="mt-1 text-xs text-red-600">{form.formState.errors.room_id.message}</p>
+          )}
+          
+          {watchStartTime && watchEndTime && watchDate && (
+            <p className="mt-2 text-xs text-gray-600 text-center">
+              💡 {(availableRooms || []).length} {getText('available rooms', 'ruangan tersedia')}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Thesis Title */}
+      <div className="space-y-3">
+        <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
+          <BookOpen className="h-4 w-4 text-blue-500" />
+          <span>{getText('Thesis Title', 'Judul Skripsi/Tesis')}</span>
+        </h4>
+        <textarea
+          {...form.register('title')}
+          rows={3}
+          className="w-full px-3 md:px-4 py-2.5 md:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm resize-none"
+          placeholder={getText("Enter the complete thesis title...", "Masukkan judul lengkap skripsi/tesis...")}
+        />
+        {form.formState.errors.title && (
+          <p className="mt-1 text-xs text-red-600">{form.formState.errors.title.message}</p>
+        )}
+      </div>
+
+      {/* Committee Members - BookRoom Style */}
+      <div className="space-y-3">
+        <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
+          <Users className="h-4 w-4 text-blue-500" />
+          <span>{getText('Examination Committee', 'Panitia Sidang')}</span>
+        </h4>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          
+          {/* Supervisor - BookRoom Style */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {getText("Supervisor", "Pembimbing")} *
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder={getText("Search supervisor...", "Cari pembimbing...")}
+                value={supervisorSearch}
+                onChange={(e) => {
+                  setSupervisorSearch(e.target.value);
+                  form.setValue('supervisor', e.target.value);
+                  setShowSupervisorDropdown(true);
+                }}
+                onFocus={() => setShowSupervisorDropdown(true)}
+                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+              />
+              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              
+              {showSupervisorDropdown && filteredLecturersForSupervisor.length > 0 && (
+                <div 
+                  onMouseLeave={() => setShowSupervisorDropdown(false)}
+                  className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
+                >
+                  {filteredLecturersForSupervisor.map((lecturer) => (
+                    <div
+                      key={lecturer.id}
+                      onClick={() => {
+                        setSupervisorSearch(lecturer.full_name);
+                        form.setValue('supervisor', lecturer.full_name);
+                        setShowSupervisorDropdown(false);
+                      }}
+                      className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                    >
+                      <div className="font-semibold text-gray-800">{lecturer.full_name}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {form.formState.errors.supervisor && (
+              <p className="mt-1 text-xs text-red-600">{form.formState.errors.supervisor.message}</p>
+            )}
+          </div>
+          
+          {/* Examiner - BookRoom Style */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {getText("Examiner", "Penguji")} *
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder={getText("Search examiner...", "Cari penguji...")}
+                value={examinerSearch}
+                onChange={(e) => {
+                  setExaminerSearch(e.target.value);
+                  form.setValue('examiner', e.target.value);
+                  setShowExaminerDropdown(true);
+                }}
+                onFocus={() => setShowExaminerDropdown(true)}
+                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+              />
+              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              
+              {showExaminerDropdown && filteredLecturersForExaminer.length > 0 && (
+                <div 
+                  onMouseLeave={() => setShowExaminerDropdown(false)}
+                  className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
+                >
+                  {filteredLecturersForExaminer.map((lecturer) => (
+                    <div
+                      key={lecturer.id}
+                      onClick={() => {
+                        setExaminerSearch(lecturer.full_name);
+                        form.setValue('examiner', lecturer.full_name);
+                        setShowExaminerDropdown(false);
+                      }}
+                      className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                    >
+                      <div className="font-semibold text-gray-800">{lecturer.full_name}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {form.formState.errors.examiner && (
+              <p className="mt-1 text-xs text-red-600">{form.formState.errors.examiner.message}</p>
+            )}
+          </div>
+          
+          {/* Secretary - BookRoom Style */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {getText("Secretary", "Sekretaris")} *
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder={getText("Search secretary...", "Cari sekretaris...")}
+                value={secretarySearch}
+                onChange={(e) => {
+                  setSecretarySearch(e.target.value);
+                  form.setValue('secretary', e.target.value);
+                  setShowSecretaryDropdown(true);
+                }}
+                onFocus={() => setShowSecretaryDropdown(true)}
+                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+              />
+              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              
+              {showSecretaryDropdown && filteredLecturersForSecretary.length > 0 && (
+                <div 
+                  onMouseLeave={() => setShowSecretaryDropdown(false)}
+                  className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
+                >
+                  {filteredLecturersForSecretary.map((lecturer) => (
+                    <div
+                      key={lecturer.id}
+                      onClick={() => {
+                        setSecretarySearch(lecturer.full_name);
+                        form.setValue('secretary', lecturer.full_name);
+                        setShowSecretaryDropdown(false);
+                      }}
+                      className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                    >
+                      <div className="font-semibold text-gray-800">{lecturer.full_name}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {form.formState.errors.secretary && (
+              <p className="mt-1 text-xs text-red-600">{form.formState.errors.secretary.message}</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const renderCurrentStep = () => {
     switch (currentStep) {
       case 1:
@@ -1098,14 +1096,13 @@ const RoomAndDetailsStep = () => (
       secretary: session.secretary,
     });
     
-    setStudentSearch(session.student?.identity_number || '');
+    setStudentSearchTerm(session.student?.identity_number || '');
     setFormData({
       student_name: session.student?.full_name || '',
       student_nim: session.student?.identity_number || '',
       study_program_id: session.student?.study_program?.id || ''
     });
     setProgramSearch(session.student?.study_program?.name || '');
-    setRoomSearch(session.room?.name || '');
     setSupervisorSearch(session.supervisor);
     setExaminerSearch(session.examiner);
     setSecretarySearch(session.secretary);
@@ -1284,117 +1281,117 @@ const RoomAndDetailsStep = () => (
 
       {/* Progressive Form Modal */}
       {showModal && profile?.role === 'department_admin' && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 md:p-4">
-    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl flex flex-col overflow-hidden" 
-         style={{ 
-           height: 'calc(100vh - 16px)',
-           maxHeight: '95vh'
-         }}>
-      
-      {/* Mobile: Progress di top, Desktop: Progress di sidebar */}
-      <div className="md:hidden bg-white border-b border-gray-200 p-3 flex-shrink-0">
-        <MobileProgressIndicator />
-      </div>
-      
-      <div className="flex flex-1 min-h-0">
-        {/* Desktop Sidebar */}
-        <div className="hidden md:block flex-shrink-0">
-          <ProgressSidebar />
-        </div>
-        
-        {/* Content Area */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Header */}
-          <div className="flex items-center justify-between p-3 md:p-6 border-b border-gray-200 bg-white flex-shrink-0">
-            <h3 className="text-base md:text-xl font-bold text-gray-900 flex items-center space-x-2">
-              <UserCheck className="h-4 w-4 md:h-6 md:w-6 text-blue-600" />
-              <span className="hidden sm:inline">
-                {editingSession ? getText('Edit Session', 'Edit Sidang') : getText('Create Session', 'Buat Sidang')}
-              </span>
-              <span className="sm:hidden text-sm">
-                {editingSession ? getText('Edit', 'Edit') : getText('Create', 'Buat')}
-              </span>
-            </h3>
-            <button
-              onClick={() => {
-                setShowModal(false);
-                resetForm();
-              }}
-              className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl flex-shrink-0"
-            >
-              <X className="h-4 w-4 md:h-5 md:w-5" />
-            </button>
-          </div>
-          
-          {/* Content - Scrollable dengan padding yang disesuaikan */}
-          <div className="flex-1 overflow-y-auto p-3 md:p-8 bg-gray-50 min-h-0">
-            <div className="max-w-4xl mx-auto">
-              {renderCurrentStep()}
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 md:p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl flex flex-col overflow-hidden" 
+               style={{ 
+                 height: 'calc(100vh - 16px)',
+                 maxHeight: '95vh'
+               }}>
+            
+            {/* Mobile: Progress di top, Desktop: Progress di sidebar */}
+            <div className="md:hidden bg-white border-b border-gray-200 p-3 flex-shrink-0">
+              <MobileProgressIndicator />
             </div>
-          </div>
-          
-          {/* Footer Navigation - Fixed di bottom */}
-          <div className="border-t border-gray-200 p-3 md:p-6 bg-white flex-shrink-0">
-            <div className="flex flex-col sm:flex-row justify-between items-center space-y-3 sm:space-y-0 sm:space-x-4 max-w-4xl mx-auto">
-              {/* Navigation buttons */}
-              <div className="flex w-full sm:w-auto space-x-3 sm:space-x-0">
-                {currentStep > 1 && (
-                  <button
-                    type="button"
-                    onClick={handleStepBack}
-                    className="flex-1 sm:flex-none flex items-center justify-center space-x-2 px-3 md:px-4 py-2 md:py-3 text-gray-600 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 text-sm"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    <span className="hidden sm:inline">{getText('Back', 'Kembali')}</span>
-                    <span className="sm:hidden">Back</span>
-                  </button>
-                )}
+            
+            <div className="flex flex-1 min-h-0">
+              {/* Desktop Sidebar */}
+              <div className="hidden md:block flex-shrink-0">
+                <ProgressSidebar />
               </div>
+              
+              {/* Content Area */}
+              <div className="flex-1 flex flex-col min-w-0">
+                {/* Header */}
+                <div className="flex items-center justify-between p-3 md:p-6 border-b border-gray-200 bg-white flex-shrink-0">
+                  <h3 className="text-base md:text-xl font-bold text-gray-900 flex items-center space-x-2">
+                    <UserCheck className="h-4 w-4 md:h-6 md:w-6 text-blue-600" />
+                   <span className="hidden sm:inline">
+                      {editingSession ? getText('Edit Session', 'Edit Sidang') : getText('Create Session', 'Buat Sidang')}
+                    </span>
+                    <span className="sm:hidden text-sm">
+                      {editingSession ? getText('Edit', 'Edit') : getText('Create', 'Buat')}
+                    </span>
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setShowModal(false);
+                      resetForm();
+                    }}
+                    className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl flex-shrink-0"
+                  >
+                    <X className="h-4 w-4 md:h-5 md:w-5" />
+                  </button>
+                </div>
+                
+                {/* Content - Scrollable dengan padding yang disesuaikan */}
+                <div className="flex-1 overflow-y-auto p-3 md:p-8 bg-gray-50 min-h-0">
+                  <div className="max-w-4xl mx-auto">
+                    {renderCurrentStep()}
+                  </div>
+                </div>
+                
+                {/* Footer Navigation - Fixed di bottom */}
+                <div className="border-t border-gray-200 p-3 md:p-6 bg-white flex-shrink-0">
+                  <div className="flex flex-col sm:flex-row justify-between items-center space-y-3 sm:space-y-0 sm:space-x-4 max-w-4xl mx-auto">
+                    {/* Navigation buttons */}
+                    <div className="flex w-full sm:w-auto space-x-3 sm:space-x-0">
+                      {currentStep > 1 && (
+                        <button
+                          type="button"
+                          onClick={handleStepBack}
+                          className="flex-1 sm:flex-none flex items-center justify-center space-x-2 px-3 md:px-4 py-2 md:py-3 text-gray-600 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 text-sm"
+                        >
+                          <ArrowLeft className="h-4 w-4" />
+                          <span className="hidden sm:inline">{getText('Back', 'Kembali')}</span>
+                          <span className="sm:hidden">Back</span>
+                        </button>
+                      )}
+                    </div>
 
-              <div className="w-full sm:w-auto">
-                {currentStep < 3 ? (
-                  <button
-                    type="button"
-                    onClick={() => handleStepComplete(currentStep)}
-                    disabled={!validateStep(currentStep)}
-                    className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
-                  >
-                    <span>{getText('Continue', 'Lanjutkan')}</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => form.handleSubmit(handleSubmit)()}
-                    disabled={!validateStep(currentStep) || submitting}
-                    className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
-                  >
-                    {submitting ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                        <span>{getText('Saving...', 'Menyimpan...')}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check className="h-4 w-4" />
-                        <span className="hidden sm:inline">
-                          {editingSession ? getText('Update Session', 'Perbarui') : getText('Create Session', 'Buat Sidang')}
-                        </span>
-                        <span className="sm:hidden">
-                          {editingSession ? getText('Update', 'Perbarui') : getText('Create', 'Buat')}
-                        </span>
-                      </>
-                    )}
-                  </button>
-                )}
+                    <div className="w-full sm:w-auto">
+                      {currentStep < 3 ? (
+                        <button
+                          type="button"
+                          onClick={() => handleStepComplete(currentStep)}
+                          disabled={!validateStep(currentStep)}
+                          className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
+                        >
+                          <span>{getText('Continue', 'Lanjutkan')}</span>
+                          <ArrowRight className="h-4 w-4" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => form.handleSubmit(handleSubmit)()}
+                          disabled={!validateStep(currentStep) || submitting}
+                          className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
+                        >
+                          {submitting ? (
+                            <>
+                              <RefreshCw className="h-4 w-4 animate-spin" />
+                              <span>{getText('Saving...', 'Menyimpan...')}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Check className="h-4 w-4" />
+                              <span className="hidden sm:inline">
+                                {editingSession ? getText('Update Session', 'Perbarui') : getText('Create Session', 'Buat Sidang')}
+                              </span>
+                              <span className="sm:hidden">
+                                {editingSession ? getText('Update', 'Perbarui') : getText('Create', 'Buat')}
+                              </span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  </div>
-)}
+      )}
     </div>
   );
 };
