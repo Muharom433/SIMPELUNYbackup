@@ -815,7 +815,7 @@ const RoomAndDetailsStep = () => (
       </p>
     </div>
 
-    {/* Room Selection - Pure React-Select (tidak perlu manual) */}
+    {/* Room Selection */}
     <div className="space-y-3">
       <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
         <Building className="h-4 w-4 text-blue-500" />
@@ -826,12 +826,14 @@ const RoomAndDetailsStep = () => (
           name="room_id"
           control={form.control}
           render={({ field }) => {
-            const roomOptions = availableRooms.map(room => ({
-              value: room.id,
-              label: `${room.name} - ${room.code} (Kapasitas: ${room.capacity})`
-            }));
+            const roomOptions = (availableRooms || [])
+              .filter(room => room && room.name && room.code)
+              .map(room => ({
+                value: room.id,
+                label: `${room.name} - ${room.code} (Kapasitas: ${room.capacity || 'N/A'})`
+              }));
             
-            const currentValue = roomOptions.find(option => option.value === field.value);
+            const currentValue = roomOptions.find(option => option.value === field.value) || null;
             
             return (
               <Select
@@ -860,7 +862,7 @@ const RoomAndDetailsStep = () => (
         
         {watchStartTime && watchEndTime && watchDate && (
           <p className="mt-2 text-xs text-gray-600 text-center">
-            💡 {availableRooms.length} {getText('available rooms', 'ruangan tersedia')}
+            💡 {(availableRooms || []).length} {getText('available rooms', 'ruangan tersedia')}
           </p>
         )}
       </div>
@@ -883,7 +885,7 @@ const RoomAndDetailsStep = () => (
       )}
     </div>
 
-    {/* Committee Members - HYBRID: React-Select + Manual Input */}
+    {/* Committee Members - FIXED */}
     <div className="space-y-3">
       <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
         <Users className="h-4 w-4 text-blue-500" />
@@ -891,7 +893,7 @@ const RoomAndDetailsStep = () => (
       </h4>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         
-        {/* Supervisor - HYBRID */}
+        {/* Supervisor - FIXED */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Supervisor", "Pembimbing")} *
@@ -900,13 +902,14 @@ const RoomAndDetailsStep = () => (
             name="supervisor"
             control={form.control}
             render={({ field }) => {
-              const lecturerOptions = lecturers.map(lecturer => ({
-                value: lecturer.full_name,
-                label: lecturer.full_name
-              }));
+              const lecturerOptions = (lecturers || [])
+                .filter(lecturer => lecturer && lecturer.full_name)
+                .map(lecturer => ({
+                  value: lecturer.full_name,
+                  label: lecturer.full_name
+                }));
               
-              // Cek apakah nilai current ada di options
-              const currentValue = lecturerOptions.find(option => option.value === field.value);
+              const currentValue = lecturerOptions.find(option => option.value === field.value) || null;
               const isCustomValue = field.value && !currentValue;
               
               return (
@@ -930,12 +933,11 @@ const RoomAndDetailsStep = () => (
                     noOptionsMessage={() => getText('Lecturer not found - you can enter manually below', 'Dosen tidak ditemukan - Anda bisa input manual di bawah')}
                   />
                   
-                  {/* Manual Input - muncul jika tidak ada yang dipilih atau nilai custom */}
                   {(!currentValue || isCustomValue) && (
                     <input
                       type="text"
                       value={field.value || ''}
-                      onChange={(e) => field.onChange(e.target.value)}
+                      onChange={(e) => field.onChange(e.target.value || '')}
                       placeholder={getText("Or enter supervisor name manually...", "Atau masukkan nama pembimbing manual...")}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm mt-2 bg-blue-50"
                     />
@@ -949,7 +951,7 @@ const RoomAndDetailsStep = () => (
           )}
         </div>
         
-        {/* Examiner - HYBRID */}
+        {/* Examiner - FIXED */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Examiner", "Penguji")} *
@@ -958,12 +960,14 @@ const RoomAndDetailsStep = () => (
             name="examiner"
             control={form.control}
             render={({ field }) => {
-              const lecturerOptions = lecturers.map(lecturer => ({
-                value: lecturer.full_name,
-                label: lecturer.full_name
-              }));
+              const lecturerOptions = (lecturers || [])
+                .filter(lecturer => lecturer && lecturer.full_name)
+                .map(lecturer => ({
+                  value: lecturer.full_name,
+                  label: lecturer.full_name
+                }));
               
-              const currentValue = lecturerOptions.find(option => option.value === field.value);
+              const currentValue = lecturerOptions.find(option => option.value === field.value) || null;
               const isCustomValue = field.value && !currentValue;
               
               return (
@@ -991,7 +995,7 @@ const RoomAndDetailsStep = () => (
                     <input
                       type="text"
                       value={field.value || ''}
-                      onChange={(e) => field.onChange(e.target.value)}
+                      onChange={(e) => field.onChange(e.target.value || '')}
                       placeholder={getText("Or enter examiner name manually...", "Atau masukkan nama penguji manual...")}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm mt-2 bg-blue-50"
                     />
@@ -1005,7 +1009,7 @@ const RoomAndDetailsStep = () => (
           )}
         </div>
         
-        {/* Secretary - HYBRID */}
+        {/* Secretary - FIXED */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Secretary", "Sekretaris")} *
@@ -1014,12 +1018,14 @@ const RoomAndDetailsStep = () => (
             name="secretary"
             control={form.control}
             render={({ field }) => {
-              const lecturerOptions = lecturers.map(lecturer => ({
-                value: lecturer.full_name,
-                label: lecturer.full_name
-              }));
+              const lecturerOptions = (lecturers || [])
+                .filter(lecturer => lecturer && lecturer.full_name)
+                .map(lecturer => ({
+                  value: lecturer.full_name,
+                  label: lecturer.full_name
+                }));
               
-              const currentValue = lecturerOptions.find(option => option.value === field.value);
+              const currentValue = lecturerOptions.find(option => option.value === field.value) || null;
               const isCustomValue = field.value && !currentValue;
               
               return (
@@ -1047,7 +1053,7 @@ const RoomAndDetailsStep = () => (
                     <input
                       type="text"
                       value={field.value || ''}
-                      onChange={(e) => field.onChange(e.target.value)}
+                      onChange={(e) => field.onChange(e.target.value || '')}
                       placeholder={getText("Or enter secretary name manually...", "Atau masukkan nama sekretaris manual...")}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm mt-2 bg-blue-50"
                     />
