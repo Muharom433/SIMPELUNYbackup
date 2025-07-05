@@ -801,8 +801,6 @@ const ScheduleInformationStep = () => (
     )}
   </div>
 );
-// VERSI LENGKAP RoomAndDetailsStep dengan React-Select
-
 const RoomAndDetailsStep = () => (
   <div className="space-y-6">
     <div className="text-center mb-6">
@@ -814,7 +812,7 @@ const RoomAndDetailsStep = () => (
       </p>
     </div>
 
-    {/* Room Selection - MENGGUNAKAN REACT-SELECT */}
+    {/* Room Selection - Pure React-Select (tidak perlu manual) */}
     <div className="space-y-3">
       <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
         <Building className="h-4 w-4 text-blue-500" />
@@ -882,7 +880,7 @@ const RoomAndDetailsStep = () => (
       )}
     </div>
 
-    {/* Committee Members - MENGGUNAKAN REACT-SELECT */}
+    {/* Committee Members - HYBRID: React-Select + Manual Input */}
     <div className="space-y-3">
       <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
         <Users className="h-4 w-4 text-blue-500" />
@@ -890,7 +888,7 @@ const RoomAndDetailsStep = () => (
       </h4>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         
-        {/* Supervisor - MENGGUNAKAN REACT-SELECT */}
+        {/* Supervisor - HYBRID */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Supervisor", "Pembimbing")} *
@@ -904,26 +902,42 @@ const RoomAndDetailsStep = () => (
                 label: lecturer.full_name
               }));
               
+              // Cek apakah nilai current ada di options
               const currentValue = lecturerOptions.find(option => option.value === field.value);
+              const isCustomValue = field.value && !currentValue;
               
               return (
-                <Select
-                  {...field}
-                  options={lecturerOptions}
-                  value={currentValue}
-                  onChange={(option) => field.onChange(option ? option.value : '')}
-                  placeholder={getText("Search supervisor...", "Cari pembimbing...")}
-                  isClearable
-                  isSearchable
-                  styles={{
-                    control: (provided) => ({
-                      ...provided,
-                      minHeight: '42px',
-                      borderColor: '#d1d5db',
-                    }),
-                  }}
-                  noOptionsMessage={() => getText('No lecturers found', 'Tidak ada dosen ditemukan')}
-                />
+                <div>
+                  <Select
+                    options={lecturerOptions}
+                    value={currentValue}
+                    onChange={(option) => {
+                      field.onChange(option ? option.value : '');
+                    }}
+                    placeholder={getText("Search supervisor...", "Cari pembimbing...")}
+                    isClearable
+                    isSearchable
+                    styles={{
+                      control: (provided) => ({
+                        ...provided,
+                        minHeight: '42px',
+                        borderColor: '#d1d5db',
+                      }),
+                    }}
+                    noOptionsMessage={() => getText('Lecturer not found - you can enter manually below', 'Dosen tidak ditemukan - Anda bisa input manual di bawah')}
+                  />
+                  
+                  {/* Manual Input - muncul jika tidak ada yang dipilih atau nilai custom */}
+                  {(!currentValue || isCustomValue) && (
+                    <input
+                      type="text"
+                      value={field.value || ''}
+                      onChange={(e) => field.onChange(e.target.value)}
+                      placeholder={getText("Or enter supervisor name manually...", "Atau masukkan nama pembimbing manual...")}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm mt-2 bg-blue-50"
+                    />
+                  )}
+                </div>
               );
             }}
           />
@@ -932,7 +946,7 @@ const RoomAndDetailsStep = () => (
           )}
         </div>
         
-        {/* Examiner - MENGGUNAKAN REACT-SELECT */}
+        {/* Examiner - HYBRID */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Examiner", "Penguji")} *
@@ -947,25 +961,39 @@ const RoomAndDetailsStep = () => (
               }));
               
               const currentValue = lecturerOptions.find(option => option.value === field.value);
+              const isCustomValue = field.value && !currentValue;
               
               return (
-                <Select
-                  {...field}
-                  options={lecturerOptions}
-                  value={currentValue}
-                  onChange={(option) => field.onChange(option ? option.value : '')}
-                  placeholder={getText("Search examiner...", "Cari penguji...")}
-                  isClearable
-                  isSearchable
-                  styles={{
-                    control: (provided) => ({
-                      ...provided,
-                      minHeight: '42px',
-                      borderColor: '#d1d5db',
-                    }),
-                  }}
-                  noOptionsMessage={() => getText('No lecturers found', 'Tidak ada dosen ditemukan')}
-                />
+                <div>
+                  <Select
+                    options={lecturerOptions}
+                    value={currentValue}
+                    onChange={(option) => {
+                      field.onChange(option ? option.value : '');
+                    }}
+                    placeholder={getText("Search examiner...", "Cari penguji...")}
+                    isClearable
+                    isSearchable
+                    styles={{
+                      control: (provided) => ({
+                        ...provided,
+                        minHeight: '42px',
+                        borderColor: '#d1d5db',
+                      }),
+                    }}
+                    noOptionsMessage={() => getText('Lecturer not found - you can enter manually below', 'Dosen tidak ditemukan - Anda bisa input manual di bawah')}
+                  />
+                  
+                  {(!currentValue || isCustomValue) && (
+                    <input
+                      type="text"
+                      value={field.value || ''}
+                      onChange={(e) => field.onChange(e.target.value)}
+                      placeholder={getText("Or enter examiner name manually...", "Atau masukkan nama penguji manual...")}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm mt-2 bg-blue-50"
+                    />
+                  )}
+                </div>
               );
             }}
           />
@@ -974,7 +1002,7 @@ const RoomAndDetailsStep = () => (
           )}
         </div>
         
-        {/* Secretary - MENGGUNAKAN REACT-SELECT */}
+        {/* Secretary - HYBRID */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Secretary", "Sekretaris")} *
@@ -989,25 +1017,39 @@ const RoomAndDetailsStep = () => (
               }));
               
               const currentValue = lecturerOptions.find(option => option.value === field.value);
+              const isCustomValue = field.value && !currentValue;
               
               return (
-                <Select
-                  {...field}
-                  options={lecturerOptions}
-                  value={currentValue}
-                  onChange={(option) => field.onChange(option ? option.value : '')}
-                  placeholder={getText("Search secretary...", "Cari sekretaris...")}
-                  isClearable
-                  isSearchable
-                  styles={{
-                    control: (provided) => ({
-                      ...provided,
-                      minHeight: '42px',
-                      borderColor: '#d1d5db',
-                    }),
-                  }}
-                  noOptionsMessage={() => getText('No lecturers found', 'Tidak ada dosen ditemukan')}
-                />
+                <div>
+                  <Select
+                    options={lecturerOptions}
+                    value={currentValue}
+                    onChange={(option) => {
+                      field.onChange(option ? option.value : '');
+                    }}
+                    placeholder={getText("Search secretary...", "Cari sekretaris...")}
+                    isClearable
+                    isSearchable
+                    styles={{
+                      control: (provided) => ({
+                        ...provided,
+                        minHeight: '42px',
+                        borderColor: '#d1d5db',
+                      }),
+                    }}
+                    noOptionsMessage={() => getText('Lecturer not found - you can enter manually below', 'Dosen tidak ditemukan - Anda bisa input manual di bawah')}
+                  />
+                  
+                  {(!currentValue || isCustomValue) && (
+                    <input
+                      type="text"
+                      value={field.value || ''}
+                      onChange={(e) => field.onChange(e.target.value)}
+                      placeholder={getText("Or enter secretary name manually...", "Atau masukkan nama sekretaris manual...")}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm mt-2 bg-blue-50"
+                    />
+                  )}
+                </div>
               );
             }}
           />
