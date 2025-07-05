@@ -411,13 +411,18 @@ const SessionScheduleProgressive = () => {
       setStudentSearch(formData.student_nim || '');
     }, [formData.student_nim]);
 
-    const filteredStudents = useMemo(() => 
-      students.filter(student => 
-        student && student.identity_number && student.full_name &&
-        (student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
-         student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
-      ), [students, studentSearch]
-    );
+   const filteredStudents = useMemo(() => 
+  students.filter(student => 
+    student && 
+    student.identity_number && 
+    student.full_name &&
+    (
+      student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
+      student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
+    )
+  ), 
+  [students, studentSearch]
+);
 
     const filteredPrograms = useMemo(() =>
       studyPrograms.filter(program =>
