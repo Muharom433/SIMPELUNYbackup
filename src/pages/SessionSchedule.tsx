@@ -217,6 +217,40 @@ const SessionScheduleProgressive = () => {
     }
   };
 
+  const MobileProgressIndicator = () => (
+  <div className="flex items-center justify-between">
+    {steps.map((step, index) => {
+      const isCompleted = completedSteps.has(step.id);
+      const isCurrent = currentStep === step.id;
+      
+      return (
+        <React.Fragment key={step.id}>
+          <div className="flex flex-col items-center">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
+              isCompleted
+                ? 'bg-blue-500 text-white'
+                : isCurrent
+                ? 'bg-blue-500 text-white'
+                : 'bg-gray-200 text-gray-400'
+            }`}>
+              {isCompleted ? <Check className="h-4 w-4" /> : step.id}
+            </div>
+            <div className={`text-xs mt-1 text-center max-w-16 ${
+              isCurrent || isCompleted ? 'text-blue-600 font-medium' : 'text-gray-400'
+            }`}>
+              {step.title.split(' ')[0]} {/* Hanya kata pertama */}
+            </div>
+          </div>
+          {index < steps.length - 1 && (
+            <div className={`flex-1 h-0.5 mx-2 ${
+              isCompleted ? 'bg-blue-500' : 'bg-gray-200'
+            }`} />
+          )}
+        </React.Fragment>
+      );
+    })}
+  </div>
+);
   const fetchStudents = async () => {
     try {
       let query = supabase
