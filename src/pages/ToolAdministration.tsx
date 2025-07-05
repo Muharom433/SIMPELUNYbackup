@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -16,21 +16,36 @@ import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { useLanguage } from '../contexts/LanguageContext';
 
-// Schema validation with mandatory room for department admin
-const equipmentSchema = z.object({
-  name: z.string().min(2, 'Equipment name must be at least 2 characters'),
-  code: z.string().min(2, 'Equipment code must be at least 2 characters'),
-  category: z.string().min(1, 'Please select a category'),
-  rooms_id: z.string().min(1, 'Please select a room location'),
-  is_mandatory: z.boolean().optional(),
-  is_available: z.boolean().optional(),
-  condition: z.enum(['GOOD', 'BROKEN', 'MAINTENANCE']).default('GOOD'),
-  Spesification: z.string().optional(),
-  quantity: z.number().min(0, 'Quantity cannot be negative'),
-  unit: z.string().min(1, 'Unit is required (e.g., pcs, set)'),
-});
+// Dynamic schema validation based on user role
+const createEquipmentSchema = (userRole: string) => {
+    const baseSchema = {
+        name: z.string().min(2, 'Equipment name must be at least 2 characters'),
+        code: z.string().min(2, 'Equipment code must be at least 2 characters'),
+        category: z.string().min(1, 'Please select a category'),
+        is_mandatory: z.boolean().optional(),
+        is_available: z.boolean().optional(),
+        condition: z.enum(['GOOD', 'BROKEN', 'MAINTENANCE']).default('GOOD'),
+        Spesification: z.string().optional(),
+        quantity: z.number().min(0, 'Quantity cannot be negative'),
+        unit: z.string().min(1, 'Unit is required (e.g., pcs, set)'),
+    };
 
-type EquipmentForm = z.infer<typeof equipmentSchema>;
+    // For department admin, room is mandatory
+    if (userRole === 'department_admin') {
+        return z.object({
+            ...baseSchema,
+            rooms_id: z.string().min(1, 'Please select a room location'),
+        });
+    }
+    
+    // For super admin, room is optional
+    return z.object({
+        ...baseSchema,
+        rooms_id: z.string().optional(),
+    });
+};
+
+type EquipmentForm = z.infer<ReturnType<typeof createEquipmentSchema>>;
 
 interface EquipmentWithDetails extends Equipment {
   rooms?: Room & { department: Department };
@@ -57,6 +72,12 @@ interface LendingDetail {
 const ToolAdministration: React.FC = () => {
     const { profile } = useAuth();
     const { getText } = useLanguage();
+    
+    // Create schema based on user role
+    const equipmentSchema = useMemo(() => {
+        return createEquipmentSchema(profile?.role || 'student');
+    }, [profile?.role]);
+
     const [equipment, setEquipment] = useState<EquipmentWithDetails[]>([]);
     const [rooms, setRooms] = useState<Room[]>([]);
     const [loading, setLoading] = useState(true);
@@ -412,15 +433,25 @@ const ToolAdministration: React.FC = () => {
         try {
             setLoading(true);
             
-            // Validate room belongs to department for department admin
-            if (profile?.role === 'department_admin' && profile.department_id) {
-                const selectedRoomData = rooms.find(r => r.id === data.rooms_id);
-                if (!selectedRoomData || selectedRoomData.department_id !== profile.department_id) {
+            // Validate room belongs to department for department admin only
+            if (profile?.role === 'department_admin') {
+                if (!data.rooms_id) {
                     toast.error(getText(
-                        'You can only assign equipment to rooms in your department.',
-                        'Anda hanya dapat menugaskan peralatan ke ruangan di departemen Anda.'
+                        'Room selection is required for department admin.',
+                        'Pemilihan ruangan wajib untuk admin departemen.'
                     ));
                     return;
+                }
+                
+                if (profile.department_id) {
+                    const selectedRoomData = rooms.find(r => r.id === data.rooms_id);
+                    if (!selectedRoomData || selectedRoomData.department_id !== profile.department_id) {
+                        toast.error(getText(
+                            'You can only assign equipment to rooms in your department.',
+                            'Anda hanya dapat menugaskan peralatan ke ruangan di departemen Anda.'
+                        ));
+                        return;
+                    }
                 }
             }
             
@@ -431,7 +462,7 @@ const ToolAdministration: React.FC = () => {
                 is_mandatory: data.is_mandatory,
                 is_available: data.is_available,
                 condition: data.condition,
-                rooms_id: data.rooms_id,
+                rooms_id: data.rooms_id || null, // Allow null for super admin
                 Spesification: data.Spesification,
                 quantity: data.quantity,
                 unit: data.unit,
@@ -516,6 +547,17 @@ const ToolAdministration: React.FC = () => {
         setSelectedRoom(null);
         form.setValue('rooms_id', '');
         setRoomSearchTerm('');
+    };
+
+    // Check if user can add equipment
+    const canAddEquipment = () => {
+        if (profile?.role === 'super_admin') {
+            return true; // Super admin can always add equipment
+        }
+        if (profile?.role === 'department_admin') {
+            return rooms.length > 0; // Department admin needs rooms
+        }
+        return false;
     };
 
     // Filter rooms for department admin
@@ -612,6 +654,206 @@ const ToolAdministration: React.FC = () => {
                         <Star className="h-3 w-3" />
                         {getText('REQUIRED', 'WAJIB')}
                     </span>
+                )}
+            </div>
+        );
+    };
+
+    // Render room selection component
+    const renderRoomSelection = () => {
+        const isRoomMandatory = profile?.role === 'department_admin';
+        
+        return (
+            <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700">
+                    {getText('Room Location', 'Lokasi Ruangan')}
+                    {isRoomMandatory && (
+                        <span className="text-red-500 ml-1">
+                            * ({getText('Required', 'Wajib')})
+                        </span>
+                    )}
+                    {!isRoomMandatory && (
+                        <span className="text-gray-500 ml-1">
+                            ({getText('Optional', 'Opsional')})
+                        </span>
+                    )}
+                    {profile?.role === 'department_admin' && (
+                        <span className="text-blue-600 text-xs block mt-1">
+                            {getText('Only rooms in your department', 'Hanya ruangan di departemen Anda')}
+                        </span>
+                    )}
+                    {profile?.role === 'super_admin' && (
+                        <span className="text-green-600 text-xs block mt-1">
+                            {getText('You can leave this empty for unassigned equipment', 'Anda dapat membiarkan ini kosong untuk peralatan yang belum ditugaskan')}
+                        </span>
+                    )}
+                </label>
+                <div className="relative">
+                    <div className="flex items-center">
+                        <input
+                            type="text"
+                            value={roomSearchTerm}
+                            onChange={(e) => {
+                                setRoomSearchTerm(e.target.value);
+                                setShowRoomDropdown(true);
+                            }}
+                            onFocus={() => setShowRoomDropdown(true)}
+                            placeholder={getText(
+                                profile?.role === 'department_admin' 
+                                    ? 'Search rooms in your department...' 
+                                    : profile?.role === 'super_admin'
+                                    ? 'Search for a room (optional)...'
+                                    : 'Search for a room...', 
+                                profile?.role === 'department_admin' 
+                                    ? 'Cari ruangan di departemen Anda...' 
+                                    : profile?.role === 'super_admin'
+                                    ? 'Cari ruangan (opsional)...'
+                                    : 'Cari ruangan...'
+                            )}
+                            className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors pr-20"
+                            disabled={rooms.length === 0}
+                        />
+                        <div className="absolute right-2 flex items-center gap-1">
+                            {selectedRoom && (
+                                <button
+                                    type="button"
+                                    onClick={clearRoomSelection}
+                                    className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                                    title={getText('Clear selection', 'Hapus pilihan')}
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => setShowRoomDropdown(!showRoomDropdown)}
+                                className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                                disabled={rooms.length === 0}
+                            >
+                                {showRoomDropdown ? 
+                                    <ChevronUp className="h-4 w-4" /> : 
+                                    <ChevronDown className="h-4 w-4" />
+                                }
+                            </button>
+                        </div>
+                    </div>
+                    
+                    {/* Dropdown */}
+                    {showRoomDropdown && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                            {rooms.length === 0 ? (
+                                <div className="p-3 text-gray-500 text-center">
+                                    <AlertTriangle className="h-5 w-5 mx-auto mb-2 text-amber-500" />
+                                    <div className="font-medium">
+                                        {getText('No rooms available', 'Tidak ada ruangan tersedia')}
+                                    </div>
+                                    <div className="text-xs mt-1">
+                                        {profile?.role === 'department_admin' 
+                                            ? getText('No rooms assigned to your department', 'Tidak ada ruangan yang ditugaskan ke departemen Anda')
+                                            : getText('Contact administrator', 'Hubungi administrator')
+                                        }
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Add "No Room" option for super admin */}
+                                    {profile?.role === 'super_admin' && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSelectedRoom(null);
+                                                form.setValue('rooms_id', '');
+                                                setRoomSearchTerm('');
+                                                setShowRoomDropdown(false);
+                                            }}
+                                            className="w-full text-left p-3 hover:bg-gray-50 border-b border-gray-100 transition-colors"
+                                        >
+                                            <div className="font-medium text-gray-500 italic">
+                                                {getText('No Room Assignment', 'Tanpa Penugasan Ruangan')}
+                                            </div>
+                                            <div className="text-sm text-gray-400">
+                                                {getText('Equipment will not be assigned to any room', 'Peralatan tidak akan ditugaskan ke ruangan manapun')}
+                                            </div>
+                                        </button>
+                                    )}
+                                    {filteredRooms.length === 0 && roomSearchTerm ? (
+                                        <div className="p-3 text-gray-500 text-center">
+                                            {getText('No rooms found', 'Tidak ada ruangan ditemukan')}
+                                            <div className="text-xs mt-1">
+                                                {getText('Try different search terms', 'Coba kata kunci pencarian yang berbeda')}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        filteredRooms.map((room) => (
+                                            <button
+                                                key={room.id}
+                                                type="button"
+                                                onClick={() => handleRoomSelect(room)}
+                                                className={`w-full text-left p-3 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-colors ${
+                                                    selectedRoom?.id === room.id ? 'bg-blue-50 border-blue-200' : ''
+                                                }`}
+                                            >
+                                                <div className="font-medium text-gray-900">{room.name}</div>
+                                                <div className="text-sm text-gray-500">
+                                                    {getText('Code', 'Kode')}: {room.code} | {getText('Capacity', 'Kapasitas')}: {room.capacity}
+                                                    {room.department && (
+                                                        <span className="ml-2 text-blue-600 font-medium">
+                                                            ({room.department.name})
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </button>
+                                        ))
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )}
+                    
+                    {/* Selected Room Display */}
+                    {selectedRoom && (
+                        <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <div className="font-medium text-blue-900 flex items-center gap-2">
+                                        <MapPin className="h-4 w-4" />
+                                        {selectedRoom.name}
+                                    </div>
+                                    <div className="text-sm text-blue-600">
+                                        {getText('Code', 'Kode')}: {selectedRoom.code} | {getText('Capacity', 'Kapasitas')}: {selectedRoom.capacity}
+                                        {selectedRoom.department && (
+                                            <span className="ml-2 font-medium">
+                                                ({selectedRoom.department.name})
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={clearRoomSelection}
+                                    className="text-blue-400 hover:text-red-500 transition-colors"
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+                
+                {/* Show validation error only for department admin */}
+                {form.formState.errors.rooms_id && profile?.role === 'department_admin' && (
+                    <p className="text-red-500 text-sm flex items-center gap-1">
+                        <AlertTriangle className="h-4 w-4" />
+                        {getText('Please select a room location', 'Pilih lokasi ruangan')}
+                    </p>
+                )}
+                
+                {/* Warning for department admin when no rooms available */}
+                {rooms.length === 0 && profile?.role === 'department_admin' && (
+                    <p className="text-amber-600 text-sm flex items-center gap-1">
+                        <AlertTriangle className="h-4 w-4" />
+                        {getText('No rooms available in your department. Contact administrator.', 'Tidak ada ruangan tersedia di departemen Anda. Hubungi administrator.')}
+                    </p>
                 )}
             </div>
         );
@@ -787,7 +1029,7 @@ const ToolAdministration: React.FC = () => {
                                 setShowModal(true); 
                             }} 
                             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-                            disabled={rooms.length === 0}
+                            disabled={!canAddEquipment()}
                         >
                             <Plus className="h-4 w-4" />
                             <span>{getText('Add Equipment', 'Tambah Peralatan')}</span>
@@ -1044,158 +1286,10 @@ const ToolAdministration: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* Room Location with Search Dropdown - MANDATORY */}
-                            <div className="space-y-2">
-                                <label className="block text-sm font-semibold text-gray-700">
-                                    {getText('Room Location', 'Lokasi Ruangan')} *
-                                    <span className="text-red-500 ml-1">
-                                        ({getText('Required', 'Wajib')})
-                                    </span>
-                                    {profile?.role === 'department_admin' && (
-                                        <span className="text-blue-600 text-xs block mt-1">
-                                            {getText('Only rooms in your department', 'Hanya ruangan di departemen Anda')}
-                                        </span>
-                                    )}
-                                </label>
-                                <div className="relative">
-                                    <div className="flex items-center">
-                                        <input
-                                            type="text"
-                                            value={roomSearchTerm}
-                                            onChange={(e) => {
-                                                setRoomSearchTerm(e.target.value);
-                                                setShowRoomDropdown(true);
-                                            }}
-                                            onFocus={() => setShowRoomDropdown(true)}
-                                            placeholder={getText(
-                                                profile?.role === 'department_admin' 
-                                                    ? 'Search rooms in your department...' 
-                                                    : 'Search for a room...', 
-                                                profile?.role === 'department_admin' 
-                                                    ? 'Cari ruangan di departemen Anda...' 
-                                                    : 'Cari ruangan...'
-                                            )}
-                                            className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors pr-20"
-                                            disabled={rooms.length === 0}
-                                        />
-                                        <div className="absolute right-2 flex items-center gap-1">
-                                            {selectedRoom && (
-                                                <button
-                                                    type="button"
-                                                    onClick={clearRoomSelection}
-                                                    className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                                                    title={getText('Clear selection', 'Hapus pilihan')}
-                                                >
-                                                    <X className="h-4 w-4" />
-                                                </button>
-                                            )}
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowRoomDropdown(!showRoomDropdown)}
-                                                className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                                                disabled={rooms.length === 0}
-                                            >
-                                                {showRoomDropdown ? 
-                                                    <ChevronUp className="h-4 w-4" /> : 
-                                                    <ChevronDown className="h-4 w-4" />
-                                                }
-                                            </button>
-                                        </div>
-                                    </div>
-                                    
-                                    {/* Dropdown */}
-                                    {showRoomDropdown && (
-                                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                                            {rooms.length === 0 ? (
-                                                <div className="p-3 text-gray-500 text-center">
-                                                    <AlertTriangle className="h-5 w-5 mx-auto mb-2 text-amber-500" />
-                                                    <div className="font-medium">
-                                                        {getText('No rooms available', 'Tidak ada ruangan tersedia')}
-                                                    </div>
-                                                    <div className="text-xs mt-1">
-                                                        {profile?.role === 'department_admin' 
-                                                            ? getText('No rooms assigned to your department', 'Tidak ada ruangan yang ditugaskan ke departemen Anda')
-                                                            : getText('Contact administrator', 'Hubungi administrator')
-                                                        }
-                                                    </div>
-                                                </div>
-                                            ) : filteredRooms.length === 0 ? (
-                                                <div className="p-3 text-gray-500 text-center">
-                                                    {getText('No rooms found', 'Tidak ada ruangan ditemukan')}
-                                                    <div className="text-xs mt-1">
-                                                        {getText('Try different search terms', 'Coba kata kunci pencarian yang berbeda')}
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                filteredRooms.map((room) => (
-                                                    <button
-                                                        key={room.id}
-                                                        type="button"
-                                                        onClick={() => handleRoomSelect(room)}
-                                                        className={`w-full text-left p-3 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-colors ${
-                                                            selectedRoom?.id === room.id ? 'bg-blue-50 border-blue-200' : ''
-                                                        }`}
-                                                    >
-                                                        <div className="font-medium text-gray-900">{room.name}</div>
-                                                        <div className="text-sm text-gray-500">
-                                                            {getText('Code', 'Kode')}: {room.code} | {getText('Capacity', 'Kapasitas')}: {room.capacity}
-                                                            {room.department && (
-                                                                <span className="ml-2 text-blue-600 font-medium">
-                                                                    ({room.department.name})
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </button>
-                                                ))
-                                            )}
-                                        </div>
-                                    )}
-                                    
-                                    {/* Selected Room Display */}
-                                    {selectedRoom && (
-                                        <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                                            <div className="flex items-center justify-between">
-                                                <div>
-                                                    <div className="font-medium text-blue-900 flex items-center gap-2">
-                                                        <MapPin className="h-4 w-4" />
-                                                        {selectedRoom.name}
-                                                    </div>
-                                                    <div className="text-sm text-blue-600">
-                                                        {getText('Code', 'Kode')}: {selectedRoom.code} | {getText('Capacity', 'Kapasitas')}: {selectedRoom.capacity}
-                                                        {selectedRoom.department && (
-                                                            <span className="ml-2 font-medium">
-                                                                ({selectedRoom.department.name})
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={clearRoomSelection}
-                                                    className="text-blue-400 hover:text-red-500 transition-colors"
-                                                >
-                                                    <X className="h-4 w-4" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                                {form.formState.errors.rooms_id && (
-                                    <p className="text-red-500 text-sm flex items-center gap-1">
-                                        <AlertTriangle className="h-4 w-4" />
-                                        {getText('Please select a room location', 'Pilih lokasi ruangan')}
-                                    </p>
-                                )}
-                                {rooms.length === 0 && (
-                                    <p className="text-amber-600 text-sm flex items-center gap-1">
-                                        <AlertTriangle className="h-4 w-4" />
-                                        {profile?.role === 'department_admin' 
-                                            ? getText('No rooms available in your department. Contact administrator.', 'Tidak ada ruangan tersedia di departemen Anda. Hubungi administrator.')
-                                            : getText('No rooms available. Contact administrator.', 'Tidak ada ruangan tersedia. Hubungi administrator.')
-                                        }
-                                    </p>
-                                )}
-                            </div><div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Room Location Selection */}
+                            {renderRoomSelection()}
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-2">
                                     <label className="block text-sm font-semibold text-gray-700">
                                         {getText('Quantity', 'Jumlah')} *
@@ -1308,7 +1402,7 @@ const ToolAdministration: React.FC = () => {
                                 </button>
                                 <button 
                                     type="submit" 
-                                    disabled={loading || rooms.length === 0} 
+                                    disabled={loading || (profile?.role === 'department_admin' && rooms.length === 0)} 
                                     className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-semibold transition-all shadow-lg"
                                 >
                                     {loading ? (
