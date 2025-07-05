@@ -86,9 +86,6 @@ const SessionScheduleProgressive = () => {
     study_program_id: ''
   });
 
-  // Dropdown states - TAMBAHAN UNTUK FIX MODAL
-  const [showStudentDropdown, setShowStudentDropdown] = useState(false);
-
   const form = useForm<SessionFormData>({
     resolver: zodResolver(sessionSchema),
     defaultValues: {
@@ -132,7 +129,7 @@ const SessionScheduleProgressive = () => {
     }
   ];
 
-  // Fetch data functions remain the same...
+  // Fetch data functions
   const fetchSessions = async () => {
     try {
       setLoading(true);
@@ -358,10 +355,12 @@ const SessionScheduleProgressive = () => {
     </div>
   );
 
+  // ✅ FIXED VALIDATION - NO MORE RE-RENDER ISSUES
   const validateStep = useCallback((step) => {
     switch (step) {
       case 1:
-        return !!(formData.student_name && formData.student_nim && formData.study_program_id);
+        // ✅ NO REAL-TIME VALIDATION FOR STEP 1 - PREVENTS RE-RENDER
+        return true;
       case 2:
         return !!(form.getValues('date') && form.getValues('start_time') && form.getValues('end_time'));
       case 3:
@@ -375,16 +374,28 @@ const SessionScheduleProgressive = () => {
       default:
         return false;
     }
-  }, [formData, form]);
+  }, [form]); // ✅ ONLY DEPENDS ON FORM, NOT formData
 
+  // ✅ FIXED STEP COMPLETION WITH MANUAL VALIDATION FOR STEP 1
   const handleStepComplete = useCallback((step) => {
-    if (validateStep(step)) {
-      setCompletedSteps(prev => new Set([...prev, step]));
-      if (step < 3) {
-        setCurrentStep(step + 1);
+    // ✅ MANUAL VALIDATION FOR STEP 1 TO PREVENT RE-RENDER
+    if (step === 1) {
+      if (!formData.student_name?.trim() || !formData.student_nim?.trim() || !formData.study_program_id) {
+        alert.error(getText('Please fill all required fields', 'Silakan isi semua field yang diperlukan'));
+        return;
+      }
+    } else {
+      // For other steps, use validateStep
+      if (!validateStep(step)) {
+        return;
       }
     }
-  }, [validateStep]);
+    
+    setCompletedSteps(prev => new Set([...prev, step]));
+    if (step < 3) {
+      setCurrentStep(step + 1);
+    }
+  }, [validateStep, formData.student_name, formData.student_nim, formData.study_program_id, getText]);
 
   const handleStepBack = useCallback(() => {
     if (currentStep > 1) {
@@ -392,9 +403,10 @@ const SessionScheduleProgressive = () => {
     }
   }, [currentStep]);
 
-  // STUDENT INFORMATION STEP - FIXED VERSION
+  // ✅ STUDENT INFORMATION STEP - FIXED WITH NO RE-RENDER ISSUES
   const StudentInformationStep = () => {
     const [studentSearch, setStudentSearch] = useState('');
+    const [showStudentDropdown, setShowStudentDropdown] = useState(false);
     const [programSearch, setProgramSearch] = useState('');
     const [showProgramDropdown, setShowProgramDropdown] = useState(false);
     const [selectedProgramDisplay, setSelectedProgramDisplay] = useState('');
@@ -413,7 +425,7 @@ const SessionScheduleProgressive = () => {
       [students, studentSearch]
     );
 
-    // Filter programs based on search input - SEPERTI DROPDOWN RUANG
+    // Filter programs based on search input
     const filteredPrograms = useMemo(() =>
       studyPrograms.filter(program =>
         program && 
@@ -489,26 +501,22 @@ const SessionScheduleProgressive = () => {
                 onChange={(e) => {
                   setStudentSearch(e.target.value);
                   setFormData(prev => ({ ...prev, student_nim: e.target.value }));
-                  setShowStudentDropdown(true); // ✅ SELALU BUKA SAAT MENGETIK
+                  setShowStudentDropdown(true);
                 }}
-                onFocus={() => setShowStudentDropdown(true)} // ✅ SELALU BUKA SAAT FOCUS
+                onFocus={() => setShowStudentDropdown(true)}
                 className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
               />
               <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               
               {showStudentDropdown && filteredStudents.length > 0 && (
                 <div 
-                  onMouseLeave={() => setShowStudentDropdown(false)} // ✅ BOOKROOM PATTERN
-                  onClick={(e) => e.stopPropagation()} // ✅ PREVENT MODAL CLOSE
+                  onMouseLeave={() => setShowStudentDropdown(false)}
                   className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
                 >
                   {filteredStudents.map((student) => (
                     <div
                       key={student.id}
-                      onClick={(e) => {
-                        e.stopPropagation(); // ✅ PREVENT MODAL CLOSE
-                        handleStudentSelect(student);
-                      }}
+                      onClick={() => handleStudentSelect(student)}
                       className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
                     >
                       <div className="font-semibold text-gray-800">{student.identity_number}</div>
@@ -540,11 +548,10 @@ const SessionScheduleProgressive = () => {
               onChange={(e) => setFormData(prev => ({ ...prev, student_name: e.target.value || '' }))}
               placeholder={getText("Enter student name...", "Masukkan nama mahasiswa...")}
               className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
-              required
             />
           </div>
 
-          {/* Study Program - SEARCHABLE DROPDOWN SEPERTI RUANG */}
+          {/* Study Program - SEARCHABLE DROPDOWN */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               {getText("Study Program", "Program Studi")} *
@@ -561,10 +568,7 @@ const SessionScheduleProgressive = () => {
               <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               
               {showProgramDropdown && (
-                <div 
-                  onClick={(e) => e.stopPropagation()} // ✅ PREVENT MODAL CLOSE
-                  className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden"
-                >
+                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
                   <div className="p-3 border-b border-gray-100">
                     <input
                       type="text"
@@ -581,8 +585,7 @@ const SessionScheduleProgressive = () => {
                       filteredPrograms.map((program) => (
                         <div
                           key={program.id}
-                          onClick={(e) => {
-                            e.stopPropagation(); // ✅ PREVENT MODAL CLOSE
+                          onClick={() => {
                             setSelectedProgramDisplay(`${program.name} (${program.code})`);
                             setFormData(prev => ({
                               ...prev,
@@ -687,7 +690,7 @@ const SessionScheduleProgressive = () => {
         </div>
       </div>
 
-      {watchDate && (
+     {watchDate && (
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg md:rounded-xl p-3 md:p-4 max-w-md mx-auto">
           <div className="flex items-center space-x-2 md:space-x-3">
             <Calendar className="h-4 w-4 md:h-5 md:w-5 text-green-600" />
@@ -797,10 +800,7 @@ const SessionScheduleProgressive = () => {
             <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             
             {showRoomDropdown && (
-              <div 
-                onClick={(e) => e.stopPropagation()}
-                className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden"
-              >
+              <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
                 <div className="p-3 border-b border-gray-100">
                   <input
                     type="text"
@@ -817,8 +817,7 @@ const SessionScheduleProgressive = () => {
                     filteredRooms.map((room) => (
                       <div
                         key={room.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={() => {
                           form.setValue('room_id', room.id);
                           setSelectedRoomDisplay(`${room.name} - ${room.code}`);
                           setShowRoomDropdown(false);
@@ -875,7 +874,7 @@ const SessionScheduleProgressive = () => {
           )}
         </div>
 
-        {/* Committee Members - FIXED WITH BOOKROOM PATTERN */}
+        {/* Committee Members - BOOKROOM PATTERN */}
         <div className="space-y-3">
           <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
             <Users className="h-4 w-4 text-blue-500" />
@@ -906,14 +905,12 @@ const SessionScheduleProgressive = () => {
                 {showSupervisorDropdown && filteredLecturersForSupervisor.length > 0 && (
                   <div 
                     onMouseLeave={() => setShowSupervisorDropdown(false)}
-                    onClick={(e) => e.stopPropagation()}
                     className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
                   >
                     {filteredLecturersForSupervisor.map((lecturer) => (
                       <div
                         key={lecturer.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={() => {
                           setSupervisorSearch(lecturer.full_name);
                           form.setValue('supervisor', lecturer.full_name);
                           setShowSupervisorDropdown(false);
@@ -954,14 +951,12 @@ const SessionScheduleProgressive = () => {
                 {showExaminerDropdown && filteredLecturersForExaminer.length > 0 && (
                   <div 
                     onMouseLeave={() => setShowExaminerDropdown(false)}
-                    onClick={(e) => e.stopPropagation()}
                     className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
                   >
                     {filteredLecturersForExaminer.map((lecturer) => (
                       <div
                         key={lecturer.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={() => {
                           setExaminerSearch(lecturer.full_name);
                           form.setValue('examiner', lecturer.full_name);
                           setShowExaminerDropdown(false);
@@ -1002,14 +997,12 @@ const SessionScheduleProgressive = () => {
                 {showSecretaryDropdown && filteredLecturersForSecretary.length > 0 && (
                   <div 
                     onMouseLeave={() => setShowSecretaryDropdown(false)}
-                    onClick={(e) => e.stopPropagation()}
                     className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
                   >
                     {filteredLecturersForSecretary.map((lecturer) => (
                       <div
                         key={lecturer.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={() => {
                           setSecretarySearch(lecturer.full_name);
                           form.setValue('secretary', lecturer.full_name);
                           setShowSecretaryDropdown(false);
@@ -1193,7 +1186,6 @@ const SessionScheduleProgressive = () => {
     setFormData({ student_name: '', student_nim: '', study_program_id: '' });
     setCurrentStep(1);
     setCompletedSteps(new Set());
-    setShowStudentDropdown(false); // Reset dropdown states
   };
 
   const handleEdit = (session: any) => {
@@ -1333,7 +1325,7 @@ const SessionScheduleProgressive = () => {
                         </div>
                         <div className="ml-4">
                           <div className="text-sm font-semibold text-gray-900">{session.student?.full_name}</div>
-                          <div className="text-sm text-gray-600 font-mono">{session.student?.identity_number}</div>
+                         <div className="text-sm text-gray-600 font-mono">{session.student?.identity_number}</div>
                         </div>
                       </div>
                     </td>
@@ -1389,13 +1381,13 @@ const SessionScheduleProgressive = () => {
         </div>
       </div>
 
-      {/* Progressive Form Modal - FIXED VERSION */}
+      {/* Progressive Form Modal - FULLY FIXED VERSION */}
       {showModal && profile?.role === 'department_admin' && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 md:p-4"
           onClick={(e) => {
-            // ✅ HANYA TUTUP MODAL JIKA TIDAK ADA DROPDOWN YANG TERBUKA
-            if (!showStudentDropdown) {
+            // ✅ SIMPLE CLICK HANDLING - ONLY CLOSE IF CLICKING BACKGROUND
+            if (e.target === e.currentTarget) {
               setShowModal(false);
               resetForm();
             }
@@ -1407,7 +1399,6 @@ const SessionScheduleProgressive = () => {
               height: 'calc(100vh - 16px)',
               maxHeight: '95vh'
             }}
-            onClick={(e) => e.stopPropagation()} // ✅ STOP EVENT BUBBLING
           >
             
             {/* Mobile: Progress di top, Desktop: Progress di sidebar */}
@@ -1475,7 +1466,8 @@ const SessionScheduleProgressive = () => {
                         <button
                           type="button"
                           onClick={() => handleStepComplete(currentStep)}
-                          disabled={!validateStep(currentStep)}
+                          // ✅ FIXED: NO REAL-TIME DISABLED FOR STEP 1 TO PREVENT RE-RENDER
+                          disabled={currentStep !== 1 && !validateStep(currentStep)}
                           className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
                         >
                           <span>{getText('Continue', 'Lanjutkan')}</span>
