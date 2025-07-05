@@ -1328,101 +1328,111 @@ const ProgressSidebar = () => (
       </div>
 
       {/* Progressive Form Modal */}
-{showModal && profile?.role === 'department_admin' && (
+      {showModal && profile?.role === 'department_admin' && (
   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 md:p-4">
-    <div className="bg-white rounded-2xl shadow-2xl w-full h-full md:max-w-6xl md:h-[85vh] flex flex-col md:flex-row overflow-hidden">
+    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl flex flex-col overflow-hidden" 
+         style={{ 
+           height: 'calc(100vh - 16px)',
+           maxHeight: '95vh'
+         }}>
       
       {/* Mobile: Progress di top, Desktop: Progress di sidebar */}
-      <div className="md:hidden bg-white border-b border-gray-200 p-4">
+      <div className="md:hidden bg-white border-b border-gray-200 p-3 flex-shrink-0">
         <MobileProgressIndicator />
       </div>
       
-      <div className="hidden md:block">
-        <ProgressSidebar />
-      </div>
-      
-      {/* Content Area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 md:p-6 border-b border-gray-200 bg-white">
-          <h3 className="text-lg md:text-xl font-bold text-gray-900 flex items-center space-x-2">
-            <UserCheck className="h-5 w-5 md:h-6 md:w-6 text-blue-600" />
-            <span className="hidden sm:inline">
-              {editingSession ? getText('Edit Session', 'Edit Sidang') : getText('Create Session', 'Buat Sidang')}
-            </span>
-            <span className="sm:hidden">
-              {editingSession ? getText('Edit', 'Edit') : getText('Create', 'Buat')}
-            </span>
-          </h3>
-          <button
-            onClick={() => {
-              setShowModal(false);
-              resetForm();
-            }}
-            className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl"
-          >
-            <X className="h-5 w-5" />
-          </button>
+      <div className="flex flex-1 min-h-0">
+        {/* Desktop Sidebar */}
+        <div className="hidden md:block flex-shrink-0">
+          <ProgressSidebar />
         </div>
         
-        {/* Content - Scrollable */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-50">
-          {renderCurrentStep()}
-        </div>
-        
-        {/* Footer Navigation */}
-        <div className="border-t border-gray-200 p-4 md:p-6 bg-white">
-          <div className="flex flex-col sm:flex-row justify-between items-center space-y-3 sm:space-y-0 sm:space-x-4">
-            {/* Mobile: Stack buttons vertically */}
-            <div className="flex w-full sm:w-auto space-x-3 sm:space-x-0">
-              {currentStep > 1 && (
-                <button
-                  type="button"
-                  onClick={handleStepBack}
-                  className="flex-1 sm:flex-none flex items-center justify-center space-x-2 px-4 py-3 text-gray-600 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  <span className="hidden sm:inline">{getText('Back', 'Kembali')}</span>
-                </button>
-              )}
+        {/* Content Area */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Header */}
+          <div className="flex items-center justify-between p-3 md:p-6 border-b border-gray-200 bg-white flex-shrink-0">
+            <h3 className="text-base md:text-xl font-bold text-gray-900 flex items-center space-x-2">
+              <UserCheck className="h-4 w-4 md:h-6 md:w-6 text-blue-600" />
+              <span className="hidden sm:inline">
+                {editingSession ? getText('Edit Session', 'Edit Sidang') : getText('Create Session', 'Buat Sidang')}
+              </span>
+              <span className="sm:hidden text-sm">
+                {editingSession ? getText('Edit', 'Edit') : getText('Create', 'Buat')}
+              </span>
+            </h3>
+            <button
+              onClick={() => {
+                setShowModal(false);
+                resetForm();
+              }}
+              className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl flex-shrink-0"
+            >
+              <X className="h-4 w-4 md:h-5 md:w-5" />
+            </button>
+          </div>
+          
+          {/* Content - Scrollable dengan padding yang disesuaikan */}
+          <div className="flex-1 overflow-y-auto p-3 md:p-8 bg-gray-50 min-h-0">
+            <div className="max-w-4xl mx-auto">
+              {renderCurrentStep()}
             </div>
+          </div>
+          
+          {/* Footer Navigation - Fixed di bottom */}
+          <div className="border-t border-gray-200 p-3 md:p-6 bg-white flex-shrink-0">
+            <div className="flex flex-col sm:flex-row justify-between items-center space-y-3 sm:space-y-0 sm:space-x-4 max-w-4xl mx-auto">
+              {/* Navigation buttons */}
+              <div className="flex w-full sm:w-auto space-x-3 sm:space-x-0">
+                {currentStep > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleStepBack}
+                    className="flex-1 sm:flex-none flex items-center justify-center space-x-2 px-3 md:px-4 py-2 md:py-3 text-gray-600 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 text-sm"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    <span className="hidden sm:inline">{getText('Back', 'Kembali')}</span>
+                    <span className="sm:hidden">Back</span>
+                  </button>
+                )}
+              </div>
 
-            <div className="w-full sm:w-auto">
-              {currentStep < 3 ? (
-                <button
-                  type="button"
-                  onClick={() => handleStepComplete(currentStep)}
-                  disabled={!validateStep(currentStep)}
-                  className="w-full flex items-center justify-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                >
-                  <span>{getText('Continue', 'Lanjutkan')}</span>
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => form.handleSubmit(handleSubmit)()}
-                  disabled={!validateStep(currentStep) || submitting}
-                  className="w-full flex items-center justify-center space-x-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                >
-                  {submitting ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      <span>{getText('Saving...', 'Menyimpan...')}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="h-4 w-4" />
-                      <span className="hidden sm:inline">
-                        {editingSession ? getText('Update Session', 'Perbarui') : getText('Create Session', 'Buat Sidang')}
-                      </span>
-                      <span className="sm:hidden">
-                        {editingSession ? getText('Update', 'Perbarui') : getText('Create', 'Buat')}
-                      </span>
-                    </>
-                  )}
-                </button>
-              )}
+              <div className="w-full sm:w-auto">
+                {currentStep < 3 ? (
+                  <button
+                    type="button"
+                    onClick={() => handleStepComplete(currentStep)}
+                    disabled={!validateStep(currentStep)}
+                    className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
+                  >
+                    <span>{getText('Continue', 'Lanjutkan')}</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => form.handleSubmit(handleSubmit)()}
+                    disabled={!validateStep(currentStep) || submitting}
+                    className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
+                  >
+                    {submitting ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        <span>{getText('Saving...', 'Menyimpan...')}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="h-4 w-4" />
+                        <span className="hidden sm:inline">
+                          {editingSession ? getText('Update Session', 'Perbarui') : getText('Create Session', 'Buat Sidang')}
+                        </span>
+                        <span className="sm:hidden">
+                          {editingSession ? getText('Update', 'Perbarui') : getText('Create', 'Buat')}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
