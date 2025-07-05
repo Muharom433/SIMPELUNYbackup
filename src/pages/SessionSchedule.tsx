@@ -396,24 +396,49 @@ const SessionScheduleProgressive = () => {
 }, [form, formData]); 
   
   const handleStepComplete = useCallback((step) => {
-    // ✅ MANUAL VALIDATION FOR STEP 1 TO PREVENT RE-RENDER
-    if (step === 1) {
-      if (!formData.student_name?.trim() || !formData.student_nim?.trim() || !formData.study_program_id) {
-        alert.error(getText('Please fill all required fields', 'Silakan isi semua field yang diperlukan'));
-        return;
-      }
-    } else {
-      // For other steps, use validateStep
-      if (!validateStep(step)) {
-        return;
-      }
+  // ✅ SYNC localData ke formData sebelum validasi
+  if (step === 1) {
+    // Sync dari DOM ke formData
+    const nimValue = studentInputRef.current?.value || localData.current?.studentNim;
+    const nameValue = studentNameRef.current?.value || localData.current?.studentName;
+    const programValue = localData.current?.studyProgramId;
+    
+    if (!nimValue?.trim() || !nameValue?.trim() || !programValue) {
+      alert.error(getText('Please fill all required fields', 'Silakan isi semua field yang diperlukan'));
+      return;
     }
     
-    setCompletedSteps(prev => new Set([...prev, step]));
-    if (step < 3) {
-      setCurrentStep(step + 1);
-    }
-  }, [validateStep, formData.student_name, formData.student_nim, formData.study_program_id, getText]);
+    // Update formData dengan nilai terbaru
+    setFormData(prev => ({
+      ...prev,
+      student_nim: nimValue,
+      student_name: nameValue,
+      study_program_id: programValue
+    }));
+  } else if (step === 3) {
+    // Sync dosen values dari DOM ke form
+    const supervisorValue = supervisorInputRef.current?.value;
+    const examinerValue = examinerInputRef.current?.value;
+    const secretaryValue = secretaryInputRef.current?.value;
+    const titleValue = titleInputRef.current?.value;
+    
+    if (supervisorValue) form.setValue('supervisor', supervisorValue);
+    if (examinerValue) form.setValue('examiner', examinerValue);
+    if (secretaryValue) form.setValue('secretary', secretaryValue);
+    if (titleValue) form.setValue('title', titleValue);
+  }
+  
+  // Validasi setelah sync
+  if (!validateStep(step)) {
+    alert.error(getText('Please fill all required fields', 'Silakan isi semua field yang diperlukan'));
+    return;
+  }
+  
+  setCompletedSteps(prev => new Set([...prev, step]));
+  if (step < 3) {
+    setCurrentStep(step + 1);
+  }
+}, [validateStep, getText]);
 
   const handleStepBack = useCallback(() => {
     if (currentStep > 1) {
