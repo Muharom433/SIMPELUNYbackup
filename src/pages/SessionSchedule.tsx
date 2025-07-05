@@ -1202,7 +1202,6 @@ const ProgressSidebar = () => (
       </div>
 
       {/* Progressive Form Modal */}
-// GANTI layout modal dengan responsive design:
 {showModal && profile?.role === 'department_admin' && (
   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 md:p-4">
     <div className="bg-white rounded-2xl shadow-2xl w-full h-full md:max-w-6xl md:h-[85vh] flex flex-col md:flex-row overflow-hidden">
