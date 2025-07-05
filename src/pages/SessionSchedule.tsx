@@ -586,109 +586,65 @@ const StudentInformationStep = () => (
     </div>
     
     <div className="space-y-4 md:grid md:grid-cols-1 lg:grid-cols-3 md:gap-6 md:space-y-0">
-      {/* Student NIM - FIXED */}
+      {/* Student NIM - MENGGUNAKAN REACT-SELECT */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           {getText("Student NIM", "NIM Mahasiswa")} *
         </label>
-        <div className="relative">
-          <input
-            type="text"
-            placeholder={getText("Enter or search NIM...", "Masukkan atau cari NIM...")}
-            value={studentSearch}
-            onChange={(e) => {
-              const newValue = e.target.value;
-              setStudentSearch(newValue);
-              
-              const foundStudent = students.find(s => s.identity_number === newValue);
-              if (foundStudent) {
-                form.setValue('student_id', foundStudent.id);
-                setFormData(prev => ({
-                  ...prev,
-                  student_name: foundStudent.full_name,
-                  student_nim: foundStudent.identity_number,
-                  study_program_id: foundStudent.study_program_id || ''
-                }));
-                const program = studyPrograms.find(p => p.id === foundStudent.study_program_id);
-                if (program) setProgramSearch(program.name);
-                setShowStudentDropdown(false); // Close dropdown when found
-              } else {
-                form.setValue('student_id', '');
-                setFormData(prev => ({ ...prev, student_name: '', student_nim: newValue, study_program_id: '' }));
-                setProgramSearch('');
-                
-                // Show dropdown only if there's text and matching results
-                if (newValue.length > 0) {
-                  const hasMatches = students.some(student => 
-                    student.identity_number.toLowerCase().includes(newValue.toLowerCase()) ||
-                    student.full_name.toLowerCase().includes(newValue.toLowerCase())
-                  );
-                  setShowStudentDropdown(hasMatches);
-                } else {
-                  setShowStudentDropdown(false);
-                }
-              }
-            }}
-            onFocus={() => {
-              if (studentSearch.length > 0) {
-                const hasMatches = students.some(student => 
-                  student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
-                  student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
-                );
-                setShowStudentDropdown(hasMatches);
-              }
-            }}
-            className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
-            autoComplete="off"
-          />
-          <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 md:h-5 md:w-5 text-gray-400 pointer-events-none" />
-          
-          {showStudentDropdown && studentSearch && (
-            <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg md:rounded-xl shadow-xl max-h-48 md:max-h-60 overflow-y-auto">
-              {students
-                .filter(student => 
-                  student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
-                  student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
-                )
-                .slice(0, 5)
-                .map(student => (
-                  <div
-                    key={student.id}
-                    onMouseDown={(e) => {
-                      e.preventDefault(); // Prevent input blur
-                      setStudentSearch(student.identity_number);
-                      form.setValue('student_id', student.id);
-                      setFormData(prev => ({
-                        ...prev,
-                        student_name: student.full_name,
-                        student_nim: student.identity_number,
-                        study_program_id: student.study_program_id || ''
-                      }));
-                      const program = studyPrograms.find(p => p.id === student.study_program_id);
-                      if (program) setProgramSearch(program.name);
-                      setShowStudentDropdown(false);
-                    }}
-                    className="w-full text-left px-3 md:px-4 py-2 md:py-3 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-colors duration-150 cursor-pointer"
-                  >
-                    <div className="font-medium text-gray-900 text-sm md:text-base">{student.full_name}</div>
-                    <div className="text-xs md:text-sm text-gray-500">{student.identity_number}</div>
-                  </div>
-                ))
-              }
-              {students.filter(student => 
-                student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
-                student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
-              ).length === 0 && (
-                <div className="px-3 md:px-4 py-2 md:py-3 text-gray-500 text-xs md:text-sm text-center">
-                  {getText('No students found - you can enter manually', 'Tidak ada mahasiswa ditemukan - Anda bisa input manual')}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        <Controller
+          name="student_id"
+          control={form.control}
+          render={({ field }) => {
+            const studentOptions = students.map(student => ({
+              value: student.id,
+              label: `${student.identity_number} - ${student.full_name}`,
+              student: student
+            }));
+            
+            const currentValue = studentOptions.find(option => option.value === field.value);
+            
+            return (
+              <Select
+                {...field}
+                options={studentOptions}
+                value={currentValue}
+                onChange={(option) => {
+                  if (option) {
+                    field.onChange(option.value);
+                    // Auto-fill data mahasiswa
+                    setFormData(prev => ({
+                      ...prev,
+                      student_name: option.student.full_name,
+                      student_nim: option.student.identity_number,
+                      study_program_id: option.student.study_program_id || ''
+                    }));
+                    const program = studyPrograms.find(p => p.id === option.student.study_program_id);
+                    if (program) {
+                      form.setValue('study_program_id', program.id);
+                    }
+                  } else {
+                    field.onChange('');
+                    setFormData(prev => ({ ...prev, student_name: '', student_nim: '', study_program_id: '' }));
+                  }
+                }}
+                placeholder={getText("Search student by NIM or name...", "Cari mahasiswa berdasarkan NIM atau nama...")}
+                isClearable
+                isSearchable
+                styles={{
+                  control: (provided) => ({
+                    ...provided,
+                    minHeight: '42px',
+                    borderColor: '#d1d5db',
+                  }),
+                }}
+                noOptionsMessage={() => getText('No students found', 'Tidak ada mahasiswa ditemukan')}
+              />
+            );
+          }}
+        />
       </div>
 
-      {/* Student Name - NO CHANGE NEEDED */}
+      {/* Student Name - INPUT BIASA */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           {getText("Student Name", "Nama Mahasiswa")} *
@@ -703,73 +659,53 @@ const StudentInformationStep = () => (
         />
       </div>
 
-      {/* Study Program - FIXED */}
+      {/* Study Program - MENGGUNAKAN REACT-SELECT */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           {getText("Study Program", "Program Studi")} *
         </label>
-        <div className="relative">
-          <input
-            type="text"
-            value={programSearch}
-            onChange={(e) => {
-              const newValue = e.target.value;
-              setProgramSearch(newValue);
-              
-              // Show dropdown only if there's text and matching results
-              if (newValue.length > 0) {
-                const hasMatches = studyPrograms.some(program => 
-                  program.name.toLowerCase().includes(newValue.toLowerCase())
-                );
-                setShowProgramDropdown(hasMatches);
-              } else {
-                setShowProgramDropdown(false);
-              }
-            }}
-            onFocus={() => {
-              if (programSearch.length > 0) {
-                const hasMatches = studyPrograms.some(program => 
-                  program.name.toLowerCase().includes(programSearch.toLowerCase())
-                );
-                setShowProgramDropdown(hasMatches);
-              }
-            }}
-            placeholder={getText("Search study program...", "Cari program studi...")}
-            className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
-            autoComplete="off"
-          />
-          <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 md:h-5 md:w-5 text-gray-400 pointer-events-none" />
-          
-          {showProgramDropdown && (
-            <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg md:rounded-xl shadow-xl max-h-48 md:max-h-60 overflow-y-auto">
-              {studyPrograms
-                .filter(program => 
-                  program.name.toLowerCase().includes(programSearch.toLowerCase())
-                )
-                .slice(0, 5)
-                .map(program => (
-                  <div
-                    key={program.id}
-                    onMouseDown={(e) => {
-                      e.preventDefault(); // Prevent input blur
-                      setFormData(prev => ({ ...prev, study_program_id: program.id }));
-                      setProgramSearch(program.name);
-                      setShowProgramDropdown(false);
-                    }}
-                    className="w-full text-left px-3 md:px-4 py-2 md:py-3 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-colors duration-150 text-sm md:text-base cursor-pointer"
-                  >
-                    {program.name}
-                  </div>
-                ))
-              }
-            </div>
-          )}
-        </div>
+        <Controller
+          name="study_program_id"
+          control={form.control}
+          render={({ field }) => {
+            const programOptions = studyPrograms.map(program => ({
+              value: program.id,
+              label: program.name
+            }));
+            
+            const currentValue = programOptions.find(option => option.value === formData.study_program_id);
+            
+            return (
+              <Select
+                options={programOptions}
+                value={currentValue}
+                onChange={(option) => {
+                  if (option) {
+                    setFormData(prev => ({ ...prev, study_program_id: option.value }));
+                  } else {
+                    setFormData(prev => ({ ...prev, study_program_id: '' }));
+                  }
+                }}
+                placeholder={getText("Search study program...", "Cari program studi...")}
+                isClearable
+                isSearchable
+                styles={{
+                  control: (provided) => ({
+                    ...provided,
+                    minHeight: '42px',
+                    borderColor: '#d1d5db',
+                  }),
+                }}
+                noOptionsMessage={() => getText('No programs found', 'Tidak ada program ditemukan')}
+              />
+            );
+          }}
+        />
       </div>
     </div>
     
-    {/* Info box for manual entry - NO CHANGE NEEDED */}
-    {studentSearch && !form.getValues('student_id') && formData.student_nim && (
+    {/* Info box for manual entry */}
+    {formData.student_nim && !form.getValues('student_id') && (
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg md:rounded-xl p-3 md:p-4">
         <div className="flex items-start space-x-2 md:space-x-3">
           <User className="h-4 w-4 md:h-5 md:w-5 text-blue-600 mt-0.5 flex-shrink-0" />
