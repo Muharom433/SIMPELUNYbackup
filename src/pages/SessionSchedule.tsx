@@ -392,39 +392,21 @@ const SessionScheduleProgressive = () => {
  const StudentInformationStep = () => {
   const [studentSearch, setStudentSearch] = useState('');
   const [showStudentDropdown, setShowStudentDropdown] = useState(false);
-  const [programSearch, setProgramSearch] = useState('');
-  const [showProgramDropdown, setShowProgramDropdown] = useState(false);
   const [selectedProgramDisplay, setSelectedProgramDisplay] = useState('');
 
-  // Refs for handling clicks outside dropdown
-  const studentDropdownRef = useRef<HTMLDivElement>(null);
-  const studentInputRef = useRef<HTMLInputElement>(null);
-  const programDropdownRef = useRef<HTMLDivElement>(null);
-  const programInputRef = useRef<HTMLInputElement>(null);
-
-  // Handle clicks outside student dropdown
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (studentDropdownRef.current && 
-          !studentDropdownRef.current.contains(event.target as Node) &&
-          studentInputRef.current &&
-          !studentInputRef.current.contains(event.target as Node)) {
-        setShowStudentDropdown(false);
-      }
-      
-      if (programDropdownRef.current && 
-          !programDropdownRef.current.contains(event.target as Node) &&
-          programInputRef.current &&
-          !programInputRef.current.contains(event.target as Node)) {
-        setShowProgramDropdown(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
+  // Filter students based on search input - SAMA SEPERTI BOOKROOM
+  const filteredStudents = useMemo(() => 
+    students.filter(student => 
+      student && 
+      student.identity_number && 
+      student.full_name &&
+      (
+        student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
+        student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
+      )
+    ), 
+    [students, studentSearch]
+  );
 
   // Set program display when formData changes
   useEffect(() => {
@@ -443,31 +425,7 @@ const SessionScheduleProgressive = () => {
     setStudentSearch(formData.student_nim || '');
   }, [formData.student_nim]);
 
-  // Filter students based on search input
-  const filteredStudents = useMemo(() => 
-    students.filter(student => 
-      student && 
-      student.identity_number && 
-      student.full_name &&
-      (
-        student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
-        student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
-      )
-    ), 
-    [students, studentSearch]
-  );
-
-  // Filter programs based on search input
-  const filteredPrograms = useMemo(() =>
-    studyPrograms.filter(program =>
-      program && 
-      program.name &&
-      program.name.toLowerCase().includes(programSearch.toLowerCase())
-    ), 
-    [studyPrograms, programSearch]
-  );
-
-  // Handle student selection from dropdown
+  // Handle student selection from dropdown - SAMA SEPERTI BOOKROOM
   const handleStudentSelect = useCallback((student: any) => {
     setStudentSearch(student.identity_number);
     setFormData(prev => ({
@@ -500,36 +458,31 @@ const SessionScheduleProgressive = () => {
       </div>
       
       <div className="space-y-4 md:grid md:grid-cols-1 lg:grid-cols-3 md:gap-6 md:space-y-0">
-        {/* NIM Input - Implemented exactly like lecturer dropdown */}
+        {/* NIM Input - MENGGUNAKAN PATTERN BOOKROOM */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Student NIM", "NIM Mahasiswa")} *
           </label>
-          <div className="relative" ref={studentDropdownRef}>
+          <div className="relative">
             <input
-              ref={studentInputRef}
               type="text"
               placeholder={getText("Search student by NIM or name...", "Cari mahasiswa berdasarkan NIM atau nama...")}
               value={studentSearch}
               onChange={(e) => {
                 setStudentSearch(e.target.value);
                 setFormData(prev => ({ ...prev, student_nim: e.target.value }));
-                setShowStudentDropdown(true);
+                setShowStudentDropdown(true); // ✅ SELALU BUKA SAAT MENGETIK
               }}
-              onFocus={() => {
-                if (studentSearch.length > 0) {
-                  setShowStudentDropdown(true);
-                }
-              }}
+              onFocus={() => setShowStudentDropdown(true)} // ✅ SELALU BUKA SAAT FOCUS
               className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
             />
-            <ChevronDown 
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 cursor-pointer"
-              onClick={() => setShowStudentDropdown(!showStudentDropdown)}
-            />
+            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             
             {showStudentDropdown && filteredStudents.length > 0 && (
-              <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+              <div 
+                onMouseLeave={() => setShowStudentDropdown(false)} // ✅ TUTUP HANYA SAAT MOUSE KELUAR - PATTERN BOOKROOM
+                className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
+              >
                 {filteredStudents.map((student) => (
                   <div
                     key={student.id}
@@ -554,7 +507,7 @@ const SessionScheduleProgressive = () => {
           )}
         </div>
 
-        {/* Student Name */}
+        {/* Student Name - SAMA SEPERTI BOOKROOM */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Student Name", "Nama Mahasiswa")} *
@@ -569,64 +522,39 @@ const SessionScheduleProgressive = () => {
           />
         </div>
 
-        {/* Study Program */}
+        {/* Study Program - TETAP MENGGUNAKAN SELECT DROPDOWN */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Study Program", "Program Studi")} *
           </label>
-          <div className="relative" ref={programDropdownRef}>
-            <input
-              type="text"
-              value={selectedProgramDisplay}
-              onClick={() => setShowProgramDropdown(!showProgramDropdown)}
-              readOnly
-              placeholder={getText("Click to select program...", "Klik untuk pilih program...")}
-              className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer bg-white"
-            />
-            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            
-            {showProgramDropdown && (
-              <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
-                <div className="p-3 border-b border-gray-100">
-                  <input
-                    ref={programInputRef}
-                    type="text"
-                    placeholder={getText("Search programs...", "Cari program studi...")}
-                    value={programSearch}
-                    onChange={(e) => setProgramSearch(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                    autoFocus
-                  />
-                </div>
-                
-                <div className="max-h-60 overflow-y-auto">
-                  {filteredPrograms.length > 0 ? (
-                    filteredPrograms.map((program) => (
-                      <div
-                        key={program.id}
-                        onClick={() => {
-                          setSelectedProgramDisplay(`${program.name} (${program.code})`);
-                          setFormData(prev => ({
-                            ...prev,
-                            study_program_id: program.id
-                          }));
-                          setShowProgramDropdown(false);
-                          setProgramSearch('');
-                        }}
-                        className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                      >
-                        <div className="font-semibold text-gray-800">{program.name} ({program.code})</div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="px-4 py-3 text-gray-500 text-sm">
-                      {getText('No programs found', 'Tidak ada program ditemukan')}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+          <select
+            value={formData.study_program_id || ''}
+            onChange={(e) => {
+              setFormData(prev => ({
+                ...prev,
+                study_program_id: e.target.value
+              }));
+              
+              // Update display text
+              if (e.target.value) {
+                const selectedProgram = studyPrograms.find(p => p.id === e.target.value);
+                if (selectedProgram) {
+                  setSelectedProgramDisplay(`${selectedProgram.name} (${selectedProgram.code})`);
+                }
+              } else {
+                setSelectedProgramDisplay('');
+              }
+            }}
+            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white"
+            required
+          >
+            <option value="">{getText("Select study program...", "Pilih program studi...")}</option>
+            {studyPrograms.map((program) => (
+              <option key={program.id} value={program.id}>
+                {program.name} ({program.code})
+              </option>
+            ))}
+          </select>
         </div>
       </div>
       
