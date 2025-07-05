@@ -355,28 +355,46 @@ const SessionScheduleProgressive = () => {
     </div>
   );
 
-  // ✅ FIXED VALIDATION - NO MORE RE-RENDER ISSUES
   const validateStep = useCallback((step) => {
-    switch (step) {
-      case 1:
-        // ✅ NO REAL-TIME VALIDATION FOR STEP 1 - PREVENTS RE-RENDER
-        return true;
-      case 2:
-        return !!(form.getValues('date') && form.getValues('start_time') && form.getValues('end_time'));
-      case 3:
-        return !!(
-          form.getValues('room_id') && 
-          form.getValues('title') && 
-          form.getValues('supervisor') && 
-          form.getValues('examiner') && 
-          form.getValues('secretary')
-        );
-      default:
-        return false;
-    }
-  }, [form]); // ✅ ONLY DEPENDS ON FORM, NOT formData
-
-  // ✅ FIXED STEP COMPLETION WITH MANUAL VALIDATION FOR STEP 1
+  switch (step) {
+    case 1:
+      // ✅ CEK DARI localData.current DAN formData
+      const hasStudentNim = formData.student_nim || 
+        (studentInputRef.current && studentInputRef.current.value) ||
+        localData.current?.studentNim;
+        
+      const hasStudentName = formData.student_name || 
+        (studentNameRef.current && studentNameRef.current.value) ||
+        localData.current?.studentName;
+        
+      const hasStudyProgram = formData.study_program_id || 
+        localData.current?.studyProgramId;
+        
+      return !!(hasStudentNim?.trim() && hasStudentName?.trim() && hasStudyProgram);
+      
+    case 2:
+      return !!(form.getValues('date') && form.getValues('start_time') && form.getValues('end_time'));
+      
+    case 3:
+      // ✅ CEK DARI FORM VALUES DAN DOM VALUES
+      const roomId = form.getValues('room_id');
+      const title = form.getValues('title');
+      
+      // CEK dari DOM juga untuk dosen
+      const supervisorValue = form.getValues('supervisor') || 
+        (supervisorInputRef.current && supervisorInputRef.current.value);
+      const examinerValue = form.getValues('examiner') || 
+        (examinerInputRef.current && examinerInputRef.current.value);
+      const secretaryValue = form.getValues('secretary') || 
+        (secretaryInputRef.current && secretaryInputRef.current.value);
+        
+      return !!(roomId && title?.trim() && supervisorValue?.trim() && examinerValue?.trim() && secretaryValue?.trim());
+      
+    default:
+      return false;
+  }
+}, [form, formData]); 
+  
   const handleStepComplete = useCallback((step) => {
     // ✅ MANUAL VALIDATION FOR STEP 1 TO PREVENT RE-RENDER
     if (step === 1) {
