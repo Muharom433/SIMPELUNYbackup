@@ -820,7 +820,7 @@ const ProgressSidebar = () => (
   </div>
 );
 
-  // PERBAIKAN RoomAndDetailsStep - Tanpa auto scroll dan layout yang konsisten
+  // PERBAIKAN DROPDOWN INPUTS - TANPA LAG!
 
 const RoomAndDetailsStep = () => (
   <div className="space-y-6">
@@ -833,7 +833,7 @@ const RoomAndDetailsStep = () => (
       </p>
     </div>
 
-    {/* Room Selection - Compact Layout */}
+    {/* Room Selection */}
     <div className="space-y-3">
       <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
         <Building className="h-4 w-4 text-blue-500" />
@@ -858,7 +858,6 @@ const RoomAndDetailsStep = () => (
         {showRoomDropdown && (
           <>
             <div className="absolute z-30 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-xl overflow-hidden">
-              {/* Search Input di dalam dropdown */}
               <div className="p-2 border-b border-gray-200">
                 <div className="relative">
                   <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
@@ -868,12 +867,10 @@ const RoomAndDetailsStep = () => (
                     value={roomSearch}
                     onChange={(e) => setRoomSearch(e.target.value)}
                     className="w-full pl-7 pr-3 py-1.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    onClick={(e) => e.stopPropagation()}
                   />
                 </div>
               </div>
               
-              {/* Options List dengan scroll */}
               <div className="max-h-48 overflow-y-auto">
                 {availableRooms
                   .filter(room => 
@@ -896,18 +893,9 @@ const RoomAndDetailsStep = () => (
                     </button>
                   ))
                 }
-                {availableRooms.filter(room => 
-                  room.name.toLowerCase().includes(roomSearch.toLowerCase()) ||
-                  room.code.toLowerCase().includes(roomSearch.toLowerCase())
-                ).length === 0 && (
-                  <div className="px-3 py-4 text-center text-gray-500 text-xs">
-                    {getText('No rooms found', 'Tidak ada ruangan ditemukan')}
-                  </div>
-                )}
               </div>
             </div>
             
-            {/* Click outside to close */}
             <div 
               className="fixed inset-0 z-20" 
               onClick={() => setShowRoomDropdown(false)}
@@ -927,7 +915,7 @@ const RoomAndDetailsStep = () => (
       )}
     </div>
 
-    {/* Thesis Title - Compact */}
+    {/* Thesis Title */}
     <div className="space-y-3">
       <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
         <BookOpen className="h-4 w-4 text-blue-500" />
@@ -944,7 +932,7 @@ const RoomAndDetailsStep = () => (
       )}
     </div>
 
-    {/* Committee Members - Compact Grid */}
+    {/* Committee Members - SIMPLE APPROACH */}
     <div className="space-y-3">
       <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
         <Users className="h-4 w-4 text-blue-500" />
@@ -952,7 +940,7 @@ const RoomAndDetailsStep = () => (
       </h4>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         
-        {/* Supervisor - FIXED INPUT */}
+        {/* Supervisor - SIMPLIFIED */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Supervisor", "Pembimbing")} *
@@ -962,23 +950,20 @@ const RoomAndDetailsStep = () => (
               type="text"
               value={supervisorSearch}
               onChange={(e) => {
-                const newValue = e.target.value;
-                setSupervisorSearch(newValue);
-                form.setValue('supervisor', newValue);
-                setShowSupervisorDropdown(newValue.length > 0);
+                setSupervisorSearch(e.target.value);
+                form.setValue('supervisor', e.target.value);
               }}
-              onFocus={() => setShowSupervisorDropdown(supervisorSearch.length > 0)}
-              onBlur={() => {
-                // Delay untuk allow click pada dropdown
-                setTimeout(() => setShowSupervisorDropdown(false), 150);
-              }}
+              onFocus={() => setShowSupervisorDropdown(true)}
               placeholder={getText("Search supervisor...", "Cari pembimbing...")}
               className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm"
             />
-            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             
-            {showSupervisorDropdown && supervisorSearch && (
-              <div className="absolute z-30 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+            {showSupervisorDropdown && (
+              <div 
+                className="absolute z-30 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-xl max-h-48 overflow-y-auto"
+                onMouseLeave={() => setShowSupervisorDropdown(false)}
+              >
                 {lecturers
                   .filter(lecturer => 
                     lecturer.full_name.toLowerCase().includes(supervisorSearch.toLowerCase())
@@ -988,8 +973,7 @@ const RoomAndDetailsStep = () => (
                     <button
                       key={lecturer.id}
                       type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault(); // Prevent blur
+                      onClick={() => {
                         form.setValue('supervisor', lecturer.full_name);
                         setSupervisorSearch(lecturer.full_name);
                         setShowSupervisorDropdown(false);
@@ -1008,7 +992,7 @@ const RoomAndDetailsStep = () => (
           )}
         </div>
         
-        {/* Examiner - FIXED INPUT */}
+        {/* Examiner - SIMPLIFIED */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Examiner", "Penguji")} *
@@ -1018,22 +1002,20 @@ const RoomAndDetailsStep = () => (
               type="text"
               value={examinerSearch}
               onChange={(e) => {
-                const newValue = e.target.value;
-                setExaminerSearch(newValue);
-                form.setValue('examiner', newValue);
-                setShowExaminerDropdown(newValue.length > 0);
+                setExaminerSearch(e.target.value);
+                form.setValue('examiner', e.target.value);
               }}
-              onFocus={() => setShowExaminerDropdown(examinerSearch.length > 0)}
-              onBlur={() => {
-                setTimeout(() => setShowExaminerDropdown(false), 150);
-              }}
+              onFocus={() => setShowExaminerDropdown(true)}
               placeholder={getText("Search examiner...", "Cari penguji...")}
               className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm"
             />
-            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             
-            {showExaminerDropdown && examinerSearch && (
-              <div className="absolute z-30 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+            {showExaminerDropdown && (
+              <div 
+                className="absolute z-30 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-xl max-h-48 overflow-y-auto"
+                onMouseLeave={() => setShowExaminerDropdown(false)}
+              >
                 {lecturers
                   .filter(lecturer => 
                     lecturer.full_name.toLowerCase().includes(examinerSearch.toLowerCase())
@@ -1043,8 +1025,7 @@ const RoomAndDetailsStep = () => (
                     <button
                       key={lecturer.id}
                       type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
+                      onClick={() => {
                         form.setValue('examiner', lecturer.full_name);
                         setExaminerSearch(lecturer.full_name);
                         setShowExaminerDropdown(false);
@@ -1063,7 +1044,7 @@ const RoomAndDetailsStep = () => (
           )}
         </div>
         
-        {/* Secretary - FIXED INPUT */}
+        {/* Secretary - SIMPLIFIED */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Secretary", "Sekretaris")} *
@@ -1073,22 +1054,20 @@ const RoomAndDetailsStep = () => (
               type="text"
               value={secretarySearch}
               onChange={(e) => {
-                const newValue = e.target.value;
-                setSecretarySearch(newValue);
-                form.setValue('secretary', newValue);
-                setShowSecretaryDropdown(newValue.length > 0);
+                setSecretarySearch(e.target.value);
+                form.setValue('secretary', e.target.value);
               }}
-              onFocus={() => setShowSecretaryDropdown(secretarySearch.length > 0)}
-              onBlur={() => {
-                setTimeout(() => setShowSecretaryDropdown(false), 150);
-              }}
+              onFocus={() => setShowSecretaryDropdown(true)}
               placeholder={getText("Search secretary...", "Cari sekretaris...")}
               className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm"
             />
-            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             
-            {showSecretaryDropdown && secretarySearch && (
-              <div className="absolute z-30 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+            {showSecretaryDropdown && (
+              <div 
+                className="absolute z-30 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-xl max-h-48 overflow-y-auto"
+                onMouseLeave={() => setShowSecretaryDropdown(false)}
+              >
                 {lecturers
                   .filter(lecturer => 
                     lecturer.full_name.toLowerCase().includes(secretarySearch.toLowerCase())
@@ -1098,8 +1077,7 @@ const RoomAndDetailsStep = () => (
                     <button
                       key={lecturer.id}
                       type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
+                      onClick={() => {
                         form.setValue('secretary', lecturer.full_name);
                         setSecretarySearch(lecturer.full_name);
                         setShowSecretaryDropdown(false);
