@@ -798,67 +798,31 @@ const ProgressSidebar = () => (
       </div>
       
       {/* Room Selection */}
-      <div className="space-y-4">
-        <h4 className="text-lg font-semibold text-gray-800 flex items-center space-x-2">
-          <MapPin className="h-5 w-5 text-blue-500" />
-          <span>{getText('Select Room', 'Pilih Ruangan')}</span>
-        </h4>
-        <div className="max-w-lg mx-auto">
-          <div className="relative">
-            <input
-              type="text"
-              value={roomSearch}
-              onChange={(e) => {
-                setRoomSearch(e.target.value);
-                setShowRoomDropdown(true);
-              }}
-              onFocus={() => setShowRoomDropdown(true)}
-              placeholder={getText("Search and select room...", "Cari dan pilih ruangan...")}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
-            />
-            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-            
-            {showRoomDropdown && (
-              <div 
-                className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-xl shadow-xl max-h-60 overflow-y-auto"
-                onMouseLeave={() => setShowRoomDropdown(false)}
-              >
-                {availableRooms
-                  .filter(room => room.name.toLowerCase().includes(roomSearch.toLowerCase()))
-                  .slice(0, 10)
-                  .map(room => (
-                    <button
-                      key={room.id}
-                      type="button"
-                      onClick={() => {
-                        form.setValue('room_id', room.id);
-                        setRoomSearch(room.name);
-                        setShowRoomDropdown(false);
-                      }}
-                      className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                    >
-                      <div className="font-medium text-gray-900">{room.name}</div>
-                      <div className="text-sm text-gray-500">{room.code} • Capacity: {room.capacity}</div>
-                    </button>
-                  ))
-                }
-                {availableRooms.filter(room => room.name.toLowerCase().includes(roomSearch.toLowerCase())).length === 0 && (
-                  <div className="px-4 py-3 text-gray-500 text-sm text-center">
-                    {getText('No available rooms found', 'Tidak ada ruangan tersedia ditemukan')}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-          {form.formState.errors.room_id && (
-            <p className="mt-1 text-sm text-red-600">{form.formState.errors.room_id.message}</p>
-          )}
-          {watchStartTime && watchEndTime && watchDate && (
-            <p className="mt-2 text-sm text-gray-600 text-center">
-              💡 {getText(`Showing ${availableRooms.length} available rooms for selected time`, `Menampilkan ${availableRooms.length} ruangan tersedia untuk waktu terpilih`)}
-            </p>
-          )}
-        </div>
+      // GANTI bagian Room Selection di RoomAndDetailsStep:
+<div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">
+    {getText("Room", "Ruangan")} *
+  </label>
+  <select
+    {...form.register('room_id')}
+    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white"
+  >
+    <option value="">{getText('Select room...', 'Pilih ruangan...')}</option>
+    {availableRooms.map(room => (
+      <option key={room.id} value={room.id}>
+        {room.name} - {room.code} (Capacity: {room.capacity})
+      </option>
+    ))}
+  </select>
+  {form.formState.errors.room_id && (
+    <p className="mt-1 text-sm text-red-600">{form.formState.errors.room_id.message}</p>
+  )}
+  {watchStartTime && watchEndTime && watchDate && (
+    <p className="mt-2 text-sm text-gray-600 text-center">
+      💡 {availableRooms.length} {getText('available rooms', 'ruangan tersedia')}
+    </p>
+  )}
+</div>
       </div>
 
       {/* Thesis Title */}
