@@ -841,322 +841,395 @@ const StudentInformationStep = () => {
     </div>
   );
 
-  const RoomAndDetailsStep = () => {
-    const [supervisorSearch, setSupervisorSearch] = useState('');
-    const [showSupervisorDropdown, setShowSupervisorDropdown] = useState(false);
-    const [examinerSearch, setExaminerSearch] = useState('');
-    const [showExaminerDropdown, setShowExaminerDropdown] = useState(false);
-    const [secretarySearch, setSecretarySearch] = useState('');
-    const [showSecretaryDropdown, setShowSecretaryDropdown] = useState(false);
-    const [roomSearch, setRoomSearch] = useState('');
-    const [showRoomDropdown, setShowRoomDropdown] = useState(false);
-    const [selectedRoomDisplay, setSelectedRoomDisplay] = useState('');
+ const RoomAndDetailsStep = () => {
+  // ✅ REF untuk maintain values
+  const supervisorInputRef = useRef(null);
+  const examinerInputRef = useRef(null); 
+  const secretaryInputRef = useRef(null);
+  const roomDisplayRef = useRef(null);
+  const titleInputRef = useRef(null);
 
-    const filteredLecturersForSupervisor = useMemo(() =>
-      lecturers.filter(lecturer =>
-        lecturer && 
-        lecturer.full_name &&
-        lecturer.full_name.toLowerCase().includes(supervisorSearch.toLowerCase())
-      ), 
-      [lecturers, supervisorSearch]
+  // ✅ LOCAL DATA untuk dropdown states
+  const dosenData = useRef({
+    supervisorSearch: '',
+    examinerSearch: '',
+    secretarySearch: '',
+    roomSearch: '',
+    selectedRoomDisplay: '',
+    showSupervisorDropdown: false,
+    showExaminerDropdown: false,
+    showSecretaryDropdown: false,
+    showRoomDropdown: false
+  });
+
+  // ✅ DROPDOWN FUNCTIONS untuk dosen
+  const showLecturerDropdown = (type, searchTerm) => {
+    if (!searchTerm.trim()) {
+      hideLecturerDropdown(type);
+      return;
+    }
+
+    const filteredLecturers = lecturers.filter(lecturer =>
+      lecturer && 
+      lecturer.full_name &&
+      lecturer.full_name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const filteredLecturersForExaminer = useMemo(() =>
-      lecturers.filter(lecturer =>
-        lecturer && 
-        lecturer.full_name &&
-        lecturer.full_name.toLowerCase().includes(examinerSearch.toLowerCase())
-      ), 
-      [lecturers, examinerSearch]
-    );
+    if (filteredLecturers.length === 0) {
+      hideLecturerDropdown(type);
+      return;
+    }
 
-    const filteredLecturersForSecretary = useMemo(() =>
-      lecturers.filter(lecturer =>
-        lecturer && 
-        lecturer.full_name &&
-        lecturer.full_name.toLowerCase().includes(secretarySearch.toLowerCase())
-      ), 
-      [lecturers, secretarySearch]
-    );
+    const dropdownHTML = `
+      <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+        ${filteredLecturers.map(lecturer => `
+          <div 
+            class="lecturer-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+            data-lecturer-name="${lecturer.full_name}"
+          >
+            <div class="font-semibold text-gray-800">${lecturer.full_name}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
 
-    const filteredRooms = useMemo(() =>
-      availableRooms.filter(room =>
-        room && 
-        room.name && 
-        room.code &&
-        (
-          room.name.toLowerCase().includes(roomSearch.toLowerCase()) ||
-          room.code.toLowerCase().includes(roomSearch.toLowerCase())
-        )
-      ), 
-      [availableRooms, roomSearch]
-    );
+    const dropdownContainer = document.querySelector(`#${type}-dropdown`);
+    if (dropdownContainer) {
+      dropdownContainer.innerHTML = dropdownHTML;
+      dropdownContainer.style.display = 'block';
+      
+      // Add click listeners
+      dropdownContainer.querySelectorAll('.lecturer-item').forEach(item => {
+        item.addEventListener('mousedown', (e) => e.preventDefault());
+        item.addEventListener('click', (e) => {
+          const lecturerName = e.currentTarget.dataset.lecturerName;
+          
+          // Update input value
+          const inputRef = type === 'supervisor' ? supervisorInputRef : 
+                          type === 'examiner' ? examinerInputRef : secretaryInputRef;
+          
+          if (inputRef.current) {
+            inputRef.current.value = lecturerName;
+          }
+          
+          // Update form
+          form.setValue(type, lecturerName);
+          dosenData.current[`${type}Search`] = lecturerName;
+          
+          hideLecturerDropdown(type);
+          inputRef.current?.focus();
+        });
+      });
+    }
+  };
 
-    useEffect(() => {
-      const selectedRoomId = form.getValues('room_id');
-      if (selectedRoomId) {
-        const room = availableRooms.find(r => r.id === selectedRoomId);
-        if (room) {
-          setSelectedRoomDisplay(`${room.name} - ${room.code}`);
-        }
-      } else {
-        setSelectedRoomDisplay('');
-      }
-    }, [form.watch('room_id'), availableRooms]);
+  const hideLecturerDropdown = (type) => {
+    const dropdownContainer = document.querySelector(`#${type}-dropdown`);
+    if (dropdownContainer) {
+      dropdownContainer.style.display = 'none';
+    }
+  };
 
-    return (
-      <div className="space-y-6">
-        <div className="text-center mb-6">
-          <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-2">
-            {getText('Room & Examination Details', 'Ruangan & Detail Sidang')}
-          </h3>
-          <p className="text-sm md:text-base text-gray-600">
-            {getText('Complete the examination setup with room, title and committee', 'Lengkapi pengaturan sidang dengan ruangan, judul dan panitia')}
-          </p>
+  // ✅ ROOM DROPDOWN
+  const showRoomDropdown = () => {
+    const dropdownHTML = `
+      <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
+        <div class="p-3 border-b border-gray-100">
+          <input
+            type="text"
+            placeholder="${getText("Search rooms...", "Cari ruangan...")}"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            id="room-search-input"
+            autocomplete="off"
+          />
         </div>
+        <div class="max-h-60 overflow-y-auto" id="room-list">
+          ${availableRooms.map(room => `
+            <div 
+              class="room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+              data-room-id="${room.id}"
+              data-room-name="${room.name}"
+              data-room-code="${room.code}"
+            >
+              <div class="font-semibold text-gray-800">${room.name} - ${room.code}</div>
+              <div class="text-sm text-gray-600">Kapasitas: ${room.capacity || 'N/A'}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
 
-        {/* Room Selection */}
-        <div className="space-y-3">
-          <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
-            <Building className="h-4 w-4 text-blue-500" />
-            <span>{getText('Room', 'Ruangan')}</span>
-          </h4>
-          <div className="relative">
-            <input
-              type="text"
-              value={selectedRoomDisplay}
-              onClick={() => setShowRoomDropdown(!showRoomDropdown)}
-              readOnly
-              placeholder={getText("Click to select room...", "Klik untuk pilih ruangan...")}
-              className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer bg-white"
-            />
-            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            
-            {showRoomDropdown && (
-              <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
-                <div className="p-3 border-b border-gray-100">
-                  <input
-                    type="text"
-                    placeholder={getText("Search rooms...", "Cari ruangan...")}
-                    value={roomSearch}
-                    onChange={(e) => setRoomSearch(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                    autoFocus
-                  />
-                </div>
-                
-                <div className="max-h-60 overflow-y-auto">
-                  {filteredRooms.length > 0 ? (
-                    filteredRooms.map((room) => (
-                      <div
-                        key={room.id}
-                        onClick={() => {
-                          form.setValue('room_id', room.id);
-                          setSelectedRoomDisplay(`${room.name} - ${room.code}`);
-                          setShowRoomDropdown(false);
-                          setRoomSearch('');
-                        }}
-                        className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                      >
-                        <div className="font-semibold text-gray-800">{room.name} - {room.code}</div>
-                        <div className="text-sm text-gray-600">Kapasitas: {room.capacity || 'N/A'}</div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="px-4 py-3 text-gray-500 text-sm">
-                      {getText('No rooms found', 'Tidak ada ruangan ditemukan')}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-            
-            {showRoomDropdown && (
-              <div 
-                className="fixed inset-0 z-40" 
-                onClick={() => setShowRoomDropdown(false)}
+    const roomDropdownContainer = document.querySelector('#room-dropdown');
+    if (roomDropdownContainer) {
+      roomDropdownContainer.innerHTML = dropdownHTML;
+      roomDropdownContainer.style.display = 'block';
+      
+      const searchInput = roomDropdownContainer.querySelector('#room-search-input');
+      const roomList = roomDropdownContainer.querySelector('#room-list');
+      
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.addEventListener('input', (e) => {
+          const searchTerm = e.target.value.toLowerCase();
+          const filteredRooms = availableRooms.filter(room =>
+            room.name.toLowerCase().includes(searchTerm) ||
+            room.code.toLowerCase().includes(searchTerm)
+          );
+          
+          roomList.innerHTML = filteredRooms.map(room => `
+            <div 
+              class="room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+              data-room-id="${room.id}"
+              data-room-name="${room.name}"
+              data-room-code="${room.code}"
+            >
+              <div class="font-semibold text-gray-800">${room.name} - ${room.code}</div>
+              <div class="text-sm text-gray-600">Kapasitas: ${room.capacity || 'N/A'}</div>
+            </div>
+          `).join('');
+          
+          addRoomListeners();
+        });
+      }
+      
+      addRoomListeners();
+    }
+  };
+
+  const addRoomListeners = () => {
+    document.querySelectorAll('.room-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        const roomId = e.currentTarget.dataset.roomId;
+        const roomName = e.currentTarget.dataset.roomName;
+        const roomCode = e.currentTarget.dataset.roomCode;
+        
+        const display = `${roomName} - ${roomCode}`;
+        dosenData.current.selectedRoomDisplay = display;
+        
+        if (roomDisplayRef.current) {
+          roomDisplayRef.current.value = display;
+        }
+        
+        form.setValue('room_id', roomId);
+        hideRoomDropdown();
+      });
+    });
+  };
+
+  const hideRoomDropdown = () => {
+    const roomDropdownContainer = document.querySelector('#room-dropdown');
+    if (roomDropdownContainer) {
+      roomDropdownContainer.style.display = 'none';
+    }
+  };
+
+  // ✅ RESTORE VALUES saat step navigation
+  useEffect(() => {
+    // Restore supervisor
+    const supervisorValue = form.getValues('supervisor');
+    if (supervisorValue && supervisorInputRef.current) {
+      supervisorInputRef.current.value = supervisorValue;
+      dosenData.current.supervisorSearch = supervisorValue;
+    }
+    
+    // Restore examiner  
+    const examinerValue = form.getValues('examiner');
+    if (examinerValue && examinerInputRef.current) {
+      examinerInputRef.current.value = examinerValue;
+      dosenData.current.examinerSearch = examinerValue;
+    }
+    
+    // Restore secretary
+    const secretaryValue = form.getValues('secretary');
+    if (secretaryValue && secretaryInputRef.current) {
+      secretaryInputRef.current.value = secretaryValue;
+      dosenData.current.secretarySearch = secretaryValue;
+    }
+    
+    // Restore room
+    const roomId = form.getValues('room_id');
+    if (roomId && roomDisplayRef.current) {
+      const room = availableRooms.find(r => r.id === roomId);
+      if (room) {
+        const display = `${room.name} - ${room.code}`;
+        roomDisplayRef.current.value = display;
+        dosenData.current.selectedRoomDisplay = display;
+      }
+    }
+    
+    // Restore title
+    const titleValue = form.getValues('title');
+    if (titleValue && titleInputRef.current) {
+      titleInputRef.current.value = titleValue;
+    }
+  }, [currentStep]); // ✅ Restore saat step berubah
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center mb-6">
+        <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-2">
+          {getText('Room & Examination Details', 'Ruangan & Detail Sidang')}
+        </h3>
+        <p className="text-sm md:text-base text-gray-600">
+          {getText('Complete the examination setup with room, title and committee', 'Lengkapi pengaturan sidang dengan ruangan, judul dan panitia')}
+        </p>
+      </div>
+
+      {/* Room Selection */}
+      <div className="space-y-3">
+        <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
+          <Building className="h-4 w-4 text-blue-500" />
+          <span>{getText('Room', 'Ruangan')}</span>
+        </h4>
+        <div className="relative">
+          <input
+            ref={roomDisplayRef}
+            type="text"
+            readOnly
+            placeholder={getText("Click to select room...", "Klik untuk pilih ruangan...")}
+            onClick={showRoomDropdown}
+            className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer bg-white"
+          />
+          <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <div id="room-dropdown" style={{ display: 'none' }}></div>
+        </div>
+        
+        {form.formState.errors.room_id && (
+          <p className="mt-1 text-xs text-red-600">{form.formState.errors.room_id.message}</p>
+        )}
+      </div>
+
+      {/* Thesis Title */}
+      <div className="space-y-3">
+        <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
+          <BookOpen className="h-4 w-4 text-blue-500" />
+          <span>{getText('Thesis Title', 'Judul Skripsi/Tesis')}</span>
+        </h4>
+        <textarea
+          ref={titleInputRef}
+          rows={3}
+          className="w-full px-3 md:px-4 py-2.5 md:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm resize-none"
+          placeholder={getText("Enter the complete thesis title...", "Masukkan judul lengkap skripsi/tesis...")}
+          onInput={(e) => {
+            form.setValue('title', e.target.value);
+          }}
+          onBlur={(e) => {
+            form.setValue('title', e.target.value);
+          }}
+        />
+        {form.formState.errors.title && (
+          <p className="mt-1 text-xs text-red-600">{form.formState.errors.title.message}</p>
+        )}
+      </div>
+
+      {/* Committee Members */}
+      <div className="space-y-3">
+        <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
+          <Users className="h-4 w-4 text-blue-500" />
+          <span>{getText('Examination Committee', 'Panitia Sidang')}</span>
+        </h4>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          
+          {/* Supervisor */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {getText("Supervisor", "Pembimbing")} *
+            </label>
+            <div className="relative">
+              <input
+                ref={supervisorInputRef}
+                type="text"
+                placeholder={getText("Search supervisor...", "Cari pembimbing...")}
+                onInput={(e) => {
+                  dosenData.current.supervisorSearch = e.target.value;
+                  showLecturerDropdown('supervisor', e.target.value);
+                }}
+                onFocus={(e) => {
+                  showLecturerDropdown('supervisor', e.target.value);
+                }}
+                onBlur={(e) => {
+                  form.setValue('supervisor', e.target.value);
+                  setTimeout(() => hideLecturerDropdown('supervisor'), 150);
+                }}
+                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                autoComplete="off"
               />
+              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <div id="supervisor-dropdown" style={{ display: 'none' }}></div>
+            </div>
+            {form.formState.errors.supervisor && (
+              <p className="mt-1 text-xs text-red-600">{form.formState.errors.supervisor.message}</p>
             )}
           </div>
           
-          {form.formState.errors.room_id && (
-            <p className="mt-1 text-xs text-red-600">{form.formState.errors.room_id.message}</p>
-          )}
+          {/* Examiner */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {getText("Examiner", "Penguji")} *
+            </label>
+            <div className="relative">
+              <input
+                ref={examinerInputRef}
+                type="text"
+                placeholder={getText("Search examiner...", "Cari penguji...")}
+                onInput={(e) => {
+                  dosenData.current.examinerSearch = e.target.value;
+                  showLecturerDropdown('examiner', e.target.value);
+                }}
+                onFocus={(e) => {
+                  showLecturerDropdown('examiner', e.target.value);
+                }}
+                onBlur={(e) => {
+                  form.setValue('examiner', e.target.value);
+                  setTimeout(() => hideLecturerDropdown('examiner'), 150);
+                }}
+                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                autoComplete="off"
+              />
+              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <div id="examiner-dropdown" style={{ display: 'none' }}></div>
+            </div>
+            {form.formState.errors.examiner && (
+              <p className="mt-1 text-xs text-red-600">{form.formState.errors.examiner.message}</p>
+            )}
+          </div>
           
-          {watchStartTime && watchEndTime && watchDate && (
-            <p className="mt-2 text-xs text-gray-600 text-center">
-              💡 {(availableRooms || []).length} {getText('available rooms', 'ruangan tersedia')}
-            </p>
-          )}
-        </div>
-
-        {/* Thesis Title */}
-        <div className="space-y-3">
-          <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
-            <BookOpen className="h-4 w-4 text-blue-500" />
-            <span>{getText('Thesis Title', 'Judul Skripsi/Tesis')}</span>
-          </h4>
-          <textarea
-            {...form.register('title')}
-            rows={3}
-            className="w-full px-3 md:px-4 py-2.5 md:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm resize-none"
-            placeholder={getText("Enter the complete thesis title...", "Masukkan judul lengkap skripsi/tesis...")}
-          />
-          {form.formState.errors.title && (
-            <p className="mt-1 text-xs text-red-600">{form.formState.errors.title.message}</p>
-          )}
-        </div>
-
-        {/* Committee Members - BOOKROOM PATTERN */}
-        <div className="space-y-3">
-          <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
-            <Users className="h-4 w-4 text-blue-500" />
-            <span>{getText('Examination Committee', 'Panitia Sidang')}</span>
-          </h4>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            
-            {/* Supervisor - BOOKROOM PATTERN */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                {getText("Supervisor", "Pembimbing")} *
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder={getText("Search supervisor...", "Cari pembimbing...")}
-                  value={supervisorSearch}
-                  onChange={(e) => {
-                    setSupervisorSearch(e.target.value);
-                    form.setValue('supervisor', e.target.value);
-                    setShowSupervisorDropdown(true);
-                  }}
-                  onFocus={() => setShowSupervisorDropdown(true)}
-                  className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                />
-                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                
-                {showSupervisorDropdown && filteredLecturersForSupervisor.length > 0 && (
-                  <div 
-                    onMouseLeave={() => setShowSupervisorDropdown(false)}
-                    className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
-                  >
-                    {filteredLecturersForSupervisor.map((lecturer) => (
-                      <div
-                        key={lecturer.id}
-                        onClick={() => {
-                          setSupervisorSearch(lecturer.full_name);
-                          form.setValue('supervisor', lecturer.full_name);
-                          setShowSupervisorDropdown(false);
-                        }}
-                        className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                      >
-                        <div className="font-semibold text-gray-800">{lecturer.full_name}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {form.formState.errors.supervisor && (
-                <p className="mt-1 text-xs text-red-600">{form.formState.errors.supervisor.message}</p>
-              )}
+          {/* Secretary */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {getText("Secretary", "Sekretaris")} *
+            </label>
+            <div className="relative">
+              <input
+                ref={secretaryInputRef}
+                type="text"
+                placeholder={getText("Search secretary...", "Cari sekretaris...")}
+                onInput={(e) => {
+                  dosenData.current.secretarySearch = e.target.value;
+                  showLecturerDropdown('secretary', e.target.value);
+                }}
+                onFocus={(e) => {
+                  showLecturerDropdown('secretary', e.target.value);
+                }}
+                onBlur={(e) => {
+                  form.setValue('secretary', e.target.value);
+                  setTimeout(() => hideLecturerDropdown('secretary'), 150);
+                }}
+                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                autoComplete="off"
+              />
+              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <div id="secretary-dropdown" style={{ display: 'none' }}></div>
             </div>
-            
-            {/* Examiner - BOOKROOM PATTERN */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                {getText("Examiner", "Penguji")} *
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder={getText("Search examiner...", "Cari penguji...")}
-                  value={examinerSearch}
-                  onChange={(e) => {
-                    setExaminerSearch(e.target.value);
-                    form.setValue('examiner', e.target.value);
-                    setShowExaminerDropdown(true);
-                  }}
-                  onFocus={() => setShowExaminerDropdown(true)}
-                  className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                />
-                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                
-                {showExaminerDropdown && filteredLecturersForExaminer.length > 0 && (
-                  <div 
-                    onMouseLeave={() => setShowExaminerDropdown(false)}
-                    className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
-                  >
-                    {filteredLecturersForExaminer.map((lecturer) => (
-                      <div
-                        key={lecturer.id}
-                        onClick={() => {
-                          setExaminerSearch(lecturer.full_name);
-                          form.setValue('examiner', lecturer.full_name);
-                          setShowExaminerDropdown(false);
-                        }}
-                        className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                      >
-                        <div className="font-semibold text-gray-800">{lecturer.full_name}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {form.formState.errors.examiner && (
-                <p className="mt-1 text-xs text-red-600">{form.formState.errors.examiner.message}</p>
-              )}
-            </div>
-            
-            {/* Secretary - BOOKROOM PATTERN */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                {getText("Secretary", "Sekretaris")} *
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder={getText("Search secretary...", "Cari sekretaris...")}
-                  value={secretarySearch}
-                  onChange={(e) => {
-                    setSecretarySearch(e.target.value);
-                    form.setValue('secretary', e.target.value);
-                    setShowSecretaryDropdown(true);
-                  }}
-                  onFocus={() => setShowSecretaryDropdown(true)}
-                  className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                />
-                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                
-                {showSecretaryDropdown && filteredLecturersForSecretary.length > 0 && (
-                  <div 
-                    onMouseLeave={() => setShowSecretaryDropdown(false)}
-                    className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
-                  >
-                    {filteredLecturersForSecretary.map((lecturer) => (
-                      <div
-                        key={lecturer.id}
-                        onClick={() => {
-                          setSecretarySearch(lecturer.full_name);
-                          form.setValue('secretary', lecturer.full_name);
-                          setShowSecretaryDropdown(false);
-                        }}
-                        className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                      >
-                        <div className="font-semibold text-gray-800">{lecturer.full_name}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {form.formState.errors.secretary && (
-                <p className="mt-1 text-xs text-red-600">{form.formState.errors.secretary.message}</p>
-              )}
-            </div>
+            {form.formState.errors.secretary && (
+              <p className="mt-1 text-xs text-red-600">{form.formState.errors.secretary.message}</p>
+            )}
           </div>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   const ProgressSidebar = () => (
     <div className="w-72 bg-white border-r-2 border-blue-100 p-6">
