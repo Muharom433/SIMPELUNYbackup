@@ -491,61 +491,47 @@ const SessionScheduleProgressive = () => {
   // Enhanced Progress Indicator like the image
   // Ganti ProgressIndicator yang ada dengan ini:
 const ProgressSidebar = () => (
-  <div className="w-80 bg-gradient-to-b from-blue-50 to-indigo-50 border-r border-gray-200 p-6">
-    <div className="space-y-8">
+  <div className="w-72 bg-white border-r-2 border-blue-100 p-6">
+    <div className="mb-8">
+      <h3 className="text-lg font-bold text-gray-900">Session Creation</h3>
+      <p className="text-sm text-gray-500 mt-1">Follow the steps below</p>
+    </div>
+
+    <div className="space-y-6">
       {steps.map((step, index) => {
         const isCompleted = completedSteps.has(step.id);
         const isCurrent = currentStep === step.id;
-        const isAccessible = step.id === 1 || completedSteps.has(step.id - 1);
         
         return (
-          <div key={step.id} className="relative">
-            {/* Connecting Line */}
+          <div key={step.id} className="relative flex items-start">
+            {/* Vertical Line */}
             {index < steps.length - 1 && (
               <div className={`absolute left-6 top-12 w-0.5 h-16 ${
                 isCompleted ? 'bg-blue-500' : 'bg-gray-200'
               }`} />
             )}
             
-            <button
-              onClick={() => isAccessible && setCurrentStep(step.id)}
-              disabled={!isAccessible}
-              className={`w-full text-left flex items-start space-x-4 p-3 rounded-xl transition-all duration-200 ${
-                isCurrent ? 'bg-white shadow-md' : 'hover:bg-white/50'
-              }`}
-            >
-              {/* Step Circle */}
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
-                isCompleted
-                  ? 'bg-blue-500 text-white'
-                  : isCurrent
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 text-gray-400'
-              }`}>
-                {isCompleted ? (
-                  <Check className="h-6 w-6" />
-                ) : (
-                  <step.icon className="h-5 w-5" />
-                )}
+            {/* Circle */}
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 relative z-10 ${
+              isCompleted
+                ? 'bg-blue-500 border-blue-500 text-white'
+                : isCurrent
+                ? 'bg-white border-blue-500 text-blue-500 ring-4 ring-blue-100'
+                : 'bg-white border-gray-300 text-gray-400'
+            }`}>
+              {isCompleted ? <Check className="h-5 w-5" /> : <step.icon className="h-5 w-5" />}
+            </div>
+            
+            {/* Content */}
+            <div className="ml-4">
+              <div className={`text-sm font-medium ${isCurrent || isCompleted ? 'text-blue-600' : 'text-gray-400'}`}>
+                Step {step.id}
               </div>
-              
-              {/* Step Content */}
-              <div className="flex-1 min-w-0">
-                <div className={`text-sm font-medium ${
-                  isCurrent ? 'text-blue-600' : isCompleted ? 'text-blue-600' : 'text-gray-500'
-                }`}>
-                  Step {step.id}
-                </div>
-                <div className={`text-base font-semibold mt-1 ${
-                  isCurrent ? 'text-gray-900' : 'text-gray-600'
-                }`}>
-                  {step.title}
-                </div>
-                <div className="text-sm text-gray-500 mt-1">
-                  {step.description}
-                </div>
+              <div className={`font-semibold ${isCurrent || isCompleted ? 'text-gray-900' : 'text-gray-500'}`}>
+                {step.title}
               </div>
-            </button>
+              <div className="text-sm text-gray-500 mt-1">{step.description}</div>
+            </div>
           </div>
         );
       })}
