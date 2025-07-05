@@ -403,43 +403,48 @@ const SessionScheduleProgressive = () => {
     }
   }, [currentStep]);
 
-  // ✅ SOLUSI RADIKAL: ZERO RE-RENDER dengan Direct DOM Manipulation
+  // ✅ SOLUSI FINAL: PURE DOM MANIPULATION - ZERO REACT STATE UPDATES
 
 const StudentInformationStep = () => {
-  // ✅ STATIC refs - tidak pernah berubah
+  // ✅ HANYA REF - TIDAK ADA STATE YANG TRIGGER RE-RENDER
   const studentInputRef = useRef(null);
   const studentNameRef = useRef(null);
   const dropdownRef = useRef(null);
+  const programDisplayRef = useRef(null);
   const programDropdownRef = useRef(null);
   
-  // ✅ STATIC state - tidak trigger re-render untuk typing
-  const searchStateRef = useRef({
+  // ✅ PURE OBJECT - BUKAN REACT STATE
+  const localData = useRef({
     studentSearch: '',
-    showStudentDropdown: false,
-    programSearch: '',
-    showProgramDropdown: false,
+    studentName: '',
+    studentNim: '',
+    studyProgramId: '',
     selectedProgramDisplay: ''
   });
 
-  // ✅ DIRECT DOM UPDATE - no re-render
-  const updateStudentSearch = (value) => {
-    searchStateRef.current.studentSearch = value;
-    // Update formData langsung tanpa setState
-    setFormData(prev => ({ ...prev, student_nim: value }));
-    updateDropdown();
-  };
-
-  const updateStudentName = (value) => {
-    // Direct update tanpa re-render
-    setFormData(prev => ({ ...prev, student_name: value }));
-  };
-
-  // ✅ MANUAL DROPDOWN RENDERING - no component re-render
-  const updateDropdown = () => {
-    const searchTerm = searchStateRef.current.studentSearch.toLowerCase();
+  // ✅ PURE FUNCTION - UPDATE PARENT FORM DATA ONLY
+  const updateParentFormData = (field, value) => {
+    // HANYA update parent formData - BUKAN local state
+    localData.current[field] = value;
     
+    // Update parent form HANYA saat blur atau selection
+    // BUKAN saat setiap keystroke
+  };
+
+  // ✅ FINAL UPDATE ke parent (saat blur atau submit)
+  const syncToParentForm = () => {
+    setFormData(prev => ({
+      ...prev,
+      student_name: localData.current.studentName,
+      student_nim: localData.current.studentNim,
+      study_program_id: localData.current.studyProgramId
+    }));
+  };
+
+  // ✅ DROPDOWN FUNCTIONS - PURE DOM
+  const showStudentDropdown = (searchTerm) => {
     if (!searchTerm.trim()) {
-      hideDropdown();
+      hideStudentDropdown();
       return;
     }
 
@@ -448,22 +453,21 @@ const StudentInformationStep = () => {
       student.identity_number && 
       student.full_name &&
       (
-        student.identity_number.toLowerCase().includes(searchTerm) ||
-        student.full_name.toLowerCase().includes(searchTerm)
+        student.identity_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        student.full_name.toLowerCase().includes(searchTerm.toLowerCase())
       )
     );
 
     if (filteredStudents.length === 0) {
-      hideDropdown();
+      hideStudentDropdown();
       return;
     }
 
-    // ✅ MANUAL DOM CREATION - no React re-render
     const dropdownHTML = `
       <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
         ${filteredStudents.map(student => `
           <div 
-            class="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+            class="dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
             data-student-id="${student.id}"
             data-student-nim="${student.identity_number}"
             data-student-name="${student.full_name}"
@@ -481,66 +485,54 @@ const StudentInformationStep = () => {
       dropdownRef.current.innerHTML = dropdownHTML;
       dropdownRef.current.style.display = 'block';
       
-      // ✅ ADD CLICK LISTENERS langsung ke DOM
-      dropdownRef.current.querySelectorAll('[data-student-id]').forEach(item => {
+      // Add event listeners
+      dropdownRef.current.querySelectorAll('.dropdown-item').forEach(item => {
+        item.addEventListener('mousedown', (e) => e.preventDefault());
         item.addEventListener('click', (e) => {
           const studentId = e.currentTarget.dataset.studentId;
           const studentNim = e.currentTarget.dataset.studentNim;
           const studentName = e.currentTarget.dataset.studentName;
           const programId = e.currentTarget.dataset.programId;
           
-          // ✅ DIRECT VALUE UPDATE
+          // ✅ DIRECT DOM UPDATE
           studentInputRef.current.value = studentNim;
           studentNameRef.current.value = studentName;
           
-          // ✅ UPDATE FORM DATA
-          setFormData(prev => ({
-            ...prev,
-            student_name: studentName,
-            student_nim: studentNim,
-            study_program_id: programId
-          }));
+          // ✅ UPDATE LOCAL DATA
+          localData.current.studentNim = studentNim;
+          localData.current.studentName = studentName;
+          localData.current.studyProgramId = programId;
           
+          // ✅ UPDATE REACT FORM - ONLY ONCE
           form.setValue('student_id', studentId);
+          syncToParentForm();
           
           // Auto-set program display
           if (programId) {
             const program = studyPrograms.find(p => p.id === programId);
             if (program) {
-              searchStateRef.current.selectedProgramDisplay = `${program.name} (${program.code})`;
-              updateProgramDisplay();
+              const display = `${program.name} (${program.code})`;
+              localData.current.selectedProgramDisplay = display;
+              if (programDisplayRef.current) {
+                programDisplayRef.current.value = display;
+              }
             }
           }
           
-          hideDropdown();
-          studentInputRef.current.focus(); // Keep focus
+          hideStudentDropdown();
+          studentInputRef.current.focus();
         });
-        
-        // Prevent blur on mousedown
-        item.addEventListener('mousedown', (e) => e.preventDefault());
       });
     }
   };
 
-  const hideDropdown = () => {
+  const hideStudentDropdown = () => {
     if (dropdownRef.current) {
       dropdownRef.current.style.display = 'none';
     }
   };
 
-  // ✅ MANUAL PROGRAM DROPDOWN
-  const updateProgramDropdown = () => {
-    const searchTerm = searchStateRef.current.programSearch.toLowerCase();
-    
-    const filteredPrograms = studyPrograms.filter(program =>
-      program && 
-      program.name &&
-      (
-        program.name.toLowerCase().includes(searchTerm) ||
-        (program.code && program.code.toLowerCase().includes(searchTerm))
-      )
-    );
-
+  const showProgramDropdown = () => {
     const dropdownHTML = `
       <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
         <div class="p-3 border-b border-gray-100">
@@ -552,20 +544,17 @@ const StudentInformationStep = () => {
             autocomplete="off"
           />
         </div>
-        <div class="max-h-60 overflow-y-auto">
-          ${filteredPrograms.length > 0 ? 
-            filteredPrograms.map(program => `
-              <div 
-                class="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                data-program-id="${program.id}"
-                data-program-name="${program.name}"
-                data-program-code="${program.code || ''}"
-              >
-                <div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div>
-              </div>
-            `).join('') 
-            : `<div class="px-4 py-3 text-gray-500 text-sm">${getText('No programs found', 'Tidak ada program ditemukan')}</div>`
-          }
+        <div class="max-h-60 overflow-y-auto" id="program-list">
+          ${studyPrograms.map(program => `
+            <div 
+              class="program-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+              data-program-id="${program.id}"
+              data-program-name="${program.name}"
+              data-program-code="${program.code || ''}"
+            >
+              <div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div>
+            </div>
+          `).join('')}
         </div>
       </div>
     `;
@@ -574,51 +563,57 @@ const StudentInformationStep = () => {
       programDropdownRef.current.innerHTML = dropdownHTML;
       programDropdownRef.current.style.display = 'block';
       
-      // Add search input listener
       const searchInput = programDropdownRef.current.querySelector('#program-search-input');
+      const programList = programDropdownRef.current.querySelector('#program-list');
+      
       if (searchInput) {
-        searchInput.value = searchStateRef.current.programSearch;
         searchInput.focus();
-        
         searchInput.addEventListener('input', (e) => {
-          searchStateRef.current.programSearch = e.target.value;
-          updateProgramDropdown();
+          const searchTerm = e.target.value.toLowerCase();
+          const filteredPrograms = studyPrograms.filter(program =>
+            program.name.toLowerCase().includes(searchTerm) ||
+            (program.code && program.code.toLowerCase().includes(searchTerm))
+          );
+          
+          programList.innerHTML = filteredPrograms.map(program => `
+            <div 
+              class="program-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+              data-program-id="${program.id}"
+              data-program-name="${program.name}"
+              data-program-code="${program.code || ''}"
+            >
+              <div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div>
+            </div>
+          `).join('');
+          
+          // Re-add event listeners
+          addProgramListeners();
         });
       }
       
-      // Add click listeners
-      programDropdownRef.current.querySelectorAll('[data-program-id]').forEach(item => {
-        item.addEventListener('click', (e) => {
-          const programId = e.currentTarget.dataset.programId;
-          const programName = e.currentTarget.dataset.programName;
-          const programCode = e.currentTarget.dataset.programCode;
-          
-          searchStateRef.current.selectedProgramDisplay = `${programName} (${programCode})`;
-          searchStateRef.current.showProgramDropdown = false;
-          searchStateRef.current.programSearch = '';
-          
-          setFormData(prev => ({
-            ...prev,
-            study_program_id: programId
-          }));
-          
-          updateProgramDisplay();
-          hideProgramDropdown();
-        });
+      addProgramListeners();
+    }
+  };
+
+  const addProgramListeners = () => {
+    programDropdownRef.current?.querySelectorAll('.program-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        const programId = e.currentTarget.dataset.programId;
+        const programName = e.currentTarget.dataset.programName;
+        const programCode = e.currentTarget.dataset.programCode;
+        
+        const display = `${programName} (${programCode})`;
+        localData.current.selectedProgramDisplay = display;
+        localData.current.studyProgramId = programId;
+        
+        if (programDisplayRef.current) {
+          programDisplayRef.current.value = display;
+        }
+        
+        syncToParentForm();
+        hideProgramDropdown();
       });
-    }
-  };
-
-  const updateProgramDisplay = () => {
-    const programInput = document.querySelector('#program-display-input');
-    if (programInput) {
-      programInput.value = searchStateRef.current.selectedProgramDisplay;
-    }
-  };
-
-  const showProgramDropdown = () => {
-    searchStateRef.current.showProgramDropdown = true;
-    updateProgramDropdown();
+    });
   };
 
   const hideProgramDropdown = () => {
@@ -627,25 +622,28 @@ const StudentInformationStep = () => {
     }
   };
 
-  // ✅ SET INITIAL VALUES
+  // ✅ INITIALIZE VALUES - HANYA SEKALI
   useEffect(() => {
-    if (formData.student_nim && studentInputRef.current) {
+    if (formData.student_nim && studentInputRef.current && !localData.current.studentNim) {
       studentInputRef.current.value = formData.student_nim;
-      searchStateRef.current.studentSearch = formData.student_nim;
+      localData.current.studentNim = formData.student_nim;
     }
     
-    if (formData.student_name && studentNameRef.current) {
+    if (formData.student_name && studentNameRef.current && !localData.current.studentName) {
       studentNameRef.current.value = formData.student_name;
+      localData.current.studentName = formData.student_name;
     }
     
-    if (formData.study_program_id) {
+    if (formData.study_program_id && !localData.current.studyProgramId) {
       const selectedProgram = studyPrograms.find(sp => sp.id === formData.study_program_id);
-      if (selectedProgram) {
-        searchStateRef.current.selectedProgramDisplay = `${selectedProgram.name} (${selectedProgram.code})`;
-        updateProgramDisplay();
+      if (selectedProgram && programDisplayRef.current) {
+        const display = `${selectedProgram.name} (${selectedProgram.code})`;
+        programDisplayRef.current.value = display;
+        localData.current.selectedProgramDisplay = display;
+        localData.current.studyProgramId = formData.study_program_id;
       }
     }
-  }, [formData.student_nim, formData.student_name, formData.study_program_id, studyPrograms]);
+  }, []); // ✅ EMPTY DEPENDENCY - HANYA RUN SEKALI
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -661,7 +659,7 @@ const StudentInformationStep = () => {
       
       <div className="space-y-4 md:grid md:grid-cols-1 lg:grid-cols-3 md:gap-6 md:space-y-0">
         
-        {/* ✅ ZERO RE-RENDER NIM INPUT */}
+        {/* ✅ PURE DOM NIM INPUT */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Student NIM", "NIM Mahasiswa")} *
@@ -672,29 +670,27 @@ const StudentInformationStep = () => {
               type="text"
               placeholder={getText("Search student by NIM or name...", "Cari mahasiswa berdasarkan NIM atau nama...")}
               onInput={(e) => {
-                // ✅ PURE DOM EVENT - no React state
-                updateStudentSearch(e.target.value);
+                // ✅ PURE DOM - NO REACT STATE UPDATE
+                localData.current.studentNim = e.target.value;
+                showStudentDropdown(e.target.value);
               }}
-              onFocus={() => {
-                if (studentInputRef.current.value.trim()) {
-                  updateDropdown();
-                }
+              onFocus={(e) => {
+                showStudentDropdown(e.target.value);
               }}
               onBlur={() => {
-                // Delayed hide untuk allow click
-                setTimeout(() => hideDropdown(), 150);
+                // ✅ SYNC TO PARENT HANYA SAAT BLUR
+                syncToParentForm();
+                setTimeout(() => hideStudentDropdown(), 150);
               }}
               className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
               autoComplete="off"
             />
             <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-            
-            {/* ✅ MANUAL DROPDOWN CONTAINER */}
             <div ref={dropdownRef} style={{ display: 'none' }}></div>
           </div>
         </div>
 
-        {/* ✅ ZERO RE-RENDER NAME INPUT */}
+        {/* ✅ PURE DOM NAME INPUT */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Student Name", "Nama Mahasiswa")} *
@@ -704,22 +700,26 @@ const StudentInformationStep = () => {
             type="text"
             placeholder={getText("Enter student name...", "Masukkan nama mahasiswa...")}
             onInput={(e) => {
-              // ✅ DIRECT UPDATE - no re-render
-              updateStudentName(e.target.value);
+              // ✅ PURE DOM - NO REACT STATE UPDATE
+              localData.current.studentName = e.target.value;
+            }}
+            onBlur={() => {
+              // ✅ SYNC TO PARENT HANYA SAAT BLUR
+              syncToParentForm();
             }}
             className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
             autoComplete="off"
           />
         </div>
 
-        {/* ✅ ZERO RE-RENDER PROGRAM INPUT */}
+        {/* ✅ PURE DOM PROGRAM INPUT */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Study Program", "Program Studi")} *
           </label>
           <div className="relative">
             <input
-              id="program-display-input"
+              ref={programDisplayRef}
               type="text"
               readOnly
               placeholder={getText("Click to select program...", "Klik untuk pilih program...")}
@@ -727,16 +727,7 @@ const StudentInformationStep = () => {
               className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer bg-white"
             />
             <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-            
-            {/* ✅ MANUAL PROGRAM DROPDOWN */}
             <div ref={programDropdownRef} style={{ display: 'none' }}></div>
-            
-            {/* Click outside to close */}
-            <div 
-              className="fixed inset-0 z-40" 
-              style={{ display: searchStateRef.current.showProgramDropdown ? 'block' : 'none' }}
-              onClick={hideProgramDropdown}
-            />
           </div>
         </div>
       </div>
