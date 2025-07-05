@@ -800,7 +800,6 @@ const ProgressSidebar = () => (
       
       {/* Room Selection */}
       <div className="space-y-4">
-<div>
   <h4 className="text-lg font-semibold text-gray-800 flex items-center space-x-2">
    <Building className="h-5 w-5 text-blue-500" />
           <span>{getText('Room', 'Ruangan')}</span>
@@ -835,7 +834,6 @@ const ProgressSidebar = () => (
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               autoFocus
             />
-          </div>
         </div>
         
         {/* Options List dengan scroll */}
