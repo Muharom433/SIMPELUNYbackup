@@ -1277,7 +1277,88 @@ const ProgressSidebar = () => (
       </div>
 
       {/* Progressive Form Modal */}
+      // Ganti bagian modal content dengan:
+{showModal && profile?.role === 'department_admin' && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl h-[90vh] flex overflow-hidden">
       
+      {/* Left Sidebar - Progress */}
+      <ProgressSidebar />
+      
+      {/* Right Content Area */}
+      <div className="flex-1 flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <h3 className="text-xl font-bold text-gray-900 flex items-center space-x-3">
+            <UserCheck className="h-6 w-6 text-blue-600" />
+            <span>{editingSession ? getText('Edit Session Schedule', 'Edit Jadwal Sidang') : getText('Create New Session', 'Buat Jadwal Sidang Baru')}</span>
+          </h3>
+          <button
+            onClick={() => {
+              setShowModal(false);
+              resetForm();
+            }}
+            className="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-xl"
+          >
+            <X className="h-6 w-6" />
+          </button>
+        </div>
+        
+        {/* Form Content - Scrollable */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {renderCurrentStep()}
+        </div>
+        
+        {/* Bottom Navigation - Fixed */}
+        <div className="border-t border-gray-200 p-6">
+          <div className="flex justify-end space-x-4">
+            {currentStep > 1 && (
+              <button
+                type="button"
+                onClick={handleStepBack}
+                className="flex items-center space-x-2 px-6 py-3 text-gray-600 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                <span>{getText('Back', 'Kembali')}</span>
+              </button>
+            )}
+
+            {currentStep < 3 ? (
+              <button
+                type="button"
+                onClick={() => handleStepComplete(currentStep)}
+                disabled={!validateStep(currentStep)}
+                className="flex items-center space-x-2 px-8 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+              >
+                <span>{getText('Continue', 'Lanjutkan')}</span>
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => form.handleSubmit(handleSubmit)()}
+                disabled={!validateStep(currentStep) || submitting}
+                className="flex items-center space-x-2 px-8 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+              >
+                {submitting ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    <span>{getText('Saving...', 'Menyimpan...')}</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-4 w-4" />
+                    <span>{editingSession ? getText('Update Session', 'Perbarui Sidang') : getText('Create Session', 'Buat Sidang')}</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 };
