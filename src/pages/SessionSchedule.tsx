@@ -820,7 +820,7 @@ const ProgressSidebar = () => (
   </div>
 );
 
-  // PERBAIKAN DROPDOWN INPUTS - TANPA LAG!
+ // PERBAIKAN YANG BENAR - KEMBALI KE LOGIKA ASLI
 
 const RoomAndDetailsStep = () => (
   <div className="space-y-6">
@@ -932,7 +932,7 @@ const RoomAndDetailsStep = () => (
       )}
     </div>
 
-    {/* Committee Members - SIMPLE APPROACH */}
+    {/* Committee Members - BACK TO ORIGINAL LOGIC */}
     <div className="space-y-3">
       <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
         <Users className="h-4 w-4 text-blue-500" />
@@ -940,7 +940,7 @@ const RoomAndDetailsStep = () => (
       </h4>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         
-        {/* Supervisor - SIMPLIFIED */}
+        {/* Supervisor - ORIGINAL LOGIC */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Supervisor", "Pembimbing")} *
@@ -951,6 +951,7 @@ const RoomAndDetailsStep = () => (
               value={supervisorSearch}
               onChange={(e) => {
                 setSupervisorSearch(e.target.value);
+                setShowSupervisorDropdown(true); // INI YANG HILANG!
                 form.setValue('supervisor', e.target.value);
               }}
               onFocus={() => setShowSupervisorDropdown(true)}
@@ -992,7 +993,7 @@ const RoomAndDetailsStep = () => (
           )}
         </div>
         
-        {/* Examiner - SIMPLIFIED */}
+        {/* Examiner - ORIGINAL LOGIC */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Examiner", "Penguji")} *
@@ -1003,6 +1004,7 @@ const RoomAndDetailsStep = () => (
               value={examinerSearch}
               onChange={(e) => {
                 setExaminerSearch(e.target.value);
+                setShowExaminerDropdown(true); // INI YANG HILANG!
                 form.setValue('examiner', e.target.value);
               }}
               onFocus={() => setShowExaminerDropdown(true)}
@@ -1044,7 +1046,7 @@ const RoomAndDetailsStep = () => (
           )}
         </div>
         
-        {/* Secretary - SIMPLIFIED */}
+        {/* Secretary - ORIGINAL LOGIC */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Secretary", "Sekretaris")} *
@@ -1055,6 +1057,7 @@ const RoomAndDetailsStep = () => (
               value={secretarySearch}
               onChange={(e) => {
                 setSecretarySearch(e.target.value);
+                setShowSecretaryDropdown(true); // INI YANG HILANG!
                 form.setValue('secretary', e.target.value);
               }}
               onFocus={() => setShowSecretaryDropdown(true)}
@@ -1099,7 +1102,6 @@ const RoomAndDetailsStep = () => (
     </div>
   </div>
 );
-
   const renderCurrentStep = () => {
     switch (currentStep) {
       case 1:
