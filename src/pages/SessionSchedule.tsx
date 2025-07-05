@@ -861,212 +861,271 @@ const SessionScheduleProgressive = () => {
   );
 
   const RoomAndDetailsStep = () => (
-    <div className="space-y-6">
-      <div className="text-center mb-6">
-        <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-2">
-          {getText('Room & Examination Details', 'Ruangan & Detail Sidang')}
-        </h3>
-        <p className="text-sm md:text-base text-gray-600">
-          {getText('Complete the examination setup with room, title and committee', 'Lengkapi pengaturan sidang dengan ruangan, judul dan panitia')}
-        </p>
-      </div>
+  <div className="space-y-6">
+    <div className="text-center mb-6">
+      <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-2">
+        {getText('Room & Examination Details', 'Ruangan & Detail Sidang')}
+      </h3>
+      <p className="text-sm md:text-base text-gray-600">
+        {getText('Complete the examination setup with room, title and committee', 'Lengkapi pengaturan sidang dengan ruangan, judul dan panitia')}
+      </p>
+    </div>
 
-      {/* Room Selection - BookRoom Style */}
-      <div className="space-y-3">
-        <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
-          <Building className="h-4 w-4 text-blue-500" />
-          <span>{getText('Room', 'Ruangan')}</span>
-        </h4>
-        <div className="relative">
-          <select
-            {...form.register('room_id')}
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-          >
-            <option value="">{getText('Select room...', 'Pilih ruangan...')}</option>
-            {availableRooms.map(room => (
-              <option key={room.id} value={room.id}>
-                {room.name} - {room.code} (Kapasitas: {room.capacity || 'N/A'})
-              </option>
-            ))}
-          </select>
-          {form.formState.errors.room_id && (
-            <p className="mt-1 text-xs text-red-600">{form.formState.errors.room_id.message}</p>
-          )}
-          
-          {watchStartTime && watchEndTime && watchDate && (
-            <p className="mt-2 text-xs text-gray-600 text-center">
-              💡 {(availableRooms || []).length} {getText('available rooms', 'ruangan tersedia')}
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Thesis Title */}
-      <div className="space-y-3">
-        <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
-          <BookOpen className="h-4 w-4 text-blue-500" />
-          <span>{getText('Thesis Title', 'Judul Skripsi/Tesis')}</span>
-        </h4>
-        <textarea
-          {...form.register('title')}
-          rows={3}
-          className="w-full px-3 md:px-4 py-2.5 md:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm resize-none"
-          placeholder={getText("Enter the complete thesis title...", "Masukkan judul lengkap skripsi/tesis...")}
+    {/* Room Selection */}
+    <div className="space-y-3">
+      <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
+        <Building className="h-4 w-4 text-blue-500" />
+        <span>{getText('Room', 'Ruangan')}</span>
+      </h4>
+      <div>
+        <Controller
+          name="room_id"
+          control={form.control}
+          render={({ field }) => {
+            const roomOptions = (availableRooms || [])
+              .filter(room => room && room.name && room.code)
+              .map(room => ({
+                value: room.id,
+                label: `${room.name} - ${room.code} (Kapasitas: ${room.capacity || 'N/A'})`
+              }));
+            
+            const currentValue = roomOptions.find(option => option.value === field.value) || null;
+            
+            return (
+              <Select
+                {...field}
+                options={roomOptions}
+                value={currentValue}
+                onChange={(option) => field.onChange(option ? option.value : '')}
+                placeholder={getText('Search and select room...', 'Cari dan pilih ruangan...')}
+                isClearable
+                isSearchable
+                styles={{
+                  control: (provided) => ({
+                    ...provided,
+                    minHeight: '42px',
+                    borderColor: '#d1d5db',
+                  }),
+                }}
+                noOptionsMessage={() => getText('No rooms available', 'Tidak ada ruangan tersedia')}
+              />
+            );
+          }}
         />
-        {form.formState.errors.title && (
-          <p className="mt-1 text-xs text-red-600">{form.formState.errors.title.message}</p>
+        {form.formState.errors.room_id && (
+          <p className="mt-1 text-xs text-red-600">{form.formState.errors.room_id.message}</p>
+        )}
+        
+        {watchStartTime && watchEndTime && watchDate && (
+          <p className="mt-2 text-xs text-gray-600 text-center">
+            💡 {(availableRooms || []).length} {getText('available rooms', 'ruangan tersedia')}
+          </p>
         )}
       </div>
+    </div>
 
-      {/* Committee Members - BookRoom Style */}
-      <div className="space-y-3">
-        <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
-          <Users className="h-4 w-4 text-blue-500" />
-          <span>{getText('Examination Committee', 'Panitia Sidang')}</span>
-        </h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          
-          {/* Supervisor - BookRoom Style */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {getText("Supervisor", "Pembimbing")} *
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder={getText("Search supervisor...", "Cari pembimbing...")}
-                value={supervisorSearch}
-                onChange={(e) => {
-                  setSupervisorSearch(e.target.value);
-                  form.setValue('supervisor', e.target.value);
-                  setShowSupervisorDropdown(true);
-                }}
-                onFocus={() => setShowSupervisorDropdown(true)}
-                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-              />
-              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+    {/* Thesis Title */}
+    <div className="space-y-3">
+      <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
+        <BookOpen className="h-4 w-4 text-blue-500" />
+        <span>{getText('Thesis Title', 'Judul Skripsi/Tesis')}</span>
+      </h4>
+      <textarea
+        {...form.register('title')}
+        rows={3}
+        className="w-full px-3 md:px-4 py-2.5 md:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm resize-none"
+        placeholder={getText("Enter the complete thesis title...", "Masukkan judul lengkap skripsi/tesis...")}
+      />
+      {form.formState.errors.title && (
+        <p className="mt-1 text-xs text-red-600">{form.formState.errors.title.message}</p>
+      )}
+    </div>
+
+    {/* Committee Members - FIXED */}
+    <div className="space-y-3">
+      <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
+        <Users className="h-4 w-4 text-blue-500" />
+        <span>{getText('Examination Committee', 'Panitia Sidang')}</span>
+      </h4>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        
+        {/* Supervisor - FIXED */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {getText("Supervisor", "Pembimbing")} *
+          </label>
+          <Controller
+            name="supervisor"
+            control={form.control}
+            render={({ field }) => {
+              const lecturerOptions = (lecturers || [])
+                .filter(lecturer => lecturer && lecturer.full_name)
+                .map(lecturer => ({
+                  value: lecturer.full_name,
+                  label: lecturer.full_name
+                }));
               
-              {showSupervisorDropdown && filteredLecturersForSupervisor.length > 0 && (
-                <div 
-                  onMouseLeave={() => setShowSupervisorDropdown(false)}
-                  className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
-                >
-                  {filteredLecturersForSupervisor.map((lecturer) => (
-                    <div
-                      key={lecturer.id}
-                      onClick={() => {
-                        setSupervisorSearch(lecturer.full_name);
-                        form.setValue('supervisor', lecturer.full_name);
-                        setShowSupervisorDropdown(false);
-                      }}
-                      className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                    >
-                      <div className="font-semibold text-gray-800">{lecturer.full_name}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            {form.formState.errors.supervisor && (
-              <p className="mt-1 text-xs text-red-600">{form.formState.errors.supervisor.message}</p>
-            )}
-          </div>
-          
-          {/* Examiner - BookRoom Style */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {getText("Examiner", "Penguji")} *
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder={getText("Search examiner...", "Cari penguji...")}
-                value={examinerSearch}
-                onChange={(e) => {
-                  setExaminerSearch(e.target.value);
-                  form.setValue('examiner', e.target.value);
-                  setShowExaminerDropdown(true);
-                }}
-                onFocus={() => setShowExaminerDropdown(true)}
-                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-              />
-              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              const currentValue = lecturerOptions.find(option => option.value === field.value) || null;
+              const isCustomValue = field.value && !currentValue;
               
-              {showExaminerDropdown && filteredLecturersForExaminer.length > 0 && (
-                <div 
-                  onMouseLeave={() => setShowExaminerDropdown(false)}
-                  className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
-                >
-                  {filteredLecturersForExaminer.map((lecturer) => (
-                    <div
-                      key={lecturer.id}
-                      onClick={() => {
-                        setExaminerSearch(lecturer.full_name);
-                        form.setValue('examiner', lecturer.full_name);
-                        setShowExaminerDropdown(false);
-                      }}
-                      className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                    >
-                      <div className="font-semibold text-gray-800">{lecturer.full_name}</div>
-                    </div>
-                  ))}
+              return (
+                <div>
+                  <Select
+                    options={lecturerOptions}
+                    value={currentValue}
+                    onChange={(option) => {
+                      field.onChange(option ? option.value : '');
+                    }}
+                    placeholder={getText("Search supervisor...", "Cari pembimbing...")}
+                    isClearable
+                    isSearchable
+                    styles={{
+                      control: (provided) => ({
+                        ...provided,
+                        minHeight: '42px',
+                        borderColor: '#d1d5db',
+                      }),
+                    }}
+                    noOptionsMessage={() => getText('Lecturer not found - you can enter manually below', 'Dosen tidak ditemukan - Anda bisa input manual di bawah')}
+                  />
+                  
+                  {(!currentValue || isCustomValue) && (
+                    <input
+                      type="text"
+                      value={field.value || ''}
+                      onChange={(e) => field.onChange(e.target.value || '')}
+                      placeholder={getText("Or enter supervisor name manually...", "Atau masukkan nama pembimbing manual...")}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm mt-2 bg-blue-50"
+                    />
+                  )}
                 </div>
-              )}
-            </div>
-            {form.formState.errors.examiner && (
-              <p className="mt-1 text-xs text-red-600">{form.formState.errors.examiner.message}</p>
-            )}
-          </div>
-          
-          {/* Secretary - BookRoom Style */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {getText("Secretary", "Sekretaris")} *
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder={getText("Search secretary...", "Cari sekretaris...")}
-                value={secretarySearch}
-                onChange={(e) => {
-                  setSecretarySearch(e.target.value);
-                  form.setValue('secretary', e.target.value);
-                  setShowSecretaryDropdown(true);
-                }}
-                onFocus={() => setShowSecretaryDropdown(true)}
-                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-              />
-              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              );
+            }}
+          />
+          {form.formState.errors.supervisor && (
+            <p className="mt-1 text-xs text-red-600">{form.formState.errors.supervisor.message}</p>
+          )}
+        </div>
+        
+        {/* Examiner - FIXED */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {getText("Examiner", "Penguji")} *
+          </label>
+          <Controller
+            name="examiner"
+            control={form.control}
+            render={({ field }) => {
+              const lecturerOptions = (lecturers || [])
+                .filter(lecturer => lecturer && lecturer.full_name)
+                .map(lecturer => ({
+                  value: lecturer.full_name,
+                  label: lecturer.full_name
+                }));
               
-              {showSecretaryDropdown && filteredLecturersForSecretary.length > 0 && (
-                <div 
-                  onMouseLeave={() => setShowSecretaryDropdown(false)}
-                  className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
-                >
-                  {filteredLecturersForSecretary.map((lecturer) => (
-                    <div
-                      key={lecturer.id}
-                      onClick={() => {
-                        setSecretarySearch(lecturer.full_name);
-                        form.setValue('secretary', lecturer.full_name);
-                        setShowSecretaryDropdown(false);
-                      }}
-                      className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                    >
-                      <div className="font-semibold text-gray-800">{lecturer.full_name}</div>
-                    </div>
-                  ))}
+              const currentValue = lecturerOptions.find(option => option.value === field.value) || null;
+              const isCustomValue = field.value && !currentValue;
+              
+              return (
+                <div>
+                  <Select
+                    options={lecturerOptions}
+                    value={currentValue}
+                    onChange={(option) => {
+                      field.onChange(option ? option.value : '');
+                    }}
+                    placeholder={getText("Search examiner...", "Cari penguji...")}
+                    isClearable
+                    isSearchable
+                    styles={{
+                      control: (provided) => ({
+                        ...provided,
+                        minHeight: '42px',
+                        borderColor: '#d1d5db',
+                      }),
+                    }}
+                    noOptionsMessage={() => getText('Lecturer not found - you can enter manually below', 'Dosen tidak ditemukan - Anda bisa input manual di bawah')}
+                  />
+                  
+                  {(!currentValue || isCustomValue) && (
+                    <input
+                      type="text"
+                      value={field.value || ''}
+                      onChange={(e) => field.onChange(e.target.value || '')}
+                      placeholder={getText("Or enter examiner name manually...", "Atau masukkan nama penguji manual...")}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm mt-2 bg-blue-50"
+                    />
+                  )}
                 </div>
-              )}
-            </div>
-            {form.formState.errors.secretary && (
-              <p className="mt-1 text-xs text-red-600">{form.formState.errors.secretary.message}</p>
-            )}
-          </div>
+              );
+            }}
+          />
+          {form.formState.errors.examiner && (
+            <p className="mt-1 text-xs text-red-600">{form.formState.errors.examiner.message}</p>
+          )}
+        </div>
+        
+        {/* Secretary - FIXED */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {getText("Secretary", "Sekretaris")} *
+          </label>
+          <Controller
+            name="secretary"
+            control={form.control}
+            render={({ field }) => {
+              const lecturerOptions = (lecturers || [])
+                .filter(lecturer => lecturer && lecturer.full_name)
+                .map(lecturer => ({
+                  value: lecturer.full_name,
+                  label: lecturer.full_name
+                }));
+              
+              const currentValue = lecturerOptions.find(option => option.value === field.value) || null;
+              const isCustomValue = field.value && !currentValue;
+              
+              return (
+                <div>
+                  <Select
+                    options={lecturerOptions}
+                    value={currentValue}
+                    onChange={(option) => {
+                      field.onChange(option ? option.value : '');
+                    }}
+                    placeholder={getText("Search secretary...", "Cari sekretaris...")}
+                    isClearable
+                    isSearchable
+                    styles={{
+                      control: (provided) => ({
+                        ...provided,
+                        minHeight: '42px',
+                        borderColor: '#d1d5db',
+                      }),
+                    }}
+                    noOptionsMessage={() => getText('Lecturer not found - you can enter manually below', 'Dosen tidak ditemukan - Anda bisa input manual di bawah')}
+                  />
+                  
+                  {(!currentValue || isCustomValue) && (
+                    <input
+                      type="text"
+                      value={field.value || ''}
+                      onChange={(e) => field.onChange(e.target.value || '')}
+                      placeholder={getText("Or enter secretary name manually...", "Atau masukkan nama sekretaris manual...")}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm mt-2 bg-blue-50"
+                    />
+                  )}
+                </div>
+              );
+            }}
+          />
+          {form.formState.errors.secretary && (
+            <p className="mt-1 text-xs text-red-600">{form.formState.errors.secretary.message}</p>
+          )}
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 
   const renderCurrentStep = () => {
     switch (currentStep) {
