@@ -403,239 +403,325 @@ const SessionScheduleProgressive = () => {
     }
   }, [currentStep]);
 
-  // ✅ STUDENT INFORMATION STEP - FIXED WITH NO RE-RENDER ISSUES
-  const StudentInformationStep = () => {
-    const [studentSearch, setStudentSearch] = useState('');
-    const [showStudentDropdown, setShowStudentDropdown] = useState(false);
-    const [programSearch, setProgramSearch] = useState('');
-    const [showProgramDropdown, setShowProgramDropdown] = useState(false);
-    const [selectedProgramDisplay, setSelectedProgramDisplay] = useState('');
+  function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
 
-    // Filter students based on search input - BOOKROOM PATTERN
-    const filteredStudents = useMemo(() => 
-      students.filter(student => 
-        student && 
-        student.identity_number && 
-        student.full_name &&
-        (
-          student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
-          student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
-        )
-      ), 
-      [students, studentSearch]
-    );
+// ✅ FIXED STUDENT INFORMATION STEP - LENGKAP
+const StudentInformationStep = useCallback(() => {
+  // Local states untuk dropdown dan search
+  const [studentSearch, setStudentSearch] = useState('');
+  const [showStudentDropdown, setShowStudentDropdown] = useState(false);
+  const [programSearch, setProgramSearch] = useState('');
+  const [showProgramDropdown, setShowProgramDropdown] = useState(false);
+  const [selectedProgramDisplay, setSelectedProgramDisplay] = useState('');
+  
+  // ✅ REF untuk maintain focus
+  const studentInputRef = useRef(null);
+  const studentNameRef = useRef(null);
 
-    // Filter programs based on search input
-    const filteredPrograms = useMemo(() =>
-      studyPrograms.filter(program =>
-        program && 
-        program.name &&
-        (
-          program.name.toLowerCase().includes(programSearch.toLowerCase()) ||
-          program.code.toLowerCase().includes(programSearch.toLowerCase())
-        )
-      ), 
-      [studyPrograms, programSearch]
-    );
+  // ✅ DEBOUNCED UPDATE untuk mengurangi re-render
+  const debouncedUpdateFormData = useCallback(
+    debounce((field, value) => {
+      setFormData(prev => ({ ...prev, [field]: value }));
+    }, 200),
+    []
+  );
 
-    // Set program display when formData changes
-    useEffect(() => {
-      if (formData.study_program_id) {
-        const selectedProgram = studyPrograms.find(sp => sp.id === formData.study_program_id);
-        if (selectedProgram) {
-          setSelectedProgramDisplay(`${selectedProgram.name} (${selectedProgram.code})`);
-        }
-      } else {
-        setSelectedProgramDisplay('');
-      }
-    }, [formData.study_program_id, studyPrograms]);
+  // ✅ OPTIMIZED filtered students dengan useMemo
+  const filteredStudents = useMemo(() => 
+    students.filter(student => 
+      student && 
+      student.identity_number && 
+      student.full_name &&
+      (
+        student.identity_number.toLowerCase().includes(studentSearch.toLowerCase()) ||
+        student.full_name.toLowerCase().includes(studentSearch.toLowerCase())
+      )
+    ), 
+    [students, studentSearch]
+  );
 
-    // Sync initial value from formData
-    useEffect(() => {
-      setStudentSearch(formData.student_nim || '');
-    }, [formData.student_nim]);
+  // ✅ OPTIMIZED filtered programs dengan useMemo
+  const filteredPrograms = useMemo(() =>
+    studyPrograms.filter(program =>
+      program && 
+      program.name &&
+      (
+        program.name.toLowerCase().includes(programSearch.toLowerCase()) ||
+        (program.code && program.code.toLowerCase().includes(programSearch.toLowerCase()))
+      )
+    ), 
+    [studyPrograms, programSearch]
+  );
 
-    // Handle student selection from dropdown - BOOKROOM PATTERN
-    const handleStudentSelect = useCallback((student: any) => {
-      setStudentSearch(student.identity_number);
-      setFormData(prev => ({
-        ...prev,
-        student_name: student.full_name,
-        student_nim: student.identity_number,
-        study_program_id: student.study_program_id
-      }));
-      form.setValue('student_id', student.id);
+  // ✅ OPTIMIZED student input handler
+  const handleStudentInputChange = useCallback((e) => {
+    const value = e.target.value;
+    setStudentSearch(value);
+    debouncedUpdateFormData('student_nim', value);
+    
+    // Show dropdown only if there's input
+    if (value.trim()) {
+      setShowStudentDropdown(true);
+    } else {
       setShowStudentDropdown(false);
-      
-      // Auto-set program display if student has study program
-      if (student.study_program_id) {
-        const program = studyPrograms.find(p => p.id === student.study_program_id);
-        if (program) {
-          setSelectedProgramDisplay(`${program.name} (${program.code})`);
-        }
-      }
-    }, [form, studyPrograms]);
+    }
+  }, [debouncedUpdateFormData]);
 
-    return (
-      <div className="space-y-4 md:space-y-6">
-        <div className="text-center mb-4 md:mb-8">
-          <h3 className="text-lg md:text-2xl font-bold text-gray-900 mb-2">
-            {getText('Student Information', 'Informasi Mahasiswa')}
-          </h3>
-          <p className="text-sm md:text-base text-gray-600">
-            {getText('Please select or enter student details for the examination', 'Silakan pilih atau masukkan detail mahasiswa untuk sidang')}
-          </p>
-        </div>
+  // ✅ OPTIMIZED student name handler
+  const handleStudentNameChange = useCallback((e) => {
+    const value = e.target.value;
+    debouncedUpdateFormData('student_name', value);
+  }, [debouncedUpdateFormData]);
+
+  // ✅ OPTIMIZED student selection dari dropdown
+  const handleStudentSelect = useCallback((student) => {
+    setStudentSearch(student.identity_number);
+    
+    // Update formData sekaligus
+    setFormData(prev => ({
+      ...prev,
+      student_name: student.full_name,
+      student_nim: student.identity_number,
+      study_program_id: student.study_program_id
+    }));
+    
+    form.setValue('student_id', student.id);
+    setShowStudentDropdown(false);
+    
+    // Auto-set program display jika student punya study program
+    if (student.study_program_id) {
+      const program = studyPrograms.find(p => p.id === student.study_program_id);
+      if (program) {
+        setSelectedProgramDisplay(`${program.name} (${program.code})`);
+      }
+    }
+    
+    // ✅ MAINTAIN FOCUS ke input setelah selection
+    setTimeout(() => {
+      if (studentInputRef.current) {
+        studentInputRef.current.focus();
+      }
+    }, 0);
+  }, [form, studyPrograms]);
+
+  // ✅ OPTIMIZED program selection
+  const handleProgramSelect = useCallback((program) => {
+    setSelectedProgramDisplay(`${program.name} (${program.code})`);
+    setFormData(prev => ({
+      ...prev,
+      study_program_id: program.id
+    }));
+    setShowProgramDropdown(false);
+    setProgramSearch('');
+  }, []);
+
+  // ✅ SET INITIAL VALUES - hanya sekali
+  useEffect(() => {
+    // Sync student search dengan formData.student_nim
+    if (formData.student_nim && formData.student_nim !== studentSearch) {
+      setStudentSearch(formData.student_nim);
+    }
+    
+    // Set program display jika ada study_program_id
+    if (formData.study_program_id) {
+      const selectedProgram = studyPrograms.find(sp => sp.id === formData.study_program_id);
+      if (selectedProgram && !selectedProgramDisplay) {
+        setSelectedProgramDisplay(`${selectedProgram.name} (${selectedProgram.code})`);
+      }
+    } else if (!formData.study_program_id && selectedProgramDisplay) {
+      setSelectedProgramDisplay('');
+    }
+  }, [formData.student_nim, formData.study_program_id, studyPrograms]);
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      {/* Header */}
+      <div className="text-center mb-4 md:mb-8">
+        <h3 className="text-lg md:text-2xl font-bold text-gray-900 mb-2">
+          {getText('Student Information', 'Informasi Mahasiswa')}
+        </h3>
+        <p className="text-sm md:text-base text-gray-600">
+          {getText('Please select or enter student details for the examination', 'Silakan pilih atau masukkan detail mahasiswa untuk sidang')}
+        </p>
+      </div>
+      
+      <div className="space-y-4 md:grid md:grid-cols-1 lg:grid-cols-3 md:gap-6 md:space-y-0">
         
-        <div className="space-y-4 md:grid md:grid-cols-1 lg:grid-cols-3 md:gap-6 md:space-y-0">
-          {/* NIM Input - BOOKROOM PATTERN */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {getText("Student NIM", "NIM Mahasiswa")} *
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder={getText("Search student by NIM or name...", "Cari mahasiswa berdasarkan NIM atau nama...")}
-                value={studentSearch}
-                onChange={(e) => {
-                  setStudentSearch(e.target.value);
-                  setFormData(prev => ({ ...prev, student_nim: e.target.value }));
+        {/* ✅ FIXED NIM INPUT - NO MORE FOCUS LOSS */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {getText("Student NIM", "NIM Mahasiswa")} *
+          </label>
+          <div className="relative">
+            <input
+              ref={studentInputRef}
+              type="text"
+              placeholder={getText("Search student by NIM or name...", "Cari mahasiswa berdasarkan NIM atau nama...")}
+              value={studentSearch}
+              onChange={handleStudentInputChange}
+              onFocus={() => {
+                if (studentSearch.trim()) {
                   setShowStudentDropdown(true);
-                }}
-                onFocus={() => setShowStudentDropdown(true)}
-                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-              />
-              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              
-              {showStudentDropdown && filteredStudents.length > 0 && (
-                <div 
-                  onMouseLeave={() => setShowStudentDropdown(false)}
-                  className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto"
-                >
-                  {filteredStudents.map((student) => (
-                    <div
-                      key={student.id}
-                      onClick={() => handleStudentSelect(student)}
-                      className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                    >
-                      <div className="font-semibold text-gray-800">{student.identity_number}</div>
-                      <div className="text-sm text-gray-600">{student.full_name}</div>
-                      {student.study_program && (
-                        <div className="text-xs text-gray-500">{student.study_program.name}</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                }
+              }}
+              onBlur={(e) => {
+                // ✅ DELAYED CLOSE untuk allow dropdown selection
+                setTimeout(() => {
+                  // Check if focus moved to dropdown item
+                  if (!e.currentTarget.parentElement.contains(document.activeElement)) {
+                    setShowStudentDropdown(false);
+                  }
+                }, 150);
+              }}
+              className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+              autoComplete="off"
+            />
+            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
             
-            {studentSearch && !students.find(s => s.identity_number === studentSearch) && (
-              <div className="mt-2 text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
-                💡 {getText('Student not found - you can continue typing to enter manually', 'Mahasiswa tidak ditemukan - Anda bisa lanjut mengetik untuk input manual')}
+            {/* ✅ STUDENT DROPDOWN - OPTIMIZED */}
+            {showStudentDropdown && filteredStudents.length > 0 && (
+              <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                {filteredStudents.map((student) => (
+                  <div
+                    key={student.id}
+                    onMouseDown={(e) => e.preventDefault()} // ✅ PREVENT input blur
+                    onClick={() => handleStudentSelect(student)}
+                    className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                  >
+                    <div className="font-semibold text-gray-800">{student.identity_number}</div>
+                    <div className="text-sm text-gray-600">{student.full_name}</div>
+                    {student.study_program && (
+                      <div className="text-xs text-gray-500">{student.study_program.name}</div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
+          
+          {/* Info untuk new student */}
+          {studentSearch && !students.find(s => s.identity_number === studentSearch) && (
+            <div className="mt-2 text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
+              💡 {getText('Student not found - you can continue typing to enter manually', 'Mahasiswa tidak ditemukan - Anda bisa lanjut mengetik untuk input manual')}
+            </div>
+          )}
+        </div>
 
-          {/* Student Name */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {getText("Student Name", "Nama Mahasiswa")} *
-            </label>
+        {/* ✅ FIXED STUDENT NAME INPUT */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {getText("Student Name", "Nama Mahasiswa")} *
+          </label>
+          <input
+            ref={studentNameRef}
+            type="text"
+            value={formData.student_name || ''}
+            onChange={handleStudentNameChange}
+            placeholder={getText("Enter student name...", "Masukkan nama mahasiswa...")}
+            className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
+            autoComplete="off"
+          />
+        </div>
+
+        {/* ✅ FIXED STUDY PROGRAM DROPDOWN - LENGKAP */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {getText("Study Program", "Program Studi")} *
+          </label>
+          <div className="relative">
             <input
               type="text"
-              value={formData.student_name || ''}
-              onChange={(e) => setFormData(prev => ({ ...prev, student_name: e.target.value || '' }))}
-              placeholder={getText("Enter student name...", "Masukkan nama mahasiswa...")}
-              className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
+              value={selectedProgramDisplay}
+              onClick={() => setShowProgramDropdown(!showProgramDropdown)}
+              readOnly
+              placeholder={getText("Click to select program...", "Klik untuk pilih program...")}
+              className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer bg-white"
             />
-          </div>
-
-          {/* Study Program - SEARCHABLE DROPDOWN */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {getText("Study Program", "Program Studi")} *
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={selectedProgramDisplay}
-                onClick={() => setShowProgramDropdown(!showProgramDropdown)}
-                readOnly
-                placeholder={getText("Click to select program...", "Klik untuk pilih program...")}
-                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer bg-white"
-              />
-              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              
-              {showProgramDropdown && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
-                  <div className="p-3 border-b border-gray-100">
-                    <input
-                      type="text"
-                      placeholder={getText("Search programs...", "Cari program studi...")}
-                      value={programSearch}
-                      onChange={(e) => setProgramSearch(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                      autoFocus
-                    />
-                  </div>
-                  
-                  <div className="max-h-60 overflow-y-auto">
-                    {filteredPrograms.length > 0 ? (
-                      filteredPrograms.map((program) => (
-                        <div
-                          key={program.id}
-                          onClick={() => {
-                            setSelectedProgramDisplay(`${program.name} (${program.code})`);
-                            setFormData(prev => ({
-                              ...prev,
-                              study_program_id: program.id
-                            }));
-                            setShowProgramDropdown(false);
-                            setProgramSearch('');
-                          }}
-                          className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                        >
-                          <div className="font-semibold text-gray-800">{program.name} ({program.code})</div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="px-4 py-3 text-gray-500 text-sm">
-                        {getText('No programs found', 'Tidak ada program ditemukan')}
-                      </div>
-                    )}
-                  </div>
+            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+            
+            {/* ✅ PROGRAM DROPDOWN - LENGKAP */}
+            {showProgramDropdown && (
+              <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
+                
+                {/* Search box di dalam dropdown */}
+                <div className="p-3 border-b border-gray-100">
+                  <input
+                    type="text"
+                    placeholder={getText("Search programs...", "Cari program studi...")}
+                    value={programSearch}
+                    onChange={(e) => setProgramSearch(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                    autoFocus
+                    autoComplete="off"
+                  />
                 </div>
-              )}
-              
-              {showProgramDropdown && (
-                <div 
-                  className="fixed inset-0 z-40" 
-                  onClick={() => setShowProgramDropdown(false)}
-                />
-              )}
+                
+                {/* Program list */}
+                <div className="max-h-60 overflow-y-auto">
+                  {filteredPrograms.length > 0 ? (
+                    filteredPrograms.map((program) => (
+                      <div
+                        key={program.id}
+                        onClick={() => handleProgramSelect(program)}
+                        className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                      >
+                        <div className="font-semibold text-gray-800">
+                          {program.name} ({program.code})
+                        </div>
+                        {program.department && (
+                          <div className="text-sm text-gray-600">{program.department}</div>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-4 py-3 text-gray-500 text-sm">
+                      {getText('No programs found', 'Tidak ada program ditemukan')}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* ✅ CLICK OUTSIDE TO CLOSE */}
+            {showProgramDropdown && (
+              <div 
+                className="fixed inset-0 z-40" 
+                onClick={() => setShowProgramDropdown(false)}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+      
+      {/* ✅ NEW STUDENT REGISTRATION INFO */}
+      {formData.student_nim && !form.getValues('student_id') && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg md:rounded-xl p-3 md:p-4">
+          <div className="flex items-start space-x-2 md:space-x-3">
+            <User className="h-4 w-4 md:h-5 md:w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="text-xs md:text-sm text-blue-800">
+              <p className="font-semibold">
+                {getText('New Student Registration', 'Pendaftaran Mahasiswa Baru')}
+              </p>
+              <p className="mt-1">
+                {getText('Student not found in database. A new student account will be automatically created when you save this session.', 'Mahasiswa tidak ditemukan di database. Akun mahasiswa baru akan otomatis dibuat saat Anda menyimpan jadwal sidang ini.')}
+              </p>
             </div>
           </div>
         </div>
-        
-        {formData.student_nim && !form.getValues('student_id') && (
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg md:rounded-xl p-3 md:p-4">
-            <div className="flex items-start space-x-2 md:space-x-3">
-              <User className="h-4 w-4 md:h-5 md:w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-              <div className="text-xs md:text-sm text-blue-800">
-                <p className="font-semibold">
-                  {getText('New Student Registration', 'Pendaftaran Mahasiswa Baru')}
-                </p>
-                <p className="mt-1">
-                  {getText('Student not found in database. A new student account will be automatically created when you save this session.', 'Mahasiswa tidak ditemukan di database. Akun mahasiswa baru akan otomatis dibuat saat Anda menyimpan jadwal sidang ini.')}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
+      )}
+    </div>
+  );
+}, [students, studyPrograms, formData, getText, form]);
 
   const ScheduleInformationStep = () => (
     <div className="space-y-4 md:space-y-6">
