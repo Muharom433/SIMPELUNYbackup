@@ -800,7 +800,6 @@ const ProgressSidebar = () => (
       
       {/* Room Selection */}
       <div className="space-y-4">
-<div>
   <h4 className="text-lg font-semibold text-gray-800 flex items-center space-x-2">
    <Building className="h-5 w-5 text-blue-500" />
           <span>{getText('Room', 'Ruangan')}</span>
@@ -891,7 +890,6 @@ const ProgressSidebar = () => (
       💡 {availableRooms.length} {getText('available rooms', 'ruangan tersedia')}
     </p>
   )}
-</div>
       </div>
 
       {/* Thesis Title */}
