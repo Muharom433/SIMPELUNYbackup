@@ -33,6 +33,8 @@ import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
 import { alert } from '../components/Alert/AlertHelper';
 import { useLanguage } from '../contexts/LanguageContext';
+import { Controller } from 'react-hook-form';
+import Select from 'react-select';
 
 // Schema for validating the session form data
 const sessionSchema = z.object({
