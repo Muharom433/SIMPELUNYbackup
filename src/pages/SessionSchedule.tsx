@@ -65,6 +65,7 @@ const SessionScheduleProgressive = () => {
 
   // Backend data states
   const [sessions, setSessions] = useState([]);
+  const [allSessions, setAllSessions] = useState([]); // ✅ TAMBAHAN: Untuk kalender universal
   const [students, setStudents] = useState([]);
   const [lecturers, setLecturers] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -96,7 +97,7 @@ const SessionScheduleProgressive = () => {
     study_program_id: ''
   });
 
-  // ✅ TIDAK DIUBAH: Refs untuk semua input - dideklarasikan di component level
+  // ✅ Refs untuk semua input
   const studentInputRef = useRef(null);
   const studentNameRef = useRef(null);
   const supervisorInputRef = useRef(null);
@@ -147,15 +148,15 @@ const SessionScheduleProgressive = () => {
     }
   ];
 
-  // ✅ Calendar Helper Functions
+  // ✅ PERBAIKAN: Calendar Helper Functions menggunakan allSessions
   const getSessionsForDate = (date) => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    return sessions.filter(session => session.date === dateStr);
+    return allSessions.filter(session => session.date === dateStr);
   };
 
   const getSessionsForRoom = (date, roomId) => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    return sessions.filter(session => 
+    return allSessions.filter(session => 
       session.date === dateStr && 
       session.room_id === roomId
     );
@@ -164,11 +165,11 @@ const SessionScheduleProgressive = () => {
   const hasSessionsOnDate = (date, roomId = null) => {
     const dateStr = format(date, 'yyyy-MM-dd');
     if (roomId) {
-      return sessions.some(session => 
+      return allSessions.some(session => 
         session.date === dateStr && session.room_id === roomId
       );
     }
-    return sessions.some(session => session.date === dateStr);
+    return allSessions.some(session => session.date === dateStr);
   };
 
   const generateCalendarDays = () => {
@@ -187,7 +188,7 @@ const SessionScheduleProgressive = () => {
     }
   };
 
-  // ✅ Calendar Modal Component - FIXED
+  // ✅ PERBAIKAN: Calendar Modal Component dengan layout yang lebih compact
   const CalendarModal = () => {
     const calendarDays = generateCalendarDays();
     const monthNames = [
@@ -195,7 +196,6 @@ const SessionScheduleProgressive = () => {
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
 
-    // ✅ Room dropdown refs and functions
     const roomDropdownRef = useRef(null);
     const roomDisplayRef = useRef(null);
 
@@ -244,7 +244,6 @@ const SessionScheduleProgressive = () => {
           searchInput.addEventListener('input', (e) => {
             const searchTerm = e.target.value.toLowerCase();
             
-            // Filter all rooms including "All Rooms" option
             const allRoomsOption = `
               <div 
                 class="calendar-room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 transition-colors duration-150"
@@ -321,13 +320,11 @@ const SessionScheduleProgressive = () => {
           }
         }}
       >
-        <div 
-          className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden"
-        >
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
-            <h3 className="text-xl font-bold flex items-center space-x-2">
-              <Calendar className="h-6 w-6" />
+          <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex-shrink-0">
+            <h3 className="text-lg font-bold flex items-center space-x-2">
+              <Calendar className="h-5 w-5" />
               <span>{getText('Session Calendar', 'Kalender Jadwal Sidang')}</span>
             </h3>
             <button
@@ -343,11 +340,29 @@ const SessionScheduleProgressive = () => {
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-hidden flex">
+          <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
             {/* Calendar Section */}
-            <div className="flex-1 p-6">
-              {/* Room Filter - Updated with searchable dropdown */}
-              <div className="mb-6">
+            <div className="flex-1 p-4 overflow-y-auto">
+              {/* Info Banner */}
+              <div className="mb-4 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-3">
+                <div className="flex items-start space-x-2">
+                  <Eye className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-green-800">
+                    <p className="font-semibold mb-1">
+                      {getText('Universal Calendar View', 'Tampilan Kalender Universal')}
+                    </p>
+                    <p className="text-xs leading-relaxed">
+                      {getText(
+                        'This calendar shows ALL examination sessions across all departments to help with room coordination.',
+                        'Kalender ini menampilkan SEMUA jadwal sidang dari semua departemen untuk koordinasi ruangan.'
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Room Filter */}
+              <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   <Filter className="h-4 w-4 inline mr-2" />
                   {getText('Filter by Room', 'Filter berdasarkan Ruangan')}
@@ -360,36 +375,36 @@ const SessionScheduleProgressive = () => {
                     placeholder={getText("Click to select room...", "Klik untuk pilih ruangan...")}
                     onClick={showRoomDropdown}
                     defaultValue={getText('All Rooms', 'Semua Ruangan')}
-                    className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer bg-white"
+                    className="w-full px-3 py-2 pr-8 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer bg-white text-sm"
                   />
-                  <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                  <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
                   <div ref={roomDropdownRef} style={{ display: 'none' }}></div>
                 </div>
               </div>
 
               {/* Month Navigation */}
-              <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center justify-between mb-4">
                 <button
                   onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
-                  className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                 >
-                  <ChevronLeft className="h-5 w-5" />
+                  <ChevronLeft className="h-4 w-4" />
                 </button>
-                <h2 className="text-xl font-bold text-gray-900">
+                <h2 className="text-lg font-bold text-gray-900">
                   {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
                 </h2>
                 <button
                   onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-                  className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                 >
-                  <ChevronRight className="h-5 w-5" />
+                  <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
 
               {/* Calendar Grid */}
-              <div className="grid grid-cols-7 gap-1 mb-4">
+              <div className="grid grid-cols-7 gap-1 mb-3">
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                  <div key={day} className="p-2 text-center text-sm font-medium text-gray-500">
+                  <div key={day} className="p-2 text-center text-xs font-medium text-gray-500">
                     {day}
                   </div>
                 ))}
@@ -406,11 +421,11 @@ const SessionScheduleProgressive = () => {
                       key={day.toString()}
                       onClick={() => handleDateClick(day)}
                       className={`
-                        aspect-square p-2 text-sm rounded-lg transition-all duration-200 relative
+                        aspect-square p-1 text-xs rounded-lg transition-all duration-200 relative min-h-[2.5rem] flex items-center justify-center
                         ${!isSameMonth(day, currentMonth) 
                           ? 'text-gray-300 cursor-not-allowed' 
                           : hasSessions 
-                            ? 'bg-red-500 text-white hover:bg-red-600 shadow-lg' 
+                            ? 'bg-red-500 text-white hover:bg-red-600 shadow-lg font-medium' 
                             : 'text-gray-900 hover:bg-gray-100'
                         }
                       `}
@@ -418,7 +433,7 @@ const SessionScheduleProgressive = () => {
                     >
                       {format(day, 'd')}
                       {hasSessions && (
-                        <div className="absolute top-1 right-1 w-2 h-2 bg-white rounded-full"></div>
+                        <div className="absolute top-1 right-1 w-1.5 h-1.5 bg-white rounded-full"></div>
                       )}
                     </button>
                   );
@@ -426,67 +441,62 @@ const SessionScheduleProgressive = () => {
               </div>
             </div>
 
-            {/* Session Details Sidebar - Simplified */}
-            <div className="w-80 border-l border-gray-200 bg-gray-50 p-6 overflow-y-auto">
-              <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-                <Eye className="h-5 w-5 text-blue-600" />
+            {/* Session Details Sidebar */}
+            <div className="w-full lg:w-80 border-t lg:border-t-0 lg:border-l border-gray-200 bg-gray-50 p-4 overflow-y-auto">
+              <h4 className="text-base font-semibold text-gray-900 mb-3 flex items-center space-x-2">
+                <Eye className="h-4 w-4 text-blue-600" />
                 <span>{getText('Session Details', 'Detail Sidang')}</span>
               </h4>
 
               {selectedDateSessions.length > 0 ? (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {selectedDateSessions.map((session, index) => (
-                    <div key={session.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-                      <div className="flex items-center justify-between mb-3">
+                    <div key={session.id} className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+                      <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
                           {getText('Session', 'Sidang')} #{index + 1}
                         </span>
-                        <span className="text-sm font-medium text-gray-900">
+                        <span className="text-xs font-medium text-gray-900">
                           {session.start_time} - {session.end_time}
                         </span>
                       </div>
                       
-                      <div className="space-y-2 text-sm">
+                      <div className="space-y-2 text-xs">
+                        <div>
+                          <span className="font-medium text-gray-700">{getText('Study Program', 'Program Studi')}:</span>
+                          <p className="text-gray-900">{session.student?.study_program?.name || 'N/A'}</p>
+                        </div>
+
+                        <div>
+                          <span className="font-medium text-gray-700">{getText('Room', 'Ruangan')}:</span>
+                          <p className="text-gray-900">{session.room?.name} - {session.room?.code}</p>
+                        </div>
+
                         <div>
                           <span className="font-medium text-gray-700">{getText('Student', 'Mahasiswa')}:</span>
                           <p className="text-gray-900">{session.student?.full_name}</p>
-                        </div>
-                        
-                        <div>
-                          <span className="font-medium text-gray-700">{getText('Program', 'Program Studi')}:</span>
-                          <p className="text-gray-900">{session.student?.study_program?.name || 'N/A'}</p>
                         </div>
                       </div>
                     </div>
                   ))}
                   
-                  {/* Room Usage Summary - Simplified */}
                   {selectedRoomForCalendar && selectedDateSessions.length > 0 && (
-                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-200">
-                      <h5 className="font-semibold text-blue-900 mb-2 flex items-center space-x-2">
-                        <Building className="h-4 w-4" />
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-200">
+                      <h5 className="font-semibold text-blue-900 mb-2 flex items-center space-x-2 text-sm">
+                        <Building className="h-3 w-3" />
                         <span>{getText('Room Usage Summary', 'Ringkasan Penggunaan Ruangan')}</span>
                       </h5>
-                      <div className="text-sm text-blue-800">
+                      <div className="text-xs text-blue-800">
                         <p><span className="font-medium">{getText('Total Sessions', 'Total Sidang')}:</span> {selectedDateSessions.length}</p>
-                        <p><span className="font-medium">{getText('Time Range', 'Rentang Waktu')}:</span> 
-                          {Math.min(...selectedDateSessions.map(s => s.start_time))} - 
-                          {Math.max(...selectedDateSessions.map(s => s.end_time))}
-                        </p>
                       </div>
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="text-center text-gray-500 mt-12">
-                  <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p className="font-medium mb-2">{getText('No sessions selected', 'Tidak ada sidang dipilih')}</p>
-                  <p className="text-sm">{getText('Click on a date to view session details', 'Klik pada tanggal untuk melihat detail sidang')}</p>
-                  {selectedRoomForCalendar && (
-                    <p className="text-xs text-blue-600 mt-2">
-                      {getText('Showing sessions for selected room only', 'Menampilkan sidang untuk ruangan terpilih saja')}
-                    </p>
-                  )}
+                <div className="text-center text-gray-500 mt-8">
+                  <Calendar className="h-8 w-8 mx-auto mb-3 opacity-50" />
+                  <p className="font-medium mb-2 text-sm">{getText('No sessions selected', 'Tidak ada sidang dipilih')}</p>
+                  <p className="text-xs">{getText('Click on a date to view session details', 'Klik pada tanggal untuk melihat detail sidang')}</p>
                 </div>
               )}
             </div>
@@ -496,11 +506,11 @@ const SessionScheduleProgressive = () => {
     );
   };
 
-  // ✅ TIDAK DIUBAH: Fetch data functions tetap sama
+  // ✅ PERBAIKAN: Fetch Sessions Universal
   const fetchSessions = async () => {
     try {
       setLoading(true);
-      let query = supabase
+      const query = supabase
         .from('final_sessions')
         .select(`
           *,
@@ -525,14 +535,18 @@ const SessionScheduleProgressive = () => {
         .order('date', { ascending: true })
         .order('start_time', { ascending: true });
 
+      const { data } = await query;
+      
+      // Simpan semua data untuk kalender
+      setAllSessions(data || []);
+      
+      // Filter untuk tabel utama berdasarkan departemen admin
       if (profile?.role === 'department_admin' && profile?.department_id) {
-        const { data } = await query;
         const filtered = data?.filter(session => 
           session.student?.study_program?.department_id === profile.department_id
         );
         setSessions(filtered || []);
       } else {
-        const { data } = await query;
         setSessions(data || []);
       }
     } catch (error) {
@@ -633,38 +647,30 @@ const SessionScheduleProgressive = () => {
     }
   }, [watchDate, watchStartTime, watchEndTime, rooms]);
 
-  // ✅ TIDAK DIUBAH: checkAvailableRooms tetap sama
+  // ✅ PERBAIKAN: checkAvailableRooms menggunakan allSessions
   const checkAvailableRooms = async (date, startTime, endTime) => {
     try {
       const dateObj = new Date(date);
       const dayNamesIndonesian = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
       const dayName = dayNamesIndonesian[dateObj.getDay()];
       
-      const [finalSessionsResponse, lectureSchedulesResponse] = await Promise.all([
-        supabase
-          .from('final_sessions')
-          .select('room_id, start_time, end_time, id')
-          .eq('date', date)
-          .not('room_id', 'is', null),
-        supabase
-          .from('lecture_schedules')
-          .select('room, start_time, end_time')
-          .eq('day', dayName)
-      ]);
-
-      if (finalSessionsResponse.error) throw finalSessionsResponse.error;
-      if (lectureSchedulesResponse.error) throw lectureSchedulesResponse.error;
-      
-      const finalSessionConflicts = (finalSessionsResponse.data || [])
+      const finalSessionConflicts = allSessions
+        .filter(session => session.date === date && session.room_id)
         .filter(session => {
           if (editingSession && session.id === editingSession.id) return false;
           const hasOverlap = startTime < session.end_time && endTime > session.start_time;
           return hasOverlap;
         })
-        .map(session => session.room_id)
-        .filter(Boolean);
+        .map(session => session.room_id);
 
-      const lectureScheduleConflicts = (lectureSchedulesResponse.data || [])
+      const { data: lectureSchedules, error } = await supabase
+        .from('lecture_schedules')
+        .select('room, start_time, end_time')
+        .eq('day', dayName);
+
+      if (error) throw error;
+      
+      const lectureScheduleConflicts = (lectureSchedules || [])
         .filter(schedule => {
           const hasOverlap = startTime < schedule.end_time && endTime > schedule.start_time;
           return hasOverlap;
@@ -688,7 +694,8 @@ const SessionScheduleProgressive = () => {
     }
   };
 
-  // ✅ TIDAK DIUBAH: MobileProgressIndicator tetap sama
+  // Mobile Progress Indicator
+  // Mobile Progress Indicator
   const MobileProgressIndicator = () => (
     <div className="flex items-center justify-between">
       {steps.map((step, index) => {
@@ -728,7 +735,6 @@ const SessionScheduleProgressive = () => {
   const validateStep = useCallback((step) => {
     switch (step) {
       case 1:
-        // Baca dari berbagai sumber: formData -> DOM refs -> empty
         let studentNim = formData.student_nim || 
                         (studentInputRef.current?.value) || '';
         let studentName = formData.student_name || 
@@ -743,7 +749,6 @@ const SessionScheduleProgressive = () => {
       case 3:
         const roomId = form.getValues('room_id');
         
-        // Baca dari form values -> DOM refs -> empty
         let title = form.getValues('title') || 
                    (titleInputRef.current?.value) || '';
         let supervisor = form.getValues('supervisor') || 
@@ -763,7 +768,6 @@ const SessionScheduleProgressive = () => {
   // ✅ PERBAIKAN: handleStepComplete yang sinkronisasi DOM -> React state
   const handleStepComplete = useCallback((step) => {
     if (step === 1) {
-      // Ambil nilai dari DOM dan sync ke formData
       const nimValue = studentInputRef.current?.value || '';
       const nameValue = studentNameRef.current?.value || '';
       const programValue = formData.study_program_id || '';
@@ -773,7 +777,6 @@ const SessionScheduleProgressive = () => {
         return;
       }
       
-      // Update formData dengan nilai dari DOM
       setFormData(prev => ({
         ...prev,
         student_nim: nimValue,
@@ -782,7 +785,6 @@ const SessionScheduleProgressive = () => {
       }));
       
     } else if (step === 3) {
-      // Ambil nilai dari DOM dan sync ke form
       const supervisorValue = supervisorInputRef.current?.value || '';
       const examinerValue = examinerInputRef.current?.value || '';
       const secretaryValue = secretaryInputRef.current?.value || '';
@@ -794,7 +796,6 @@ const SessionScheduleProgressive = () => {
       if (titleValue) form.setValue('title', titleValue);
     }
     
-    // Validasi ulang setelah sync
     if (!validateStep(step)) {
       alert.error(getText('Please fill all required fields', 'Silakan isi semua field yang diperlukan'));
       return;
@@ -812,13 +813,12 @@ const SessionScheduleProgressive = () => {
     }
   }, [currentStep]);
 
-  // ✅ TIDAK DIUBAH: StudentInformationStep - TETAP DOM MANIPULATION
+  // ✅ StudentInformationStep
   const StudentInformationStep = () => {
     const dropdownRef = useRef(null);
     const programDisplayRef = useRef(null);
     const programDropdownRef = useRef(null);
     
-    // localData untuk internal state management
     const localData = useRef({
       studentSearch: '',
       studentName: '',
@@ -891,7 +891,6 @@ const SessionScheduleProgressive = () => {
             const studentName = e.currentTarget.dataset.studentName;
             const programId = e.currentTarget.dataset.programId;
             
-            // TETAP DOM MANIPULATION
             studentInputRef.current.value = studentNim;
             studentNameRef.current.value = studentName;
             
@@ -1135,7 +1134,7 @@ const SessionScheduleProgressive = () => {
     );
   };
 
-  // ✅ TIDAK DIUBAH: ScheduleInformationStep tetap sama
+  // ✅ ScheduleInformationStep
   const ScheduleInformationStep = () => (
     <div className="space-y-4 md:space-y-6">
       <div className="text-center mb-4 md:mb-6">
@@ -1206,7 +1205,8 @@ const SessionScheduleProgressive = () => {
       )}
     </div>
   );
-  // ✅ TIDAK DIUBAH: RoomAndDetailsStep dengan DOM manipulation
+
+  // ✅ RoomAndDetailsStep dengan DOM manipulation
   const RoomAndDetailsStep = () => {
     const roomDisplayRef = useRef(null);
 
@@ -1265,7 +1265,6 @@ const SessionScheduleProgressive = () => {
             const inputRef = type === 'supervisor' ? supervisorInputRef : 
                             type === 'examiner' ? examinerInputRef : secretaryInputRef;
             
-            // TETAP DOM MANIPULATION
             if (inputRef.current) {
               inputRef.current.value = lecturerName;
             }
@@ -1362,7 +1361,6 @@ const SessionScheduleProgressive = () => {
           const display = `${roomName} - ${roomCode}`;
           dosenData.current.selectedRoomDisplay = display;
           
-          // TETAP DOM MANIPULATION
           if (roomDisplayRef.current) {
             roomDisplayRef.current.value = display;
           }
@@ -1576,7 +1574,7 @@ const SessionScheduleProgressive = () => {
     );
   };
 
-  // ✅ TIDAK DIUBAH: ProgressSidebar tetap sama
+  // ✅ ProgressSidebar
   const ProgressSidebar = () => (
     <div className="w-72 bg-white border-r-2 border-blue-100 p-6">
       <div className="mb-8">
@@ -1636,16 +1634,14 @@ const SessionScheduleProgressive = () => {
     }
   };
 
-  // ✅ PERBAIKAN: handleSubmit menggunakan BookRoom pattern
+  // ✅ handleSubmit menggunakan BookRoom pattern
   const handleSubmit = async (data: SessionFormData) => {
     try {
       setSubmitting(true);
 
       let finalStudentId = data.student_id;
       
-      // ✅ BOOKROOM PATTERN: Check existing user, create if needed
       if (!finalStudentId && formData.student_nim && formData.student_name) {
-        // Check if student already exists
         const { data: existingUser, error: findError } = await supabase
           .from('users')
           .select('id')
@@ -1658,10 +1654,8 @@ const SessionScheduleProgressive = () => {
         }
 
         if (existingUser) {
-          // Student exists, use their ID
           finalStudentId = existingUser.id;
         } else {
-          // Student doesn't exist, create new one (like BookRoom does)
           const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id);
           
           if (!selectedProgram) {
@@ -1674,7 +1668,7 @@ const SessionScheduleProgressive = () => {
             username: formData.student_nim,
             email: `${formData.student_nim}@student.edu`,
             role: 'student',
-            password: formData.student_nim, // Default password = NIM
+            password: formData.student_nim,
             study_program_id: formData.study_program_id,
             department_id: selectedProgram.department_id,
             created_at: new Date().toISOString(),
@@ -1700,7 +1694,6 @@ const SessionScheduleProgressive = () => {
         throw new Error(getText('Student information is required. Please select or enter student details.', 'Informasi mahasiswa diperlukan. Silakan pilih atau masukkan detail mahasiswa.'));
       }
 
-      // ✅ CLEAN SESSION DATA - no user_info column needed
       const sessionData = {
         student_id: finalStudentId,
         date: data.date,
@@ -1712,8 +1705,6 @@ const SessionScheduleProgressive = () => {
         examiner: data.examiner.trim(),
         secretary: data.secretary.trim(),
       };
-
-      console.log('Session data to submit:', sessionData);
 
       if (editingSession) {
         const { error } = await supabase
@@ -1738,7 +1729,6 @@ const SessionScheduleProgressive = () => {
           throw new Error(`Failed to create session: ${error.message}`);
         }
 
-        // ✅ Enhanced success message dengan detail lengkap
         const studentName = newSession.student?.full_name || formData.student_name;
         const studentNim = newSession.student?.identity_number || formData.student_nim;
         const roomName = newSession.room?.name || 'Selected Room';
@@ -1774,7 +1764,7 @@ const SessionScheduleProgressive = () => {
     }
   };
 
-  // ✅ TIDAK DIUBAH: resetForm tetap sama
+  // ✅ resetForm
   const resetForm = () => {
     form.reset({
       student_id: '',
@@ -1792,7 +1782,7 @@ const SessionScheduleProgressive = () => {
     setCompletedSteps(new Set());
   };
 
-  // ✅ TIDAK DIUBAH: handleEdit tetap sama
+  // ✅ handleEdit
   const handleEdit = (session: any) => {
     setEditingSession(session);
     
@@ -1817,7 +1807,7 @@ const SessionScheduleProgressive = () => {
     setShowModal(true);
   };
 
-  // ✅ TIDAK DIUBAH: handleDelete tetap sama
+  // ✅ handleDelete
   const handleDelete = async (id: string) => {
     try {
       setSubmitting(true);
@@ -1840,6 +1830,7 @@ const SessionScheduleProgressive = () => {
       </div>
     );
   }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -1859,7 +1850,7 @@ const SessionScheduleProgressive = () => {
         </div>
       </div>
 
-      {/* Action Section - Updated to Calendar Button */}
+      {/* Action Section */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between">
           <div className="flex-1">
@@ -1868,7 +1859,6 @@ const SessionScheduleProgressive = () => {
           </div>
           
           <div className="flex items-center space-x-3">
-            {/* Calendar Button */}
             <button
               onClick={() => setShowCalendarModal(true)}
               className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-200 shadow-lg hover:shadow-xl"
@@ -1877,7 +1867,6 @@ const SessionScheduleProgressive = () => {
               <span>{getText("View Calendar", "Lihat Kalender")}</span>
             </button>
             
-            {/* Create Session Button */}
             {profile?.role === 'department_admin' && (
               <button
                 onClick={() => {
