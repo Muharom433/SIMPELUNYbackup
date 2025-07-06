@@ -448,9 +448,9 @@ const CalendarModal = () => {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
-          {/* Calendar Section */}
-          <div className="flex-1 p-6 overflow-y-auto bg-gray-50">
+        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row relative">
+  {/* Calendar Section */}
+  <div className={`flex-1 p-6 overflow-y-auto bg-gray-50 transition-all duration-300 ${showCalendarDetails && selectedDateSessions.length > 0 ? 'lg:flex-1' : 'w-full'}`}>
             {/* Room Filter */}
             <div className="mb-6">
               <label className="block text-sm font-semibold text-gray-700 mb-3">
