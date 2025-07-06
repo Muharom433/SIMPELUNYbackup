@@ -2826,7 +2826,7 @@ const handleCancelDelete = () => {
         </div>
       )}
       {/* Delete Confirmation Modal */}
-{showDeleteModal && <DeleteConfirmationModal />}
+      {showDeleteModal && <DeleteConfirmationModal />}
     </div>
   );
 };
