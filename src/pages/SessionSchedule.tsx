@@ -1335,10 +1335,6 @@ const SessionScheduleProgressive = () => {
           }
 
           finalStudentId = newUser.id;
-          
-          // Success notification for new student
-          setTimeout(() => {
-            alert.success(getText('✅ New student registered successfully!', '✅ Mahasiswa baru berhasil didaftarkan!'));
           }, 500);
         }
       }
