@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import Select from 'react-select';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
   Calendar,
   Search,
@@ -36,6 +39,7 @@ import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSameMo
 import toast from 'react-hot-toast';
 import { alert } from '../components/Alert/AlertHelper';
 import { useLanguage } from '../contexts/LanguageContext';
+import logoUNY from '../assets/logouny.png';
 
 const sessionSchema = z.object({
   student_id: z.string().optional(),
@@ -59,17 +63,41 @@ const sessionSchema = z.object({
 
 type SessionFormData = z.infer<typeof sessionSchema>;
 
+// ✅ Print Form Data Type
+type PrintFormData = {
+    department_id?: string;
+    study_program_id: string;
+    semester: 'GASAL' | 'GENAP';
+    academic_year: string;
+    department_head_id?: string;
+    department_head_name?: string;
+};
+
+// ✅ Helper function for image data URL
+const getImageDataUrl = async (url: string): Promise<string> => {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+};
+
 const SessionScheduleProgressive = () => {
   const { profile } = useAuth();
   const { getText } = useLanguage();
 
   // Backend data states
   const [sessions, setSessions] = useState([]);
-  const [allSessions, setAllSessions] = useState([]); // ✅ TAMBAHAN: Untuk kalender universal
+  const [allSessions, setAllSessions] = useState([]);
   const [students, setStudents] = useState([]);
   const [lecturers, setLecturers] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [studyPrograms, setStudyPrograms] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [departmentHeads, setDepartmentHeads] = useState([]);
   const [availableRooms, setAvailableRooms] = useState([]);
 
   // Loading states
@@ -79,6 +107,8 @@ const SessionScheduleProgressive = () => {
   // Modal states
   const [showModal, setShowModal] = useState(false);
   const [editingSession, setEditingSession] = useState(null);
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printSelectedDepartment, setPrintSelectedDepartment] = useState('');
 
   // Calendar Modal states
   const [showCalendarModal, setShowCalendarModal] = useState(false);
@@ -120,6 +150,35 @@ const SessionScheduleProgressive = () => {
     },
   });
 
+  // ✅ Print Form Schema
+  const printSchema = useMemo(() => {
+    return z.object({
+        department_id: z.string().optional(),
+        study_program_id: z.string().min(1, getText('Study Program is required', 'Program Studi wajib diisi')),
+        semester: z.enum(['GASAL', 'GENAP'], { required_error: getText('Semester type is required', 'Tipe semester wajib diisi') }),
+        academic_year: z.string().min(9, getText('Academic Year is required (e.g., 2023/2024)', 'Tahun Akademik wajib diisi (contoh: 2023/2024)')).regex(/^\d{4}\/\d{4}$/, getText('Invalid format. Use (YYYY/YYYY)', 'Format tidak valid. Gunakan (YYYY/YYYY)')),
+        department_head_id: z.string().optional(),
+        department_head_name: z.string().optional(),
+    }).superRefine((data, ctx) => {
+        if (profile?.role === 'super_admin' && !data.department_id) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['department_id'],
+                message: getText('Department is required for Super Admin.', 'Departemen wajib diisi untuk Super Admin.'),
+            });
+        }
+        if (profile?.role === 'department_admin' && !data.department_head_id) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['department_head_id'],
+                message: getText('Department Head is required.', 'Kepala Departemen wajib diisi.'),
+            });
+        }
+    });
+  }, [profile?.role, getText]);
+
+  const printForm = useForm<PrintFormData>({ resolver: zodResolver(printSchema) });
+
   const watchDate = form.watch('date');
   const watchStartTime = form.watch('start_time');
   const watchEndTime = form.watch('end_time');
@@ -148,7 +207,7 @@ const SessionScheduleProgressive = () => {
     }
   ];
 
-  // ✅ PERBAIKAN: Calendar Helper Functions menggunakan allSessions
+  // ✅ Calendar Helper Functions menggunakan allSessions
   const getSessionsForDate = (date) => {
     const dateStr = format(date, 'yyyy-MM-dd');
     return allSessions.filter(session => session.date === dateStr);
@@ -188,7 +247,7 @@ const SessionScheduleProgressive = () => {
     }
   };
 
-  // ✅ PERBAIKAN: Simplified Calendar Modal dengan tampilan yang lebih bersih
+  // ✅ Calendar Modal dengan tampilan yang lebih bersih
 const CalendarModal = () => {
   const calendarDays = generateCalendarDays();
   
@@ -207,7 +266,7 @@ const CalendarModal = () => {
   const roomDropdownRef = useRef(null);
   const roomDisplayRef = useRef(null);
 
-  // ✅ Function untuk mengelompokkan sessions berdasarkan ruangan
+  // Function untuk mengelompokkan sessions berdasarkan ruangan
   const groupSessionsByRoom = (sessions) => {
     const grouped = {};
     
@@ -220,7 +279,6 @@ const CalendarModal = () => {
           room: {
             id: roomKey,
             name: roomName,
-            // ✅ Hanya nama ruangan, tanpa kode
             display: roomName
           },
           sessions: []
@@ -240,7 +298,7 @@ const CalendarModal = () => {
     return grouped;
   };
 
-  // ✅ Function untuk mendapatkan rentang waktu total per ruangan (tanpa detik)
+  // Function untuk mendapatkan rentang waktu total per ruangan (tanpa detik)
   const getRoomTimeRange = (sessions) => {
     if (sessions.length === 0) return '';
     
@@ -251,12 +309,6 @@ const CalendarModal = () => {
     const latestEnd = endTimes.sort().reverse()[0];
     
     return `${earliestStart} - ${latestEnd}`;
-  };
-
-  // ✅ Function untuk mendapatkan program studi unik dalam satu ruangan
-  const getUniquePrograms = (sessions) => {
-    const programs = sessions.map(s => s.student?.study_program?.name).filter(Boolean);
-    return [...new Set(programs)];
   };
 
   const showRoomDropdown = () => {
@@ -345,7 +397,7 @@ const CalendarModal = () => {
         
         if (roomId) {
           if (roomDisplayRef.current) {
-            roomDisplayRef.current.value = roomName; // Hanya nama ruangan
+            roomDisplayRef.current.value = roomName;
           }
           setSelectedRoomForCalendar(roomId);
         } else {
@@ -526,9 +578,8 @@ const CalendarModal = () => {
             </div>
           </div>
 
-          {/* ✅ SIMPLIFIED: Room-Based Session Details Sidebar */}
+          {/* Room-Based Session Details Sidebar */}
           <div className="w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-gray-200 bg-white overflow-y-auto">
-            {/* Header sidebar */}
             <div className="p-6 border-b border-gray-200 bg-gray-50">
               <h4 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
                 <div className="p-1 bg-blue-100 rounded">
@@ -546,10 +597,8 @@ const CalendarModal = () => {
             <div className="p-6">
               {selectedDateSessions.length > 0 ? (
                 <div className="space-y-4">
-                  {/* ✅ SIMPLIFIED: Group sessions by room with cleaner design */}
                   {Object.entries(groupSessionsByRoom(selectedDateSessions)).map(([roomId, roomData]) => (
                     <div key={roomId} className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 overflow-hidden">
-                      {/* ✅ SIMPLIFIED: Room Header - hanya nama ruangan */}
                       <div className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white p-4">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-3">
@@ -571,7 +620,6 @@ const CalendarModal = () => {
                         </div>
                       </div>
 
-                      {/* ✅ SIMPLIFIED: Time slots untuk ruangan ini - lebih compact */}
                       <div className="p-4 space-y-3">
                         {roomData.sessions.map((session, sessionIndex) => (
                           <div key={session.id} className="bg-white rounded-lg p-4 border border-gray-200 hover:shadow-sm transition-shadow">
@@ -586,14 +634,12 @@ const CalendarModal = () => {
                               </div>
                             </div>
                             
-                            {/* ✅ Program Studi */}
                             <div className="mb-2">
                               <span className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm font-medium">
                                 {session.student?.study_program?.name}
                               </span>
                             </div>
                             
-                            {/* ✅ Student info - simplified */}
                             <div className="text-sm text-gray-700">
                               <div className="flex items-center space-x-2">
                                 <User className="h-4 w-4 text-gray-500" />
@@ -630,7 +676,7 @@ const CalendarModal = () => {
   );
 };
 
-  // ✅ PERBAIKAN: Fetch Sessions Universal
+  // ✅ Fetch Sessions Universal
   const fetchSessions = async () => {
     try {
       setLoading(true);
@@ -753,6 +799,43 @@ const CalendarModal = () => {
     }
   };
 
+  // ✅ NEW: Fetch Departments untuk Print
+  const fetchDepartments = async () => {
+    try {
+      let query = supabase.from('departments').select('id, name');
+      if (profile?.role === 'department_admin' && profile.department_id) {
+        query = query.eq('id', profile.department_id);
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      setDepartments(data || []);
+    } catch (error) {
+      console.error('Error fetching departments:', error);
+      alert.error(getText('Failed to load departments.', 'Gagal memuat departemen.'));
+    }
+  };
+
+  // ✅ NEW: Fetch Department Heads untuk Print
+  const fetchDepartmentHeads = async () => {
+    try {
+      let query = supabase
+        .from('users')
+        .select('id, full_name, identity_number, department_id')
+        .eq('role', 'lecturer');
+
+      if (profile?.role === 'department_admin' && profile.department_id) {
+        query = query.eq('department_id', profile.department_id);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setDepartmentHeads(data || []);
+    } catch (error) {
+      console.error('Error fetching department heads:', error);
+      alert.error(getText('Failed to load department heads.', 'Gagal memuat kepala departemen.'));
+    }
+  };
+
   useEffect(() => {
     if (profile) {
       fetchSessions();
@@ -760,6 +843,8 @@ const CalendarModal = () => {
       fetchLecturers();
       fetchRooms();
       fetchStudyPrograms();
+      fetchDepartments();
+      fetchDepartmentHeads();
     }
   }, [profile]);
 
@@ -771,7 +856,14 @@ const CalendarModal = () => {
     }
   }, [watchDate, watchStartTime, watchEndTime, rooms]);
 
-  // ✅ PERBAIKAN: checkAvailableRooms menggunakan allSessions
+  // ✅ NEW: Print Form Department Effect
+  useEffect(() => {
+    if (profile?.role === 'super_admin') {
+      printForm.setValue('study_program_id', '');
+    }
+  }, [printSelectedDepartment, profile?.role, printForm]);
+
+  // ✅ checkAvailableRooms menggunakan allSessions
   const checkAvailableRooms = async (date, startTime, endTime) => {
     try {
       const dateObj = new Date(date);
@@ -819,7 +911,6 @@ const CalendarModal = () => {
   };
 
   // Mobile Progress Indicator
-  // Mobile Progress Indicator
   const MobileProgressIndicator = () => (
     <div className="flex items-center justify-between">
       {steps.map((step, index) => {
@@ -855,7 +946,7 @@ const CalendarModal = () => {
     </div>
   );
 
-  // ✅ PERBAIKAN: validateStep yang membaca nilai DOM dan React state
+  // ✅ validateStep yang membaca nilai DOM dan React state
   const validateStep = useCallback((step) => {
     switch (step) {
       case 1:
@@ -889,7 +980,7 @@ const CalendarModal = () => {
     }
   }, [form, formData]);
   
-  // ✅ PERBAIKAN: handleStepComplete yang sinkronisasi DOM -> React state
+  // ✅ handleStepComplete yang sinkronisasi DOM -> React state
   const handleStepComplete = useCallback((step) => {
     if (step === 1) {
       const nimValue = studentInputRef.current?.value || '';
@@ -1286,8 +1377,7 @@ const CalendarModal = () => {
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            {getText("Start Time", "Waktu Mulai")} *
-          </label>
+            {getText("Start Time", "Waktu Mulai")} *</label>
           <input
             {...form.register('start_time')}
             type="time"
@@ -1947,6 +2037,167 @@ const CalendarModal = () => {
     }
   };
 
+  // ✅ NEW: Handle Print PDF Function
+  const handlePrint = async (formData: PrintFormData) => {
+    try {
+      const isSuperAdmin = profile?.role === 'super_admin';
+      const departmentIdForQuery = isSuperAdmin ? formData.department_id : profile.department_id;
+      const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id);
+      const currentDepartment = departments.find(d => d.id === departmentIdForQuery);
+      
+      let departmentHead;
+      if (isSuperAdmin) {
+        departmentHead = { full_name: getText('DEPARTMENT HEAD', 'KEPALA DEPARTEMEN'), identity_number: '123' };
+      } else {departmentHead = departmentHeads.find(h => h.id === formData.department_head_id);
+      }
+
+      if (!selectedProgram || !departmentHead || !currentDepartment) {
+        alert.error(getText("Please ensure all fields are selected and data is loaded.", "Pastikan semua field telah dipilih dan data telah dimuat."));
+        return;
+      }
+
+      const sessionsToPrint = sessions.filter(session => 
+        session.student?.study_program?.id === formData.study_program_id && 
+        session.student?.study_program?.department_id === departmentIdForQuery
+      );
+
+      if (sessionsToPrint.length === 0) {
+        alert.error(getText("No sessions found for the selected criteria.", "Tidak ditemukan jadwal sidang untuk kriteria yang dipilih."));
+        return;
+      }
+
+      const doc = new jsPDF();
+      let pageWidth = doc.internal.pageSize.getWidth();
+      const departmentName = currentDepartment.name.toUpperCase();
+      const logoDataUrl = await getImageDataUrl(logoUNY);
+
+      doc.addImage(logoDataUrl, 'PNG', 12, 15, 30, 30);
+      let currentY = 22;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(12);
+      pageWidth += 30;
+
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.text("KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI", pageWidth / 2, currentY, { align: 'center' });
+      currentY += 5;
+      doc.text("UNIVERSITAS NEGERI YOGYAKARTA", pageWidth / 2, currentY, { align: 'center' });
+      currentY += 5;
+      doc.text("FAKULTAS VOKASI", pageWidth / 2, currentY, { align: 'center' });
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      currentY += 5;
+      doc.text(`DEPARTEMEN ${departmentName}`, pageWidth / 2, currentY, { align: 'center' });
+      currentY += 5;
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.text("Kampus I: Jalan Mandung No. 1 Pengasih, Kulon Progo Telp.(0274)774625", pageWidth / 2, currentY, { align: 'center' });
+      currentY += 3;
+      doc.text("Kampus II: Pacarejo, Semanu, Gunungkidul Telp. (0274)5042222/(0274)5042255", pageWidth / 2, currentY, { align: 'center' });
+      currentY += 3;
+      doc.text("Laman: https://fv.uny.ac.id E-mail: fv@uny.ac.id", pageWidth / 2, currentY, { align: 'center' });
+      currentY += 3;
+      pageWidth -= 30;
+
+      doc.setLineWidth(1);
+      doc.line(14, currentY, pageWidth - 14, currentY);
+      currentY += 10;
+
+      const subtitle = `JADWAL SIDANG AKHIR ${selectedProgram.name.toUpperCase()} SEMESTER ${formData.semester.toUpperCase()} TAHUN AKADEMIK ${formData.academic_year}`;
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      const titleMaxWidth = pageWidth - 30;
+      const titleLines = doc.splitTextToSize(subtitle, titleMaxWidth);
+      doc.text(titleLines, pageWidth / 2, currentY, { align: 'center' });
+      currentY += (titleLines.length * 5);
+      currentY += 5;
+
+      const tableColumn = [
+        getText("No.", "No."),
+        getText("DATE", "TANGGAL"),
+        getText("TIME", "WAKTU"),
+        getText("STUDENT NAME", "NAMA MAHASISWA"),
+        getText("NIM", "NIM"),
+        getText("THESIS TITLE", "JUDUL SKRIPSI"),
+        getText("ROOM", "RUANG"),
+        getText("SUPERVISOR", "PEMBIMBING"),
+        getText("EXAMINER", "PENGUJI"),
+        getText("SECRETARY", "SEKRETARIS")
+      ];
+
+      const tableRows: any[] = [];
+      sessionsToPrint.forEach((session, index) => {
+        const timeDisplay = `${session.start_time.substring(0, 5)}-${session.end_time.substring(0, 5)}`;
+        
+        tableRows.push([
+          index + 1,
+          format(parseISO(session.date), 'dd-MM-yyyy'),
+          timeDisplay,
+          session.student?.full_name || '-',
+          session.student?.identity_number || '-',
+          session.title || '-',
+          session.room?.name || '-',
+          session.supervisor || '-',
+          session.examiner || '-',
+          session.secretary || '-'
+        ]);
+      });
+
+      autoTable(doc, {
+        head: [tableColumn],
+        body: tableRows,
+        startY: currentY,
+        theme: 'grid',
+        styles: { fontSize: 7, cellPadding: 1.5, valign: 'middle' },
+        headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 8 },
+          1: { halign: 'center', cellWidth: 20 },
+          2: { halign: 'center', cellWidth: 18 },
+          3: { halign: 'left', cellWidth: 35 },
+          4: { halign: 'center', cellWidth: 20 },
+          5: { halign: 'left', cellWidth: 45 },
+          6: { halign: 'center', cellWidth: 15 },
+          7: { halign: 'left', cellWidth: 25 },
+          8: { halign: 'left', cellWidth: 25 },
+          9: { halign: 'left', cellWidth: 25 }
+        },
+        didDrawPage: function (data) {
+          // Handle page overflow if needed
+          if (data.cursor && data.cursor.y > 250) {
+            doc.addPage();
+          }
+        }
+      });
+
+      const finalY = (doc as any).lastAutoTable.finalY || 100;
+      const signatureX = 140;
+      const signatureY = finalY + 15;
+      const signatureMaxWidth = 60;
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Yogyakarta, ${format(new Date(), 'd MMMM yyyy', { locale: (await import('date-fns/locale/id')).default })}`, signatureX, signatureY);
+      doc.text(getText("Department Head,", "Kepala Departemen,"), signatureX, signatureY + 5);
+
+      const nameY = signatureY + 30;
+      const nameLines = doc.splitTextToSize(departmentHead.full_name, signatureMaxWidth);
+      doc.setFont('helvetica', 'bold');
+      doc.text(nameLines, signatureX, nameY);
+
+      const nameBlockHeight = (nameLines.length * doc.getLineHeight()) / doc.internal.scaleFactor;
+      const nipY = nameY + nameBlockHeight + 1;
+      doc.setFont('helvetica', 'normal');
+      doc.text(`NIP. ${departmentHead.identity_number}`, signatureX, nipY);
+
+      doc.save(`Jadwal_Sidang_${selectedProgram.code}_${formData.semester}.pdf`);
+      setShowPrintModal(false);
+    } catch (e: any) {
+      console.error("PDF Generation Error:", e);
+      alert.error(getText("An unexpected error occurred while generating the PDF.", "Terjadi kesalahan tak terduga saat membuat PDF."));
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -1989,6 +2240,19 @@ const CalendarModal = () => {
             >
               <Calendar className="h-5 w-5" />
               <span>{getText("View Calendar", "Lihat Kalender")}</span>
+            </button>
+
+            {/* ✅ NEW: Print Button */}
+            <button
+              onClick={() => {
+                setShowPrintModal(true);
+                setPrintSelectedDepartment('');
+                printForm.reset();
+              }}
+              className="flex items-center space-x-2 px-6 py-3 text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 shadow-sm hover:shadow-md"
+            >
+              <Printer className="h-5 w-5" />
+              <span>{getText("Print", "Cetak")}</span>
             </button>
             
             {profile?.role === 'department_admin' && (
@@ -2232,6 +2496,156 @@ const CalendarModal = () => {
       {/* Calendar Modal */}
       {showCalendarModal && (
         <CalendarModal />
+      )}
+
+      {/* ✅ NEW: Print Modal */}
+      {showPrintModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
+                  <Printer className="h-6 w-6 text-blue-600" />
+                  <span>{getText("Print Session Schedule", "Cetak Jadwal Sidang")}</span>
+                </h3>
+                <button 
+                  onClick={() => setShowPrintModal(false)} 
+                  className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-lg transition-colors" 
+                > 
+                  <X className="h-6 w-6" /> 
+                </button>
+              </div>
+              <form onSubmit={printForm.handleSubmit(handlePrint)} className="space-y-4">
+                {profile?.role === 'super_admin' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Department", "Departemen")} *</label>
+                    <Controller 
+                      name="department_id" 
+                      control={printForm.control} 
+                      render={({ field }) => (
+                        <Select 
+                          options={departments.map(d => ({ value: d.id, label: d.name }))} 
+                          onChange={(option) => { 
+                            field.onChange(option ? option.value : ''); 
+                            setPrintSelectedDepartment(option ? option.value : ''); 
+                          }} 
+                          placeholder={getText("Select department...", "Pilih departemen...")} 
+                          isClearable 
+                        />
+                      )} 
+                    />
+                    {printForm.formState.errors.department_id && (
+                      <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.department_id.message}</p>
+                    )}
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Study Program", "Program Studi")} *</label>
+                  <Controller 
+                    name="study_program_id" 
+                    control={printForm.control} 
+                    render={({ field }) => { 
+                      const filteredPrograms = profile?.role === 'super_admin' ? 
+                        studyPrograms.filter(p => p.department_id === printSelectedDepartment) : 
+                        studyPrograms; 
+                      const options = filteredPrograms.map(p => ({ value: p.id, label: p.name })); 
+                      const currentValue = options.find(o => o.value === field.value); 
+                      return ( 
+                        <Select 
+                          {...field} 
+                          options={options} 
+                          value={currentValue} 
+                          onChange={option => field.onChange(option ? option.value : '')} 
+                          placeholder={getText("Select study program...", "Pilih program studi...")} 
+                          isDisabled={profile?.role === 'super_admin' && !printSelectedDepartment} 
+                          isClearable 
+                        /> 
+                      )
+                    }} 
+                  />
+                  {printForm.formState.errors.study_program_id && (
+                    <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.study_program_id.message}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Semester Type", "Tipe Semester")} *</label>
+                  <Controller 
+                    name="semester" 
+                    control={printForm.control} 
+                    render={({ field }) => ( 
+                      <Select 
+                        {...field} 
+                        options={[
+                          {value: 'GASAL', label: getText('GASAL (Odd)', 'GASAL (Ganjil)')}, 
+                          {value: 'GENAP', label: getText('GENAP (Even)', 'GENAP (Genap)')}
+                        ]} 
+                        value={field.value ? {value: field.value, label: `${field.value} (${field.value === 'GASAL' ? getText('Odd', 'Ganjil') : getText('Even', 'Genap')})`} : null} 
+                        onChange={option => field.onChange(option?.value)} 
+                        placeholder={getText("Select semester type...", "Pilih tipe semester...")} 
+                      /> 
+                    )} 
+                  />
+                  {printForm.formState.errors.semester && (
+                    <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.semester.message}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Academic Year", "Tahun Akademik")} *</label>
+                  <input 
+                    {...printForm.register('academic_year')} 
+                    type="text" 
+                    placeholder={getText("e.g. 2024/2025", "contoh: 2024/2025")} 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                  />
+                  {printForm.formState.errors.academic_year && (
+                    <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.academic_year.message}</p>
+                  )}
+                </div>
+                {profile?.role === 'department_admin' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Department Head", "Kepala Departemen")} *</label>
+                    <Controller 
+                      name="department_head_id" 
+                      control={printForm.control} 
+                      render={({ field }) => ( 
+                        <Select 
+                          options={departmentHeads.map(h => ({ value: h.id, label: h.full_name }))} 
+                          value={field.value ? departmentHeads.map(h => ({ value: h.id, label: h.full_name })).find(o => o.value === field.value) : null} 
+                          onChange={(option) => { 
+                            field.onChange(option ? option.value : ''); 
+                            const selectedHead = departmentHeads.find(h => h.id === option?.value); 
+                            printForm.setValue('department_head_name', selectedHead?.full_name); 
+                          }} 
+                          placeholder={getText("Search and select head...", "Cari dan pilih kepala...")} 
+                          isClearable 
+                        /> 
+                      )} 
+                    />
+                    {printForm.formState.errors.department_head_id && (
+                      <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.department_head_id.message}</p>
+                    )}
+                  </div>
+                )}
+                <div className="flex space-x-3 pt-4">
+                  <button 
+                    type="button" 
+                    onClick={() => setShowPrintModal(false)} 
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium"
+                  >
+                    {getText("Cancel", "Batal")}
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium flex items-center justify-center space-x-2"
+                  >
+                    <Printer className="h-4 w-4" />
+                    <span>{getText("Generate PDF", "Buat PDF")}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
