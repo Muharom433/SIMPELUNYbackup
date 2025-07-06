@@ -2061,9 +2061,9 @@ const CalendarModal = () => {
       doc.text("Laman: https://fv.uny.ac.id E-mail: fv@uny.ac.id", headerTextX, currentY, { align: 'center' });
       currentY += 5;
 
-      // ✅ Garis pemisah yang tepat untuk landscape
+      // ✅ Garis pemisah yang tepat untuk landscape dengan margin yang cukup
       doc.setLineWidth(1);
-      doc.line(15, currentY, pageWidth - 15, currentY);
+      doc.line(10, currentY, pageWidth - 10, currentY);
       currentY += 10;
 
       // ✅ Judul sederhana dengan font yang lebih besar
@@ -2115,34 +2115,37 @@ const CalendarModal = () => {
         startY: currentY,
         theme: 'grid',
         styles: { 
-          fontSize: 9,        // ✅ Font size dinaikkan dari 8 ke 9
-          cellPadding: 3,     // ✅ Padding dinaikkan dari 2 ke 3
+          fontSize: 8,        // ✅ Font size dikembalikan ke 8 untuk menghemat ruang
+          cellPadding: 2,     // ✅ Padding dikembalikan ke 2 untuk menghemat ruang
           valign: 'middle',
           lineColor: [0, 0, 0],
-          lineWidth: 0.1
+          lineWidth: 0.1,
+          overflow: 'linebreak',  // ✅ Tambahan untuk text wrapping yang lebih baik
+          cellWidth: 'wrap'       // ✅ Auto width calculation
         },
         headStyles: { 
           fillColor: [220, 220, 220], 
           textColor: [0, 0, 0], 
           fontStyle: 'bold', 
           halign: 'center',
-          fontSize: 10       // ✅ Header font size lebih besar
+          fontSize: 9,       // ✅ Header font size disesuaikan
+          cellPadding: 2     // ✅ Header padding disesuaikan
         },
         columnStyles: {
-          0: { halign: 'center', cellWidth: 12 },    // ✅ No - diperkecil
-          1: { halign: 'center', cellWidth: 25 },    // ✅ Tanggal
-          2: { halign: 'center', cellWidth: 20 },    // ✅ Waktu
-          3: { halign: 'left', cellWidth: 50 },      // ✅ Nama Mahasiswa - diperbesar
-          4: { halign: 'center', cellWidth: 25 },    // ✅ NIM
-          5: { halign: 'left', cellWidth: 80 },      // ✅ Judul Skripsi - diperbesar signifikan
-          6: { halign: 'center', cellWidth: 20 },    // ✅ Ruang - diperkecil
-          7: { halign: 'left', cellWidth: 35 },      // ✅ Pembimbing
-          8: { halign: 'left', cellWidth: 35 },      // ✅ Penguji
-          9: { halign: 'left', cellWidth: 35 }       // ✅ Sekretaris
+          0: { halign: 'center', cellWidth: 10 },    // ✅ No - lebih kecil
+          1: { halign: 'center', cellWidth: 22 },    // ✅ Tanggal - sedikit dikurangi
+          2: { halign: 'center', cellWidth: 18 },    // ✅ Waktu - dikurangi
+          3: { halign: 'left', cellWidth: 42 },      // ✅ Nama Mahasiswa - dikurangi
+          4: { halign: 'center', cellWidth: 22 },    // ✅ NIM - dikurangi
+          5: { halign: 'left', cellWidth: 58 },      // ✅ Judul Skripsi - diperkecil dari 80 ke 58
+          6: { halign: 'center', cellWidth: 18 },    // ✅ Ruang - dikurangi
+          7: { halign: 'left', cellWidth: 30 },      // ✅ Pembimbing - dikurangi
+          8: { halign: 'left', cellWidth: 30 },      // ✅ Penguji - dikurangi
+          9: { halign: 'left', cellWidth: 30 }       // ✅ Sekretaris - dikurangi
         },
-        // ✅ Total width = 337mm (mendekati max landscape A4 ~280mm)
-        tableWidth: 'wrap',
-        margin: { left: 15, right: 15 },
+        // ✅ Total width = 280mm (pas untuk landscape A4)
+        tableWidth: 'auto',
+        margin: { left: 10, right: 10 },
         didDrawPage: function (data) {
           // ✅ Handle page overflow untuk landscape
           if (data.cursor && data.cursor.y > pageHeight - 30) {
@@ -2160,6 +2163,7 @@ const CalendarModal = () => {
       alert.error(getText("An unexpected error occurred while generating the PDF.", "Terjadi kesalahan tak terduga saat membuat PDF."));
     }
   };
+
 
   if (loading) {
     return (
