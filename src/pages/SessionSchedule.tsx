@@ -2040,15 +2040,10 @@ const CalendarModal = () => {
       doc.text("KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI", headerTextX, currentY, { align: 'center' });
       currentY += 5;
       doc.text("UNIVERSITAS NEGERI YOGYAKARTA", headerTextX, currentY, { align: 'center' });
-      currentY += 5;
-      doc.text("FAKULTAS VOKASI", headerTextX, currentY, { align: 'center' });
-      
-      // ✅ Departemen dari program studi yang dipilih
-      const departmentName = selectedProgram.department?.name?.toUpperCase() || 'DEPARTEMEN';
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
       currentY += 5;
-      doc.text(`DEPARTEMEN ${departmentName}`, headerTextX, currentY, { align: 'center' });
+      doc.text("FAKULTAS VOKASI", headerTextX, currentY, { align: 'center' });
       
       // ✅ Contact info dengan font lebih kecil
       currentY += 5;
