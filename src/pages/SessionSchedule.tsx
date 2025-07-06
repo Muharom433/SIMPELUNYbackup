@@ -2029,7 +2029,7 @@ const CalendarModal = () => {
       const logoDataUrl = await getImageDataUrl(logoUNY);
 
       // ✅ Logo positioning untuk landscape
-      doc.addImage(logoDataUrl, 'PNG', 15, 15, 25, 25);
+      doc.addImage(logoDataUrl, 'PNG', 15, 15, 30, 30);
       
       let currentY = 20;
       const headerTextX = pageWidth / 2;
