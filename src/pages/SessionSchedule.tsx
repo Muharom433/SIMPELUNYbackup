@@ -2193,22 +2193,22 @@ const CalendarModal = () => {
           <div className="flex items-center space-x-3">
             <button
               onClick={() => setShowCalendarModal(true)}
-              className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+              className="flex items-center space-x-2 px-4 md:px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-200 shadow-lg hover:shadow-xl"
             >
               <Calendar className="h-5 w-5" />
-              <span>{getText("View Calendar", "Lihat Kalender")}</span>
+              <span className="hidden sm:inline">{getText("View Calendar", "Lihat Kalender")}</span>
             </button>
 
-            {/* ✅ Print Button */}
+            {/* ✅ Print Button - Mobile Responsive */}
             <button
               onClick={() => {
                 setShowPrintModal(true);
                 printForm.reset();
               }}
-              className="flex items-center space-x-2 px-6 py-3 text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 shadow-sm hover:shadow-md"
+              className="flex items-center space-x-2 px-4 md:px-6 py-3 text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 shadow-sm hover:shadow-md"
             >
               <Printer className="h-5 w-5" />
-              <span>{getText("Print", "Cetak")}</span>
+              <span className="hidden sm:inline">{getText("Print", "Cetak")}</span>
             </button>
             
             {profile?.role === 'department_admin' && (
@@ -2217,10 +2217,10 @@ const CalendarModal = () => {
                   resetForm();
                   setShowModal(true);
                 }}
-                className="flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+                className="flex items-center space-x-2 px-4 md:px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl"
               >
                 <Plus className="h-5 w-5" />
-                <span>{getText("Create Session", "Buat Sidang")}</span>
+                <span className="hidden sm:inline">{getText("Create Session", "Buat Sidang")}</span>
               </button>
             )}
           </div>
