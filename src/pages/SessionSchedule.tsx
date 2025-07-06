@@ -441,6 +441,7 @@ const CalendarModal = () => {
               setShowCalendarModal(false);
               setSelectedRoomForCalendar('');
               setSelectedDateSessions([]);
+              setShowCalendarDetails(false);
             }}
             className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl transition-colors"
           >
