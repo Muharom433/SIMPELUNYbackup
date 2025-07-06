@@ -2577,42 +2577,41 @@ const handleSubmitWithValidation = async () => {
                     </div>
 
                     <div className="w-full sm:w-auto">
-                      {currentStep < 3 ? (
-                        <button
-                          type="button"
-                          onClick={() => handleStepComplete(currentStep)}
-                          disabled={currentStep !== 1 && !validateStep(currentStep)}
-                          className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
-                        >
-                          <span>{getText('Continue', 'Lanjutkan')}</span>
-                          <ArrowRight className="h-4 w-4" />
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => form.handleSubmit(handleSubmit)()}
-                          disabled={!validateStep(currentStep) || submitting}
-                          className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
-                        >
-                          {submitting ? (
-                            <>
-                              <RefreshCw className="h-4 w-4 animate-spin" />
-                              <span>{getText('Saving...', 'Menyimpan...')}</span>
-                            </>
-                          ) : (
-                            <>
-                              <Check className="h-4 w-4" />
-                              <span className="hidden sm:inline">
-                                {editingSession ? getText('Update Session', 'Perbarui') : getText('Create Session', 'Buat Sidang')}
-                              </span>
-                              <span className="sm:hidden">
-                                {editingSession ? getText('Update', 'Perbarui') : getText('Create', 'Buat')}
-                              </span>
-                            </>
-                          )}
-                        </button>
-                      )}
-                    </div>
+  {currentStep < 3 ? (
+    <button
+      type="button"
+      onClick={() => handleStepComplete(currentStep)}
+      className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 text-sm"
+    >
+      <span>{getText('Continue', 'Lanjutkan')}</span>
+      <ArrowRight className="h-4 w-4" />
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={handleSubmitWithValidation}
+      disabled={submitting}
+      className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
+    >
+      {submitting ? (
+        <>
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          <span>{getText('Saving...', 'Menyimpan...')}</span>
+        </>
+      ) : (
+        <>
+          <Check className="h-4 w-4" />
+          <span className="hidden sm:inline">
+            {editingSession ? getText('Update Session', 'Perbarui Sidang') : getText('Create Session', 'Buat Sidang')}
+          </span>
+          <span className="sm:hidden">
+            {editingSession ? getText('Update', 'Perbarui') : getText('Create', 'Buat')}
+          </span>
+        </>
+      )}
+    </button>
+  )}
+</div>
                   </div>
                 </div>
               </div>
