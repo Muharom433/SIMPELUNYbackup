@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, startOfWeek, endOfWeek } from 'date-fns';
 import toast from 'react-hot-toast';
 import { alert } from '../components/Alert/AlertHelper';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -172,8 +172,8 @@ const SessionScheduleProgressive = () => {
   };
 
   const generateCalendarDays = () => {
-    const start = startOfMonth(currentMonth);
-    const end = endOfMonth(currentMonth);
+    const start = startOfWeek(startOfMonth(currentMonth));
+    const end = endOfWeek(endOfMonth(currentMonth));
     return eachDayOfInterval({ start, end });
   };
 
@@ -187,13 +187,128 @@ const SessionScheduleProgressive = () => {
     }
   };
 
-  // ✅ Calendar Modal Component
+  // ✅ Calendar Modal Component - FIXED
   const CalendarModal = () => {
     const calendarDays = generateCalendarDays();
     const monthNames = [
       'January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
+
+    // ✅ Room dropdown refs and functions
+    const roomDropdownRef = useRef(null);
+    const roomDisplayRef = useRef(null);
+
+    const showRoomDropdown = () => {
+      const dropdownHTML = `
+        <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
+          <div class="p-3 border-b border-gray-100">
+            <input
+              type="text"
+              placeholder="${getText("Search rooms...", "Cari ruangan...")}"
+              class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              id="calendar-room-search-input"
+              autocomplete="off"
+            />
+          </div>
+          <div class="max-h-60 overflow-y-auto" id="calendar-room-list">
+            <div 
+              class="calendar-room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 transition-colors duration-150"
+              data-room-id=""
+            >
+              <div class="font-semibold text-gray-800">${getText('All Rooms', 'Semua Ruangan')}</div>
+            </div>
+            ${rooms.map(room => `
+              <div 
+                class="calendar-room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                data-room-id="${room.id}"
+                data-room-name="${room.name}"
+                data-room-code="${room.code}"
+              >
+                <div class="font-semibold text-gray-800">${room.name} - ${room.code}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+
+      if (roomDropdownRef.current) {
+        roomDropdownRef.current.innerHTML = dropdownHTML;
+        roomDropdownRef.current.style.display = 'block';
+        
+        const searchInput = roomDropdownRef.current.querySelector('#calendar-room-search-input');
+        const roomList = roomDropdownRef.current.querySelector('#calendar-room-list');
+        
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            
+            // Filter all rooms including "All Rooms" option
+            const allRoomsOption = `
+              <div 
+                class="calendar-room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 transition-colors duration-150"
+                data-room-id=""
+              >
+                <div class="font-semibold text-gray-800">${getText('All Rooms', 'Semua Ruangan')}</div>
+              </div>
+            `;
+            
+            const filteredRooms = rooms.filter(room =>
+              room.name.toLowerCase().includes(searchTerm) ||
+              room.code.toLowerCase().includes(searchTerm)
+            );
+            
+            roomList.innerHTML = allRoomsOption + filteredRooms.map(room => `
+              <div 
+                class="calendar-room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                data-room-id="${room.id}"
+                data-room-name="${room.name}"
+                data-room-code="${room.code}"
+              >
+                <div class="font-semibold text-gray-800">${room.name} - ${room.code}</div>
+              </div>
+            `).join('');
+            
+            addCalendarRoomListeners();
+          });
+        }
+        
+        addCalendarRoomListeners();
+      }
+    };
+
+    const addCalendarRoomListeners = () => {
+      roomDropdownRef.current?.querySelectorAll('.calendar-room-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+          const roomId = e.currentTarget.dataset.roomId;
+          const roomName = e.currentTarget.dataset.roomName;
+          const roomCode = e.currentTarget.dataset.roomCode;
+          
+          if (roomId) {
+            const display = `${roomName} - ${roomCode}`;
+            if (roomDisplayRef.current) {
+              roomDisplayRef.current.value = display;
+            }
+            setSelectedRoomForCalendar(roomId);
+          } else {
+            if (roomDisplayRef.current) {
+              roomDisplayRef.current.value = getText('All Rooms', 'Semua Ruangan');
+            }
+            setSelectedRoomForCalendar('');
+          }
+          
+          setSelectedDateSessions([]);
+          hideRoomDropdown();
+        });
+      });
+    };
+
+    const hideRoomDropdown = () => {
+      if (roomDropdownRef.current) {
+        roomDropdownRef.current.style.display = 'none';
+      }
+    };
 
     return (
       <div 
@@ -231,27 +346,25 @@ const SessionScheduleProgressive = () => {
           <div className="flex-1 overflow-hidden flex">
             {/* Calendar Section */}
             <div className="flex-1 p-6">
-              {/* Room Filter */}
+              {/* Room Filter - Updated with searchable dropdown */}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   <Filter className="h-4 w-4 inline mr-2" />
                   {getText('Filter by Room', 'Filter berdasarkan Ruangan')}
                 </label>
-                <select
-                  value={selectedRoomForCalendar}
-                  onChange={(e) => {
-                    setSelectedRoomForCalendar(e.target.value);
-                    setSelectedDateSessions([]);
-                  }}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">{getText('All Rooms', 'Semua Ruangan')}</option>
-                  {rooms.map(room => (
-                    <option key={room.id} value={room.id}>
-                      {room.name} - {room.code}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <input
+                    ref={roomDisplayRef}
+                    type="text"
+                    readOnly
+                    placeholder={getText("Click to select room...", "Klik untuk pilih ruangan...")}
+                    onClick={showRoomDropdown}
+                    defaultValue={getText('All Rooms', 'Semua Ruangan')}
+                    className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer bg-white"
+                  />
+                  <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                  <div ref={roomDropdownRef} style={{ display: 'none' }}></div>
+                </div>
               </div>
 
               {/* Month Navigation */}
@@ -313,7 +426,7 @@ const SessionScheduleProgressive = () => {
               </div>
             </div>
 
-            {/* Session Details Sidebar */}
+            {/* Session Details Sidebar - Simplified */}
             <div className="w-80 border-l border-gray-200 bg-gray-50 p-6 overflow-y-auto">
               <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
                 <Eye className="h-5 w-5 text-blue-600" />
@@ -328,7 +441,7 @@ const SessionScheduleProgressive = () => {
                         <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
                           {getText('Session', 'Sidang')} #{index + 1}
                         </span>
-                        <span className="text-xs text-gray-500">
+                        <span className="text-sm font-medium text-gray-900">
                           {session.start_time} - {session.end_time}
                         </span>
                       </div>
@@ -337,39 +450,17 @@ const SessionScheduleProgressive = () => {
                         <div>
                           <span className="font-medium text-gray-700">{getText('Student', 'Mahasiswa')}:</span>
                           <p className="text-gray-900">{session.student?.full_name}</p>
-                          <p className="text-gray-600 text-xs">{session.student?.identity_number}</p>
-                        </div>
-                        
-                        <div>
-                          <span className="font-medium text-gray-700">{getText('Room', 'Ruangan')}:</span>
-                          <p className="text-gray-900">{session.room?.name} - {session.room?.code}</p>
                         </div>
                         
                         <div>
                           <span className="font-medium text-gray-700">{getText('Program', 'Program Studi')}:</span>
                           <p className="text-gray-900">{session.student?.study_program?.name || 'N/A'}</p>
                         </div>
-                        
-                        <div>
-                          <span className="font-medium text-gray-700">{getText('Committee', 'Panitia')}:</span>
-                          <div className="text-xs space-y-1 mt-1">
-                            <p><span className="text-blue-600 font-medium">{getText('Supervisor', 'Pembimbing')}:</span> {session.supervisor}</p>
-                            <p><span className="text-green-600 font-medium">{getText('Examiner', 'Penguji')}:</span> {session.examiner}</p>
-                            <p><span className="text-purple-600 font-medium">{getText('Secretary', 'Sekretaris')}:</span> {session.secretary}</p>
-                          </div>
-                        </div>
-
-                        {session.title && (
-                          <div>
-                            <span className="font-medium text-gray-700">{getText('Title', 'Judul')}:</span>
-                            <p className="text-gray-900 text-xs leading-relaxed">{session.title}</p>
-                          </div>
-                        )}
                       </div>
                     </div>
                   ))}
                   
-                  {/* Room Usage Summary */}
+                  {/* Room Usage Summary - Simplified */}
                   {selectedRoomForCalendar && selectedDateSessions.length > 0 && (
                     <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-200">
                       <h5 className="font-semibold text-blue-900 mb-2 flex items-center space-x-2">
@@ -382,14 +473,6 @@ const SessionScheduleProgressive = () => {
                           {Math.min(...selectedDateSessions.map(s => s.start_time))} - 
                           {Math.max(...selectedDateSessions.map(s => s.end_time))}
                         </p>
-                        <div className="mt-2">
-                          <span className="font-medium">{getText('Programs Involved', 'Program Studi Terlibat')}:</span>
-                          <ul className="list-disc list-inside mt-1 text-xs">
-                            {[...new Set(selectedDateSessions.map(s => s.student?.study_program?.name).filter(Boolean))].map(program => (
-                              <li key={program}>{program}</li>
-                            ))}
-                          </ul>
-                        </div>
                       </div>
                     </div>
                   )}
@@ -1757,7 +1840,6 @@ const SessionScheduleProgressive = () => {
       </div>
     );
   }
-
   return (
     <div className="space-y-6">
       {/* Header */}
