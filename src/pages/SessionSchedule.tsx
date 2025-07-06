@@ -566,7 +566,13 @@ const CalendarModal = () => {
         )}
 
           {/* Room-Based Session Details Sidebar */}
-          <div className="w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-gray-200 bg-white overflow-y-auto">
+          <div className={`
+  ${showCalendarDetails ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
+  fixed lg:relative top-0 right-0 w-full lg:w-96 h-full lg:h-auto
+  border-t lg:border-t-0 lg:border-l border-gray-200 bg-white overflow-y-auto
+  transition-transform duration-300 ease-in-out z-40
+  ${selectedDateSessions.length === 0 ? 'lg:block hidden' : ''}
+`}>
             <div className="p-6 border-b border-gray-200 bg-gray-50">
               <h4 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
                 <div className="p-1 bg-blue-100 rounded">
