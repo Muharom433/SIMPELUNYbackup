@@ -2185,10 +2185,7 @@ const CalendarModal = () => {
       {/* Action Section */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <h2 className="text-lg font-semibold text-gray-900">{getText("Session Management", "Manajemen Jadwal Sidang")}</h2>
-            <p className="text-sm text-gray-600">{getText("View calendar and create new examination sessions", "Lihat kalender dan buat jadwal sidang baru")}</p>
-          </div>
+         
           
           <div className="flex items-center space-x-3">
             <button
