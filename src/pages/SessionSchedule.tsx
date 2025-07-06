@@ -2066,7 +2066,7 @@ const CalendarModal = () => {
         return;
       }
 
-      const doc = new jsPDF();
+      const doc = new jsPDF('landscape', 'mm', 'a4');
       let pageWidth = doc.internal.pageSize.getWidth();
       const departmentName = currentDepartment.name.toUpperCase();
       const logoDataUrl = await getImageDataUrl(logoUNY);
