@@ -574,12 +574,22 @@ const CalendarModal = () => {
   ${selectedDateSessions.length === 0 ? 'lg:block hidden' : ''}
 `}>
             <div className="p-6 border-b border-gray-200 bg-gray-50">
-              <h4 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
-                <div className="p-1 bg-blue-100 rounded">
-                  <Building className="h-4 w-4 text-blue-600" />
-                </div>
-                <span>{getText('Room Schedule', 'Jadwal Ruangan')}</span>
-              </h4>
+  <div className="flex items-center justify-between">
+    <h4 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
+      <div className="p-1 bg-blue-100 rounded">
+        <Building className="h-4 w-4 text-blue-600" />
+      </div>
+      <span>{getText('Room Schedule', 'Jadwal Ruangan')}</span>
+    </h4>
+    {/* ✅ Close button for mobile */}
+    <button
+      onClick={() => setShowCalendarDetails(false)}
+      className="lg:hidden text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+    >
+      <X className="h-5 w-5" />
+    </button>
+  </div>
+
               {selectedDateSessions.length > 0 && (
                 <p className="text-sm text-gray-600 mt-1">
                   {format(new Date(selectedDateSessions[0].date), 'EEEE, MMMM d, yyyy')}
