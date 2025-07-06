@@ -65,12 +65,7 @@ type SessionFormData = z.infer<typeof sessionSchema>;
 
 // ✅ Print Form Data Type
 type PrintFormData = {
-    department_id?: string;
     study_program_id: string;
-    semester: 'GASAL' | 'GENAP';
-    academic_year: string;
-    department_head_id?: string;
-    department_head_name?: string;
 };
 
 // ✅ Helper function for image data URL
