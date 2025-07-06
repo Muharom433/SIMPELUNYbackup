@@ -86,11 +86,22 @@ const SessionScheduleProgressive = () => {
     study_program_id: ''
   });
 
-  // ✅ TAMBAHAN: Refs untuk input dosen dan title
+  // ✅ PERBAIKAN: Refs untuk input dosen dan title - deklarasi di level component
+  const studentInputRef = useRef(null);
+  const studentNameRef = useRef(null);
   const supervisorInputRef = useRef(null);
   const examinerInputRef = useRef(null);
   const secretaryInputRef = useRef(null);
   const titleInputRef = useRef(null);
+
+  // ✅ PERBAIKAN: LocalData ref di level component
+  const localData = useRef({
+    studentSearch: '',
+    studentName: '',
+    studentNim: '',
+    studyProgramId: '',
+    selectedProgramDisplay: ''
+  });
 
   const form = useForm<SessionFormData>({
     resolver: zodResolver(sessionSchema),
@@ -365,7 +376,6 @@ const SessionScheduleProgressive = () => {
   const validateStep = useCallback((step) => {
     switch (step) {
       case 1:
-        // TIDAK DIUBAH - tetap seperti asli
         const hasStudentNim = formData.student_nim || 
           (studentInputRef.current && studentInputRef.current.value) ||
           localData.current?.studentNim;
@@ -383,7 +393,6 @@ const SessionScheduleProgressive = () => {
         return !!(form.getValues('date') && form.getValues('start_time') && form.getValues('end_time'));
         
       case 3:
-        // ✅ PERBAIKAN: CEK DARI FORM VALUES DAN DOM VALUES
         const roomId = form.getValues('room_id');
         const title = form.getValues('title') || (titleInputRef.current?.value);
         
@@ -404,7 +413,6 @@ const SessionScheduleProgressive = () => {
   // ✅ PERBAIKAN: Update handleStepComplete untuk step 3
   const handleStepComplete = useCallback((step) => {
     if (step === 1) {
-      // TIDAK DIUBAH - tetap seperti asli
       const nimValue = studentInputRef.current?.value || localData.current?.studentNim;
       const nameValue = studentNameRef.current?.value || localData.current?.studentName;
       const programValue = localData.current?.studyProgramId;
@@ -421,7 +429,6 @@ const SessionScheduleProgressive = () => {
         study_program_id: programValue
       }));
     } else if (step === 3) {
-      // ✅ TAMBAHAN: Sync dosen values dari DOM ke form sebelum validasi
       const supervisorValue = supervisorInputRef.current?.value;
       const examinerValue = examinerInputRef.current?.value;
       const secretaryValue = secretaryInputRef.current?.value;
@@ -433,7 +440,6 @@ const SessionScheduleProgressive = () => {
       if (titleValue) form.setValue('title', titleValue);
     }
     
-    // Validasi setelah sync
     if (!validateStep(step)) {
       alert.error(getText('Please fill all required fields', 'Silakan isi semua field yang diperlukan'));
       return;
@@ -451,21 +457,11 @@ const SessionScheduleProgressive = () => {
     }
   }, [currentStep]);
 
-  // TIDAK DIUBAH - StudentInformationStep tetap seperti asli
+  // ✅ PERBAIKAN: StudentInformationStep - hapus duplicate ref declarations
   const StudentInformationStep = () => {
-    const studentInputRef = useRef(null);
-    const studentNameRef = useRef(null);
     const dropdownRef = useRef(null);
     const programDisplayRef = useRef(null);
     const programDropdownRef = useRef(null);
-    
-    const localData = useRef({
-      studentSearch: '',
-      studentName: '',
-      studentNim: '',
-      studyProgramId: '',
-      selectedProgramDisplay: ''
-    });
 
     const updateParentFormData = (field, value) => {
       localData.current[field] = value;
@@ -749,7 +745,7 @@ const SessionScheduleProgressive = () => {
                 onClick={showProgramDropdown}
                 className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer bg-white"
               />
-              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+<ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
               <div ref={programDropdownRef} style={{ display: 'none' }}></div>
             </div>
           </div>
@@ -774,7 +770,7 @@ const SessionScheduleProgressive = () => {
     );
   };
 
-  // TIDAK DIUBAH - ScheduleInformationStep tetap seperti asli
+  // ScheduleInformationStep tetap seperti asli
   const ScheduleInformationStep = () => (
     <div className="space-y-4 md:space-y-6">
       <div className="text-center mb-4 md:mb-6">
