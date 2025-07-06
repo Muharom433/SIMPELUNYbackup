@@ -2003,10 +2003,7 @@ const CalendarModal = () => {
   // ✅ NEW: Handle Print PDF Function
   const handlePrint = async (formData: PrintFormData) => {
     try {
-      const isSuperAdmin = profile?.role === 'super_admin';
-      const departmentIdForQuery = isSuperAdmin ? formData.department_id : profile.department_id;
       const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id);
-      const currentDepartment = departments.find(d => d.id === departmentIdForQuery);
       
       let departmentHead;
       if (isSuperAdmin) {
