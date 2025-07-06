@@ -96,6 +96,7 @@ const SessionScheduleProgressive = () => {
   const [departments, setDepartments] = useState([]);
   const [departmentHeads, setDepartmentHeads] = useState([]);
   const [availableRooms, setAvailableRooms] = useState([]);
+  
 
   // Loading states
   const [loading, setLoading] = useState(true);
@@ -105,6 +106,8 @@ const SessionScheduleProgressive = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingSession, setEditingSession] = useState(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+const [sessionToDelete, setSessionToDelete] = useState(null);
 
   // Calendar Modal states
   const [showCalendarModal, setShowCalendarModal] = useState(false);
