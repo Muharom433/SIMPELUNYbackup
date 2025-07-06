@@ -86,7 +86,7 @@ const SessionScheduleProgressive = () => {
     study_program_id: ''
   });
 
-  // ✅ Refs untuk semua input - dideklarasikan di component level
+  // ✅ TIDAK DIUBAH: Refs untuk semua input - dideklarasikan di component level
   const studentInputRef = useRef(null);
   const studentNameRef = useRef(null);
   const supervisorInputRef = useRef(null);
@@ -137,7 +137,7 @@ const SessionScheduleProgressive = () => {
     }
   ];
 
-  // Fetch data functions
+  // ✅ TIDAK DIUBAH: Fetch data functions tetap sama
   const fetchSessions = async () => {
     try {
       setLoading(true);
@@ -274,6 +274,7 @@ const SessionScheduleProgressive = () => {
     }
   }, [watchDate, watchStartTime, watchEndTime, rooms]);
 
+  // ✅ TIDAK DIUBAH: checkAvailableRooms tetap sama
   const checkAvailableRooms = async (date, startTime, endTime) => {
     try {
       const dateObj = new Date(date);
@@ -328,6 +329,7 @@ const SessionScheduleProgressive = () => {
     }
   };
 
+  // ✅ TIDAK DIUBAH: MobileProgressIndicator tetap sama
   const MobileProgressIndicator = () => (
     <div className="flex items-center justify-between">
       {steps.map((step, index) => {
@@ -363,11 +365,11 @@ const SessionScheduleProgressive = () => {
     </div>
   );
 
-  // ✅ KUNCI: validateStep yang membaca nilai DOM dan React state
+  // ✅ PERBAIKAN: validateStep yang membaca nilai DOM dan React state
   const validateStep = useCallback((step) => {
     switch (step) {
       case 1:
-        // ✅ Baca dari berbagai sumber: formData -> DOM refs -> empty
+        // Baca dari berbagai sumber: formData -> DOM refs -> empty
         let studentNim = formData.student_nim || 
                         (studentInputRef.current?.value) || '';
         let studentName = formData.student_name || 
@@ -382,7 +384,7 @@ const SessionScheduleProgressive = () => {
       case 3:
         const roomId = form.getValues('room_id');
         
-        // ✅ Baca dari form values -> DOM refs -> empty
+        // Baca dari form values -> DOM refs -> empty
         let title = form.getValues('title') || 
                    (titleInputRef.current?.value) || '';
         let supervisor = form.getValues('supervisor') || 
@@ -399,10 +401,10 @@ const SessionScheduleProgressive = () => {
     }
   }, [form, formData]);
   
-  // ✅ KUNCI: handleStepComplete yang sinkronisasi DOM -> React state
+  // ✅ PERBAIKAN: handleStepComplete yang sinkronisasi DOM -> React state
   const handleStepComplete = useCallback((step) => {
     if (step === 1) {
-      // ✅ Ambil nilai dari DOM dan sync ke formData
+      // Ambil nilai dari DOM dan sync ke formData
       const nimValue = studentInputRef.current?.value || '';
       const nameValue = studentNameRef.current?.value || '';
       const programValue = formData.study_program_id || '';
@@ -412,7 +414,7 @@ const SessionScheduleProgressive = () => {
         return;
       }
       
-      // ✅ Update formData dengan nilai dari DOM
+      // Update formData dengan nilai dari DOM
       setFormData(prev => ({
         ...prev,
         student_nim: nimValue,
@@ -421,7 +423,7 @@ const SessionScheduleProgressive = () => {
       }));
       
     } else if (step === 3) {
-      // ✅ Ambil nilai dari DOM dan sync ke form
+      // Ambil nilai dari DOM dan sync ke form
       const supervisorValue = supervisorInputRef.current?.value || '';
       const examinerValue = examinerInputRef.current?.value || '';
       const secretaryValue = secretaryInputRef.current?.value || '';
@@ -433,7 +435,7 @@ const SessionScheduleProgressive = () => {
       if (titleValue) form.setValue('title', titleValue);
     }
     
-    // ✅ Validasi ulang setelah sync
+    // Validasi ulang setelah sync
     if (!validateStep(step)) {
       alert.error(getText('Please fill all required fields', 'Silakan isi semua field yang diperlukan'));
       return;
@@ -451,13 +453,13 @@ const SessionScheduleProgressive = () => {
     }
   }, [currentStep]);
 
-  // ✅ StudentInformationStep - TETAP DOM MANIPULATION
+  // ✅ TIDAK DIUBAH: StudentInformationStep - TETAP DOM MANIPULATION
   const StudentInformationStep = () => {
     const dropdownRef = useRef(null);
     const programDisplayRef = useRef(null);
     const programDropdownRef = useRef(null);
     
-    // ✅ localData untuk internal state management
+    // localData untuk internal state management
     const localData = useRef({
       studentSearch: '',
       studentName: '',
@@ -530,7 +532,7 @@ const SessionScheduleProgressive = () => {
             const studentName = e.currentTarget.dataset.studentName;
             const programId = e.currentTarget.dataset.programId;
             
-            // ✅ TETAP DOM MANIPULATION
+            // TETAP DOM MANIPULATION
             studentInputRef.current.value = studentNim;
             studentNameRef.current.value = studentName;
             
@@ -749,7 +751,7 @@ const SessionScheduleProgressive = () => {
                 onClick={showProgramDropdown}
                 className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer bg-white"
               />
-              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+             <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
               <div ref={programDropdownRef} style={{ display: 'none' }}></div>
             </div>
           </div>
@@ -774,7 +776,7 @@ const SessionScheduleProgressive = () => {
     );
   };
 
-  // ScheduleInformationStep tetap sama
+  // ✅ TIDAK DIUBAH: ScheduleInformationStep tetap sama
   const ScheduleInformationStep = () => (
     <div className="space-y-4 md:space-y-6">
       <div className="text-center mb-4 md:mb-6">
@@ -846,7 +848,7 @@ const SessionScheduleProgressive = () => {
     </div>
   );
 
-  // ✅ RoomAndDetailsStep dengan DOM manipulation dan validasi yang berfungsi
+  // ✅ TIDAK DIUBAH: RoomAndDetailsStep dengan DOM manipulation
   const RoomAndDetailsStep = () => {
     const roomDisplayRef = useRef(null);
 
@@ -905,7 +907,7 @@ const SessionScheduleProgressive = () => {
             const inputRef = type === 'supervisor' ? supervisorInputRef : 
                             type === 'examiner' ? examinerInputRef : secretaryInputRef;
             
-            // ✅ TETAP DOM MANIPULATION
+            // TETAP DOM MANIPULATION
             if (inputRef.current) {
               inputRef.current.value = lecturerName;
             }
@@ -1002,7 +1004,7 @@ const SessionScheduleProgressive = () => {
           const display = `${roomName} - ${roomCode}`;
           dosenData.current.selectedRoomDisplay = display;
           
-          // ✅ TETAP DOM MANIPULATION
+          // TETAP DOM MANIPULATION
           if (roomDisplayRef.current) {
             roomDisplayRef.current.value = display;
           }
@@ -1216,6 +1218,7 @@ const SessionScheduleProgressive = () => {
     );
   };
 
+  // ✅ TIDAK DIUBAH: ProgressSidebar tetap sama
   const ProgressSidebar = () => (
     <div className="w-72 bg-white border-r-2 border-blue-100 p-6">
       <div className="mb-8">
@@ -1275,36 +1278,47 @@ const SessionScheduleProgressive = () => {
     }
   };
 
+  // ✅ PERBAIKAN: handleSubmit menggunakan BookRoom pattern
   const handleSubmit = async (data: SessionFormData) => {
     try {
       setSubmitting(true);
 
       let finalStudentId = data.student_id;
       
+      // ✅ BOOKROOM PATTERN: Check existing user, create if needed
       if (!finalStudentId && formData.student_nim && formData.student_name) {
+        // Check if student already exists
         const { data: existingUser, error: findError } = await supabase
           .from('users')
           .select('id')
           .eq('identity_number', formData.student_nim)
-          .single();
+          .maybeSingle();
         
-        if (findError && findError.code !== 'PGRST116') {
-            throw findError;
+        if (findError) {
+          console.error('Error finding user:', findError);
+          throw new Error(`Failed to check existing user: ${findError.message}`);
         }
 
         if (existingUser) {
+          // Student exists, use their ID
           finalStudentId = existingUser.id;
         } else {
+          // Student doesn't exist, create new one (like BookRoom does)
           const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id);
+          
+          if (!selectedProgram) {
+            throw new Error(getText('Study program not found. Please select a valid study program.', 'Program studi tidak ditemukan. Silakan pilih program studi yang valid.'));
+          }
           
           const newUserData = {
             identity_number: formData.student_nim,
             full_name: formData.student_name,
             username: formData.student_nim,
+            email: `${formData.student_nim}@student.edu`,
             role: 'student',
-            password: formData.student_nim,
+            password: formData.student_nim, // Default password = NIM
             study_program_id: formData.study_program_id,
-            department_id: selectedProgram?.department_id,
+            department_id: selectedProgram.department_id,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           };
@@ -1316,11 +1330,16 @@ const SessionScheduleProgressive = () => {
             .single();
 
           if (createError) {
+            console.error('Error creating user:', createError);
             throw new Error(`Failed to create user: ${createError.message}`);
           }
 
           finalStudentId = newUser.id;
-          alert.success(getText('New student registered successfully!', 'Mahasiswa baru berhasil didaftarkan!'));
+          
+          // Success notification for new student
+          setTimeout(() => {
+            alert.success(getText('✅ New student registered successfully!', '✅ Mahasiswa baru berhasil didaftarkan!'));
+          }, 500);
         }
       }
 
@@ -1328,26 +1347,55 @@ const SessionScheduleProgressive = () => {
         throw new Error(getText('Student information is required. Please select or enter student details.', 'Informasi mahasiswa diperlukan. Silakan pilih atau masukkan detail mahasiswa.'));
       }
 
+      // ✅ CLEAN SESSION DATA - no user_info column needed
       const sessionData = {
         student_id: finalStudentId,
         date: data.date,
         start_time: data.start_time,
         end_time: data.end_time,
         room_id: data.room_id,
-        title: data.title,
-        supervisor: data.supervisor,
-        examiner: data.examiner,
-        secretary: data.secretary,
+        title: data.title.trim(),
+        supervisor: data.supervisor.trim(),
+        examiner: data.examiner.trim(),
+        secretary: data.secretary.trim(),
       };
 
+      console.log('Session data to submit:', sessionData);
+
       if (editingSession) {
-        const { error } = await supabase.from('final_sessions').update(sessionData).eq('id', editingSession.id);
-        if (error) throw error;
+        const { error } = await supabase
+          .from('final_sessions')
+          .update(sessionData)
+          .eq('id', editingSession.id);
+        
+        if (error) {
+          console.error('Error updating session:', error);
+          throw new Error(`Failed to update session: ${error.message}`);
+        }
         alert.success(getText('Session updated successfully', 'Jadwal sidang berhasil diperbarui'));
       } else {
-        const { error } = await supabase.from('final_sessions').insert([sessionData]);
-        if (error) throw error;
-        alert.success(getText('Session created successfully', 'Jadwal sidang berhasil dibuat'));
+        const { data: newSession, error } = await supabase
+          .from('final_sessions')
+          .insert([sessionData])
+          .select('*, student:users(full_name, identity_number), room:rooms(name)')
+          .single();
+        
+        if (error) {
+          console.error('Error creating session:', error);
+          throw new Error(`Failed to create session: ${error.message}`);
+        }
+
+        // ✅ Enhanced success message dengan detail lengkap
+        const studentName = newSession.student?.full_name || formData.student_name;
+        const studentNim = newSession.student?.identity_number || formData.student_nim;
+        const roomName = newSession.room?.name || 'Selected Room';
+        
+        alert.success(
+          getText(
+            `✅ Session created successfully!\n👨‍🎓 Student: ${studentName} (${studentNim})\n🏢 Room: ${roomName}\n📅 Date: ${format(new Date(data.date), 'MMM d, yyyy')}\n⏰ Time: ${data.start_time} - ${data.end_time}`,
+            `✅ Jadwal sidang berhasil dibuat!\n👨‍🎓 Mahasiswa: ${studentName} (${studentNim})\n🏢 Ruangan: ${roomName}\n📅 Tanggal: ${format(new Date(data.date), 'MMM d, yyyy')}\n⏰ Waktu: ${data.start_time} - ${data.end_time}`
+          )
+        );
       }
 
       setShowModal(false);
@@ -1356,12 +1404,24 @@ const SessionScheduleProgressive = () => {
       fetchSessions();
     } catch (error) {
       console.error('Error saving session:', error);
-      alert.error(error.message || getText('Failed to save session', 'Gagal menyimpan jadwal sidang'));
+      
+      let errorMessage = getText('Failed to save session', 'Gagal menyimpan jadwal sidang');
+      
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (error.code === '23505') {
+        errorMessage = getText('Duplicate entry detected. Please check your data.', 'Data duplikat terdeteksi. Silakan periksa data Anda.');
+      } else if (error.code === '23503') {
+        errorMessage = getText('Related data not found. Please refresh and try again.', 'Data terkait tidak ditemukan. Silakan refresh dan coba lagi.');
+      }
+      
+      alert.error(errorMessage);
     } finally {
       setSubmitting(false);
     }
   };
 
+  // ✅ TIDAK DIUBAH: resetForm tetap sama
   const resetForm = () => {
     form.reset({
       student_id: '',
@@ -1379,6 +1439,7 @@ const SessionScheduleProgressive = () => {
     setCompletedSteps(new Set());
   };
 
+  // ✅ TIDAK DIUBAH: handleEdit tetap sama
   const handleEdit = (session: any) => {
     setEditingSession(session);
     
@@ -1399,15 +1460,11 @@ const SessionScheduleProgressive = () => {
       student_nim: session.student?.identity_number || '',
       study_program_id: session.student?.study_program?.id || ''
     });
-    setFormData({
-      student_name: session.student?.full_name || '',
-      student_nim: session.student?.identity_number || '',
-      study_program_id: session.student?.study_program?.id || ''
-    });
     
     setShowModal(true);
   };
 
+  // ✅ TIDAK DIUBAH: handleDelete tetap sama
   const handleDelete = async (id: string) => {
     try {
       setSubmitting(true);
