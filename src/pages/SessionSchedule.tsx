@@ -2050,11 +2050,11 @@ const CalendarModal = () => {
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
       doc.text("Kampus I: Jalan Mandung No. 1 Pengasih, Kulon Progo Telp.(0274)774625", headerTextX, currentY, { align: 'center' });
-      currentY += 3;
+      currentY += 4;
       doc.text("Kampus II: Pacarejo, Semanu, Gunungkidul Telp. (0274)5042222/(0274)5042255", headerTextX, currentY, { align: 'center' });
-      currentY += 3;
+      currentY += 4;
       doc.text("Laman: https://fv.uny.ac.id E-mail: fv@uny.ac.id", headerTextX, currentY, { align: 'center' });
-      currentY += 5;
+      currentY += 8;
 
       // ✅ Garis pemisah yang tepat untuk landscape dengan margin yang cukup
       doc.setLineWidth(1);
