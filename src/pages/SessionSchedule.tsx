@@ -450,7 +450,7 @@ const CalendarModal = () => {
         {/* Content */}
         <div className="flex-1 overflow-hidden flex flex-col lg:flex-row relative">
   {/* Calendar Section */}
-  <div className={`flex-1 p-6 overflow-y-auto bg-gray-50 transition-all duration-300 ${showCalendarDetails && selectedDateSessions.length > 0 ? 'lg:flex-1' : 'w-full'}`}>
+          <div className={`flex-1 p-6 overflow-y-auto bg-gray-50 transition-all duration-300 ${showCalendarDetails && selectedDateSessions.length > 0 ? 'lg:flex-1' : 'w-full'}`}>
             {/* Room Filter */}
             <div className="mb-6">
               <label className="block text-sm font-semibold text-gray-700 mb-3">
@@ -556,6 +556,14 @@ const CalendarModal = () => {
               </div>
             </div>
           </div>
+          {selectedDateSessions.length > 0 && (
+          <button
+            onClick={() => setShowCalendarDetails(!showCalendarDetails)}
+            className="lg:hidden fixed bottom-6 right-6 z-50 bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition-all duration-200"
+          >
+            {showCalendarDetails ? <X className="h-6 w-6" /> : <Eye className="h-6 w-6" />}
+          </button>
+        )}
 
           {/* Room-Based Session Details Sidebar */}
           <div className="w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-gray-200 bg-white overflow-y-auto">
