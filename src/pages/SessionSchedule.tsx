@@ -24,11 +24,15 @@ import {
   Check,
   CheckCircle2,
   ArrowRight,
-  ArrowLeft
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  Eye
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
 import toast from 'react-hot-toast';
 import { alert } from '../components/Alert/AlertHelper';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -74,6 +78,12 @@ const SessionScheduleProgressive = () => {
   // Modal states
   const [showModal, setShowModal] = useState(false);
   const [editingSession, setEditingSession] = useState(null);
+
+  // Calendar Modal states
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
+  const [selectedRoomForCalendar, setSelectedRoomForCalendar] = useState('');
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDateSessions, setSelectedDateSessions] = useState([]);
 
   // Progressive form states
   const [currentStep, setCurrentStep] = useState(1);
@@ -136,6 +146,272 @@ const SessionScheduleProgressive = () => {
       description: getText('Select room, title, and examination committee', 'Pilih ruangan, judul, dan tim penguji')
     }
   ];
+
+  // ✅ Calendar Helper Functions
+  const getSessionsForDate = (date) => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    return sessions.filter(session => session.date === dateStr);
+  };
+
+  const getSessionsForRoom = (date, roomId) => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    return sessions.filter(session => 
+      session.date === dateStr && 
+      session.room_id === roomId
+    );
+  };
+
+  const hasSessionsOnDate = (date, roomId = null) => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    if (roomId) {
+      return sessions.some(session => 
+        session.date === dateStr && session.room_id === roomId
+      );
+    }
+    return sessions.some(session => session.date === dateStr);
+  };
+
+  const generateCalendarDays = () => {
+    const start = startOfMonth(currentMonth);
+    const end = endOfMonth(currentMonth);
+    return eachDayOfInterval({ start, end });
+  };
+
+  const handleDateClick = (date) => {
+    if (selectedRoomForCalendar) {
+      const roomSessions = getSessionsForRoom(date, selectedRoomForCalendar);
+      setSelectedDateSessions(roomSessions);
+    } else {
+      const allSessions = getSessionsForDate(date);
+      setSelectedDateSessions(allSessions);
+    }
+  };
+
+  // ✅ Calendar Modal Component
+  const CalendarModal = () => {
+    const calendarDays = generateCalendarDays();
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    return (
+      <div 
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setShowCalendarModal(false);
+            setSelectedRoomForCalendar('');
+            setSelectedDateSessions([]);
+          }
+        }}
+      >
+        <div 
+          className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden"
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+            <h3 className="text-xl font-bold flex items-center space-x-2">
+              <Calendar className="h-6 w-6" />
+              <span>{getText('Session Calendar', 'Kalender Jadwal Sidang')}</span>
+            </h3>
+            <button
+              onClick={() => {
+                setShowCalendarModal(false);
+                setSelectedRoomForCalendar('');
+                setSelectedDateSessions([]);
+              }}
+              className="text-white hover:text-gray-200 p-2 hover:bg-white hover:bg-opacity-20 rounded-xl"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-hidden flex">
+            {/* Calendar Section */}
+            <div className="flex-1 p-6">
+              {/* Room Filter */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <Filter className="h-4 w-4 inline mr-2" />
+                  {getText('Filter by Room', 'Filter berdasarkan Ruangan')}
+                </label>
+                <select
+                  value={selectedRoomForCalendar}
+                  onChange={(e) => {
+                    setSelectedRoomForCalendar(e.target.value);
+                    setSelectedDateSessions([]);
+                  }}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">{getText('All Rooms', 'Semua Ruangan')}</option>
+                  {rooms.map(room => (
+                    <option key={room.id} value={room.id}>
+                      {room.name} - {room.code}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Month Navigation */}
+              <div className="flex items-center justify-between mb-6">
+                <button
+                  onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
+                  className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <h2 className="text-xl font-bold text-gray-900">
+                  {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+                </h2>
+                <button
+                  onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
+                  className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Calendar Grid */}
+              <div className="grid grid-cols-7 gap-1 mb-4">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                  <div key={day} className="p-2 text-center text-sm font-medium text-gray-500">
+                    {day}
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-7 gap-1">
+                {calendarDays.map(day => {
+                  const hasSessions = selectedRoomForCalendar 
+                    ? hasSessionsOnDate(day, selectedRoomForCalendar)
+                    : hasSessionsOnDate(day);
+                  
+                  return (
+                    <button
+                      key={day.toString()}
+                      onClick={() => handleDateClick(day)}
+                      className={`
+                        aspect-square p-2 text-sm rounded-lg transition-all duration-200 relative
+                        ${!isSameMonth(day, currentMonth) 
+                          ? 'text-gray-300 cursor-not-allowed' 
+                          : hasSessions 
+                            ? 'bg-red-500 text-white hover:bg-red-600 shadow-lg' 
+                            : 'text-gray-900 hover:bg-gray-100'
+                        }
+                      `}
+                      disabled={!isSameMonth(day, currentMonth)}
+                    >
+                      {format(day, 'd')}
+                      {hasSessions && (
+                        <div className="absolute top-1 right-1 w-2 h-2 bg-white rounded-full"></div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Session Details Sidebar */}
+            <div className="w-80 border-l border-gray-200 bg-gray-50 p-6 overflow-y-auto">
+              <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+                <Eye className="h-5 w-5 text-blue-600" />
+                <span>{getText('Session Details', 'Detail Sidang')}</span>
+              </h4>
+
+              {selectedDateSessions.length > 0 ? (
+                <div className="space-y-4">
+                  {selectedDateSessions.map((session, index) => (
+                    <div key={session.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
+                          {getText('Session', 'Sidang')} #{index + 1}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {session.start_time} - {session.end_time}
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-2 text-sm">
+                        <div>
+                          <span className="font-medium text-gray-700">{getText('Student', 'Mahasiswa')}:</span>
+                          <p className="text-gray-900">{session.student?.full_name}</p>
+                          <p className="text-gray-600 text-xs">{session.student?.identity_number}</p>
+                        </div>
+                        
+                        <div>
+                          <span className="font-medium text-gray-700">{getText('Room', 'Ruangan')}:</span>
+                          <p className="text-gray-900">{session.room?.name} - {session.room?.code}</p>
+                        </div>
+                        
+                        <div>
+                          <span className="font-medium text-gray-700">{getText('Program', 'Program Studi')}:</span>
+                          <p className="text-gray-900">{session.student?.study_program?.name || 'N/A'}</p>
+                        </div>
+                        
+                        <div>
+                          <span className="font-medium text-gray-700">{getText('Committee', 'Panitia')}:</span>
+                          <div className="text-xs space-y-1 mt-1">
+                            <p><span className="text-blue-600 font-medium">{getText('Supervisor', 'Pembimbing')}:</span> {session.supervisor}</p>
+                            <p><span className="text-green-600 font-medium">{getText('Examiner', 'Penguji')}:</span> {session.examiner}</p>
+                            <p><span className="text-purple-600 font-medium">{getText('Secretary', 'Sekretaris')}:</span> {session.secretary}</p>
+                          </div>
+                        </div>
+
+                        {session.title && (
+                          <div>
+                            <span className="font-medium text-gray-700">{getText('Title', 'Judul')}:</span>
+                            <p className="text-gray-900 text-xs leading-relaxed">{session.title}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {/* Room Usage Summary */}
+                  {selectedRoomForCalendar && selectedDateSessions.length > 0 && (
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-200">
+                      <h5 className="font-semibold text-blue-900 mb-2 flex items-center space-x-2">
+                        <Building className="h-4 w-4" />
+                        <span>{getText('Room Usage Summary', 'Ringkasan Penggunaan Ruangan')}</span>
+                      </h5>
+                      <div className="text-sm text-blue-800">
+                        <p><span className="font-medium">{getText('Total Sessions', 'Total Sidang')}:</span> {selectedDateSessions.length}</p>
+                        <p><span className="font-medium">{getText('Time Range', 'Rentang Waktu')}:</span> 
+                          {Math.min(...selectedDateSessions.map(s => s.start_time))} - 
+                          {Math.max(...selectedDateSessions.map(s => s.end_time))}
+                        </p>
+                        <div className="mt-2">
+                          <span className="font-medium">{getText('Programs Involved', 'Program Studi Terlibat')}:</span>
+                          <ul className="list-disc list-inside mt-1 text-xs">
+                            {[...new Set(selectedDateSessions.map(s => s.student?.study_program?.name).filter(Boolean))].map(program => (
+                              <li key={program}>{program}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center text-gray-500 mt-12">
+                  <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p className="font-medium mb-2">{getText('No sessions selected', 'Tidak ada sidang dipilih')}</p>
+                  <p className="text-sm">{getText('Click on a date to view session details', 'Klik pada tanggal untuk melihat detail sidang')}</p>
+                  {selectedRoomForCalendar && (
+                    <p className="text-xs text-blue-600 mt-2">
+                      {getText('Showing sessions for selected room only', 'Menampilkan sidang untuk ruangan terpilih saja')}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // ✅ TIDAK DIUBAH: Fetch data functions tetap sama
   const fetchSessions = async () => {
@@ -847,7 +1123,6 @@ const SessionScheduleProgressive = () => {
       )}
     </div>
   );
-
   // ✅ TIDAK DIUBAH: RoomAndDetailsStep dengan DOM manipulation
   const RoomAndDetailsStep = () => {
     const roomDisplayRef = useRef(null);
@@ -1502,25 +1777,38 @@ const SessionScheduleProgressive = () => {
         </div>
       </div>
 
-      {/* Action Section */}
+      {/* Action Section - Updated to Calendar Button */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between">
-          <div>
+          <div className="flex-1">
             <h2 className="text-lg font-semibold text-gray-900">{getText("Session Management", "Manajemen Jadwal Sidang")}</h2>
-            <p className="text-sm text-gray-600">{getText("Create new examination sessions with step-by-step guidance", "Buat jadwal sidang baru dengan panduan langkah demi langkah")}</p>
+            <p className="text-sm text-gray-600">{getText("View calendar and create new examination sessions", "Lihat kalender dan buat jadwal sidang baru")}</p>
           </div>
-          {profile?.role === 'department_admin' && (
+          
+          <div className="flex items-center space-x-3">
+            {/* Calendar Button */}
             <button
-              onClick={() => {
-                resetForm();
-                setShowModal(true);
-              }}
-              className="flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+              onClick={() => setShowCalendarModal(true)}
+              className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-200 shadow-lg hover:shadow-xl"
             >
-              <Plus className="h-5 w-5" />
-              <span>{getText("Create Session", "Buat Sidang")}</span>
+              <Calendar className="h-5 w-5" />
+              <span>{getText("View Calendar", "Lihat Kalender")}</span>
             </button>
-          )}
+            
+            {/* Create Session Button */}
+            {profile?.role === 'department_admin' && (
+              <button
+                onClick={() => {
+                  resetForm();
+                  setShowModal(true);
+                }}
+                className="flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+              >
+                <Plus className="h-5 w-5" />
+                <span>{getText("Create Session", "Buat Sidang")}</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1744,6 +2032,11 @@ const SessionScheduleProgressive = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Calendar Modal */}
+      {showCalendarModal && (
+        <CalendarModal />
       )}
     </div>
   );
