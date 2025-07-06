@@ -416,6 +416,7 @@ const CalendarModal = () => {
           setShowCalendarModal(false);
           setSelectedRoomForCalendar('');
           setSelectedDateSessions([]);
+          setShowCalendarDetails(false);
         }
       }}
     >
