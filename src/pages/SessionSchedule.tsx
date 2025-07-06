@@ -2146,12 +2146,9 @@ const CalendarModal = () => {
         // ✅ Total width = 280mm (pas untuk landscape A4)
         tableWidth: 'auto',
         margin: { left: 10, right: 10 },
-        didDrawPage: function (data) {
-          // ✅ Handle page overflow untuk landscape
-          if (data.cursor && data.cursor.y > pageHeight - 30) {
-            doc.addPage();
-          }
-        }
+        // ✅ Hapus didDrawPage yang menyebabkan halaman kosong
+        showHead: 'everyPage',
+        pageBreak: 'auto'
       });
 
       // ✅ Tidak ada tanda tangan, langsung save dengan nama yang bersih
@@ -2163,7 +2160,6 @@ const CalendarModal = () => {
       alert.error(getText("An unexpected error occurred while generating the PDF.", "Terjadi kesalahan tak terduga saat membuat PDF."));
     }
   };
-
 
   if (loading) {
     return (
