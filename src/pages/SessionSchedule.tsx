@@ -1335,7 +1335,6 @@ const SessionScheduleProgressive = () => {
           }
 
           finalStudentId = newUser.id;
-          }, 500);
         }
       }
 
