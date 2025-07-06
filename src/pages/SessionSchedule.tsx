@@ -213,14 +213,18 @@ const SessionScheduleProgressive = () => {
   };
 
   const handleDateClick = (date) => {
-    if (selectedRoomForCalendar) {
-      const roomSessions = getSessionsForRoom(date, selectedRoomForCalendar);
-      setSelectedDateSessions(roomSessions);
-    } else {
-      const allSessions = getSessionsForDate(date);
-      setSelectedDateSessions(allSessions);
-    }
-  };
+  if (selectedRoomForCalendar) {
+    const roomSessions = getSessionsForRoom(date, selectedRoomForCalendar);
+    setSelectedDateSessions(roomSessions);
+  } else {
+    const allSessions = getSessionsForDate(date);
+    setSelectedDateSessions(allSessions);
+  }
+  // ✅ Auto show details on mobile when date is clicked
+  if (window.innerWidth < 1024) {
+    setShowCalendarDetails(true);
+  }
+};
 
   // ✅ Calendar Modal dengan tampilan yang lebih bersih
 const CalendarModal = () => {
