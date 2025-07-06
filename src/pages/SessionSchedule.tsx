@@ -735,34 +735,230 @@ const SessionScheduleProgressive = () => {
     }
   }, [currentStep]);
 
-  // ✅ PERBAIKAN: StudentInformationStep dengan auto-fill yang berfungsi
+  // ✅ PERBAIKAN: StudentInformationStep - KEMBALI KE DOM MANIPULATION ASLI
   const StudentInformationStep = () => {
+    const dropdownRef = useRef(null);
+    const programDisplayRef = useRef(null);
+    const programDropdownRef = useRef(null);
 
-    // ✅ PERBAIKAN: useEffect untuk pre-populate form saat editing
+    // ✅ TETAP GUNAKAN localData ref seperti asli
+    const localData = useRef({
+      studentSearch: '',
+      studentName: '',
+      studentNim: '',
+      studyProgramId: '',
+      selectedProgramDisplay: ''
+    });
+
+    const updateParentFormData = (field, value) => {
+      localData.current[field] = value;
+    };
+
+    const syncToParentForm = () => {
+      setFormData(prev => ({
+        ...prev,
+        student_name: localData.current.studentName,
+        student_nim: localData.current.studentNim,
+        study_program_id: localData.current.studyProgramId
+      }));
+    };
+
+    const showStudentDropdown = (searchTerm) => {
+      if (!searchTerm.trim()) {
+        hideStudentDropdown();
+        return;
+      }
+
+      const filteredStudents = students.filter(student => 
+        student && 
+        student.identity_number && 
+        student.full_name &&
+        (
+          student.identity_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          student.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+      );
+
+      if (filteredStudents.length === 0) {
+        hideStudentDropdown();
+        return;
+      }
+
+      const dropdownHTML = `
+        <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+          ${filteredStudents.map(student => `
+            <div 
+              class="dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+              data-student-id="${student.id}"
+              data-student-nim="${student.identity_number}"
+              data-student-name="${student.full_name}"
+              data-program-id="${student.study_program_id || ''}"
+            >
+              <div class="font-semibold text-gray-800">${student.identity_number}</div>
+              <div class="text-sm text-gray-600">${student.full_name}</div>
+              ${student.study_program ? `<div class="text-xs text-gray-500">${student.study_program.name}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      `;
+
+      if (dropdownRef.current) {
+        dropdownRef.current.innerHTML = dropdownHTML;
+        dropdownRef.current.style.display = 'block';
+        
+        dropdownRef.current.querySelectorAll('.dropdown-item').forEach(item => {
+          item.addEventListener('mousedown', (e) => e.preventDefault());
+          item.addEventListener('click', (e) => {
+            const studentId = e.currentTarget.dataset.studentId;
+            const studentNim = e.currentTarget.dataset.studentNim;
+            const studentName = e.currentTarget.dataset.studentName;
+            const programId = e.currentTarget.dataset.programId;
+            
+            // ✅ KEMBALI KE DOM MANIPULATION ASLI
+            studentInputRef.current.value = studentNim;
+            studentNameRef.current.value = studentName;
+            
+            localData.current.studentNim = studentNim;
+            localData.current.studentName = studentName;
+            localData.current.studyProgramId = programId;
+            
+            form.setValue('student_id', studentId);
+            syncToParentForm();
+            
+            if (programId) {
+              const program = studyPrograms.find(p => p.id === programId);
+              if (program) {
+                const display = `${program.name} (${program.code})`;
+                localData.current.selectedProgramDisplay = display;
+                if (programDisplayRef.current) {
+                  programDisplayRef.current.value = display;
+                }
+              }
+            }
+            
+            hideStudentDropdown();
+            studentInputRef.current.focus();
+          });
+        });
+      }
+    };
+
+    const hideStudentDropdown = () => {
+      if (dropdownRef.current) {
+        dropdownRef.current.style.display = 'none';
+      }
+    };
+
+    const showProgramDropdown = () => {
+      const dropdownHTML = `
+        <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
+          <div class="p-3 border-b border-gray-100">
+            <input
+              type="text"
+              placeholder="${getText("Search programs...", "Cari program studi...")}"
+              class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              id="program-search-input"
+              autocomplete="off"
+            />
+          </div>
+          <div class="max-h-60 overflow-y-auto" id="program-list">
+            ${studyPrograms.map(program => `
+              <div 
+                class="program-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                data-program-id="${program.id}"
+                data-program-name="${program.name}"
+                data-program-code="${program.code || ''}"
+              >
+                <div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+
+      if (programDropdownRef.current) {
+        programDropdownRef.current.innerHTML = dropdownHTML;
+        programDropdownRef.current.style.display = 'block';
+        
+        const searchInput = programDropdownRef.current.querySelector('#program-search-input');
+        const programList = programDropdownRef.current.querySelector('#program-list');
+        
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            const filteredPrograms = studyPrograms.filter(program =>
+              program.name.toLowerCase().includes(searchTerm) ||
+              (program.code && program.code.toLowerCase().includes(searchTerm))
+            );
+            
+            programList.innerHTML = filteredPrograms.map(program => `
+              <div 
+                class="program-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                data-program-id="${program.id}"
+                data-program-name="${program.name}"
+                data-program-code="${program.code || ''}"
+              >
+                <div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div>
+              </div>
+            `).join('');
+            
+            addProgramListeners();
+          });
+        }
+        
+        addProgramListeners();
+      }
+    };
+
+    const addProgramListeners = () => {
+      programDropdownRef.current?.querySelectorAll('.program-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+          const programId = e.currentTarget.dataset.programId;
+          const programName = e.currentTarget.dataset.programName;
+          const programCode = e.currentTarget.dataset.programCode;
+          
+          const display = `${programName} (${programCode})`;
+          localData.current.selectedProgramDisplay = display;
+          localData.current.studyProgramId = programId;
+          
+          if (programDisplayRef.current) {
+            programDisplayRef.current.value = display;
+          }
+          
+          syncToParentForm();
+          hideProgramDropdown();
+        });
+      });
+    };
+
+    const hideProgramDropdown = () => {
+      if (programDropdownRef.current) {
+        programDropdownRef.current.style.display = 'none';
+      }
+    };
+
     useEffect(() => {
-      if (formData.student_nim && studentInputRef.current && !localFormState.studentNim) {
+      if (formData.student_nim && studentInputRef.current && !localData.current.studentNim) {
         studentInputRef.current.value = formData.student_nim;
-        setLocalFormState(prev => ({ ...prev, studentNim: formData.student_nim }));
+        localData.current.studentNim = formData.student_nim;
       }
       
-      if (formData.student_name && studentNameRef.current && !localFormState.studentName) {
+      if (formData.student_name && studentNameRef.current && !localData.current.studentName) {
         studentNameRef.current.value = formData.student_name;
-        setLocalFormState(prev => ({ ...prev, studentName: formData.student_name }));
+        localData.current.studentName = formData.student_name;
       }
       
-      if (formData.study_program_id && !localFormState.studyProgramId) {
+      if (formData.study_program_id && !localData.current.studyProgramId) {
         const selectedProgram = studyPrograms.find(sp => sp.id === formData.study_program_id);
         if (selectedProgram && programDisplayRef.current) {
-          const display = `${selectedProgram.name} (${selectedProgram.code || ''})`;
+          const display = `${selectedProgram.name} (${selectedProgram.code})`;
           programDisplayRef.current.value = display;
-          setLocalFormState(prev => ({
-            ...prev,
-            selectedProgramDisplay: display,
-            studyProgramId: formData.study_program_id
-          }));
+          localData.current.selectedProgramDisplay = display;
+          localData.current.studyProgramId = formData.study_program_id;
         }
       }
-    }, [formData, studyPrograms, localFormState]);
+    }, []);
 
     return (
       <div className="space-y-4 md:space-y-6">
@@ -770,7 +966,7 @@ const SessionScheduleProgressive = () => {
           <h3 className="text-lg md:text-2xl font-bold text-gray-900 mb-2">
             {getText('Student Information', 'Informasi Mahasiswa')}
           </h3>
-         <p className="text-sm md:text-base text-gray-600">
+          <p className="text-sm md:text-base text-gray-600">
             {getText('Please select or enter student details for the examination', 'Silakan pilih atau masukkan detail mahasiswa untuk sidang')}
           </p>
         </div>
@@ -786,25 +982,22 @@ const SessionScheduleProgressive = () => {
                 ref={studentInputRef}
                 type="text"
                 placeholder={getText("Search student by NIM or name...", "Cari mahasiswa berdasarkan NIM atau nama...")}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setLocalFormState(prev => ({ ...prev, studentNim: value }));
-                  showStudentDropdown(value);
+                onInput={(e) => {
+                  localData.current.studentNim = e.target.value;
+                  showStudentDropdown(e.target.value);
                 }}
                 onFocus={(e) => {
                   showStudentDropdown(e.target.value);
                 }}
                 onBlur={() => {
-                  // Sync ke form data saat blur
-                  const value = studentInputRef.current?.value || '';
-                  setFormData(prev => ({ ...prev, student_nim: value }));
+                  syncToParentForm();
                   setTimeout(() => hideStudentDropdown(), 150);
                 }}
                 className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                 autoComplete="off"
               />
               <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-              <div ref={studentDropdownRef} style={{ display: 'none' }}></div>
+              <div ref={dropdownRef} style={{ display: 'none' }}></div>
             </div>
           </div>
 
@@ -816,13 +1009,11 @@ const SessionScheduleProgressive = () => {
               ref={studentNameRef}
               type="text"
               placeholder={getText("Enter student name...", "Masukkan nama mahasiswa...")}
-              onChange={(e) => {
-                const value = e.target.value;
-                setLocalFormState(prev => ({ ...prev, studentName: value }));
+              onInput={(e) => {
+                localData.current.studentName = e.target.value;
               }}
               onBlur={() => {
-                const value = studentNameRef.current?.value || '';
-                setFormData(prev => ({ ...prev, student_name: value }));
+                syncToParentForm();
               }}
               className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
               autoComplete="off"
