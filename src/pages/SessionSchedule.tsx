@@ -762,17 +762,12 @@ const CalendarModal = () => {
 
   const fetchStudyPrograms = async () => {
     try {
-      let query = supabase.from('study_programs').select('*').order('name');
-      if (profile?.role === 'department_admin' && profile?.department_id) {
-        query = query.eq('department_id', profile.department_id);
-      }
-      const { data } = await query;
+      const { data } = await supabase.from('study_programs').select('*, department:departments(name)').order('name');
       setStudyPrograms(data || []);
     } catch (error) {
-      console.error('Error fetching study programs:', error);
-      alert.error(getText('Failed to load study programs.', 'Gagal memuat program studi.'));
+      // error handling
     }
-  };
+};
 
   // ✅ NEW: Fetch Departments untuk Print
   const fetchDepartments = async () => {
