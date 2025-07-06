@@ -1050,7 +1050,122 @@ const CalendarModal = () => {
       setCurrentStep(currentStep - 1);
     }
   }, [currentStep]);
+const validateAllFields = () => {
+  const errors = [];
+  
+  // Step 1 validation
+  const studentNim = formData.student_nim || (studentInputRef.current?.value) || '';
+  const studentName = formData.student_name || (studentNameRef.current?.value) || '';
+  const studyProgramId = formData.study_program_id || '';
+  
+  if (!studentNim.trim()) {
+    errors.push(getText('Student NIM is required', 'NIM Mahasiswa wajib diisi'));
+  }
+  if (!studentName.trim()) {
+    errors.push(getText('Student Name is required', 'Nama Mahasiswa wajib diisi'));
+  }
+  if (!studyProgramId) {
+    errors.push(getText('Study Program is required', 'Program Studi wajib dipilih'));
+  }
+  
+  // Step 2 validation
+  const date = form.getValues('date');
+  const startTime = form.getValues('start_time');
+  const endTime = form.getValues('end_time');
+  
+  if (!date) {
+    errors.push(getText('Date is required', 'Tanggal wajib diisi'));
+  }
+  if (!startTime) {
+    errors.push(getText('Start time is required', 'Waktu mulai wajib diisi'));
+  }
+  if (!endTime) {
+    errors.push(getText('End time is required', 'Waktu selesai wajib diisi'));
+  }
+  if (startTime && endTime && startTime >= endTime) {
+    errors.push(getText('End time must be after start time', 'Waktu selesai harus setelah waktu mulai'));
+  }
+  
+  // Step 3 validation
+  const roomId = form.getValues('room_id');
+  const title = form.getValues('title') || (titleInputRef.current?.value) || '';
+  const supervisor = form.getValues('supervisor') || (supervisorInputRef.current?.value) || '';
+  const examiner = form.getValues('examiner') || (examinerInputRef.current?.value) || '';
+  const secretary = form.getValues('secretary') || (secretaryInputRef.current?.value) || '';
+  
+  if (!roomId) {
+    errors.push(getText('Room is required', 'Ruangan wajib dipilih'));
+  }
+  if (!title.trim()) {
+    errors.push(getText('Thesis title is required', 'Judul skripsi/tesis wajib diisi'));
+  }
+  if (!supervisor.trim()) {
+    errors.push(getText('Supervisor is required', 'Pembimbing wajib diisi'));
+  }
+  if (!examiner.trim()) {
+    errors.push(getText('Examiner is required', 'Penguji wajib diisi'));
+  }
+  if (!secretary.trim()) {
+    errors.push(getText('Secretary is required', 'Sekretaris wajib diisi'));
+  }
+  
+  return errors;
+};
 
+// ✅ TAMBAH FUNCTION BARU - Submit dengan validasi
+const handleSubmitWithValidation = async () => {
+  // Sync semua nilai dari DOM ke React state
+  const supervisorValue = supervisorInputRef.current?.value || '';
+  const examinerValue = examinerInputRef.current?.value || '';
+  const secretaryValue = secretaryInputRef.current?.value || '';
+  const titleValue = titleInputRef.current?.value || '';
+  
+  if (supervisorValue) form.setValue('supervisor', supervisorValue);
+  if (examinerValue) form.setValue('examiner', examinerValue);
+  if (secretaryValue) form.setValue('secretary', secretaryValue);
+  if (titleValue) form.setValue('title', titleValue);
+  
+  // Sync student data
+  const nimValue = studentInputRef.current?.value || '';
+  const nameValue = studentNameRef.current?.value || '';
+  
+  if (nimValue && nimValue !== formData.student_nim) {
+    setFormData(prev => ({ ...prev, student_nim: nimValue }));
+  }
+  if (nameValue && nameValue !== formData.student_name) {
+    setFormData(prev => ({ ...prev, student_name: nameValue }));
+  }
+  
+  // Wait for state updates
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
+  // Validate all fields
+  const validationErrors = validateAllFields();
+  
+  if (validationErrors.length > 0) {
+    // Show detailed error message
+    const errorMessage = getText(
+      `Please complete the following fields:\n• ${validationErrors.join('\n• ')}`,
+      `Silakan lengkapi field berikut:\n• ${validationErrors.join('\n• ')}`
+    );
+    
+    alert.error(errorMessage);
+    
+    // Navigate to first incomplete step
+    if (!formData.student_nim || !formData.student_name || !formData.study_program_id) {
+      setCurrentStep(1);
+    } else if (!form.getValues('date') || !form.getValues('start_time') || !form.getValues('end_time')) {
+      setCurrentStep(2);
+    } else {
+      setCurrentStep(3);
+    }
+    
+    return;
+  }
+  
+  // If all validation passes, submit the form
+  form.handleSubmit(handleSubmit)();
+};
   // ✅ StudentInformationStep
   const StudentInformationStep = () => {
     const dropdownRef = useRef(null);
