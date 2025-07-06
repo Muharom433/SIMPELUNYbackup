@@ -712,6 +712,123 @@ const CalendarModal = () => {
   );
 };
 
+  const DeleteConfirmationModal = () => {
+  if (!sessionToDelete) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+        {/* Header */}
+        <div className="bg-red-50 border-b border-red-200 p-6">
+          <div className="flex items-center space-x-3">
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <AlertCircle className="h-6 w-6 text-red-600" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-red-900">
+                {getText('Delete Session', 'Hapus Jadwal Sidang')}
+              </h3>
+              <p className="text-sm text-red-700 mt-1">
+                {getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-6">
+          <div className="text-center mb-6">
+            <p className="text-gray-700 text-lg mb-4">
+              {getText('Are you sure you want to delete this session?', 'Apakah Anda yakin ingin menghapus jadwal sidang ini?')}
+            </p>
+          </div>
+
+          {/* Session Details */}
+          <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 mb-6">
+            <div className="space-y-3">
+              <div className="flex items-center space-x-3">
+                <User className="h-5 w-5 text-gray-500" />
+                <div>
+                  <div className="font-semibold text-gray-900">
+                    {sessionToDelete.student?.full_name || 'Unknown Student'}
+                  </div>
+                  <div className="text-sm text-gray-600 font-mono">
+                    {sessionToDelete.student?.identity_number || 'No NIM'}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-3">
+                <Calendar className="h-5 w-5 text-gray-500" />
+                <div>
+                  <div className="text-sm font-medium text-gray-900">
+                    {format(parseISO(sessionToDelete.date), 'EEEE, MMMM d, yyyy')}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {sessionToDelete.start_time} - {sessionToDelete.end_time}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-3">
+                <MapPin className="h-5 w-5 text-gray-500" />
+                <div className="text-sm text-gray-900">
+                  {sessionToDelete.room?.name || 'No Room'} - {sessionToDelete.room?.code || 'No Code'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Warning Message */}
+          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <AlertCircle className="h-5 w-5 text-yellow-400" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-yellow-800">
+                  {getText(
+                    'This will permanently delete the session and all related data. This action cannot be undone.',
+                    'Ini akan menghapus jadwal sidang dan semua data terkait secara permanen. Tindakan ini tidak dapat dibatalkan.'
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="bg-gray-50 px-6 py-4 flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-3">
+          <button
+            onClick={handleCancelDelete}
+            disabled={submitting}
+            className="w-full sm:w-auto px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium disabled:opacity-50"
+          >
+            {getText('Cancel', 'Batal')}
+          </button>
+          <button
+            onClick={handleConfirmDelete}
+            disabled={submitting}
+            className="w-full sm:w-auto px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all duration-200 font-medium disabled:opacity-50 flex items-center justify-center space-x-2"
+          >
+            {submitting ? (
+              <>
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                <span>{getText('Deleting...', 'Menghapus...')}</span>
+              </>
+            ) : (
+              <>
+                <Trash2 className="h-4 w-4" />
+                <span>{getText('Delete Session', 'Hapus Sidang')}</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
   // ✅ Fetch Sessions Universal
   const fetchSessions = async () => {
     try {
