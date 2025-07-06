@@ -2622,11 +2622,11 @@ const handleCancelDelete = () => {
                             <Edit className="h-4 w-4" />
                           </button>
                           <button
-                            onClick={() => handleDelete(session.id)}
-                            className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+  onClick={() => handleDeleteClick(session)}
+  className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
+>
+  <Trash2 className="h-4 w-4" />
+</button>
                         </div>
                       </td>
                     )}
