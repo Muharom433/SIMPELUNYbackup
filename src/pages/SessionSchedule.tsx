@@ -148,29 +148,9 @@ const SessionScheduleProgressive = () => {
   // ✅ Print Form Schema
   const printSchema = useMemo(() => {
     return z.object({
-        department_id: z.string().optional(),
         study_program_id: z.string().min(1, getText('Study Program is required', 'Program Studi wajib diisi')),
-        semester: z.enum(['GASAL', 'GENAP'], { required_error: getText('Semester type is required', 'Tipe semester wajib diisi') }),
-        academic_year: z.string().min(9, getText('Academic Year is required (e.g., 2023/2024)', 'Tahun Akademik wajib diisi (contoh: 2023/2024)')).regex(/^\d{4}\/\d{4}$/, getText('Invalid format. Use (YYYY/YYYY)', 'Format tidak valid. Gunakan (YYYY/YYYY)')),
-        department_head_id: z.string().optional(),
-        department_head_name: z.string().optional(),
-    }).superRefine((data, ctx) => {
-        if (profile?.role === 'super_admin' && !data.department_id) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                path: ['department_id'],
-                message: getText('Department is required for Super Admin.', 'Departemen wajib diisi untuk Super Admin.'),
-            });
-        }
-        if (profile?.role === 'department_admin' && !data.department_head_id) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                path: ['department_head_id'],
-                message: getText('Department Head is required.', 'Kepala Departemen wajib diisi.'),
-            });
-        }
     });
-  }, [profile?.role, getText]);
+}, [getText]);
 
   const printForm = useForm<PrintFormData>({ resolver: zodResolver(printSchema) });
 
