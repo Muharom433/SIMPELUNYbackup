@@ -2005,11 +2005,6 @@ const CalendarModal = () => {
     try {
       const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id);
       
-      let departmentHead;
-      if (isSuperAdmin) {
-        departmentHead = { full_name: getText('DEPARTMENT HEAD', 'KEPALA DEPARTEMEN'), identity_number: '123' };
-      } else {departmentHead = departmentHeads.find(h => h.id === formData.department_head_id);
-      }
 
       if (!selectedProgram || !departmentHead || !currentDepartment) {
         alert.error(getText("Please ensure all fields are selected and data is loaded.", "Pastikan semua field telah dipilih dan data telah dimuat."));
@@ -2206,7 +2201,6 @@ const CalendarModal = () => {
             <button
               onClick={() => {
                 setShowPrintModal(true);
-                setPrintSelectedDepartment('');
                 printForm.reset();
               }}
               className="flex items-center space-x-2 px-6 py-3 text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 shadow-sm hover:shadow-md"
