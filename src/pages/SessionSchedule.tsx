@@ -2184,9 +2184,7 @@ const CalendarModal = () => {
 
       {/* Action Section */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between">
-         
-          
+        <div className="flex items-center justify-between">         
           <div className="flex items-center space-x-3">
             <button
               onClick={() => setShowCalendarModal(true)}
