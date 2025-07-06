@@ -423,31 +423,39 @@ const CalendarModal = () => {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl h-[85vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50 flex-shrink-0">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Calendar className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-gray-900">
-                {getText('Session Calendar', 'Kalender Jadwal Sidang')}
-              </h3>
-              <p className="text-sm text-gray-600">
-                {getText('View room schedules by date', 'Lihat jadwal ruangan per tanggal')}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              setShowCalendarModal(false);
-              setSelectedRoomForCalendar('');
-              setSelectedDateSessions([]);
-              setShowCalendarDetails(false);
-            }}
-            className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+          <div className="flex items-center space-x-2">
+  {/* ✅ Mobile Detail Toggle Button */}
+  <button
+    onClick={() => setShowCalendarDetails(!showCalendarDetails)}
+    className="lg:hidden flex items-center space-x-2 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+  >
+    {showCalendarDetails ? (
+      <>
+        <X className="h-4 w-4" />
+        <span className="text-sm font-medium">Hide Detail</span>
+      </>
+    ) : (
+      <>
+        <Eye className="h-4 w-4" />
+        <span className="text-sm font-medium">Show Detail</span>
+      </>
+    )}
+  </button>
+  
+  {/* Close Modal Button */}
+  <button
+    onClick={() => {
+      setShowCalendarModal(false);
+      setSelectedRoomForCalendar('');
+      setSelectedDateSessions([]);
+      setShowCalendarDetails(false);
+    }}
+    className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl transition-colors"
+  >
+    <X className="h-5 w-5" />
+  </button>
+</div>
+
 
         {/* Content */}
         <div className="flex-1 overflow-hidden flex flex-col lg:flex-row relative">
