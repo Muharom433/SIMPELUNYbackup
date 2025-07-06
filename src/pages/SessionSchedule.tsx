@@ -31,7 +31,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
-  Eye
+  Eye,
+  ChevronUp,
+  EyeOff
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -109,6 +111,9 @@ const SessionScheduleProgressive = () => {
   const [selectedRoomForCalendar, setSelectedRoomForCalendar] = useState('');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDateSessions, setSelectedDateSessions] = useState([]);
+  
+  // ✅ NEW: Mobile details toggle state
+  const [showMobileDetails, setShowMobileDetails] = useState(false);
 
   // Progressive form states
   const [currentStep, setCurrentStep] = useState(1);
@@ -219,9 +224,14 @@ const SessionScheduleProgressive = () => {
       const allSessions = getSessionsForDate(date);
       setSelectedDateSessions(allSessions);
     }
+    
+    // ✅ Auto show details on mobile when date is clicked
+    if (window.innerWidth < 1024) { // lg breakpoint
+      setShowMobileDetails(true);
+    }
   };
 
-  // ✅ Calendar Modal dengan tampilan yang lebih bersih
+  // ✅ Calendar Modal dengan mobile toggle untuk details
 const CalendarModal = () => {
   const calendarDays = generateCalendarDays();
   
@@ -382,6 +392,8 @@ const CalendarModal = () => {
         }
         
         setSelectedDateSessions([]);
+        // ✅ Hide mobile details when filter changes
+        setShowMobileDetails(false);
         hideRoomDropdown();
       });
     });
@@ -411,6 +423,7 @@ const CalendarModal = () => {
           setShowCalendarModal(false);
           setSelectedRoomForCalendar('');
           setSelectedDateSessions([]);
+          setShowMobileDetails(false);
         }
       }}
     >
@@ -435,6 +448,7 @@ const CalendarModal = () => {
               setShowCalendarModal(false);
               setSelectedRoomForCalendar('');
               setSelectedDateSessions([]);
+              setShowMobileDetails(false);
             }}
             className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl transition-colors"
           >
@@ -552,20 +566,65 @@ const CalendarModal = () => {
             </div>
           </div>
 
-          {/* Room-Based Session Details Sidebar */}
-          <div className="w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-gray-200 bg-white overflow-y-auto">
-            <div className="p-6 border-b border-gray-200 bg-gray-50">
-              <h4 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
-                <div className="p-1 bg-blue-100 rounded">
-                  <Building className="h-4 w-4 text-blue-600" />
+          {/* ✅ Mobile Toggle Button - Only visible on small screens */}
+          {selectedDateSessions.length > 0 && (
+            <div className="lg:hidden border-t border-gray-200 bg-white p-4 flex-shrink-0">
+              <button
+                onClick={() => setShowMobileDetails(!showMobileDetails)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors duration-200"
+              >
+                <div className="flex items-center space-x-3">
+                  <Building className="h-5 w-5 text-blue-600" />
+                  <div className="text-left">
+                    <div className="font-semibold text-blue-900">
+                      {getText('Room Schedule Details', 'Detail Jadwal Ruangan')}
+                    </div>
+                    <div className="text-sm text-blue-700">
+                      {format(new Date(selectedDateSessions[0].date), 'EEEE, MMMM d, yyyy')}
+                    </div>
+                  </div>
                 </div>
-                <span>{getText('Room Schedule', 'Jadwal Ruangan')}</span>
-              </h4>
-              {selectedDateSessions.length > 0 && (
-                <p className="text-sm text-gray-600 mt-1">
-                  {format(new Date(selectedDateSessions[0].date), 'EEEE, MMMM d, yyyy')}
-                </p>
-              )}
+                <div className="flex items-center space-x-2">
+                  <span className="bg-blue-600 text-white px-2 py-1 rounded-full text-xs font-semibold">
+                    {Object.keys(groupSessionsByRoom(selectedDateSessions)).length}
+                  </span>
+                  {showMobileDetails ? (
+                    <ChevronUp className="h-5 w-5 text-blue-600" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-blue-600" />
+                  )}
+                </div>
+              </button>
+            </div>
+          )}
+
+          {/* Room-Based Session Details Sidebar */}
+          <div className={`
+            w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-gray-200 bg-white overflow-y-auto
+            ${showMobileDetails ? 'block' : 'hidden lg:block'}
+          `}>
+            <div className="p-6 border-b border-gray-200 bg-gray-50 lg:block">
+              <div className="flex items-center justify-between lg:block">
+                <h4 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
+                  <div className="p-1 bg-blue-100 rounded">
+                    <Building className="h-4 w-4 text-blue-600" />
+                  </div>
+                  <span>{getText('Room Schedule', 'Jadwal Ruangan')}</span>
+                </h4>
+                {selectedDateSessions.length > 0 && (
+                  <p className="text-sm text-gray-600 mt-1 lg:mt-1">
+                    {format(new Date(selectedDateSessions[0].date), 'EEEE, MMMM d, yyyy')}
+                  </p>
+                )}
+                
+                {/* ✅ Close button for mobile */}
+                <button
+                  onClick={() => setShowMobileDetails(false)}
+                  className="lg:hidden p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             <div className="p-6">
@@ -2187,7 +2246,10 @@ const CalendarModal = () => {
         <div className="flex items-center justify-between">         
           <div className="flex items-center space-x-3">
             <button
-              onClick={() => setShowCalendarModal(true)}
+              onClick={() => {
+                setShowCalendarModal(true);
+                setShowMobileDetails(false); // ✅ Reset mobile details when opening calendar
+              }}
               className="flex items-center space-x-2 px-4 md:px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-200 shadow-lg hover:shadow-xl"
             >
               <Calendar className="h-5 w-5" />
