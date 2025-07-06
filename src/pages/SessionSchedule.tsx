@@ -2036,18 +2036,18 @@ const CalendarModal = () => {
 
       // ✅ Header text dengan spacing yang baik
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(11);
+      doc.setFontSize(14);
       doc.text("KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI", headerTextX, currentY, { align: 'center' });
       currentY += 5;
       doc.text("UNIVERSITAS NEGERI YOGYAKARTA", headerTextX, currentY, { align: 'center' });
-      doc.setFontSize(12);
+      doc.setFontSize(14);
       doc.setFont('helvetica', 'bold');
       currentY += 5;
       doc.text("FAKULTAS VOKASI", headerTextX, currentY, { align: 'center' });
       
       // ✅ Contact info dengan font lebih kecil
       currentY += 5;
-      doc.setFontSize(8);
+      doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
       doc.text("Kampus I: Jalan Mandung No. 1 Pengasih, Kulon Progo Telp.(0274)774625", headerTextX, currentY, { align: 'center' });
       currentY += 3;
