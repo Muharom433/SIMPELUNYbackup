@@ -109,6 +109,7 @@ const SessionScheduleProgressive = () => {
   const [selectedRoomForCalendar, setSelectedRoomForCalendar] = useState('');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDateSessions, setSelectedDateSessions] = useState([]);
+  const [showCalendarDetails, setShowCalendarDetails] = useState(false);
 
   // Progressive form states
   const [currentStep, setCurrentStep] = useState(1);
