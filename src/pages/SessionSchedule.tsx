@@ -188,11 +188,10 @@ const SessionScheduleProgressive = () => {
     }
   };
 
-  // ✅ PERBAIKAN: Calendar Modal Component dengan UI/UX yang lebih baik
+  // ✅ PERBAIKAN: Calendar Modal dengan Room-Based Grouping
 const CalendarModal = () => {
   const calendarDays = generateCalendarDays();
   
-  // ✅ Multilingual support untuk kalender
   const monthNames = getText('en') === 'en' ? [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
@@ -207,6 +206,59 @@ const CalendarModal = () => {
 
   const roomDropdownRef = useRef(null);
   const roomDisplayRef = useRef(null);
+
+  // ✅ Function untuk mengelompokkan sessions berdasarkan ruangan
+  const groupSessionsByRoom = (sessions) => {
+    const grouped = {};
+    
+    sessions.forEach(session => {
+      const roomKey = session.room?.id || 'unknown';
+      const roomName = session.room?.name || 'Unknown Room';
+      const roomCode = session.room?.code || '';
+      
+      if (!grouped[roomKey]) {
+        grouped[roomKey] = {
+          room: {
+            id: roomKey,
+            name: roomName,
+            code: roomCode,
+            display: roomCode ? `${roomName} - ${roomCode}` : roomName
+          },
+          sessions: []
+        };
+      }
+      
+      grouped[roomKey].sessions.push(session);
+    });
+    
+    // Sort sessions dalam setiap ruangan berdasarkan waktu
+    Object.keys(grouped).forEach(roomKey => {
+      grouped[roomKey].sessions.sort((a, b) => {
+        return a.start_time.localeCompare(b.start_time);
+      });
+    });
+    
+    return grouped;
+  };
+
+  // ✅ Function untuk mendapatkan rentang waktu total per ruangan
+  const getRoomTimeRange = (sessions) => {
+    if (sessions.length === 0) return '';
+    
+    const startTimes = sessions.map(s => s.start_time);
+    const endTimes = sessions.map(s => s.end_time);
+    
+    const earliestStart = startTimes.sort()[0];
+    const latestEnd = endTimes.sort().reverse()[0];
+    
+    return `${earliestStart} - ${latestEnd}`;
+  };
+
+  // ✅ Function untuk mendapatkan program studi unik dalam satu ruangan
+  const getUniquePrograms = (sessions) => {
+    const programs = sessions.map(s => s.student?.study_program?.name).filter(Boolean);
+    return [...new Set(programs)];
+  };
 
   const showRoomDropdown = () => {
     const dropdownHTML = `
@@ -318,7 +370,6 @@ const CalendarModal = () => {
     }
   };
 
-  // ✅ Function untuk menghitung jumlah session per tanggal
   const getSessionCountForDate = (date) => {
     const dateStr = format(date, 'yyyy-MM-dd');
     if (selectedRoomForCalendar) {
@@ -340,8 +391,8 @@ const CalendarModal = () => {
         }
       }}
     >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden">
-        {/* ✅ Header dengan gradien yang lebih soft */}
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl h-[85vh] flex flex-col overflow-hidden">
+        {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50 flex-shrink-0">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -352,7 +403,7 @@ const CalendarModal = () => {
                 {getText('Session Calendar', 'Kalender Jadwal Sidang')}
               </h3>
               <p className="text-sm text-gray-600">
-                {getText('View and manage examination schedules', 'Lihat dan kelola jadwal sidang')}
+                {getText('View and manage examination schedules by room', 'Lihat dan kelola jadwal sidang per ruangan')}
               </p>
             </div>
           </div>
@@ -372,7 +423,7 @@ const CalendarModal = () => {
         <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
           {/* Calendar Section */}
           <div className="flex-1 p-6 overflow-y-auto bg-gray-50">
-            {/* ✅ Info Banner dengan design yang lebih menarik */}
+            {/* Info Banner */}
             <div className="mb-6 bg-gradient-to-r from-emerald-50 to-teal-50 border-l-4 border-emerald-400 rounded-r-lg p-4">
               <div className="flex items-start space-x-3">
                 <div className="p-1 bg-emerald-100 rounded-full">
@@ -380,19 +431,19 @@ const CalendarModal = () => {
                 </div>
                 <div>
                   <p className="font-semibold text-emerald-900 mb-1">
-                    {getText('Universal Calendar View', 'Tampilan Kalender Universal')}
+                    {getText('Room-Based Calendar View', 'Tampilan Kalender Berdasarkan Ruangan')}
                   </p>
                   <p className="text-sm text-emerald-800 leading-relaxed">
                     {getText(
-                      'This calendar displays all examination sessions across departments for better coordination.',
-                      'Kalender ini menampilkan semua jadwal sidang lintas departemen untuk koordinasi yang lebih baik.'
+                      'Sessions are grouped by room for better coordination and scheduling management.',
+                      'Sidang dikelompokkan berdasarkan ruangan untuk koordinasi dan manajemen jadwal yang lebih baik.'
                     )}
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* ✅ Room Filter dengan design yang lebih baik */}
+            {/* Room Filter */}
             <div className="mb-6">
               <label className="block text-sm font-semibold text-gray-700 mb-3">
                 <div className="flex items-center space-x-2">
@@ -415,7 +466,7 @@ const CalendarModal = () => {
               </div>
             </div>
 
-            {/* ✅ Month Navigation dengan design yang lebih baik */}
+            {/* Month Navigation */}
             <div className="flex items-center justify-between mb-6 bg-white rounded-xl p-4 shadow-sm border border-gray-200">
               <button
                 onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
@@ -429,7 +480,7 @@ const CalendarModal = () => {
                   {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
                 </h2>
                 <p className="text-sm text-gray-500 mt-1">
-                  {getText('Click on dates with sessions to view details', 'Klik tanggal dengan sidang untuk melihat detail')}
+                  {getText('Click on dates with sessions to view room details', 'Klik tanggal dengan sidang untuk melihat detail ruangan')}
                 </p>
               </div>
               
@@ -441,9 +492,8 @@ const CalendarModal = () => {
               </button>
             </div>
 
-            {/* ✅ Calendar Grid dengan design yang lebih baik */}
+            {/* Calendar Grid */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              {/* Header hari */}
               <div className="grid grid-cols-7 bg-gray-50 border-b border-gray-200">
                 {dayNames.map(day => (
                   <div key={day} className="p-4 text-center text-sm font-semibold text-gray-700 border-r border-gray-200 last:border-r-0">
@@ -452,7 +502,6 @@ const CalendarModal = () => {
                 ))}
               </div>
 
-              {/* Grid kalender */}
               <div className="grid grid-cols-7">
                 {calendarDays.map((day, index) => {
                   const isCurrentMonth = isSameMonth(day, currentMonth);
@@ -477,7 +526,6 @@ const CalendarModal = () => {
                         }
                       `}
                     >
-                      {/* Tanggal */}
                       <div className="flex flex-col items-center justify-center h-full">
                         <span className={`
                           ${isToday ? 'bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs' : ''}
@@ -485,7 +533,6 @@ const CalendarModal = () => {
                           {format(day, 'd')}
                         </span>
                         
-                        {/* ✅ Indicator session dengan count yang jelas */}
                         {hasSessions && isCurrentMonth && (
                           <div className="mt-1 flex items-center space-x-1">
                             <div className="w-2 h-2 bg-red-500 rounded-full"></div>
@@ -496,7 +543,6 @@ const CalendarModal = () => {
                         )}
                       </div>
 
-                      {/* ✅ Tooltip on hover */}
                       {hasSessions && isCurrentMonth && (
                         <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
                           {sessionCount} {getText('sessions', 'sidang')}
@@ -508,7 +554,7 @@ const CalendarModal = () => {
               </div>
             </div>
 
-            {/* ✅ Legend untuk membantu user */}
+            {/* Legend */}
             <div className="mt-4 bg-white rounded-lg p-4 border border-gray-200">
               <h4 className="text-sm font-semibold text-gray-700 mb-3">
                 {getText('Legend', 'Keterangan')}
@@ -532,15 +578,15 @@ const CalendarModal = () => {
             </div>
           </div>
 
-          {/* ✅ Session Details Sidebar dengan design yang lebih baik */}
-          <div className="w-full lg:w-80 border-t lg:border-t-0 lg:border-l border-gray-200 bg-white overflow-y-auto">
+          {/* ✅ PERBAIKAN: Room-Based Session Details Sidebar */}
+          <div className="w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-gray-200 bg-white overflow-y-auto">
             {/* Header sidebar */}
             <div className="p-6 border-b border-gray-200 bg-gray-50">
               <h4 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
                 <div className="p-1 bg-blue-100 rounded">
-                  <Eye className="h-4 w-4 text-blue-600" />
+                  <Building className="h-4 w-4 text-blue-600" />
                 </div>
-                <span>{getText('Session Details', 'Detail Sidang')}</span>
+                <span>{getText('Room Schedule', 'Jadwal Ruangan')}</span>
               </h4>
               {selectedDateSessions.length > 0 && (
                 <p className="text-sm text-gray-600 mt-1">
@@ -551,87 +597,97 @@ const CalendarModal = () => {
 
             <div className="p-6">
               {selectedDateSessions.length > 0 ? (
-                <div className="space-y-4">
-                  {selectedDateSessions.map((session, index) => (
-                    <div key={session.id} className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl p-4 border border-gray-200 hover:shadow-md transition-shadow duration-200">
-                      {/* Header session */}
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                            {index + 1}
+                <div className="space-y-6">
+                  {/* ✅ Group sessions by room */}
+                  {Object.entries(groupSessionsByRoom(selectedDateSessions)).map(([roomId, roomData]) => (
+                    <div key={roomId} className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border-2 border-blue-200 overflow-hidden">
+                      {/* ✅ Room Header */}
+                      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className="p-2 bg-white bg-opacity-20 rounded-lg">
+                              <Building className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <h5 className="font-bold text-lg">{roomData.room.display}</h5>
+                              <p className="text-blue-100 text-sm">
+                                {getRoomTimeRange(roomData.sessions)}
+                              </p>
+                            </div>
                           </div>
-                          <span className="text-sm font-semibold text-gray-700">
-                            {getText('Session', 'Sidang')}
-                          </span>
-                        </div>
-                        <div className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-semibold">
-                          {session.start_time} - {session.end_time}
+                          <div className="text-right">
+                            <div className="bg-white bg-opacity-20 rounded-lg px-3 py-1">
+                              <span className="text-sm font-semibold">
+                                {roomData.sessions.length} {getText('sessions', 'sidang')}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      
-                      {/* Detail session */}
-                      <div className="space-y-3">
-                        <div className="bg-white rounded-lg p-3 border border-gray-100">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <GraduationCap className="h-4 w-4 text-purple-600" />
-                            <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                              {getText('Study Program', 'Program Studi')}
-                            </span>
-                          </div>
-                          <p className="text-sm font-semibold text-gray-900">
-                            {session.student?.study_program?.name || 'N/A'}
-                          </p>
-                        </div>
 
-                        <div className="bg-white rounded-lg p-3 border border-gray-100">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <Building className="h-4 w-4 text-blue-600" />
-                            <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                              {getText('Room', 'Ruangan')}
-                            </span>
-                          </div>
-                          <p className="text-sm font-semibold text-gray-900">
-                            {session.room?.name} - {session.room?.code}
-                          </p>
+                      {/* ✅ Program Studi yang menggunakan ruangan ini */}
+                      <div className="p-4 bg-blue-25 border-b border-blue-200">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <GraduationCap className="h-4 w-4 text-blue-600" />
+                          <span className="text-sm font-semibold text-blue-900">
+                            {getText('Study Programs', 'Program Studi')}:
+                          </span>
                         </div>
+                        <div className="flex flex-wrap gap-2">
+                          {getUniquePrograms(roomData.sessions).map((program, index) => (
+                            <span key={index} className="bg-blue-200 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
+                              {program}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
 
-                        <div className="bg-white rounded-lg p-3 border border-gray-100">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <User className="h-4 w-4 text-green-600" />
-                            <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                              {getText('Student', 'Mahasiswa')}
-                            </span>
+                      {/* ✅ Time slots untuk ruangan ini */}
+                      <div className="p-4 space-y-3">
+                        {roomData.sessions.map((session, sessionIndex) => (
+                          <div key={session.id} className="bg-white rounded-lg p-3 border border-gray-200 hover:shadow-sm transition-shadow">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center space-x-2">
+                                <div className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                                  {sessionIndex + 1}
+                                </div>
+                                <span className="font-semibold text-gray-900">
+                                  {session.start_time} - {session.end_time}
+                                </span>
+                              </div>
+                              <div className="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-medium">
+                                {session.student?.study_program?.name}
+                              </div>
+                            </div>
+                            
+                            <div className="text-sm text-gray-700">
+                              <div className="flex items-center space-x-2">
+                                <User className="h-3 w-3 text-gray-500" />
+                                <span className="font-medium">{session.student?.full_name}</span>
+                                <span className="text-gray-500">({session.student?.identity_number})</span>
+                              </div>
+                            </div>
                           </div>
-                          <p className="text-sm font-semibold text-gray-900">
-                            {session.student?.full_name}
-                          </p>
-                          <p className="text-xs text-gray-600 mt-1">
-                            {session.student?.identity_number}
-                          </p>
-                        </div>
+                        ))}
                       </div>
                     </div>
                   ))}
                   
-                  {/* Summary */}
-                  {selectedRoomForCalendar && selectedDateSessions.length > 0 && (
-                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border-2 border-blue-200">
-                      <h5 className="font-bold text-blue-900 mb-3 flex items-center space-x-2">
-                        <Building className="h-4 w-4" />
-                        <span>{getText('Room Usage Summary', 'Ringkasan Penggunaan Ruangan')}</span>
+                  {/* ✅ Overall Summary jika ada multiple rooms */}
+                  {Object.keys(groupSessionsByRoom(selectedDateSessions)).length > 1 && (
+                    <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl p-4 border-2 border-emerald-200">
+                      <h5 className="font-bold text-emerald-900 mb-3 flex items-center space-x-2">
+                        <Calendar className="h-4 w-4" />
+                        <span>{getText('Daily Summary', 'Ringkasan Harian')}</span>
                       </h5>
-                      <div className="space-y-2 text-sm text-blue-800">
-                        <div className="flex justify-between">
-                          <span className="font-medium">{getText('Total Sessions', 'Total Sidang')}:</span>
-                          <span className="font-bold">{selectedDateSessions.length}</span>
+                      <div className="grid grid-cols-2 gap-4 text-sm text-emerald-800">
+                        <div className="text-center bg-white rounded-lg p-2 border border-emerald-200">
+                          <div className="font-bold text-lg text-emerald-900">{Object.keys(groupSessionsByRoom(selectedDateSessions)).length}</div>
+                          <div className="text-xs">{getText('Rooms Used', 'Ruangan Digunakan')}</div>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="font-medium">{getText('First Session', 'Sidang Pertama')}:</span>
-                          <span className="font-bold">{Math.min(...selectedDateSessions.map(s => s.start_time))}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="font-medium">{getText('Last Session', 'Sidang Terakhir')}:</span>
-                          <span className="font-bold">{Math.max(...selectedDateSessions.map(s => s.end_time))}</span>
+                        <div className="text-center bg-white rounded-lg p-2 border border-emerald-200">
+                          <div className="font-bold text-lg text-emerald-900">{selectedDateSessions.length}</div>
+                          <div className="text-xs">{getText('Total Sessions', 'Total Sidang')}</div>
                         </div>
                       </div>
                     </div>
@@ -640,15 +696,15 @@ const CalendarModal = () => {
               ) : (
                 <div className="text-center text-gray-500 py-12">
                   <div className="bg-gray-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-                    <Calendar className="h-8 w-8 text-gray-400" />
+                    <Building className="h-8 w-8 text-gray-400" />
                   </div>
                   <h5 className="font-semibold text-gray-700 mb-2">
                     {getText('No sessions selected', 'Tidak ada sidang dipilih')}
                   </h5>
                   <p className="text-sm text-gray-500 leading-relaxed">
                     {getText(
-                      'Click on a highlighted date in the calendar to view session details for that day.',
-                      'Klik pada tanggal yang diberi tanda di kalender untuk melihat detail sidang pada hari tersebut.'
+                      'Click on a highlighted date in the calendar to view room usage details for that day.',
+                      'Klik pada tanggal yang diberi tanda di kalender untuk melihat detail penggunaan ruangan pada hari tersebut.'
                     )}
                   </p>
                   {selectedRoomForCalendar && (
