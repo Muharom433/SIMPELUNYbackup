@@ -2069,7 +2069,6 @@ const CalendarModal = () => {
       const titleLines = doc.splitTextToSize(subtitle, titleMaxWidth);
       doc.text(titleLines, headerTextX, currentY, { align: 'center' });
       currentY += (titleLines.length * 6);
-      currentY += 8;
 
       // ✅ Kolom tabel yang disesuaikan dengan landscape
       const tableColumn = [
