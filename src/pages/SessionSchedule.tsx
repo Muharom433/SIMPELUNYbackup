@@ -826,13 +826,6 @@ const CalendarModal = () => {
     }
   }, [watchDate, watchStartTime, watchEndTime, rooms]);
 
-  // ✅ NEW: Print Form Department Effect
-  useEffect(() => {
-    if (profile?.role === 'super_admin') {
-      printForm.setValue('study_program_id', '');
-    }
-  }, [printSelectedDepartment, profile?.role, printForm]);
-
   // ✅ checkAvailableRooms menggunakan allSessions
   const checkAvailableRooms = async (date, startTime, endTime) => {
     try {
