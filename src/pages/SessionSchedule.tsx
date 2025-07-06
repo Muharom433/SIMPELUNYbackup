@@ -2168,6 +2168,30 @@ const handleSubmitWithValidation = async () => {
   setSessionToDelete(session);
   setShowDeleteModal(true);
 };
+  const handleConfirmDelete = async () => {
+  if (!sessionToDelete) return;
+  
+  try {
+    setSubmitting(true);
+    const { error } = await supabase.from('final_sessions').delete().eq('id', sessionToDelete.id);
+    if (error) throw error;
+    
+    alert.success(getText('Session deleted successfully', 'Jadwal sidang berhasil dihapus'));
+    setShowDeleteModal(false);
+    setSessionToDelete(null);
+    fetchSessions();
+  } catch (error) {
+    console.error('Error deleting session:', error);
+    alert.error(error.message || getText('Failed to delete session', 'Gagal menghapus jadwal sidang'));
+  } finally {
+    setSubmitting(false);
+  }
+};
+
+const handleCancelDelete = () => {
+  setShowDeleteModal(false);
+  setSessionToDelete(null);
+};
 
   // ✅ NEW: Handle Print PDF Function - Simplified dengan Fixed Layout
   const handlePrint = async (formData: PrintFormData) => {
