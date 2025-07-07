@@ -82,6 +82,19 @@ const getImageDataUrl = async (url: string): Promise<string> => {
     });
 };
 
+// ✅ Debounce utility function
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
 const SessionScheduleProgressive = () => {
   const { profile } = useAuth();
   const { getText } = useLanguage();
@@ -107,7 +120,7 @@ const SessionScheduleProgressive = () => {
   const [editingSession, setEditingSession] = useState(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-const [sessionToDelete, setSessionToDelete] = useState(null);
+  const [sessionToDelete, setSessionToDelete] = useState(null);
 
   // Calendar Modal states
   const [showCalendarModal, setShowCalendarModal] = useState(false);
@@ -117,6 +130,10 @@ const [sessionToDelete, setSessionToDelete] = useState(null);
   
   // ✅ NEW: Mobile details toggle state
   const [showMobileDetails, setShowMobileDetails] = useState(false);
+
+  // ✅ NEW: Duplicate detection states
+  const [duplicateWarning, setDuplicateWarning] = useState(null);
+  const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
 
   // Progressive form states
   const [currentStep, setCurrentStep] = useState(1);
@@ -188,6 +205,109 @@ const [sessionToDelete, setSessionToDelete] = useState(null);
       description: getText('Select room, title, and examination committee', 'Pilih ruangan, judul, dan tim penguji')
     }
   ];
+
+  // ✅ Enhanced duplicate check function with modal auto-close
+  const checkExistingSession = async (studentNim, studentName) => {
+    if (!studentNim.trim() && !studentName.trim()) {
+      setDuplicateWarning(null);
+      return { hasDuplicate: false };
+    }
+
+    setIsCheckingDuplicate(true);
+    try {
+      // Check by NIM first (most accurate)
+      let existingSessions = [];
+      
+      if (studentNim.trim()) {
+        // Query by student NIM
+        const { data: studentData } = await supabase
+          .from('users')
+          .select('id, full_name')
+          .eq('identity_number', studentNim.trim())
+          .maybeSingle();
+
+        if (studentData) {
+          const { data: sessionData } = await supabase
+            .from('final_sessions')
+            .select(`
+              id,
+              date,
+              start_time,
+              end_time,
+              title,
+              student:users!student_id(
+                id,
+                full_name,
+                identity_number,
+                study_program:study_programs(name)
+              ),
+              room:rooms(name, code)
+            `)
+            .eq('student_id', studentData.id);
+
+          existingSessions = sessionData || [];
+        }
+      } else if (studentName.trim()) {
+        // If only name provided, check by name (less accurate)
+        const { data: allSessionsData } = await supabase
+          .from('final_sessions')
+          .select(`
+            id,
+            date,
+            start_time,
+            end_time,
+            title,
+            student:users!student_id(
+              id,
+              full_name,
+              identity_number,
+              study_program:study_programs(name)
+            ),
+            room:rooms(name, code)
+          `);
+
+        existingSessions = allSessionsData?.filter(session => 
+          session.student?.full_name?.toLowerCase().includes(studentName.toLowerCase())
+        ) || [];
+      }
+
+      // Filter out current editing session if exists
+      const relevantSessions = existingSessions.filter(session => 
+        !editingSession || session.id !== editingSession.id
+      );
+
+      if (relevantSessions.length > 0) {
+        const warningData = {
+          type: studentNim.trim() ? 'exact_match' : 'name_match',
+          sessions: relevantSessions,
+          studentName: relevantSessions[0].student?.full_name || studentName,
+          studentNim: relevantSessions[0].student?.identity_number || studentNim
+        };
+
+        setDuplicateWarning(warningData);
+        return { 
+          hasDuplicate: true, 
+          sessions: relevantSessions,
+          type: warningData.type
+        };
+      } else {
+        setDuplicateWarning(null);
+        return { hasDuplicate: false };
+      }
+    } catch (error) {
+      console.error('Error in checkExistingSession:', error);
+      setDuplicateWarning(null);
+      return { hasDuplicate: false };
+    } finally {
+      setIsCheckingDuplicate(false);
+    }
+  };
+
+  // ✅ Debounced check untuk performance
+  const debouncedCheck = useCallback(
+    debounce((nim, name) => checkExistingSession(nim, name), 500),
+    [editingSession]
+  );
 
   // ✅ Calendar Helper Functions menggunakan allSessions
   const getSessionsForDate = (date) => {
@@ -599,9 +719,7 @@ const CalendarModal = () => {
                 </div>
               </button>
             </div>
-          )}
-
-          {/* Room-Based Session Details Sidebar */}
+          )}{/* Room-Based Session Details Sidebar */}
           <div className={`
             w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-gray-200 bg-white overflow-y-auto
             ${showMobileDetails ? 'block' : 'hidden lg:block'}
@@ -1089,7 +1207,7 @@ const CalendarModal = () => {
     </div>
   );
 
-  // ✅ validateStep yang membaca nilai DOM dan React state
+  // ✅ Enhanced validateStep dengan duplicate warning consideration
   const validateStep = useCallback((step) => {
     switch (step) {
       case 1:
@@ -1123,8 +1241,8 @@ const CalendarModal = () => {
     }
   }, [form, formData]);
   
-  // ✅ handleStepComplete yang sinkronisasi DOM -> React state
-  const handleStepComplete = useCallback((step) => {
+  // ✅ Enhanced handleStepComplete dengan duplicate check dan auto-close modal
+  const handleStepComplete = useCallback(async (step) => {
     if (step === 1) {
       const nimValue = studentInputRef.current?.value || '';
       const nameValue = studentNameRef.current?.value || '';
@@ -1132,6 +1250,29 @@ const CalendarModal = () => {
       
       if (!nimValue.trim() || !nameValue.trim() || !programValue) {
         alert.error(getText('Please fill all required fields', 'Silakan isi semua field yang diperlukan'));
+        return;
+      }
+      
+      // ✅ Check for existing sessions before proceeding to step 2
+      const duplicateCheck = await checkExistingSession(nimValue, nameValue);
+      
+      if (duplicateCheck.hasDuplicate && duplicateCheck.type === 'exact_match') {
+        const sessionCount = duplicateCheck.sessions.length;
+        const latestSession = duplicateCheck.sessions[0];
+        
+        alert.error(
+          getText(
+            `Student "${nameValue}" already has ${sessionCount} examination session(s).\n\nLatest session: ${format(parseISO(latestSession.date), 'MMM d, yyyy')} at ${latestSession.start_time}\n\nModal will be closed to prevent duplicate entries.`,
+            `Mahasiswa "${nameValue}" sudah memiliki ${sessionCount} jadwal sidang.\n\nSidang terakhir: ${format(parseISO(latestSession.date), 'MMM d, yyyy')} pukul ${latestSession.start_time}\n\nModal akan ditutup untuk mencegah duplikasi data.`
+          )
+        );
+        
+        // ✅ Auto-close modal after showing the alert
+        setTimeout(() => {
+          setShowModal(false);
+          resetForm();
+        }, 1000);
+        
         return;
       }
       
@@ -1163,13 +1304,14 @@ const CalendarModal = () => {
     if (step < 3) {
       setCurrentStep(step + 1);
     }
-  }, [validateStep, getText, form, formData]);
+  }, [validateStep, getText, form, formData, checkExistingSession]);
 
   const handleStepBack = useCallback(() => {
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
     }
   }, [currentStep]);
+
 const validateAllFields = () => {
   const errors = [];
   
@@ -1232,7 +1374,7 @@ const validateAllFields = () => {
   return errors;
 };
 
-// ✅ TAMBAH FUNCTION BARU - Submit dengan validasi
+// ✅ Enhanced Submit dengan comprehensive duplicate prevention
 const handleSubmitWithValidation = async () => {
   // Sync semua nilai dari DOM ke React state
   const supervisorValue = supervisorInputRef.current?.value || '';
@@ -1258,6 +1400,21 @@ const handleSubmitWithValidation = async () => {
   
   // Wait for state updates
   await new Promise(resolve => setTimeout(resolve, 100));
+  
+  // ✅ Final duplicate check before submission
+  if (!editingSession) {
+    const finalDuplicateCheck = await checkExistingSession(nimValue, nameValue);
+    if (finalDuplicateCheck.hasDuplicate && finalDuplicateCheck.type === 'exact_match') {
+      const proceed = confirm(getText(
+        `FINAL WARNING: Student "${nameValue}" already has ${finalDuplicateCheck.sessions.length} examination session(s).\n\nAre you absolutely sure you want to create another session for this student?`,
+        `PERINGATAN AKHIR: Mahasiswa "${nameValue}" sudah memiliki ${finalDuplicateCheck.sessions.length} jadwal sidang.\n\nApakah Anda benar-benar yakin ingin membuat sidang lain untuk mahasiswa ini?`
+      ));
+      
+      if (!proceed) {
+        return;
+      }
+    }
+  }
   
   // Validate all fields
   const validationErrors = validateAllFields();
@@ -1286,7 +1443,8 @@ const handleSubmitWithValidation = async () => {
   // If all validation passes, submit the form
   form.handleSubmit(handleSubmit)();
 };
-  // ✅ StudentInformationStep
+
+  // ✅ Enhanced StudentInformationStep dengan duplicate detection
   const StudentInformationStep = () => {
     const dropdownRef = useRef(null);
     const programDisplayRef = useRef(null);
@@ -1313,6 +1471,7 @@ const handleSubmitWithValidation = async () => {
       }));
     };
 
+    // ✅ Enhanced student dropdown dengan duplicate info
     const showStudentDropdown = (searchTerm) => {
       if (!searchTerm.trim()) {
         hideStudentDropdown();
@@ -1334,19 +1493,43 @@ const handleSubmitWithValidation = async () => {
         return;
       }
 
+      // ✅ Check which students already have sessions
+      const studentsWithSessionStatus = filteredStudents.map(student => {
+        const hasExistingSession = allSessions.some(session => 
+          session.student_id === student.id && 
+          (!editingSession || session.id !== editingSession.id)
+        );
+        return { ...student, hasExistingSession };
+      });
+
       const dropdownHTML = `
         <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-          ${filteredStudents.map(student => `
+          ${studentsWithSessionStatus.map(student => `
             <div 
-              class="dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+              class="dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150 ${student.hasExistingSession ? 'bg-yellow-50 border-l-4 border-yellow-400' : ''}"
               data-student-id="${student.id}"
               data-student-nim="${student.identity_number}"
               data-student-name="${student.full_name}"
               data-program-id="${student.study_program_id || ''}"
+              data-has-session="${student.hasExistingSession}"
             >
-              <div class="font-semibold text-gray-800">${student.identity_number}</div>
-              <div class="text-sm text-gray-600">${student.full_name}</div>
-              ${student.study_program ? `<div class="text-xs text-gray-500">${student.study_program.name}</div>` : ''}
+              <div class="flex items-center justify-between">
+                <div class="flex-1">
+                  <div class="font-semibold text-gray-800">${student.identity_number}</div>
+                  <div class="text-sm text-gray-600">${student.full_name}</div>
+                  ${student.study_program ? `<div class="text-xs text-gray-500">${student.study_program.name}</div>` : ''}
+                </div>
+                ${student.hasExistingSession ? `
+                  <div class="ml-2 flex-shrink-0">
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-300">
+                      <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                      </svg>
+                      ${getText('Has Session', 'Ada Sidang')}
+                    </span>
+                  </div>
+                ` : ''}
+              </div>
             </div>
           `).join('')}
         </div>
@@ -1363,6 +1546,7 @@ const handleSubmitWithValidation = async () => {
             const studentNim = e.currentTarget.dataset.studentNim;
             const studentName = e.currentTarget.dataset.studentName;
             const programId = e.currentTarget.dataset.programId;
+            const hasSession = e.currentTarget.dataset.hasSession === 'true';
             
             studentInputRef.current.value = studentNim;
             studentNameRef.current.value = studentName;
@@ -1373,6 +1557,13 @@ const handleSubmitWithValidation = async () => {
             
             form.setValue('student_id', studentId);
             syncToParentForm();
+            
+            // ✅ Trigger duplicate check when student is selected
+            if (hasSession) {
+              debouncedCheck(studentNim, studentName);
+            } else {
+              setDuplicateWarning(null);
+            }
             
             if (programId) {
               const program = studyPrograms.find(p => p.id === programId);
@@ -1395,6 +1586,30 @@ const handleSubmitWithValidation = async () => {
     const hideStudentDropdown = () => {
       if (dropdownRef.current) {
         dropdownRef.current.style.display = 'none';
+      }
+    };
+
+    // ✅ Enhanced input handlers dengan duplicate check
+    const handleStudentInputChange = (e) => {
+      const value = e.target.value;
+      localData.current.studentNim = value;
+      showStudentDropdown(value);
+      
+      // Trigger duplicate check
+      if (value.trim().length >= 3) {
+        debouncedCheck(value, localData.current.studentName);
+      } else {
+        setDuplicateWarning(null);
+      }
+    };
+
+    const handleStudentNameChange = (e) => {
+      const value = e.target.value;
+      localData.current.studentName = value;
+      
+      // Trigger duplicate check if NIM is not available
+      if (!localData.current.studentNim.trim() && value.trim().length >= 3) {
+        debouncedCheck('', value);
       }
     };
 
@@ -1487,6 +1702,118 @@ const handleSubmitWithValidation = async () => {
       }
     };
 
+    // ✅ Duplicate Warning Component
+    const DuplicateWarningCard = () => {
+      if (!duplicateWarning) return null;
+
+      const isExactMatch = duplicateWarning.type === 'exact_match';
+      
+      return (
+        <div className={`rounded-xl border p-4 mb-6 ${
+          isExactMatch 
+            ? 'bg-red-50 border-red-300' 
+            : 'bg-yellow-50 border-yellow-300'
+        }`}>
+          <div className="flex items-start space-x-3">
+            <div className={`flex-shrink-0 mt-0.5 ${
+              isExactMatch ? 'text-red-600' : 'text-yellow-600'
+            }`}>
+              <AlertCircle className="h-5 w-5" />
+            </div>
+            <div className="flex-1">
+              <h4 className={`font-semibold text-lg ${
+                isExactMatch ? 'text-red-800' : 'text-yellow-800'
+              }`}>
+                {isExactMatch 
+                  ? getText('⚠️ Duplicate Session Detected', '⚠️ Sidang Duplikat Terdeteksi')
+                  : getText('🔍 Similar Name Found', '🔍 Nama Serupa Ditemukan')
+                }
+              </h4>
+              <p className={`text-sm mt-2 ${
+                isExactMatch ? 'text-red-700' : 'text-yellow-700'
+              }`}>
+                {isExactMatch 
+                  ? getText(
+                      `Student "${duplicateWarning.studentName}" already has ${duplicateWarning.sessions.length} examination session(s). Creating another session will result in duplicate entries.`,
+                      `Mahasiswa "${duplicateWarning.studentName}" sudah memiliki ${duplicateWarning.sessions.length} jadwal sidang. Membuat sidang lain akan mengakibatkan duplikasi data.`
+                    )
+                  : getText(
+                      `Found ${duplicateWarning.sessions.length} session(s) with similar name. Please verify this is a different student.`,
+                      `Ditemukan ${duplicateWarning.sessions.length} sidang dengan nama serupa. Pastikan ini mahasiswa yang berbeda.`
+                    )
+                }
+              </p>
+              
+              {/* ✅ Show existing sessions with enhanced styling */}
+              <div className="mt-4 space-y-3">
+                <h5 className={`text-sm font-semibold ${
+                  isExactMatch ? 'text-red-800' : 'text-yellow-800'
+                }`}>
+                  {getText('Existing Sessions:', 'Sidang yang Ada:')}
+                </h5>
+                
+                {duplicateWarning.sessions.slice(0, 3).map((session, index) => (
+                  <div key={session.id} className={`text-xs p-3 rounded-lg border ${
+                    isExactMatch 
+                      ? 'bg-red-100 border-red-200' 
+                      : 'bg-yellow-100 border-yellow-200'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-bold text-gray-800">
+                        #{index + 1} - {session.student?.full_name} ({session.student?.identity_number})
+                      </div>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        isExactMatch 
+                          ? 'bg-red-200 text-red-800' 
+                          : 'bg-yellow-200 text-yellow-800'
+                      }`}>
+                        {session.student?.study_program?.name}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-gray-600">
+                      <div>
+                        <span className="font-medium">📅 Date:</span> {format(parseISO(session.date), 'MMM d, yyyy')}
+                      </div>
+                      <div>
+                        <span className="font-medium">⏰ Time:</span> {session.start_time} - {session.end_time}
+                      </div>
+                      <div>
+                        <span className="font-medium">🏢 Room:</span> {session.room?.name}
+                      </div>
+                      <div>
+                        <span className="font-medium">📝 Title:</span> {session.title?.substring(0, 30)}...
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                
+                {duplicateWarning.sessions.length > 3 && (
+                  <div className="text-xs text-gray-500 text-center py-2">
+                    {getText(
+                      `+ ${duplicateWarning.sessions.length - 3} more sessions`,
+                      `+ ${duplicateWarning.sessions.length - 3} sidang lainnya`
+                    )}
+                  </div>
+                )}
+              </div>
+              
+              {/* ✅ Action recommendation */}
+              {isExactMatch && (
+                <div className="mt-4 p-3 bg-red-100 border border-red-200 rounded-lg">
+                  <p className="text-xs text-red-800 font-medium">
+                    💡 {getText(
+                      'Recommendation: Please verify the student information. If this is correct, the system will require confirmation before creating another session.',
+                      'Rekomendasi: Silakan verifikasi informasi mahasiswa. Jika ini benar, sistem akan meminta konfirmasi sebelum membuat sidang lain.'
+                    )}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     useEffect(() => {
       if (formData.student_nim && studentInputRef.current && !localData.current.studentNim) {
         studentInputRef.current.value = formData.student_nim;
@@ -1519,22 +1846,27 @@ const handleSubmitWithValidation = async () => {
             {getText('Please select or enter student details for the examination', 'Silakan pilih atau masukkan detail mahasiswa untuk sidang')}
           </p>
         </div>
+
+        {/* ✅ Duplicate Warning Display */}
+        <DuplicateWarningCard />
         
         <div className="space-y-4 md:grid md:grid-cols-1 lg:grid-cols-3 md:gap-6 md:space-y-0">
           
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               {getText("Student NIM", "NIM Mahasiswa")} *
+              {isCheckingDuplicate && (
+                <span className="ml-2 text-blue-600">
+                  <RefreshCw className="h-3 w-3 animate-spin inline" />
+                </span>
+              )}
             </label>
             <div className="relative">
               <input
                 ref={studentInputRef}
                 type="text"
                 placeholder={getText("Search student by NIM or name...", "Cari mahasiswa berdasarkan NIM atau nama...")}
-                onInput={(e) => {
-                  localData.current.studentNim = e.target.value;
-                  showStudentDropdown(e.target.value);
-                }}
+                onInput={handleStudentInputChange}
                 onFocus={(e) => {
                   showStudentDropdown(e.target.value);
                 }}
@@ -1542,7 +1874,13 @@ const handleSubmitWithValidation = async () => {
                   syncToParentForm();
                   setTimeout(() => hideStudentDropdown(), 150);
                 }}
-                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                className={`w-full px-4 py-3 pr-10 border rounded-xl focus:outline-none focus:ring-2 focus:border-transparent transition-all duration-200 ${
+                  duplicateWarning?.type === 'exact_match' 
+                    ? 'border-red-300 focus:ring-red-500 bg-red-50' 
+                    : duplicateWarning?.type === 'name_match'
+                    ? 'border-yellow-300 focus:ring-yellow-500 bg-yellow-50'
+                    : 'border-gray-300 focus:ring-blue-500 bg-white'
+                }`}
                 autoComplete="off"
               />
               <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
@@ -1558,13 +1896,17 @@ const handleSubmitWithValidation = async () => {
               ref={studentNameRef}
               type="text"
               placeholder={getText("Enter student name...", "Masukkan nama mahasiswa...")}
-              onInput={(e) => {
-                localData.current.studentName = e.target.value;
-              }}
+              onInput={handleStudentNameChange}
               onBlur={() => {
                 syncToParentForm();
               }}
-              className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
+              className={`w-full px-3 md:px-4 py-2 md:py-3 border rounded-lg md:rounded-xl focus:outline-none focus:ring-2 transition-all duration-200 text-sm md:text-base ${
+                duplicateWarning?.type === 'exact_match' 
+                  ? 'border-red-300 focus:ring-red-500 focus:border-red-500 bg-red-50' 
+                  : duplicateWarning?.type === 'name_match'
+                  ? 'border-yellow-300 focus:ring-yellow-500 focus:border-yellow-500 bg-yellow-50'
+                  : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500 bg-white'
+              }`}
               autoComplete="off"
             />
           </div>
@@ -1588,7 +1930,7 @@ const handleSubmitWithValidation = async () => {
           </div>
         </div>
         
-        {formData.student_nim && !form.getValues('student_id') && (
+        {formData.student_nim && !form.getValues('student_id') && !duplicateWarning && (
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg md:rounded-xl p-3 md:p-4">
             <div className="flex items-start space-x-2 md:space-x-3">
               <User className="h-4 w-4 md:h-5 md:w-5 text-blue-600 mt-0.5 flex-shrink-0" />
@@ -1677,863 +2019,7 @@ const handleSubmitWithValidation = async () => {
         </div>
       )}
     </div>
-  );
-
-  // ✅ RoomAndDetailsStep dengan DOM manipulation
-  const RoomAndDetailsStep = () => {
-    const roomDisplayRef = useRef(null);
-
-    const dosenData = useRef({
-      supervisorSearch: '',
-      examinerSearch: '',
-      secretarySearch: '',
-      roomSearch: '',
-      selectedRoomDisplay: '',
-      showSupervisorDropdown: false,
-      showExaminerDropdown: false,
-      showSecretaryDropdown: false,
-      showRoomDropdown: false
-    });
-
-    const showLecturerDropdown = (type, searchTerm) => {
-      if (!searchTerm.trim()) {
-        hideLecturerDropdown(type);
-        return;
-      }
-
-      const filteredLecturers = lecturers.filter(lecturer =>
-        lecturer && 
-        lecturer.full_name &&
-        lecturer.full_name.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-
-      if (filteredLecturers.length === 0) {
-        hideLecturerDropdown(type);
-        return;
-      }
-
-      const dropdownHTML = `
-        <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-          ${filteredLecturers.map(lecturer => `
-            <div 
-              class="lecturer-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-              data-lecturer-name="${lecturer.full_name}"
-            >
-              <div class="font-semibold text-gray-800">${lecturer.full_name}</div>
-            </div>
-          `).join('')}
-        </div>
-      `;
-
-      const dropdownContainer = document.querySelector(`#${type}-dropdown`);
-      if (dropdownContainer) {
-        dropdownContainer.innerHTML = dropdownHTML;
-        dropdownContainer.style.display = 'block';
-        
-        dropdownContainer.querySelectorAll('.lecturer-item').forEach(item => {
-          item.addEventListener('mousedown', (e) => e.preventDefault());
-          item.addEventListener('click', (e) => {
-            const lecturerName = e.currentTarget.dataset.lecturerName;
-            
-            const inputRef = type === 'supervisor' ? supervisorInputRef : 
-                            type === 'examiner' ? examinerInputRef : secretaryInputRef;
-            
-            if (inputRef.current) {
-              inputRef.current.value = lecturerName;
-            }
-            
-            form.setValue(type, lecturerName);
-            dosenData.current[`${type}Search`] = lecturerName;
-            
-            hideLecturerDropdown(type);
-            inputRef.current?.focus();
-          });
-        });
-      }
-    };
-
-    const hideLecturerDropdown = (type) => {
-      const dropdownContainer = document.querySelector(`#${type}-dropdown`);
-      if (dropdownContainer) {
-        dropdownContainer.style.display = 'none';
-      }
-    };
-
-    const showRoomDropdown = () => {
-      const dropdownHTML = `
-        <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
-          <div class="p-3 border-b border-gray-100">
-            <input
-              type="text"
-              placeholder="${getText("Search rooms...", "Cari ruangan...")}"
-              class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-              id="room-search-input"
-              autocomplete="off"
-            />
-          </div>
-          <div class="max-h-60 overflow-y-auto" id="room-list">
-            ${availableRooms.map(room => `
-              <div 
-                class="room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                data-room-id="${room.id}"
-                data-room-name="${room.name}"
-                data-room-code="${room.code}"
-              >
-                <div class="font-semibold text-gray-800">${room.name} - ${room.code}</div>
-                <div class="text-sm text-gray-600">Kapasitas: ${room.capacity || 'N/A'}</div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      `;
-
-      const roomDropdownContainer = document.querySelector('#room-dropdown');
-      if (roomDropdownContainer) {
-        roomDropdownContainer.innerHTML = dropdownHTML;
-        roomDropdownContainer.style.display = 'block';
-        
-        const searchInput = roomDropdownContainer.querySelector('#room-search-input');
-        const roomList = roomDropdownContainer.querySelector('#room-list');
-        
-        if (searchInput) {
-          searchInput.focus();
-          searchInput.addEventListener('input', (e) => {
-            const searchTerm = e.target.value.toLowerCase();
-            const filteredRooms = availableRooms.filter(room =>
-              room.name.toLowerCase().includes(searchTerm) ||
-              room.code.toLowerCase().includes(searchTerm)
-            );
-            
-            roomList.innerHTML = filteredRooms.map(room => `
-              <div 
-                class="room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                data-room-id="${room.id}"
-                data-room-name="${room.name}"
-                data-room-code="${room.code}"
-              >
-                <div class="font-semibold text-gray-800">${room.name} - ${room.code}</div>
-                <div class="text-sm text-gray-600">Kapasitas: ${room.capacity || 'N/A'}</div>
-              </div>
-            `).join('');
-            
-            addRoomListeners();
-          });
-        }
-        
-        addRoomListeners();
-      }
-    };
-
-    const addRoomListeners = () => {
-      document.querySelectorAll('.room-item').forEach(item => {
-        item.addEventListener('click', (e) => {
-          const roomId = e.currentTarget.dataset.roomId;
-          const roomName = e.currentTarget.dataset.roomName;
-          const roomCode = e.currentTarget.dataset.roomCode;
-          
-          const display = `${roomName} - ${roomCode}`;
-          dosenData.current.selectedRoomDisplay = display;
-          
-          if (roomDisplayRef.current) {
-            roomDisplayRef.current.value = display;
-          }
-          
-          form.setValue('room_id', roomId);
-          hideRoomDropdown();
-        });
-      });
-    };
-
-    const hideRoomDropdown = () => {
-      const roomDropdownContainer = document.querySelector('#room-dropdown');
-      if (roomDropdownContainer) {
-        roomDropdownContainer.style.display = 'none';
-      }
-    };
-
-    useEffect(() => {
-      const supervisorValue = form.getValues('supervisor');
-      if (supervisorValue && supervisorInputRef.current) {
-        supervisorInputRef.current.value = supervisorValue;
-        dosenData.current.supervisorSearch = supervisorValue;
-      }
-      
-      const examinerValue = form.getValues('examiner');
-      if (examinerValue && examinerInputRef.current) {
-        examinerInputRef.current.value = examinerValue;
-        dosenData.current.examinerSearch = examinerValue;
-      }
-      
-      const secretaryValue = form.getValues('secretary');
-      if (secretaryValue && secretaryInputRef.current) {
-        secretaryInputRef.current.value = secretaryValue;
-        dosenData.current.secretarySearch = secretaryValue;
-      }
-      
-      const roomId = form.getValues('room_id');
-      if (roomId && roomDisplayRef.current) {
-        const room = availableRooms.find(r => r.id === roomId);
-        if (room) {
-          const display = `${room.name} - ${room.code}`;
-          roomDisplayRef.current.value = display;
-          dosenData.current.selectedRoomDisplay = display;
-        }
-      }
-      
-      const titleValue = form.getValues('title');
-      if (titleValue && titleInputRef.current) {
-        titleInputRef.current.value = titleValue;
-      }
-    }, [currentStep]);
-
-    return (
-      <div className="space-y-6">
-        <div className="text-center mb-6">
-          <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-2">
-            {getText('Room & Examination Details', 'Ruangan & Detail Sidang')}
-          </h3>
-          <p className="text-sm md:text-base text-gray-600">
-            {getText('Complete the examination setup with room, title and committee', 'Lengkapi pengaturan sidang dengan ruangan, judul dan panitia')}
-          </p>
-        </div>
-
-        <div className="space-y-3">
-          <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
-            <Building className="h-4 w-4 text-blue-500" />
-            <span>{getText('Room', 'Ruangan')}</span>
-          </h4>
-          <div className="relative">
-            <input
-              ref={roomDisplayRef}
-              type="text"
-              readOnly
-              placeholder={getText("Click to select room...", "Klik untuk pilih ruangan...")}
-              onClick={showRoomDropdown}
-              className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer bg-white"
-            />
-            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <div id="room-dropdown" style={{ display: 'none' }}></div>
-          </div>
-          
-          {form.formState.errors.room_id && (
-            <p className="mt-1 text-xs text-red-600">{form.formState.errors.room_id.message}</p>
-          )}
-        </div>
-
-        <div className="space-y-3">
-          <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
-            <BookOpen className="h-4 w-4 text-blue-500" />
-            <span>{getText('Thesis Title', 'Judul Skripsi/Tesis')}</span>
-          </h4>
-          <textarea
-            ref={titleInputRef}
-            rows={3}
-            className="w-full px-3 md:px-4 py-2.5 md:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm resize-none"
-            placeholder={getText("Enter the complete thesis title...", "Masukkan judul lengkap skripsi/tesis...")}
-            onInput={(e) => {
-              form.setValue('title', e.target.value);
-            }}
-            onBlur={(e) => {
-              form.setValue('title', e.target.value);
-            }}
-          />
-          {form.formState.errors.title && (
-            <p className="mt-1 text-xs text-red-600">{form.formState.errors.title.message}</p>
-          )}
-        </div>
-
-        <div className="space-y-3">
-          <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
-            <Users className="h-4 w-4 text-blue-500" />
-            <span>{getText('Examination Committee', 'Panitia Sidang')}</span>
-          </h4>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                {getText("Supervisor", "Pembimbing")} *
-              </label>
-              <div className="relative">
-                <input
-                  ref={supervisorInputRef}
-                  type="text"
-                  placeholder={getText("Search supervisor...", "Cari pembimbing...")}
-                  onInput={(e) => {
-                    dosenData.current.supervisorSearch = e.target.value;
-                    showLecturerDropdown('supervisor', e.target.value);
-                  }}
-                  onFocus={(e) => {
-                    showLecturerDropdown('supervisor', e.target.value);
-                  }}
-                  onBlur={(e) => {
-                    form.setValue('supervisor', e.target.value);
-                    setTimeout(() => hideLecturerDropdown('supervisor'), 150);
-                  }}
-                  className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                  autoComplete="off"
-                />
-                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <div id="supervisor-dropdown" style={{ display: 'none' }}></div>
-              </div>
-              {form.formState.errors.supervisor && (
-                <p className="mt-1 text-xs text-red-600">{form.formState.errors.supervisor.message}</p>
-              )}
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                {getText("Examiner", "Penguji")} *
-              </label>
-              <div className="relative">
-                <input
-                  ref={examinerInputRef}
-                  type="text"
-                  placeholder={getText("Search examiner...", "Cari penguji...")}
-                  onInput={(e) => {
-                    dosenData.current.examinerSearch = e.target.value;
-                    showLecturerDropdown('examiner', e.target.value);
-                  }}
-                  onFocus={(e) => {
-                    showLecturerDropdown('examiner', e.target.value);
-                  }}
-                  onBlur={(e) => {
-                    form.setValue('examiner', e.target.value);
-                    setTimeout(() => hideLecturerDropdown('examiner'), 150);
-                  }}
-                  className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                  autoComplete="off"
-                />
-                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <div id="examiner-dropdown" style={{ display: 'none' }}></div>
-              </div>
-              {form.formState.errors.examiner && (
-                <p className="mt-1 text-xs text-red-600">{form.formState.errors.examiner.message}</p>
-              )}
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                {getText("Secretary", "Sekretaris")} *
-              </label>
-              <div className="relative">
-                <input
-                  ref={secretaryInputRef}
-                  type="text"
-                  placeholder={getText("Search secretary...", "Cari sekretaris...")}
-                  onInput={(e) => {
-                    dosenData.current.secretarySearch = e.target.value;
-                    showLecturerDropdown('secretary', e.target.value);
-                  }}
-                  onFocus={(e) => {
-                    showLecturerDropdown('secretary', e.target.value);
-                  }}
-                  onBlur={(e) => {
-                    form.setValue('secretary', e.target.value);
-                    setTimeout(() => hideLecturerDropdown('secretary'), 150);
-                  }}
-                  className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                  autoComplete="off"
-                />
-                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <div id="secretary-dropdown" style={{ display: 'none' }}></div>
-              </div>
-              {form.formState.errors.secretary && (
-                <p className="mt-1 text-xs text-red-600">{form.formState.errors.secretary.message}</p>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // ✅ ProgressSidebar
-  const ProgressSidebar = () => (
-    <div className="w-72 bg-white border-r-2 border-blue-100 p-6">
-      <div className="mb-8">
-        <h3 className="text-lg font-bold text-gray-900">Session Creation</h3>
-        <p className="text-sm text-gray-500 mt-1">Follow the steps below</p>
-      </div>
-
-      <div className="space-y-6">
-        {steps.map((step, index) => {
-          const isCompleted = completedSteps.has(step.id);
-          const isCurrent = currentStep === step.id;
-          
-          return (
-            <div key={step.id} className="relative flex items-start">
-              {index < steps.length - 1 && (
-                <div className={`absolute left-6 top-12 w-0.5 h-16 ${
-                  isCompleted ? 'bg-blue-500' : 'bg-gray-200'
-                }`} />
-              )}
-              
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 relative z-10 ${
-                isCompleted
-                  ? 'bg-blue-500 border-blue-500 text-white'
-                  : isCurrent
-                  ? 'bg-white border-blue-500 text-blue-500 ring-4 ring-blue-100'
-                  : 'bg-white border-gray-300 text-gray-400'
-              }`}>
-                {isCompleted ? <Check className="h-5 w-5" /> : <step.icon className="h-5 w-5" />}
-              </div>
-              
-              <div className="ml-4">
-                <div className={`text-sm font-medium ${isCurrent || isCompleted ? 'text-blue-600' : 'text-gray-400'}`}>
-                  Step {step.id}
-                </div>
-                <div className={`font-semibold ${isCurrent || isCompleted ? 'text-gray-900' : 'text-gray-500'}`}>
-                  {step.title}
-                </div>
-                <div className="text-sm text-gray-500 mt-1">{step.description}</div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-
-  const renderCurrentStep = () => {
-    switch (currentStep) {
-      case 1:
-        return <StudentInformationStep />;
-      case 2:
-        return <ScheduleInformationStep />;
-      case 3:
-        return <RoomAndDetailsStep />;
-      default:
-        return null;
-    }
-  };
-
-  // ✅ handleSubmit menggunakan BookRoom pattern
-  const handleSubmit = async (data: SessionFormData) => {
-    try {
-      setSubmitting(true);
-
-      let finalStudentId = data.student_id;
-      
-      if (!finalStudentId && formData.student_nim && formData.student_name) {
-        const { data: existingUser, error: findError } = await supabase
-          .from('users')
-          .select('id')
-          .eq('identity_number', formData.student_nim)
-          .maybeSingle();
-        
-        if (findError) {
-          console.error('Error finding user:', findError);
-          throw new Error(`Failed to check existing user: ${findError.message}`);
-        }
-
-        if (existingUser) {
-          finalStudentId = existingUser.id;
-        } else {
-          const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id);
-          
-          if (!selectedProgram) {
-            throw new Error(getText('Study program not found. Please select a valid study program.', 'Program studi tidak ditemukan. Silakan pilih program studi yang valid.'));
-          }
-          
-          const newUserData = {
-            identity_number: formData.student_nim,
-            full_name: formData.student_name,
-            username: formData.student_nim,
-            email: `${formData.student_nim}@student.edu`,
-            role: 'student',
-            password: formData.student_nim,
-            study_program_id: formData.study_program_id,
-            department_id: selectedProgram.department_id,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          };
-
-          const { data: newUser, error: createError } = await supabase
-            .from('users')
-            .insert([newUserData])
-            .select('id')
-            .single();
-
-          if (createError) {
-            console.error('Error creating user:', createError);
-            throw new Error(`Failed to create user: ${createError.message}`);
-          }
-
-          finalStudentId = newUser.id;
-        }
-      }
-
-      if (!finalStudentId) {
-        throw new Error(getText('Student information is required. Please select or enter student details.', 'Informasi mahasiswa diperlukan. Silakan pilih atau masukkan detail mahasiswa.'));
-      }
-
-      const sessionData = {
-        student_id: finalStudentId,
-        date: data.date,
-        start_time: data.start_time,
-        end_time: data.end_time,
-        room_id: data.room_id,
-        title: data.title.trim(),
-        supervisor: data.supervisor.trim(),
-        examiner: data.examiner.trim(),
-        secretary: data.secretary.trim(),
-      };
-
-      if (editingSession) {
-        const { error } = await supabase
-          .from('final_sessions')
-          .update(sessionData)
-          .eq('id', editingSession.id);
-        
-        if (error) {
-          console.error('Error updating session:', error);
-          throw new Error(`Failed to update session: ${error.message}`);
-        }
-        alert.success(getText('Session updated successfully', 'Jadwal sidang berhasil diperbarui'));
-      } else {
-        const { data: newSession, error } = await supabase
-          .from('final_sessions')
-          .insert([sessionData])
-          .select('*, student:users(full_name, identity_number), room:rooms(name)')
-          .single();
-        
-        if (error) {
-          console.error('Error creating session:', error);
-          throw new Error(`Failed to create session: ${error.message}`);
-        }
-
-        const studentName = newSession.student?.full_name || formData.student_name;
-        const studentNim = newSession.student?.identity_number || formData.student_nim;
-        const roomName = newSession.room?.name || 'Selected Room';
-        
-        alert.success(
-          getText(
-            `✅ Session created successfully!\n👨‍🎓 Student: ${studentName} (${studentNim})\n🏢 Room: ${roomName}\n📅 Date: ${format(new Date(data.date), 'MMM d, yyyy')}\n⏰ Time: ${data.start_time} - ${data.end_time}`,
-            `✅ Jadwal sidang berhasil dibuat!\n👨‍🎓 Mahasiswa: ${studentName} (${studentNim})\n🏢 Ruangan: ${roomName}\n📅 Tanggal: ${format(new Date(data.date), 'MMM d, yyyy')}\n⏰ Waktu: ${data.start_time} - ${data.end_time}`
-          )
-        );
-      }
-
-      setShowModal(false);
-      setEditingSession(null);
-      resetForm();
-      fetchSessions();
-    } catch (error) {
-      console.error('Error saving session:', error);
-      
-      let errorMessage = getText('Failed to save session', 'Gagal menyimpan jadwal sidang');
-      
-      if (error.message) {
-        errorMessage = error.message;
-      } else if (error.code === '23505') {
-        errorMessage = getText('Duplicate entry detected. Please check your data.', 'Data duplikat terdeteksi. Silakan periksa data Anda.');
-      } else if (error.code === '23503') {
-        errorMessage = getText('Related data not found. Please refresh and try again.', 'Data terkait tidak ditemukan. Silakan refresh dan coba lagi.');
-      }
-      
-      alert.error(errorMessage);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // ✅ resetForm
-  const resetForm = () => {
-    form.reset({
-      student_id: '',
-      date: format(new Date(), 'yyyy-MM-dd'),
-      start_time: '',
-      end_time: '',
-      room_id: '',
-      title: '',
-      supervisor: '',
-      examiner: '',
-      secretary: '',
-    });
-    setFormData({ student_name: '', student_nim: '', study_program_id: '' });
-    setCurrentStep(1);
-    setCompletedSteps(new Set());
-  };
-
-  // ✅ handleEdit
-  const handleEdit = (session: any) => {
-    setEditingSession(session);
-    
-    form.reset({
-      student_id: session.student_id,
-      date: session.date,
-      start_time: session.start_time,
-      end_time: session.end_time,
-      room_id: session.room_id,
-      title: session.title,
-      supervisor: session.supervisor,
-      examiner: session.examiner,
-      secretary: session.secretary,
-    });
-    
-    setFormData({
-      student_name: session.student?.full_name || '',
-      student_nim: session.student?.identity_number || '',
-      study_program_id: session.student?.study_program?.id || ''
-    });
-    
-    setShowModal(true);
-  };
-
-  // ✅ handleDelete
-  const handleDeleteClick = (session: any) => {
-  setSessionToDelete(session);
-  setShowDeleteModal(true);
-};
-  const handleConfirmDelete = async () => {
-  if (!sessionToDelete) return;
-  
-  try {
-    setSubmitting(true);
-    const { error } = await supabase.from('final_sessions').delete().eq('id', sessionToDelete.id);
-    if (error) throw error;
-    
-    alert.success(getText('Session deleted successfully', 'Jadwal sidang berhasil dihapus'));
-    setShowDeleteModal(false);
-    setSessionToDelete(null);
-    fetchSessions();
-  } catch (error) {
-    console.error('Error deleting session:', error);
-    alert.error(error.message || getText('Failed to delete session', 'Gagal menghapus jadwal sidang'));
-  } finally {
-    setSubmitting(false);
-  }
-};
-
-const handleCancelDelete = () => {
-  setShowDeleteModal(false);
-  setSessionToDelete(null);
-};
-
-  // ✅ NEW: Handle Print PDF Function - Simplified dengan Fixed Layout
-  const handlePrint = async (formData: PrintFormData) => {
-    try {
-      const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id);
-      
-      if (!selectedProgram) {
-        alert.error(getText("Please ensure study program is selected.", "Pastikan program studi telah dipilih."));
-        return;
-      }
-
-      // ✅ Filter sessions by study program only (tidak terbatas departemen)
-      const sessionsToPrint = allSessions.filter(session => 
-        session.student?.study_program?.id === formData.study_program_id
-      );
-
-      if (sessionsToPrint.length === 0) {
-        alert.error(getText("No sessions found for the selected study program.", "Tidak ditemukan jadwal sidang untuk program studi yang dipilih."));
-        return;
-      }
-
-      const doc = new jsPDF('landscape', 'mm', 'a4');
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
-      
-      const logoDataUrl = await getImageDataUrl(logoUNY);
-
-      // ✅ Logo positioning untuk landscape
-      doc.addImage(logoDataUrl, 'PNG', 15, 15, 30, 30);
-      
-      let currentY = 20;
-      const headerTextX = pageWidth / 2;
-
-      // ✅ Header text dengan spacing yang baik
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(14);
-      doc.text("KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI", headerTextX, currentY, { align: 'center' });
-      currentY += 5;
-      doc.text("UNIVERSITAS NEGERI YOGYAKARTA", headerTextX, currentY, { align: 'center' });
-      doc.setFontSize(14);
-      doc.setFont('helvetica', 'bold');
-      currentY += 5;
-      doc.text("FAKULTAS VOKASI", headerTextX, currentY, { align: 'center' });
-      
-      // ✅ Contact info dengan font lebih kecil
-      currentY += 5;
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
-      doc.text("Kampus I: Jalan Mandung No. 1 Pengasih, Kulon Progo Telp.(0274)774625", headerTextX, currentY, { align: 'center' });
-      currentY += 4;
-      doc.text("Kampus II: Pacarejo, Semanu, Gunungkidul Telp. (0274)5042222/(0274)5042255", headerTextX, currentY, { align: 'center' });
-      currentY += 4;
-      doc.text("Laman: https://fv.uny.ac.id E-mail: fv@uny.ac.id", headerTextX, currentY, { align: 'center' });
-      currentY += 8;
-
-      // ✅ Garis pemisah yang tepat untuk landscape dengan margin yang cukup
-      doc.setLineWidth(1);
-      doc.line(10, currentY, pageWidth - 10, currentY);
-      currentY += 10;
-
-      // ✅ Judul sederhana dengan font yang lebih besar
-      const subtitle = `JADWAL SIDANG PROGRAM STUDI ${selectedProgram.name.toUpperCase()}`;
-      doc.setFontSize(14);
-      doc.setFont('helvetica', 'bold');
-      const titleMaxWidth = pageWidth - 40;
-      const titleLines = doc.splitTextToSize(subtitle, titleMaxWidth);
-      doc.text(titleLines, headerTextX, currentY, { align: 'center' });
-      currentY += (titleLines.length * 6);
-
-      // ✅ Kolom tabel yang disesuaikan dengan landscape
-      const tableColumn = [
-        getText("No.", "No."),
-        getText("DATE", "TANGGAL"),
-        getText("TIME", "WAKTU"),
-        getText("STUDENT NAME", "NAMA MAHASISWA"),
-        getText("NIM", "NIM"),
-        getText("THESIS TITLE", "JUDUL SKRIPSI"),
-        getText("ROOM", "RUANG"),
-        getText("SUPERVISOR", "PEMBIMBING"),
-        getText("EXAMINER", "PENGUJI"),
-        getText("SECRETARY", "SEKRETARIS")
-      ];
-
-      const tableRows: any[] = [];
-      sessionsToPrint.forEach((session, index) => {
-        const timeDisplay = `${session.start_time.substring(0, 5)}-${session.end_time.substring(0, 5)}`;
-        
-        tableRows.push([
-          index + 1,
-          format(parseISO(session.date), 'dd-MM-yyyy'),
-          timeDisplay,
-          session.student?.full_name || '-',
-          session.student?.identity_number || '-',
-          session.title || '-',
-          session.room?.name || '-',
-          session.supervisor || '-',
-          session.examiner || '-',
-          session.secretary || '-'
-        ]);
-      });
-
-      // ✅ Tabel dengan ukuran yang disesuaikan untuk landscape dan font yang lebih besar
-      autoTable(doc, {
-        head: [tableColumn],
-        body: tableRows,
-        startY: currentY,
-        theme: 'grid',
-        styles: { 
-          fontSize: 8,        // ✅ Font size dikembalikan ke 8 untuk menghemat ruang
-          cellPadding: 2,     // ✅ Padding dikembalikan ke 2 untuk menghemat ruang
-          valign: 'middle',
-          lineColor: [0, 0, 0],
-          lineWidth: 0.1,
-          overflow: 'linebreak',  // ✅ Tambahan untuk text wrapping yang lebih baik
-          cellWidth: 'wrap'       // ✅ Auto width calculation
-        },
-        headStyles: { 
-          fillColor: [220, 220, 220], 
-          textColor: [0, 0, 0], 
-          fontStyle: 'bold', 
-          halign: 'center',
-          fontSize: 9,       // ✅ Header font size disesuaikan
-          cellPadding: 2     // ✅ Header padding disesuaikan
-        },
-        columnStyles: {
-          0: { halign: 'center', cellWidth: 10 },    // ✅ No - lebih kecil
-          1: { halign: 'center', cellWidth: 22 },    // ✅ Tanggal - sedikit dikurangi
-          2: { halign: 'center', cellWidth: 18 },    // ✅ Waktu - dikurangi
-          3: { halign: 'left', cellWidth: 42 },      // ✅ Nama Mahasiswa - dikurangi
-          4: { halign: 'center', cellWidth: 22 },    // ✅ NIM - dikurangi
-          5: { halign: 'left', cellWidth: 58 },      // ✅ Judul Skripsi - diperkecil dari 80 ke 58
-          6: { halign: 'center', cellWidth: 18 },    // ✅ Ruang - dikurangi
-          7: { halign: 'left', cellWidth: 30 },      // ✅ Pembimbing - dikurangi
-          8: { halign: 'left', cellWidth: 30 },      // ✅ Penguji - dikurangi
-          9: { halign: 'left', cellWidth: 30 }       // ✅ Sekretaris - dikurangi
-        },
-        // ✅ Total width = 280mm (pas untuk landscape A4)
-        tableWidth: 'auto',
-        margin: { left: 10, right: 10 },
-        // ✅ Hapus didDrawPage yang menyebabkan halaman kosong
-        showHead: 'everyPage',
-        pageBreak: 'auto'
-      });
-
-      // ✅ Tidak ada tanda tangan, langsung save dengan nama yang bersih
-      const fileName = `Jadwal_Sidang_${selectedProgram.code || selectedProgram.name.replace(/\s+/g, '_')}.pdf`;
-      doc.save(fileName);
-      setShowPrintModal(false);
-    } catch (e: any) {
-      console.error("PDF Generation Error:", e);
-      alert.error(getText("An unexpected error occurred while generating the PDF.", "Terjadi kesalahan tak terduga saat membuat PDF."));
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <RefreshCw className="animate-spin h-8 w-8 text-blue-600" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center space-x-3">
-              <UserCheck className="h-8 w-8" />
-              <span>{getText("Session Schedule", "Jadwal Sidang")}</span>
-            </h1>
-            <p className="mt-2 opacity-90">{getText("Manage final examination sessions with progressive workflow", "Kelola jadwal sidang akhir dengan alur kerja progresif")}</p>
-          </div>
-          <div className="hidden md:block text-right">
-            <div className="text-2xl font-bold">{sessions.length}</div>
-            <div className="text-sm opacity-80">{getText("Total Sessions", "Total Sidang")}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Action Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between">         
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={() => {
-                setShowCalendarModal(true);
-                setShowMobileDetails(false); // ✅ Reset mobile details when opening calendar
-              }}
-              className="flex items-center space-x-2 px-4 md:px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-200 shadow-lg hover:shadow-xl"
-            >
-              <Calendar className="h-5 w-5" />
-              <span className="hidden sm:inline">{getText("View Calendar", "Lihat Kalender")}</span>
-            </button>
-
-            {/* ✅ Print Button - Mobile Responsive */}
-            <button
-              onClick={() => {
-                setShowPrintModal(true);
-                printForm.reset();
-              }}
-              className="flex items-center space-x-2 px-4 md:px-6 py-3 text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 shadow-sm hover:shadow-md"
-            >
-              <Printer className="h-5 w-5" />
-              <span className="hidden sm:inline">{getText("Print", "Cetak")}</span>
-            </button>
-            
-            {profile?.role === 'department_admin' && (
-              <button
-                onClick={() => {
-                  resetForm();
-                  setShowModal(true);
-                }}
-                className="flex items-center space-x-2 px-4 md:px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl"
-              >
-                <Plus className="h-5 w-5" />
-                <span className="hidden sm:inline">{getText("Create Session", "Buat Sidang")}</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Sessions Table */}
+  );{/* Sessions Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-6 border-b border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900">{getText("Registered Sessions", "Jadwal Sidang Terdaftar")}</h3>
@@ -2622,11 +2108,11 @@ const handleCancelDelete = () => {
                             <Edit className="h-4 w-4" />
                           </button>
                           <button
-  onClick={() => handleDeleteClick(session)}
-  className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
->
-  <Trash2 className="h-4 w-4" />
-</button>
+                            onClick={() => handleDeleteClick(session)}
+                            className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
                       </td>
                     )}
@@ -2711,41 +2197,41 @@ const handleCancelDelete = () => {
                     </div>
 
                     <div className="w-full sm:w-auto">
-  {currentStep < 3 ? (
-    <button
-      type="button"
-      onClick={() => handleStepComplete(currentStep)}
-      className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 text-sm"
-    >
-      <span>{getText('Continue', 'Lanjutkan')}</span>
-      <ArrowRight className="h-4 w-4" />
-    </button>
-  ) : (
-    <button
-      type="button"
-      onClick={handleSubmitWithValidation}
-      disabled={submitting}
-      className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
-    >
-      {submitting ? (
-        <>
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          <span>{getText('Saving...', 'Menyimpan...')}</span>
-        </>
-      ) : (
-        <>
-          <Check className="h-4 w-4" />
-          <span className="hidden sm:inline">
-            {editingSession ? getText('Update Session', 'Perbarui Sidang') : getText('Create Session', 'Buat Sidang')}
-          </span>
-          <span className="sm:hidden">
-            {editingSession ? getText('Update', 'Perbarui') : getText('Create', 'Buat')}
-          </span>
-        </>
-      )}
-    </button>
-  )}
-</div>
+                      {currentStep < 3 ? (
+                        <button
+                          type="button"
+                          onClick={() => handleStepComplete(currentStep)}
+                          className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 text-sm"
+                        >
+                          <span>{getText('Continue', 'Lanjutkan')}</span>
+                          <ArrowRight className="h-4 w-4" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleSubmitWithValidation}
+                          disabled={submitting}
+                          className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
+                        >
+                          {submitting ? (
+                            <>
+                              <RefreshCw className="h-4 w-4 animate-spin" />
+                              <span>{getText('Saving...', 'Menyimpan...')}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Check className="h-4 w-4" />
+                              <span className="hidden sm:inline">
+                                {editingSession ? getText('Update Session', 'Perbarui Sidang') : getText('Create Session', 'Buat Sidang')}
+                              </span>
+                              <span className="sm:hidden">
+                                {editingSession ? getText('Update', 'Perbarui') : getText('Create', 'Buat')}
+                              </span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2825,6 +2311,7 @@ const handleCancelDelete = () => {
           </div>
         </div>
       )}
+
       {/* Delete Confirmation Modal */}
       {showDeleteModal && <DeleteConfirmationModal />}
     </div>
