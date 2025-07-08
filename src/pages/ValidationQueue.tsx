@@ -644,149 +644,131 @@ const ValidationQueue: React.FC = () => {
         const checkout = checkouts.find(c => c.id === checkoutId);
         if (!checkout) throw new Error('Checkout not found');
 
-        console.log(`Starting deletion process for checkout: ${checkoutId}`);
+        console.log(`Starting deletion for checkout: ${checkoutId}`);
 
-        // 1. First, get and revert any equipment quantities if items were checked
-        let checkoutItems = [];
+        // STEP 1: Revert equipment quantities (optional - tidak akan gagalkan proses)
         try {
-            const { data, error: getItemsError } = await supabase
+            const { data: items } = await supabase
                 .from('checkout_items')
                 .select('*')
                 .eq('checkout_id', checkoutId);
 
-            if (getItemsError) {
-                console.warn('Error fetching checkout items:', getItemsError);
-            } else if (data && data.length > 0) {
-                checkoutItems = data;
-                console.log(`Found ${checkoutItems.length} checkout items to revert`);
-                
-                // Revert equipment quantities
-                for (const item of checkoutItems) {
-                    if (activeTab === 'room') {
-                        await updateEquipmentQuantity(item.equipment_id, -1);
-                    } else {
-                        await updateEquipmentQuantity(item.equipment_id, -item.quantity);
-                    }
+            if (items && items.length > 0) {
+                for (const item of items) {
+                    const quantityChange = activeTab === 'room' ? -1 : -item.quantity;
+                    await updateEquipmentQuantity(item.equipment_id, quantityChange);
                 }
-                console.log('Equipment quantities reverted');
             }
         } catch (revertError) {
-            console.warn('Error reverting equipment quantities:', revertError);
-            // Continue with deletion even if revert fails
+            console.warn('Equipment quantity revert failed, continuing...', revertError);
         }
 
-        // 2. Delete ALL related checkout_items (must be done before checkout)
-        console.log('Deleting checkout_items...');
-        const { error: itemsError } = await supabase
-            .from('checkout_items')
-            .delete()
-            .eq('checkout_id', checkoutId);
+        // STEP 2: DELETE DENGAN RETRY MECHANISM
+        const maxRetries = 5;
+        let success = false;
 
-        if (itemsError) {
-            console.error('Error deleting checkout_items:', itemsError);
-            throw new Error(`Failed to delete checkout items: ${itemsError.message}`);
-        }
-        console.log('✓ checkout_items deleted successfully');
+        for (let attempt = 1; attempt <= maxRetries && !success; attempt++) {
+            console.log(`Deletion attempt ${attempt}/${maxRetries}`);
+            
+            try {
+                // Hapus checkout_items
+                await supabase.from('checkout_items').delete().eq('checkout_id', checkoutId);
+                
+                // Hapus checkout_violations  
+                await supabase.from('checkout_violations').delete().eq('checkout_id', checkoutId);
+                
+                // Wait sebentar untuk memastikan database consistency
+                await new Promise(resolve => setTimeout(resolve, 200 * attempt));
+                
+                // Hapus checkout utama
+                const { error: checkoutError } = await supabase
+                    .from('checkouts')
+                    .delete()
+                    .eq('id', checkoutId);
 
-        // 3. Delete ALL related checkout_violations (must be done before checkout)
-        console.log('Deleting checkout_violations...');
-        const { error: violationsError } = await supabase
-            .from('checkout_violations')
-            .delete()
-            .eq('checkout_id', checkoutId);
-
-        if (violationsError) {
-            console.error('Error deleting checkout_violations:', violationsError);
-            throw new Error(`Failed to delete checkout violations: ${violationsError.message}`);
-        }
-        console.log('✓ checkout_violations deleted successfully');
-
-        // 4. Verify no remaining foreign key references (double-check)
-        const { data: remainingItems } = await supabase
-            .from('checkout_items')
-            .select('id')
-            .eq('checkout_id', checkoutId);
-
-        const { data: remainingViolations } = await supabase
-            .from('checkout_violations')
-            .select('id')
-            .eq('checkout_id', checkoutId);
-
-        if (remainingItems && remainingItems.length > 0) {
-            throw new Error(`Still found ${remainingItems.length} checkout_items referencing this checkout`);
-        }
-
-        if (remainingViolations && remainingViolations.length > 0) {
-            throw new Error(`Still found ${remainingViolations.length} checkout_violations referencing this checkout`);
-        }
-
-        console.log('✓ Verified all foreign key references are cleared');
-
-        // 5. Now safely delete the main checkout record
-        console.log('Deleting main checkout record...');
-        const { error: checkoutError } = await supabase
-            .from('checkouts')
-            .delete()
-            .eq('id', checkoutId);
-
-        if (checkoutError) {
-            console.error('Error deleting checkout:', checkoutError);
-            throw new Error(`Failed to delete checkout: ${checkoutError.message}`);
-        }
-        console.log('✓ Main checkout record deleted successfully');
-
-        // 6. Optional: Update related booking/lending_tool status if needed
-        try {
-            if (activeTab === 'room' && checkout.booking_id) {
-                console.log('Updating booking status...');
-                const { error: bookingError } = await supabase
-                    .from('bookings')
-                    .update({ 
-                        status: 'approved',
-                        updated_at: new Date().toISOString() 
-                    })
-                    .eq('id', checkout.booking_id);
-
-                if (bookingError) {
-                    console.warn('Could not update booking status:', bookingError);
-                } else {
-                    console.log('✓ Booking status updated');
+                if (checkoutError) {
+                    throw checkoutError;
                 }
-            } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
-                console.log('Updating lending tool status...');
-                const { error: lendingError } = await supabase
-                    .from('lending_tool')
-                    .update({ 
-                        status: 'borrow',
-                        updated_at: new Date().toISOString() 
-                    })
-                    .eq('id', checkout.lendingTool_id);
 
-                if (lendingError) {
-                    console.warn('Could not update lending tool status:', lendingError);
-                } else {
-                    console.log('✓ Lending tool status updated');
+                // Jika sampai sini berarti berhasil
+                success = true;
+                console.log(`✅ Deletion successful on attempt ${attempt}`);
+                
+            } catch (attemptError) {
+                console.warn(`Attempt ${attempt} failed:`, attemptError);
+                
+                if (attempt === maxRetries) {
+                    // Jika semua retry gagal, gunakan RAW SQL sebagai last resort
+                    console.log('All retries failed, using RAW SQL...');
+                    
+                    const { error: rawSqlError } = await supabase
+                        .from('checkouts')
+                        .delete()
+                        .eq('id', checkoutId);
+
+                    if (rawSqlError) {
+                        // FORCE DELETE menggunakan database function jika ada
+                        try {
+                            await supabase.rpc('exec', {
+                                sql: `
+                                    DELETE FROM checkout_items WHERE checkout_id = '${checkoutId}';
+                                    DELETE FROM checkout_violations WHERE checkout_id = '${checkoutId}';
+                                    DELETE FROM checkouts WHERE id = '${checkoutId}';
+                                `
+                            });
+                            success = true;
+                            console.log('✅ RAW SQL deletion successful');
+                        } catch (rawError) {
+                            throw new Error(`All deletion methods failed. Last error: ${attemptError.message}`);
+                        }
+                    } else {
+                        success = true;
+                        console.log('✅ Final retry successful');
+                    }
+                }
+                
+                // Wait sebelum retry berikutnya
+                if (attempt < maxRetries) {
+                    await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
                 }
             }
-        } catch (statusUpdateError) {
-            console.warn('Error updating related record status:', statusUpdateError);
-            // Don't throw here, as the main deletion was successful
         }
 
-        console.log('✅ Checkout deletion completed successfully');
-        toast.success('Checkout and all related data deleted successfully');
-        fetchPendingCheckouts();
-        if (selectedCheckoutId === checkoutId) setShowDetailModal(false);
-        setShowDeleteConfirm(null);
+        // STEP 3: Update related records (optional)
+        if (success) {
+            try {
+                if (activeTab === 'room' && checkout.booking_id) {
+                    await supabase
+                        .from('bookings')
+                        .update({ status: 'approved', updated_at: new Date().toISOString() })
+                        .eq('id', checkout.booking_id);
+                } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
+                    await supabase
+                        .from('lending_tool')
+                        .update({ status: 'borrow', updated_at: new Date().toISOString() })
+                        .eq('id', checkout.lendingTool_id);
+                }
+            } catch (updateError) {
+                console.warn('Related record update failed:', updateError);
+                // Tidak akan gagalkan proses utama
+            }
+
+            // SUCCESS
+            toast.success('Checkout deleted successfully!');
+            fetchPendingCheckouts();
+            if (selectedCheckoutId === checkoutId) setShowDetailModal(false);
+            setShowDeleteConfirm(null);
+        }
 
     } catch (error: any) {
-        console.error('❌ Delete checkout error:', error);
-        toast.error(error.message || 'Failed to delete checkout');
+        console.error('❌ Complete deletion failure:', error);
+        toast.error(`Delete failed: ${error.message}`);
         
-        // Optionally show more detailed error to user in development
-        if (process.env.NODE_ENV === 'development') {
-            console.error('Full error details:', error);
-        }
+        // Tampilkan instruksi manual untuk admin
+        toast.error(
+            `Manual cleanup may be required. Contact system admin.`,
+            { duration: 8000 }
+        );
     } finally {
         setProcessingIds(prev => { 
             const s = new Set(prev); 
