@@ -97,6 +97,9 @@ const SessionScheduleProgressive = () => {
   const [departmentHeads, setDepartmentHeads] = useState([]);
   const [availableRooms, setAvailableRooms] = useState([]);
   
+  // ✅ NEW: Search states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filteredSessions, setFilteredSessions] = useState([]);
 
   // Loading states
   const [loading, setLoading] = useState(true);
@@ -107,7 +110,7 @@ const SessionScheduleProgressive = () => {
   const [editingSession, setEditingSession] = useState(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-const [sessionToDelete, setSessionToDelete] = useState(null);
+  const [sessionToDelete, setSessionToDelete] = useState(null);
 
   // Calendar Modal states
   const [showCalendarModal, setShowCalendarModal] = useState(false);
@@ -188,6 +191,46 @@ const [sessionToDelete, setSessionToDelete] = useState(null);
       description: getText('Select room, title, and examination committee', 'Pilih ruangan, judul, dan tim penguji')
     }
   ];
+
+  // ✅ NEW: Search functionality
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setFilteredSessions(sessions);
+    } else {
+      const filtered = sessions.filter(session => {
+        const studentName = session.student?.full_name?.toLowerCase() || '';
+        const studentNim = session.student?.identity_number?.toLowerCase() || '';
+        const searchLower = searchTerm.toLowerCase();
+        
+        return studentName.includes(searchLower) || studentNim.includes(searchLower);
+      });
+      setFilteredSessions(filtered);
+    }
+  }, [searchTerm, sessions]);
+
+  // ✅ NEW: Check for duplicate student function
+  const checkDuplicateStudent = async (studentId, studentNim) => {
+    try {
+      // Check if editing existing session
+      if (editingSession) {
+        // If editing, exclude current session from duplicate check
+        const existingSession = allSessions.find(session => 
+          (session.student_id === studentId || session.student?.identity_number === studentNim) &&
+          session.id !== editingSession.id
+        );
+        return existingSession;
+      } else {
+        // If creating new, check for any existing session
+        const existingSession = allSessions.find(session => 
+          session.student_id === studentId || session.student?.identity_number === studentNim
+        );
+        return existingSession;
+      }
+    } catch (error) {
+      console.error('Error checking duplicate student:', error);
+      return null;
+    }
+  };
 
   // ✅ Calendar Helper Functions menggunakan allSessions
   const getSessionsForDate = (date) => {
@@ -1123,8 +1166,8 @@ const CalendarModal = () => {
     }
   }, [form, formData]);
   
-  // ✅ handleStepComplete yang sinkronisasi DOM -> React state
-  const handleStepComplete = useCallback((step) => {
+  // ✅ handleStepComplete yang sinkronisasi DOM -> React state + duplicate check
+  const handleStepComplete = useCallback(async (step) => {
     if (step === 1) {
       const nimValue = studentInputRef.current?.value || '';
       const nameValue = studentNameRef.current?.value || '';
@@ -1132,6 +1175,21 @@ const CalendarModal = () => {
       
       if (!nimValue.trim() || !nameValue.trim() || !programValue) {
         alert.error(getText('Please fill all required fields', 'Silakan isi semua field yang diperlukan'));
+        return;
+      }
+      
+      // ✅ NEW: Check for duplicate student
+      const existingSession = await checkDuplicateStudent(form.getValues('student_id'), nimValue);
+      if (existingSession) {
+        const existingDate = format(parseISO(existingSession.date), 'EEEE, dd MMMM yyyy');
+        const existingTime = `${existingSession.start_time} - ${existingSession.end_time}`;
+        
+        alert.error(
+          getText(
+            `⚠️ Duplicate Student Found!\n\nStudent ${nameValue} (${nimValue}) already has a scheduled session:\n📅 Date: ${existingDate}\n⏰ Time: ${existingTime}\n🏢 Room: ${existingSession.room?.name || 'Unknown'}\n\nPlease select a different student or edit the existing session.`,
+            `⚠️ Mahasiswa Duplikat Ditemukan!\n\nMahasiswa ${nameValue} (${nimValue}) sudah memiliki jadwal sidang:\n📅 Tanggal: ${existingDate}\n⏰ Waktu: ${existingTime}\n🏢 Ruangan: ${existingSession.room?.name || 'Tidak diketahui'}\n\nSilakan pilih mahasiswa lain atau edit jadwal yang sudah ada.`
+          )
+        );
         return;
       }
       
@@ -1163,13 +1221,14 @@ const CalendarModal = () => {
     if (step < 3) {
       setCurrentStep(step + 1);
     }
-  }, [validateStep, getText, form, formData]);
+  }, [validateStep, getText, form, formData, checkDuplicateStudent]);
 
   const handleStepBack = useCallback(() => {
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
     }
   }, [currentStep]);
+
 const validateAllFields = () => {
   const errors = [];
   
@@ -1232,7 +1291,7 @@ const validateAllFields = () => {
   return errors;
 };
 
-// ✅ TAMBAH FUNCTION BARU - Submit dengan validasi
+// ✅ TAMBAH FUNCTION BARU - Submit dengan validasi + duplicate check
 const handleSubmitWithValidation = async () => {
   // Sync semua nilai dari DOM ke React state
   const supervisorValue = supervisorInputRef.current?.value || '';
@@ -1280,6 +1339,22 @@ const handleSubmitWithValidation = async () => {
       setCurrentStep(3);
     }
     
+    return;
+  }
+  
+  // ✅ NEW: Final duplicate check before submit
+  const existingSession = await checkDuplicateStudent(form.getValues('student_id'), nimValue);
+  if (existingSession) {
+    const existingDate = format(parseISO(existingSession.date), 'EEEE, dd MMMM yyyy');
+    const existingTime = `${existingSession.start_time} - ${existingSession.end_time}`;
+    
+    alert.error(
+      getText(
+        `⚠️ Duplicate Student Found!\n\nStudent ${nameValue} (${nimValue}) already has a scheduled session:\n📅 Date: ${existingDate}\n⏰ Time: ${existingTime}\n🏢 Room: ${existingSession.room?.name || 'Unknown'}\n\nPlease select a different student or edit the existing session.`,
+        `⚠️ Mahasiswa Duplikat Ditemukan!\n\nMahasiswa ${nameValue} (${nimValue}) sudah memiliki jadwal sidang:\n📅 Tanggal: ${existingDate}\n⏰ Waktu: ${existingTime}\n🏢 Ruangan: ${existingSession.room?.name || 'Tidak diketahui'}\n\nSilakan pilih mahasiswa lain atau edit jadwal yang sudah ada.`
+      )
+    );
+    setCurrentStep(1); // Navigate back to student selection
     return;
   }
   
@@ -2490,10 +2565,25 @@ const handleCancelDelete = () => {
         </div>
       </div>
 
-      {/* Action Section */}
+      {/* ✅ NEW: Search Section */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between">         
-          <div className="flex items-center space-x-3">
+        <div className="flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0 sm:space-x-4">
+          <div className="w-full sm:w-96">
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                placeholder={getText("Search by student name or NIM...", "Cari berdasarkan nama atau NIM mahasiswa...")}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+              />
+            </div>
+          </div>
+          
+          <div className="flex items-center space-x-3 w-full sm:w-auto">
             <button
               onClick={() => {
                 setShowCalendarModal(true);
@@ -2536,7 +2626,14 @@ const handleCancelDelete = () => {
       {/* Sessions Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-6 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">{getText("Registered Sessions", "Jadwal Sidang Terdaftar")}</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">{getText("Registered Sessions", "Jadwal Sidang Terdaftar")}</h3>
+            {searchTerm && (
+              <div className="text-sm text-gray-500">
+                {getText(`Found ${filteredSessions.length} of ${sessions.length} sessions`, `Ditemukan ${filteredSessions.length} dari ${sessions.length} sidang`)}
+              </div>
+            )}
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -2562,18 +2659,33 @@ const handleCancelDelete = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {sessions.length === 0 ? (
+              {filteredSessions.length === 0 ? (
                 <tr>
                   <td colSpan={profile?.role === 'department_admin' ? 5 : 4} className="px-6 py-12 text-center">
                     <div className="text-gray-500">
                       <UserCheck className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p className="text-lg font-medium mb-2">{getText("No sessions found", "Tidak ada jadwal sidang ditemukan")}</p>
-                      <p>{getText("Create your first examination session", "Buat jadwal sidang pertama Anda")}</p>
+                      {searchTerm ? (
+                        <>
+                          <p className="text-lg font-medium mb-2">{getText("No matching sessions found", "Tidak ada jadwal sidang yang cocok")}</p>
+                          <p>{getText(`No sessions found for "${searchTerm}"`, `Tidak ada sidang ditemukan untuk "${searchTerm}"`)}</p>
+                          <button 
+                            onClick={() => setSearchTerm('')}
+                            className="mt-2 text-blue-600 hover:text-blue-800 underline"
+                          >
+                            {getText("Clear search", "Hapus pencarian")}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-lg font-medium mb-2">{getText("No sessions found", "Tidak ada jadwal sidang ditemukan")}</p>
+                          <p>{getText("Create your first examination session", "Buat jadwal sidang pertama Anda")}</p>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
               ) : (
-                sessions.map((session: any) => (
+                filteredSessions.map((session: any) => (
                   <tr key={session.id} className="hover:bg-gray-50 transition-colors duration-200">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
@@ -2622,11 +2734,11 @@ const handleCancelDelete = () => {
                             <Edit className="h-4 w-4" />
                           </button>
                           <button
-  onClick={() => handleDeleteClick(session)}
-  className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
->
-  <Trash2 className="h-4 w-4" />
-</button>
+                            onClick={() => handleDeleteClick(session)}
+                            className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
                       </td>
                     )}
@@ -2711,41 +2823,41 @@ const handleCancelDelete = () => {
                     </div>
 
                     <div className="w-full sm:w-auto">
-  {currentStep < 3 ? (
-    <button
-      type="button"
-      onClick={() => handleStepComplete(currentStep)}
-      className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 text-sm"
-    >
-      <span>{getText('Continue', 'Lanjutkan')}</span>
-      <ArrowRight className="h-4 w-4" />
-    </button>
-  ) : (
-    <button
-      type="button"
-      onClick={handleSubmitWithValidation}
-      disabled={submitting}
-      className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
-    >
-      {submitting ? (
-        <>
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          <span>{getText('Saving...', 'Menyimpan...')}</span>
-        </>
-      ) : (
-        <>
-          <Check className="h-4 w-4" />
-          <span className="hidden sm:inline">
-            {editingSession ? getText('Update Session', 'Perbarui Sidang') : getText('Create Session', 'Buat Sidang')}
-          </span>
-          <span className="sm:hidden">
-            {editingSession ? getText('Update', 'Perbarui') : getText('Create', 'Buat')}
-          </span>
-        </>
-      )}
-    </button>
-  )}
-</div>
+                      {currentStep < 3 ? (
+                        <button
+                          type="button"
+                          onClick={() => handleStepComplete(currentStep)}
+                          className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 text-sm"
+                        >
+                          <span>{getText('Continue', 'Lanjutkan')}</span>
+                          <ArrowRight className="h-4 w-4" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleSubmitWithValidation}
+                          disabled={submitting}
+                          className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
+                        >
+                          {submitting ? (
+                            <>
+                              <RefreshCw className="h-4 w-4 animate-spin" />
+                              <span>{getText('Saving...', 'Menyimpan...')}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Check className="h-4 w-4" />
+                              <span className="hidden sm:inline">
+                                {editingSession ? getText('Update Session', 'Perbarui Sidang') : getText('Create Session', 'Buat Sidang')}
+                              </span>
+                              <span className="sm:hidden">
+                                {editingSession ? getText('Update', 'Perbarui') : getText('Create', 'Buat')}
+                              </span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
