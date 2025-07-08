@@ -529,7 +529,7 @@ const PermitLetter: React.FC = () => {
     if (attachment.startsWith('data:application/pdf')) {
       return <FileText className="h-4 w-4 text-red-600" />;
     } else {
-      return <Camera className="h-4 w-4 text-magenta-600" />;
+      return <Camera className="h-4 w-4 text-amber-600" />;
     }
   };
 
@@ -545,17 +545,17 @@ const PermitLetter: React.FC = () => {
   const isSubmitEnabled = selectedRecords.length > 0 && attachments.length > 0 && !loading;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-pink-50 to-magenta-50 relative">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-amber-50 to-orange-50 relative">
       {/* Header Section */}
       <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 sticky top-0 z-30">
         <div className="max-w-6xl mx-auto px-4 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <div className="p-3 bg-gradient-to-r from-magenta-600 to-pink-600 rounded-2xl shadow-lg">
+              <div className="p-3 bg-gradient-to-r from-amber-600 to-orange-600 rounded-2xl shadow-lg">
                 <FileText className="h-8 w-8 text-white" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-magenta-600 to-pink-600 bg-clip-text text-transparent">
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">
                   {getText('Permit Letter', 'Surat Izin')}
                 </h1>
                 <p className="text-gray-600 mt-1">
@@ -581,7 +581,7 @@ const PermitLetter: React.FC = () => {
           <div className="lg:col-span-1 space-y-6 relative z-20">
             <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 relative">
               <div className="flex items-center space-x-3 mb-6">
-                <Search className="h-5 w-5 text-magenta-500" />
+                <Search className="h-5 w-5 text-amber-500" />
                 <h2 className="text-xl font-bold text-gray-800">
                   {getText('Select Records', 'Pilih Data')}
                 </h2>
@@ -592,7 +592,7 @@ const PermitLetter: React.FC = () => {
                 <select
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value as any)}
-                  className="w-full px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-magenta-500/50 focus:border-transparent transition-all duration-200"
+                  className="w-full px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent transition-all duration-200"
                 >
                   <option value="all">{getText('All Records', 'Semua Data')}</option>
                   <option value="booking">{getText('Room Bookings', 'Pemesanan Ruangan')}</option>
@@ -614,7 +614,7 @@ const PermitLetter: React.FC = () => {
                   onBlur={() => {
                     setTimeout(() => setShowRecordDropdown(false), 150);
                   }}
-                  className="w-full pl-12 pr-4 py-4 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-magenta-500/50 focus:border-transparent transition-all duration-200 placeholder-gray-400 relative z-10"
+                  className="w-full pl-12 pr-4 py-4 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent transition-all duration-200 placeholder-gray-400 relative z-10"
                 />
                 <button
                   type="button"
@@ -631,7 +631,7 @@ const PermitLetter: React.FC = () => {
                   >
                     {loading ? (
                       <div className="flex flex-col items-center justify-center py-12">
-                        <RefreshCw className="h-8 w-8 animate-spin text-magenta-600 mb-3" />
+                        <RefreshCw className="h-8 w-8 animate-spin text-amber-600 mb-3" />
                         <span className="text-gray-600 font-medium">
                           {getText('Loading records...', 'Memuat data...')}
                         </span>
@@ -667,8 +667,8 @@ const PermitLetter: React.FC = () => {
                               }}
                               className={`w-full text-left p-4 cursor-pointer rounded-xl border transition-all duration-200 mb-2 last:mb-0 ${
                                 isSelected 
-                                  ? 'bg-magenta-50 border-magenta-200 ring-2 ring-magenta-500/50' 
-                                  : 'hover:bg-magenta-50 border-transparent hover:border-magenta-200'
+                                  ? 'bg-amber-50 border-amber-200 ring-2 ring-amber-500/50' 
+                                  : 'hover:bg-amber-50 border-transparent hover:border-amber-200'
                               }`}
                             >
                               <div className="flex items-start space-x-3">
@@ -677,11 +677,11 @@ const PermitLetter: React.FC = () => {
                                     type="checkbox"
                                     checked={isSelected}
                                     onChange={() => {}}
-                                    className="h-4 w-4 text-magenta-600 focus:ring-magenta-500 border-gray-300 rounded mr-3"
+                                    className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded mr-3"
                                   />
                                   <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${
                                     record.record_type === 'booking' 
-                                      ? 'bg-gradient-to-r from-magenta-500 to-pink-500' 
+                                      ? 'bg-gradient-to-r from-amber-500 to-orange-500' 
                                       : 'bg-gradient-to-r from-purple-500 to-indigo-500'
                                   }`}>
                                     {record.record_type === 'booking' ? (
@@ -702,12 +702,11 @@ const PermitLetter: React.FC = () => {
                                      (record.record_type === 'booking' ? (record as BookingWithDetails).user_info?.identity_number : '') || 
                                      getText('No ID', 'Tidak Ada ID')}
                                   </div>
-                                  
                                   <div className="space-y-1">
                                     <div className="flex items-center text-xs text-gray-500">
                                       <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                                         record.record_type === 'booking' 
-                                          ? 'bg-magenta-100 text-magenta-800' 
+                                          ? 'bg-amber-100 text-amber-800' 
                                           : 'bg-purple-100 text-purple-800'
                                       }`}>
                                         {record.record_type === 'booking' ? getText('Room Booking', 'Pemesanan Ruangan') : getText('Tool Lending', 'Peminjaman Alat')}
@@ -755,14 +754,14 @@ const PermitLetter: React.FC = () => {
               
               {/* Selected Records Summary */}
               {selectedRecords.length > 0 && (
-                <div className="mt-4 p-4 bg-magenta-50 border border-magenta-200 rounded-xl">
-                  <h3 className="text-sm font-semibold text-magenta-900 mb-2">
+                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                  <h3 className="text-sm font-semibold text-amber-900 mb-2">
                     {getText('Selected Records', 'Data Terpilih')} ({selectedRecords.length})
                   </h3>
                   <div className="space-y-2 max-h-32 overflow-y-auto">
                     {selectedRecords.map((record) => (
                       <div key={record.id} className="flex items-center justify-between text-xs bg-white/60 p-2 rounded-lg">
-                        <span className="truncate text-magenta-900">
+                        <span className="truncate text-amber-900">
                           {getDisplayName(record)}
                         </span>
                         <button
@@ -789,7 +788,7 @@ const PermitLetter: React.FC = () => {
           <div className="lg:col-span-2 relative z-10">
             <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
               <div className="flex items-center space-x-3 mb-8">
-                <div className="p-2 bg-gradient-to-r from-magenta-500 to-pink-500 rounded-lg">
+                <div className="p-2 bg-gradient-to-r from-amber-500 to-orange-500 rounded-lg">
                   <Upload className="h-5 w-5 text-white" />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-800">
@@ -800,10 +799,10 @@ const PermitLetter: React.FC = () => {
               <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
                 {/* Selected Records Display */}
                 {selectedRecords.length > 0 && (
-                  <div className="bg-gradient-to-r from-magenta-50 to-pink-50 border border-magenta-200/50 rounded-2xl p-6">
+                  <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/50 rounded-2xl p-6">
                     <div className="flex items-center space-x-3 mb-6">
-                      <Check className="h-6 w-6 text-magenta-600" />
-                      <h3 className="text-xl font-bold text-magenta-900">
+                      <Check className="h-6 w-6 text-amber-600" />
+                      <h3 className="text-xl font-bold text-amber-900">
                         {getText('Selected Records for Permit', 'Data Terpilih untuk Izin')}
                       </h3>
                     </div>
@@ -812,14 +811,14 @@ const PermitLetter: React.FC = () => {
                       {selectedRecords.map((record) => (
                         <div key={record.id} className={`border rounded-xl p-4 ${
                           record.record_type === 'booking' 
-                            ? 'bg-gradient-to-r from-magenta-100 to-pink-100 border-magenta-200' 
+                            ? 'bg-gradient-to-r from-amber-100 to-orange-100 border-amber-200' 
                             : 'bg-gradient-to-r from-purple-100 to-indigo-100 border-purple-200'
                         }`}>
                           <div className="flex items-start justify-between">
                             <div className="flex items-start space-x-3">
                               <div className={`h-10 w-10 rounded-full flex items-center justify-center ${
                                 record.record_type === 'booking' 
-                                  ? 'bg-gradient-to-r from-magenta-500 to-pink-500' 
+                                  ? 'bg-gradient-to-r from-amber-500 to-orange-500' 
                                   : 'bg-gradient-to-r from-purple-500 to-indigo-500'
                               }`}>
                                 {record.record_type === 'booking' ? (
@@ -884,10 +883,10 @@ const PermitLetter: React.FC = () => {
                 )}
 
                 {/* File Upload Section */}
-                <div className="bg-gradient-to-r from-orange-50 to-yellow-50 border border-orange-200/50 rounded-2xl p-6 space-y-6">
+                <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200/50 rounded-2xl p-6 space-y-6">
                   <div className="flex items-center space-x-3 mb-6">
-                    <FileText className="h-6 w-6 text-orange-600" />
-                    <h3 className="text-xl font-bold text-orange-900">
+                    <FileText className="h-6 w-6 text-yellow-600" />
+                    <h3 className="text-xl font-bold text-yellow-900">
                       {getText('Upload Permit Documents', 'Unggah Dokumen Izin')}
                     </h3>
                   </div>
@@ -908,8 +907,8 @@ const PermitLetter: React.FC = () => {
                               </div>
                             ) : (
                               <div className="flex flex-col items-center">
-                                <div className="p-3 bg-magenta-100 rounded-full mb-3">
-                                  <Upload className="h-8 w-8 text-magenta-600" />
+                                <div className="p-3 bg-amber-100 rounded-full mb-3">
+                                  <Upload className="h-8 w-8 text-amber-600" />
                                 </div>
                                 <p className="mb-2 text-sm text-gray-600 font-semibold">
                                   {getText('Upload Document', 'Unggah Dokumen')}
@@ -936,11 +935,11 @@ const PermitLetter: React.FC = () => {
                           type="button"
                           onClick={capturePhoto}
                           disabled={uploadingFile}
-                          className="flex flex-col items-center justify-center w-full h-40 border-2 border-magenta-300/50 border-dashed rounded-xl bg-gradient-to-b from-magenta-50/50 to-pink-50/50 hover:from-magenta-100/50 hover:to-pink-100/50 transition-all duration-200 disabled:opacity-50"
+                          className="flex flex-col items-center justify-center w-full h-40 border-2 border-amber-300/50 border-dashed rounded-xl bg-gradient-to-b from-amber-50/50 to-orange-50/50 hover:from-amber-100/50 hover:to-orange-100/50 transition-all duration-200 disabled:opacity-50"
                         >
                           <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                            <div className="p-3 bg-magenta-100 rounded-full mb-3">
-                              <Camera className="h-8 w-8 text-magenta-600" />
+                            <div className="p-3 bg-amber-100 rounded-full mb-3">
+                              <Camera className="h-8 w-8 text-amber-600" />
                             </div>
                             <p className="mb-2 text-sm text-gray-600 font-semibold">
                               {getText('Take Photo', 'Ambil Foto')}
@@ -1022,9 +1021,9 @@ const PermitLetter: React.FC = () => {
                   <button
                     type="submit"
                     disabled={!isSubmitEnabled}
-                    className={`flex-1 flex items-center justify-center space-x-3 px-8 py-4 font-semibold rounded-xl focus:outline-none focus:ring-2 focus:ring-magenta-500/50 focus:ring-offset-2 transition-all duration-200 shadow-lg ${
+                    className={`flex-1 flex items-center justify-center space-x-3 px-8 py-4 font-semibold rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:ring-offset-2 transition-all duration-200 shadow-lg ${
                       isSubmitEnabled
-                        ? 'bg-gradient-to-r from-magenta-600 to-pink-600 text-white hover:from-magenta-700 hover:to-pink-700 hover:shadow-xl cursor-pointer'
+                        ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white hover:from-amber-700 hover:to-orange-700 hover:shadow-xl cursor-pointer'
                         : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     }`}
                   >
