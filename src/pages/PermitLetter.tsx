@@ -156,7 +156,7 @@ const PermitLetter: React.FC = () => {
       const { data: bookingsData, error: bookingsError } = await supabase
         .from('bookings')
         .select('*')
-        .eq('status', 'approved')
+        .eq('status', 'pending')
         .order('created_at', { ascending: false });
 
       if (bookingsError) {
