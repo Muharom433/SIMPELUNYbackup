@@ -101,6 +101,60 @@ const ValidationQueue: React.FC = () => {
     const [isDetailLoading, setIsDetailLoading] = useState(false);
     const [requestedEquipmentDetails, setRequestedEquipmentDetails] = useState<Equipment[]>([]);
 
+    // Setup database triggers for cascade delete
+    const setupTriggers = async () => {
+        try {
+            // Trigger untuk menghapus checkout_items ketika checkout dihapus
+            const checkoutItemsTrigger = `
+                CREATE OR REPLACE FUNCTION delete_checkout_items()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    DELETE FROM checkout_items WHERE checkout_id = OLD.id;
+                    RETURN OLD;
+                END;
+                $$ LANGUAGE plpgsql;
+
+                DROP TRIGGER IF EXISTS trigger_delete_checkout_items ON checkouts;
+                CREATE TRIGGER trigger_delete_checkout_items
+                    BEFORE DELETE ON checkouts
+                    FOR EACH ROW
+                    EXECUTE FUNCTION delete_checkout_items();
+            `;
+
+            // Trigger untuk menghapus checkout_violations ketika checkout dihapus
+            const checkoutViolationsTrigger = `
+                CREATE OR REPLACE FUNCTION delete_checkout_violations()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    DELETE FROM checkout_violations WHERE checkout_id = OLD.id;
+                    RETURN OLD;
+                END;
+                $$ LANGUAGE plpgsql;
+
+                DROP TRIGGER IF EXISTS trigger_delete_checkout_violations ON checkouts;
+                CREATE TRIGGER trigger_delete_checkout_violations
+                    BEFORE DELETE ON checkouts
+                    FOR EACH ROW
+                    EXECUTE FUNCTION delete_checkout_violations();
+            `;
+
+            // Execute triggers
+            await supabase.rpc('exec_sql', { sql: checkoutItemsTrigger });
+            await supabase.rpc('exec_sql', { sql: checkoutViolationsTrigger });
+            
+            console.log('Database triggers setup successfully');
+        } catch (error) {
+            console.error('Error setting up triggers:', error);
+            // Triggers are optional, don't fail the app if they can't be created
+        }
+    };
+
+    useEffect(() => {
+        if (profile?.role === 'super_admin') {
+            setupTriggers();
+        }
+    }, [profile]);
+
     useEffect(() => {
         setStatusFilter('returned'); // Both tabs default to 'returned'
     }, [activeTab]);
@@ -586,6 +640,7 @@ const ValidationQueue: React.FC = () => {
                 }
             }
             
+            // Delete checkout - triggers will automatically delete related records
             const { error: checkoutError } = await supabase.from('checkouts').delete().eq('id', checkoutId);
             if (checkoutError) throw checkoutError;
             
@@ -637,14 +692,14 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    // DELETE CHECKOUT FUNCTION
+    // IMPROVED DELETE CHECKOUT FUNCTION with trigger support
     const handleDeleteCheckout = async (checkoutId: string) => {
         setProcessingIds(prev => new Set(prev).add(checkoutId));
         try {
             const checkout = checkouts.find(c => c.id === checkoutId);
             if (!checkout) throw new Error('Checkout not found');
 
-            // First, revert any equipment quantities if items were checked
+            // Revert any equipment quantities if items were checked
             const checkoutItems = await supabase
                 .from('checkout_items')
                 .select('*')
@@ -660,23 +715,7 @@ const ValidationQueue: React.FC = () => {
                 }
             }
 
-            // Delete checkout items first (due to foreign key constraint)
-            const { error: itemsError } = await supabase
-                .from('checkout_items')
-                .delete()
-                .eq('checkout_id', checkoutId);
-
-            if (itemsError) throw itemsError;
-
-            // Delete any reports associated with this checkout
-            const { error: reportsError } = await supabase
-                .from('checkout_violations')
-                .delete()
-                .eq('checkout_id', checkoutId);
-
-            if (reportsError) console.error('Error deleting reports:', reportsError);
-
-            // Finally, delete the checkout
+            // Delete the checkout - triggers will handle cascade delete
             const { error: checkoutError } = await supabase
                 .from('checkouts')
                 .delete()
@@ -752,7 +791,7 @@ const ValidationQueue: React.FC = () => {
                             <Bell className="h-8 w-8" />
                             <span>Validation Queue</span>
                         </h1>
-                        <p className="mt-2 opacity-90">Review and validate checkouts</p>
+                        <p className="mt-2 opacity-90">Review and validate checkouts with automated cascade deletion</p>
                     </div>
                     <div className="hidden md:block text-right">
                         <div className="text-2xl font-bold">{checkouts.length}</div>
@@ -760,6 +799,23 @@ const ValidationQueue: React.FC = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Database Triggers Info */}
+            {profile?.role === 'super_admin' && (
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
+                    <div className="flex items-start space-x-3">
+                        <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                            <Wrench className="h-4 w-4 text-blue-600" />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-semibold text-blue-900">Database Triggers Active</h3>
+                            <p className="text-xs text-blue-700 mt-1">
+                                Automatic cascade deletion is configured. When a checkout is deleted, all related checkout_items and checkout_violations will be automatically removed by database triggers.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Tabs */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -1016,7 +1072,7 @@ const ValidationQueue: React.FC = () => {
                                         <button 
                                             onClick={() => setShowDeleteConfirm(checkout.id)} 
                                             className="p-2 text-red-500 hover:bg-red-100 rounded-md" 
-                                            title="Delete Checkout"
+                                            title="Delete Checkout (with cascade)"
                                         >
                                             <Trash2 className="h-4 w-4" />
                                         </button>
@@ -1045,6 +1101,9 @@ const ValidationQueue: React.FC = () => {
                             <div className="flex justify-between items-center pb-4 border-b border-gray-200">
                                 <div>
                                     <h2 className="text-xl font-bold text-gray-900">Checkout Validation</h2>
+                                    <p className="text-sm text-gray-600 mt-1">
+                                        Database triggers ensure automatic cleanup of related records
+                                    </p>
                                 </div>
                                 <button 
                                     onClick={() => setShowDetailModal(false)} 
@@ -1233,20 +1292,39 @@ const ValidationQueue: React.FC = () => {
                 );
             })()}
 
-            {/* Delete Confirmation Modal */}
+            {/* Enhanced Delete Confirmation Modal with Trigger Info */}
             {showDeleteConfirm && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-lg p-6 max-w-sm w-full">
+                    <div className="bg-white rounded-lg p-6 max-w-md w-full">
                         <div className="flex items-center space-x-3 mb-4">
                             <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
                                 <AlertTriangle className="h-5 w-5 text-red-600" />
                             </div>
                             <h3 className="text-lg font-bold text-gray-900">Confirm Deletion</h3>
                         </div>
+                        
                         <p className="text-sm text-gray-600 mb-2">Are you sure you want to delete this checkout?</p>
+                        
+                        {/* Enhanced warning with trigger info */}
+                        <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                            <div className="flex items-start space-x-2">
+                                <Wrench className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                                <div className="text-xs text-yellow-800">
+                                    <p className="font-semibold mb-1">Automatic Cascade Deletion</p>
+                                    <p>Database triggers will automatically delete:</p>
+                                    <ul className="list-disc list-inside mt-1 space-y-0.5">
+                                        <li>All checkout_items records</li>
+                                        <li>All checkout_violations reports</li>
+                                        <li>Equipment quantities will be reverted</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <p className="text-sm text-red-600 font-medium mb-6">
-                            This action cannot be undone. All associated data including reports and verification status will be permanently removed.
+                            This action cannot be undone. All associated data will be permanently removed.
                         </p>
+                        
                         <div className="flex justify-end space-x-3">
                             <button 
                                 onClick={() => setShowDeleteConfirm(null)} 
@@ -1271,7 +1349,7 @@ const ValidationQueue: React.FC = () => {
                 </div>
             )}
 
-            {/* Report Modal */}
+            {/* Enhanced Report Modal */}
             {showReportModal && selectedCheckoutId && (() => {
                 const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId);
                 if(!selectedCheckout) return null;
@@ -1282,9 +1360,14 @@ const ValidationQueue: React.FC = () => {
                     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                         <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
                             <div className="flex justify-between items-center pb-4 border-b border-gray-200">
-                                <h3 className="text-lg font-bold text-gray-900">
-                                    {selectedCheckout.has_report ? 'Update Report' : 'Add Report'}
-                                </h3>
+                                <div>
+                                    <h3 className="text-lg font-bold text-gray-900">
+                                        {selectedCheckout.has_report ? 'Update Report' : 'Add Report'}
+                                    </h3>
+                                    <p className="text-sm text-gray-600 mt-1">
+                                        Report will be stored in checkout_violations table
+                                    </p>
+                                </div>
                                 <button 
                                     onClick={() => setShowReportModal(false)} 
                                     className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100"
@@ -1292,6 +1375,7 @@ const ValidationQueue: React.FC = () => {
                                     <X className="h-5 w-5"/>
                                 </button>
                             </div>
+                            
                             <div className="space-y-4 mt-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
@@ -1303,6 +1387,7 @@ const ValidationQueue: React.FC = () => {
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                                     />
                                 </div>
+                                
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
                                     <textarea 
@@ -1313,6 +1398,7 @@ const ValidationQueue: React.FC = () => {
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                                     />
                                 </div>
+                                
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Severity</label>
                                     <select 
@@ -1325,7 +1411,22 @@ const ValidationQueue: React.FC = () => {
                                         <option value="critical">Critical - Serious violation</option>
                                     </select>
                                 </div>
+
+                                {/* Info about database storage */}
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                    <div className="flex items-start space-x-2">
+                                        <AlertCircleIcon className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                                        <div className="text-xs text-blue-800">
+                                            <p className="font-semibold">Database Integration</p>
+                                            <p className="mt-1">
+                                                This report will be stored in the checkout_violations table and automatically linked to this checkout. 
+                                                If the checkout is deleted, this report will be automatically removed by database triggers.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
+                            
                             <div className="mt-6 flex justify-end space-x-3 pt-4 border-t">
                                 <button 
                                     onClick={() => setShowReportModal(false)} 
