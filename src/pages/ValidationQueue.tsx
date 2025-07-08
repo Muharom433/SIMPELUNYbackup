@@ -644,9 +644,9 @@ const ValidationQueue: React.FC = () => {
         const checkout = checkouts.find(c => c.id === checkoutId);
         if (!checkout) throw new Error('Checkout not found');
 
-        console.log(`Starting deletion for checkout: ${checkoutId}`);
+        console.log(`Deleting checkout: ${checkoutId}`);
 
-        // STEP 1: Revert equipment quantities (optional - tidak akan gagalkan proses)
+        // STEP 1: Revert equipment quantities (opsional)
         try {
             const { data: items } = await supabase
                 .from('checkout_items')
@@ -654,121 +654,71 @@ const ValidationQueue: React.FC = () => {
                 .eq('checkout_id', checkoutId);
 
             if (items && items.length > 0) {
+                console.log(`Reverting quantities for ${items.length} items...`);
                 for (const item of items) {
                     const quantityChange = activeTab === 'room' ? -1 : -item.quantity;
                     await updateEquipmentQuantity(item.equipment_id, quantityChange);
                 }
+                console.log('✓ Equipment quantities reverted');
             }
         } catch (revertError) {
             console.warn('Equipment quantity revert failed, continuing...', revertError);
+            // Tidak akan menggagalkan proses deletion
         }
 
-        // STEP 2: DELETE DENGAN RETRY MECHANISM
-        const maxRetries = 5;
-        let success = false;
-
-        for (let attempt = 1; attempt <= maxRetries && !success; attempt++) {
-            console.log(`Deletion attempt ${attempt}/${maxRetries}`);
-            
-            try {
-                // Hapus checkout_items
-                await supabase.from('checkout_items').delete().eq('checkout_id', checkoutId);
+        // STEP 2: Update related records status (sebelum delete)
+        try {
+            if (activeTab === 'room' && checkout.booking_id) {
+                const { error: bookingError } = await supabase
+                    .from('bookings')
+                    .update({ 
+                        status: 'approved',
+                        updated_at: new Date().toISOString() 
+                    })
+                    .eq('id', checkout.booking_id);
                 
-                // Hapus checkout_violations  
-                await supabase.from('checkout_violations').delete().eq('checkout_id', checkoutId);
+                if (bookingError) console.warn('Booking update failed:', bookingError);
+                else console.log('✓ Booking status updated');
                 
-                // Wait sebentar untuk memastikan database consistency
-                await new Promise(resolve => setTimeout(resolve, 200 * attempt));
+            } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
+                const { error: lendingError } = await supabase
+                    .from('lending_tool')
+                    .update({ 
+                        status: 'borrow',
+                        updated_at: new Date().toISOString() 
+                    })
+                    .eq('id', checkout.lendingTool_id);
                 
-                // Hapus checkout utama
-                const { error: checkoutError } = await supabase
-                    .from('checkouts')
-                    .delete()
-                    .eq('id', checkoutId);
-
-                if (checkoutError) {
-                    throw checkoutError;
-                }
-
-                // Jika sampai sini berarti berhasil
-                success = true;
-                console.log(`✅ Deletion successful on attempt ${attempt}`);
-                
-            } catch (attemptError) {
-                console.warn(`Attempt ${attempt} failed:`, attemptError);
-                
-                if (attempt === maxRetries) {
-                    // Jika semua retry gagal, gunakan RAW SQL sebagai last resort
-                    console.log('All retries failed, using RAW SQL...');
-                    
-                    const { error: rawSqlError } = await supabase
-                        .from('checkouts')
-                        .delete()
-                        .eq('id', checkoutId);
-
-                    if (rawSqlError) {
-                        // FORCE DELETE menggunakan database function jika ada
-                        try {
-                            await supabase.rpc('exec', {
-                                sql: `
-                                    DELETE FROM checkout_items WHERE checkout_id = '${checkoutId}';
-                                    DELETE FROM checkout_violations WHERE checkout_id = '${checkoutId}';
-                                    DELETE FROM checkouts WHERE id = '${checkoutId}';
-                                `
-                            });
-                            success = true;
-                            console.log('✅ RAW SQL deletion successful');
-                        } catch (rawError) {
-                            throw new Error(`All deletion methods failed. Last error: ${attemptError.message}`);
-                        }
-                    } else {
-                        success = true;
-                        console.log('✅ Final retry successful');
-                    }
-                }
-                
-                // Wait sebelum retry berikutnya
-                if (attempt < maxRetries) {
-                    await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-                }
+                if (lendingError) console.warn('Lending tool update failed:', lendingError);
+                else console.log('✓ Lending tool status updated');
             }
+        } catch (updateError) {
+            console.warn('Related record update failed:', updateError);
+            // Tidak akan menggagalkan proses deletion
         }
 
-        // STEP 3: Update related records (optional)
-        if (success) {
-            try {
-                if (activeTab === 'room' && checkout.booking_id) {
-                    await supabase
-                        .from('bookings')
-                        .update({ status: 'approved', updated_at: new Date().toISOString() })
-                        .eq('id', checkout.booking_id);
-                } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
-                    await supabase
-                        .from('lending_tool')
-                        .update({ status: 'borrow', updated_at: new Date().toISOString() })
-                        .eq('id', checkout.lendingTool_id);
-                }
-            } catch (updateError) {
-                console.warn('Related record update failed:', updateError);
-                // Tidak akan gagalkan proses utama
-            }
+        // STEP 3: DELETE CHECKOUT (Trigger akan otomatis hapus child records)
+        const { error: deleteError } = await supabase
+            .from('checkouts')
+            .delete()
+            .eq('id', checkoutId);
 
-            // SUCCESS
-            toast.success('Checkout deleted successfully!');
-            fetchPendingCheckouts();
-            if (selectedCheckoutId === checkoutId) setShowDetailModal(false);
-            setShowDeleteConfirm(null);
+        if (deleteError) {
+            throw new Error(`Failed to delete checkout: ${deleteError.message}`);
         }
+
+        // SUCCESS!
+        console.log('✅ Checkout deleted successfully (trigger handled child records)');
+        toast.success('Checkout deleted successfully!');
+        
+        // Update UI
+        fetchPendingCheckouts();
+        if (selectedCheckoutId === checkoutId) setShowDetailModal(false);
+        setShowDeleteConfirm(null);
 
     } catch (error: any) {
-        console.error('❌ Complete deletion failure:', error);
+        console.error('❌ Delete checkout failed:', error);
         toast.error(`Delete failed: ${error.message}`);
-        
-        // Tampilkan instruksi manual untuk admin
-        toast.error(
-            `Manual cleanup may be required. Contact system admin.`,
-            { duration: 8000 }
-        );
     } finally {
         setProcessingIds(prev => { 
             const s = new Set(prev); 
