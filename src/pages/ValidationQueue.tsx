@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     Bell, Clock, CheckCircle, XCircle, AlertTriangle, User, Building, Calendar,
     Timer, Eye, Check, X, RefreshCw, Filter, Search, FileText, Zap, Users, Package,
-    Flag, AlertCircle as AlertCircleIcon, Phone, Wrench
+    Flag, AlertCircle as AlertCircleIcon, Phone, Wrench, Trash2
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -603,7 +603,10 @@ const ValidationQueue: React.FC = () => {
     const handleAddReport = async () => {
         const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId);
         if (!selectedCheckout) return;
-        if (!reportTitle || !reportDescription) { toast.error('Title and description are required'); return; }
+        if (!reportDescription) { 
+            toast.error('Description is required'); 
+            return; 
+        }
 
         setProcessingIds(prev => new Set(prev).add(selectedCheckout.id));
         try {
@@ -612,7 +615,7 @@ const ValidationQueue: React.FC = () => {
                 user_id: selectedCheckout.user_id, 
                 violation_type: 'other', 
                 severity: reportSeverity, 
-                title: reportTitle, 
+                title: reportTitle || 'Validation Report', 
                 description: reportDescription, 
                 reported_by: profile?.id, 
                 status: 'active' 
@@ -631,6 +634,64 @@ const ValidationQueue: React.FC = () => {
             if (selectedCheckout) { 
                 setProcessingIds(prev => { const s = new Set(prev); s.delete(selectedCheckout.id); return s; }); 
             } 
+        }
+    };
+
+    // DELETE CHECKOUT FUNCTION
+    const handleDeleteCheckout = async (checkoutId: string) => {
+        setProcessingIds(prev => new Set(prev).add(checkoutId));
+        try {
+            const checkout = checkouts.find(c => c.id === checkoutId);
+            if (!checkout) throw new Error('Checkout not found');
+
+            // First, revert any equipment quantities if items were checked
+            const checkoutItems = await supabase
+                .from('checkout_items')
+                .select('*')
+                .eq('checkout_id', checkoutId);
+
+            if (checkoutItems.data) {
+                for (const item of checkoutItems.data) {
+                    if (activeTab === 'room') {
+                        await updateEquipmentQuantity(item.equipment_id, -1);
+                    } else {
+                        await updateEquipmentQuantity(item.equipment_id, -item.quantity);
+                    }
+                }
+            }
+
+            // Delete checkout items first (due to foreign key constraint)
+            const { error: itemsError } = await supabase
+                .from('checkout_items')
+                .delete()
+                .eq('checkout_id', checkoutId);
+
+            if (itemsError) throw itemsError;
+
+            // Delete any reports associated with this checkout
+            const { error: reportsError } = await supabase
+                .from('checkout_violations')
+                .delete()
+                .eq('checkout_id', checkoutId);
+
+            if (reportsError) console.error('Error deleting reports:', reportsError);
+
+            // Finally, delete the checkout
+            const { error: checkoutError } = await supabase
+                .from('checkouts')
+                .delete()
+                .eq('id', checkoutId);
+
+            if (checkoutError) throw checkoutError;
+
+            toast.success('Checkout deleted successfully');
+            fetchPendingCheckouts();
+            if (selectedCheckoutId === checkoutId) setShowDetailModal(false);
+            setShowDeleteConfirm(null);
+        } catch (error: any) {
+            toast.error(error.message || 'Failed to delete checkout');
+        } finally {
+            setProcessingIds(prev => { const s = new Set(prev); s.delete(checkoutId); return s; });
         }
     };
 
@@ -952,6 +1013,13 @@ const ValidationQueue: React.FC = () => {
                                         >
                                             <Eye className="h-4 w-4" />
                                         </button>
+                                        <button 
+                                            onClick={() => setShowDeleteConfirm(checkout.id)} 
+                                            className="p-2 text-red-500 hover:bg-red-100 rounded-md" 
+                                            title="Delete Checkout"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -1169,26 +1237,34 @@ const ValidationQueue: React.FC = () => {
             {showDeleteConfirm && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-lg p-6 max-w-sm w-full">
-                        <h3 className="text-lg font-bold">Confirm Rejection</h3>
-                        <p className="text-sm text-gray-600 mt-2">Are you sure you want to reject this return?</p>
-                        <p className="text-sm text-gray-700 mt-2 font-medium">
-                            This will delete the checkout record and restore the original {activeTab === 'room' ? 'booking' : 'lending tool'} status.
+                        <div className="flex items-center space-x-3 mb-4">
+                            <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                                <AlertTriangle className="h-5 w-5 text-red-600" />
+                            </div>
+                            <h3 className="text-lg font-bold text-gray-900">Confirm Deletion</h3>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-2">Are you sure you want to delete this checkout?</p>
+                        <p className="text-sm text-red-600 font-medium mb-6">
+                            This action cannot be undone. All associated data including reports and verification status will be permanently removed.
                         </p>
-                        <div className="mt-6 flex justify-end space-x-3">
+                        <div className="flex justify-end space-x-3">
                             <button 
                                 onClick={() => setShowDeleteConfirm(null)} 
-                                className="px-4 py-2 border rounded-lg"
+                                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
                             >
                                 Cancel
                             </button>
                             <button 
                                 onClick={() => { 
-                                    if(showDeleteConfirm) handleReject(showDeleteConfirm); 
+                                    if(showDeleteConfirm) handleDeleteCheckout(showDeleteConfirm); 
                                 }} 
                                 disabled={processingIds.has(showDeleteConfirm || '')} 
-                                className="px-4 py-2 bg-red-600 text-white rounded-lg"
+                                className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
                             >
-                                {processingIds.has(showDeleteConfirm || '') ? 'Processing...' : 'Confirm Reject'}
+                                <Trash2 className="h-4 w-4" />
+                                <span>
+                                    {processingIds.has(showDeleteConfirm || '') ? 'Deleting...' : 'Delete Checkout'}
+                                </span>
                             </button>
                         </div>
                     </div>
@@ -1218,26 +1294,49 @@ const ValidationQueue: React.FC = () => {
                             </div>
                             <div className="space-y-4 mt-4">
                                 <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                                    <input 
+                                        type="text"
+                                        value={reportTitle} 
+                                        onChange={(e) => setReportTitle(e.target.value)} 
+                                        placeholder="Enter report title (optional)"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                    />
+                                </div>
+                                <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
                                     <textarea 
                                         value={reportDescription} 
                                         onChange={(e) => setReportDescription(e.target.value)} 
                                         rows={4} 
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                        placeholder="Describe the issue or observation..."
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                                     />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Severity</label>
+                                    <select 
+                                        value={reportSeverity} 
+                                        onChange={(e) => setReportSeverity(e.target.value as any)} 
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                    >
+                                        <option value="minor">Minor - Small issue or note</option>
+                                        <option value="major">Major - Significant problem</option>
+                                        <option value="critical">Critical - Serious violation</option>
+                                    </select>
                                 </div>
                             </div>
                             <div className="mt-6 flex justify-end space-x-3 pt-4 border-t">
                                 <button 
                                     onClick={() => setShowReportModal(false)} 
-                                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg"
+                                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
                                 >
                                     Cancel
                                 </button>
                                 <button 
                                     onClick={handleAddReport} 
-                                    disabled={!reportTitle || !reportDescription || isProcessing} 
-                                    className="flex items-center justify-center space-x-2 px-4 py-2 bg-yellow-600 text-white rounded-lg disabled:opacity-50"
+                                    disabled={!reportDescription || isProcessing} 
+                                    className="flex items-center justify-center space-x-2 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50"
                                 >
                                     <Flag className="h-4 w-4" />
                                     <span>
@@ -1253,4 +1352,4 @@ const ValidationQueue: React.FC = () => {
     );
 };
 
-export default ValidationQueue
+export default ValidationQueue;
