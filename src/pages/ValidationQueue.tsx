@@ -637,45 +637,78 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    // FIXED: Manual cascade delete function
     const performManualCascadeDelete = async (checkoutId: string) => {
-        try {
-            // Step 1: Delete checkout_violations first
-            const { error: violationsError } = await supabase
-                .from('checkout_violations')
-                .delete()
-                .eq('checkout_id', checkoutId);
+    try {
+        console.log(`Starting cascade delete for checkout: ${checkoutId}`);
 
-            if (violationsError) {
-                console.error('Error deleting checkout violations:', violationsError);
-                // Continue anyway - violations might not exist
-            }
+        // Step 1: Force delete ALL checkout_violations (wait for completion)
+        console.log('Deleting checkout_violations...');
+        const { error: violationsError, count: violationsCount } = await supabase
+            .from('checkout_violations')
+            .delete({ count: 'exact' })
+            .eq('checkout_id', checkoutId);
 
-            // Step 2: Delete checkout_items
-            const { error: itemsError } = await supabase
-                .from('checkout_items')
-                .delete()
-                .eq('checkout_id', checkoutId);
-
-            if (itemsError) {
-                console.error('Error deleting checkout items:', itemsError);
-                // Continue anyway - items might not exist
-            }
-
-            // Step 3: Finally delete the checkout
-            const { error: checkoutError } = await supabase
-                .from('checkouts')
-                .delete()
-                .eq('id', checkoutId);
-
-            if (checkoutError) throw checkoutError;
-
-            return true;
-        } catch (error) {
-            console.error('Error in manual cascade delete:', error);
-            throw error;
+        if (violationsError) {
+            console.error('Error deleting checkout violations:', violationsError);
+            throw new Error(`Failed to delete violations: ${violationsError.message}`);
         }
-    };
+        console.log(`Deleted ${violationsCount || 0} violation records`);
+
+        // Step 2: Force delete ALL checkout_items (wait for completion)
+        console.log('Deleting checkout_items...');
+        const { error: itemsError, count: itemsCount } = await supabase
+            .from('checkout_items')
+            .delete({ count: 'exact' })
+            .eq('checkout_id', checkoutId);
+
+        if (itemsError) {
+            console.error('Error deleting checkout items:', itemsError);
+            throw new Error(`Failed to delete items: ${itemsError.message}`);
+        }
+        console.log(`Deleted ${itemsCount || 0} item records`);
+
+        // Step 3: Small delay to ensure database consistency
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Step 4: Verify no foreign key references exist
+        console.log('Verifying no remaining references...');
+        const { data: remainingViolations } = await supabase
+            .from('checkout_violations')
+            .select('id')
+            .eq('checkout_id', checkoutId);
+
+        const { data: remainingItems } = await supabase
+            .from('checkout_items')
+            .select('id')
+            .eq('checkout_id', checkoutId);
+
+        if (remainingViolations && remainingViolations.length > 0) {
+            throw new Error(`Still have ${remainingViolations.length} violation references`);
+        }
+
+        if (remainingItems && remainingItems.length > 0) {
+            throw new Error(`Still have ${remainingItems.length} item references`);
+        }
+
+        // Step 5: Finally delete the checkout
+        console.log('Deleting checkout record...');
+        const { error: checkoutError } = await supabase
+            .from('checkouts')
+            .delete()
+            .eq('id', checkoutId);
+
+        if (checkoutError) {
+            console.error('Error deleting checkout:', checkoutError);
+            throw new Error(`Failed to delete checkout: ${checkoutError.message}`);
+        }
+
+        console.log('Cascade delete completed successfully');
+        return true;
+    } catch (error) {
+        console.error('Error in manual cascade delete:', error);
+        throw error;
+    }
+};
 
     // FIXED: Delete checkout function with proper cascade
     const handleDeleteCheckout = async (checkoutId: string) => {
