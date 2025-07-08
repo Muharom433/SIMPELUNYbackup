@@ -10,6 +10,7 @@ import RoomManagement from './pages/RoomManagement';
 import UserManagement from './pages/UserManagement';
 import DepartmentManagement from './pages/DepartmentManagement';
 import StudyProgramManagement from './pages/StudyProgramManagement';
+import PermitLetter from './pages/PermitLetter';
 import BookingManagement from './pages/BookingManagement';
 import ValidationQueue from './pages/ValidationQueue';
 import CheckoutValidation from './pages/CheckoutValidation';
