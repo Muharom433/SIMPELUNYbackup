@@ -586,8 +586,8 @@ const ValidationQueue: React.FC = () => {
                 }
             }
             
-            // Manual cascade delete - delete related records first, then checkout
-            await performManualCascadeDelete(checkoutId);
+            const { error: checkoutError } = await supabase.from('checkouts').delete().eq('id', checkoutId);
+            if (checkoutError) throw checkoutError;
             
             toast.success('Checkout rejected and status restored.');
             fetchPendingCheckouts();
@@ -637,87 +637,14 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    const performManualCascadeDelete = async (checkoutId: string) => {
-    try {
-        console.log(`Starting cascade delete for checkout: ${checkoutId}`);
-
-        // Step 1: Force delete ALL checkout_violations (wait for completion)
-        console.log('Deleting checkout_violations...');
-        const { error: violationsError, count: violationsCount } = await supabase
-            .from('checkout_violations')
-            .delete({ count: 'exact' })
-            .eq('checkout_id', checkoutId);
-
-        if (violationsError) {
-            console.error('Error deleting checkout violations:', violationsError);
-            throw new Error(`Failed to delete violations: ${violationsError.message}`);
-        }
-        console.log(`Deleted ${violationsCount || 0} violation records`);
-
-        // Step 2: Force delete ALL checkout_items (wait for completion)
-        console.log('Deleting checkout_items...');
-        const { error: itemsError, count: itemsCount } = await supabase
-            .from('checkout_items')
-            .delete({ count: 'exact' })
-            .eq('checkout_id', checkoutId);
-
-        if (itemsError) {
-            console.error('Error deleting checkout items:', itemsError);
-            throw new Error(`Failed to delete items: ${itemsError.message}`);
-        }
-        console.log(`Deleted ${itemsCount || 0} item records`);
-
-        // Step 3: Small delay to ensure database consistency
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        // Step 4: Verify no foreign key references exist
-        console.log('Verifying no remaining references...');
-        const { data: remainingViolations } = await supabase
-            .from('checkout_violations')
-            .select('id')
-            .eq('checkout_id', checkoutId);
-
-        const { data: remainingItems } = await supabase
-            .from('checkout_items')
-            .select('id')
-            .eq('checkout_id', checkoutId);
-
-        if (remainingViolations && remainingViolations.length > 0) {
-            throw new Error(`Still have ${remainingViolations.length} violation references`);
-        }
-
-        if (remainingItems && remainingItems.length > 0) {
-            throw new Error(`Still have ${remainingItems.length} item references`);
-        }
-
-        // Step 5: Finally delete the checkout
-        console.log('Deleting checkout record...');
-        const { error: checkoutError } = await supabase
-            .from('checkouts')
-            .delete()
-            .eq('id', checkoutId);
-
-        if (checkoutError) {
-            console.error('Error deleting checkout:', checkoutError);
-            throw new Error(`Failed to delete checkout: ${checkoutError.message}`);
-        }
-
-        console.log('Cascade delete completed successfully');
-        return true;
-    } catch (error) {
-        console.error('Error in manual cascade delete:', error);
-        throw error;
-    }
-};
-
-    // FIXED: Delete checkout function with proper cascade
+    // DELETE CHECKOUT FUNCTION
     const handleDeleteCheckout = async (checkoutId: string) => {
         setProcessingIds(prev => new Set(prev).add(checkoutId));
         try {
             const checkout = checkouts.find(c => c.id === checkoutId);
             if (!checkout) throw new Error('Checkout not found');
 
-            // Revert any equipment quantities if items were checked
+            // First, revert any equipment quantities if items were checked
             const checkoutItems = await supabase
                 .from('checkout_items')
                 .select('*')
@@ -733,8 +660,29 @@ const ValidationQueue: React.FC = () => {
                 }
             }
 
-            // Perform manual cascade delete
-            await performManualCascadeDelete(checkoutId);
+            // Delete checkout items first (due to foreign key constraint)
+            const { error: itemsError } = await supabase
+                .from('checkout_items')
+                .delete()
+                .eq('checkout_id', checkoutId);
+
+            if (itemsError) throw itemsError;
+
+            // Delete any reports associated with this checkout
+            const { error: reportsError } = await supabase
+                .from('checkout_violations')
+                .delete()
+                .eq('checkout_id', checkoutId);
+
+            if (reportsError) console.error('Error deleting reports:', reportsError);
+
+            // Finally, delete the checkout
+            const { error: checkoutError } = await supabase
+                .from('checkouts')
+                .delete()
+                .eq('id', checkoutId);
+
+            if (checkoutError) throw checkoutError;
 
             toast.success('Checkout deleted successfully');
             fetchPendingCheckouts();
@@ -755,7 +703,8 @@ const ValidationQueue: React.FC = () => {
                 c.booking?.purpose?.toLowerCase().includes(s) || 
                 c.booking?.room?.name?.toLowerCase().includes(s);
         } else {
-            return !s || c.user?.full_name?.toLowerCase().includes(s) || 
+            return !s || 
+                c.user?.full_name?.toLowerCase().includes(s) || 
                 c.lendingTool?.equipment_details?.some(eq => 
                     eq.name.toLowerCase().includes(s) || 
                     eq.code?.toLowerCase().includes(s) ||
@@ -803,27 +752,11 @@ const ValidationQueue: React.FC = () => {
                             <Bell className="h-8 w-8" />
                             <span>Validation Queue</span>
                         </h1>
-                        <p className="mt-2 opacity-90">Review and validate checkouts with manual cascade deletion</p>
+                        <p className="mt-2 opacity-90">Review and validate checkouts</p>
                     </div>
                     <div className="hidden md:block text-right">
                         <div className="text-2xl font-bold">{checkouts.length}</div>
                         <div className="text-sm opacity-80">Items in Queue</div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Manual Cascade Info */}
-            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
-                <div className="flex items-start space-x-3">
-                    <div className="flex-shrink-0 w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                    </div>
-                    <div>
-                        <h3 className="text-sm font-semibold text-green-900">Manual Cascade Deletion Active</h3>
-                        <p className="text-xs text-green-700 mt-1">
-                            The system will automatically handle deletion order: checkout_violations → checkout_items → checkouts. 
-                            Equipment quantities are properly reverted before deletion.
-                        </p>
                     </div>
                 </div>
             </div>
@@ -1083,7 +1016,7 @@ const ValidationQueue: React.FC = () => {
                                         <button 
                                             onClick={() => setShowDeleteConfirm(checkout.id)} 
                                             className="p-2 text-red-500 hover:bg-red-100 rounded-md" 
-                                            title="Delete Checkout (manual cascade)"
+                                            title="Delete Checkout"
                                         >
                                             <Trash2 className="h-4 w-4" />
                                         </button>
@@ -1112,9 +1045,6 @@ const ValidationQueue: React.FC = () => {
                             <div className="flex justify-between items-center pb-4 border-b border-gray-200">
                                 <div>
                                     <h2 className="text-xl font-bold text-gray-900">Checkout Validation</h2>
-                                    <p className="text-sm text-gray-600 mt-1">
-                                        Manual cascade deletion ensures proper cleanup of related records
-                                    </p>
                                 </div>
                                 <button 
                                     onClick={() => setShowDetailModal(false)} 
@@ -1303,40 +1233,20 @@ const ValidationQueue: React.FC = () => {
                 );
             })()}
 
-            {/* Enhanced Delete Confirmation Modal */}
+            {/* Delete Confirmation Modal */}
             {showDeleteConfirm && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-lg p-6 max-w-md w-full">
+                    <div className="bg-white rounded-lg p-6 max-w-sm w-full">
                         <div className="flex items-center space-x-3 mb-4">
                             <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
                                 <AlertTriangle className="h-5 w-5 text-red-600" />
                             </div>
                             <h3 className="text-lg font-bold text-gray-900">Confirm Deletion</h3>
                         </div>
-                        
                         <p className="text-sm text-gray-600 mb-2">Are you sure you want to delete this checkout?</p>
-                        
-                        {/* Enhanced warning with manual cascade info */}
-                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-3 mb-4">
-                            <div className="flex items-start space-x-2">
-                                <CheckCircle className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                                <div className="text-xs text-blue-800">
-                                    <p className="font-semibold mb-1">Manual Cascade Deletion Process</p>
-                                    <p>The system will safely delete in this order:</p>
-                                    <ol className="list-decimal list-inside mt-1 space-y-0.5">
-                                        <li>Revert equipment quantities</li>
-                                        <li>Delete checkout_violations records</li>
-                                        <li>Delete checkout_items records</li>
-                                        <li>Delete checkout record</li>
-                                    </ol>
-                                </div>
-                            </div>
-                        </div>
-                        
                         <p className="text-sm text-red-600 font-medium mb-6">
-                            This action cannot be undone. All associated data will be permanently removed.
+                            This action cannot be undone. All associated data including reports and verification status will be permanently removed.
                         </p>
-                        
                         <div className="flex justify-end space-x-3">
                             <button 
                                 onClick={() => setShowDeleteConfirm(null)} 
@@ -1361,7 +1271,7 @@ const ValidationQueue: React.FC = () => {
                 </div>
             )}
 
-            {/* Enhanced Report Modal */}
+            {/* Report Modal */}
             {showReportModal && selectedCheckoutId && (() => {
                 const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId);
                 if(!selectedCheckout) return null;
@@ -1372,14 +1282,9 @@ const ValidationQueue: React.FC = () => {
                     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                         <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
                             <div className="flex justify-between items-center pb-4 border-b border-gray-200">
-                                <div>
-                                    <h3 className="text-lg font-bold text-gray-900">
-                                        {selectedCheckout.has_report ? 'Update Report' : 'Add Report'}
-                                    </h3>
-                                    <p className="text-sm text-gray-600 mt-1">
-                                        Report will be stored in checkout_violations table
-                                    </p>
-                                </div>
+                                <h3 className="text-lg font-bold text-gray-900">
+                                    {selectedCheckout.has_report ? 'Update Report' : 'Add Report'}
+                                </h3>
                                 <button 
                                     onClick={() => setShowReportModal(false)} 
                                     className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100"
@@ -1387,7 +1292,6 @@ const ValidationQueue: React.FC = () => {
                                     <X className="h-5 w-5"/>
                                 </button>
                             </div>
-                            
                             <div className="space-y-4 mt-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
@@ -1399,7 +1303,6 @@ const ValidationQueue: React.FC = () => {
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                                     />
                                 </div>
-                                
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
                                     <textarea 
@@ -1410,7 +1313,6 @@ const ValidationQueue: React.FC = () => {
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                                     />
                                 </div>
-                                
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Severity</label>
                                     <select 
@@ -1423,22 +1325,7 @@ const ValidationQueue: React.FC = () => {
                                         <option value="critical">Critical - Serious violation</option>
                                     </select>
                                 </div>
-
-                                {/* Info about database storage and manual cascade */}
-                                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                                    <div className="flex items-start space-x-2">
-                                        <AlertCircleIcon className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
-                                        <div className="text-xs text-green-800">
-                                            <p className="font-semibold">Safe Database Integration</p>
-                                            <p className="mt-1">
-                                                This report will be stored in checkout_violations table. 
-                                                If the checkout is deleted, this report will be safely removed through our manual cascade deletion process.
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
-                            
                             <div className="mt-6 flex justify-end space-x-3 pt-4 border-t">
                                 <button 
                                     onClick={() => setShowReportModal(false)} 
