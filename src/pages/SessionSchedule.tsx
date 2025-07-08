@@ -2948,6 +2948,53 @@ const fileName = `Jadwal_Sidang_${selectedProgram.code || selectedProgram.name.r
                     <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.study_program_id.message}</p>
                   )}
                 </div>
+                <div>
+  <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Month", "Bulan")} *</label>
+  <Controller 
+    name="month" 
+    control={printForm.control} 
+    render={({ field }) => { 
+      const monthOptions = [
+        { value: '1', label: getText('January', 'Januari') },
+        { value: '2', label: getText('February', 'Februari') },
+        { value: '3', label: getText('March', 'Maret') },
+        { value: '4', label: getText('April', 'April') },
+        { value: '5', label: getText('May', 'Mei') },
+        { value: '6', label: getText('June', 'Juni') },
+        { value: '7', label: getText('July', 'Juli') },
+        { value: '8', label: getText('August', 'Agustus') },
+        { value: '9', label: getText('September', 'September') },
+        { value: '10', label: getText('October', 'Oktober') },
+        { value: '11', label: getText('November', 'November') },
+        { value: '12', label: getText('December', 'Desember') }
+      ];
+      const currentValue = monthOptions.find(o => o.value === field.value); 
+      return ( 
+        <Select 
+          {...field} 
+          options={monthOptions} 
+          value={currentValue} 
+          onChange={option => field.onChange(option ? option.value : '')} 
+          placeholder={getText("Select month...", "Pilih bulan...")} 
+          isClearable 
+        /> 
+      )
+    }} 
+  />
+  {printForm.formState.errors.month && (
+    <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.month.message}</p>
+  )}
+</div>
+
+{/* ✅ Info current year */}
+<div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+  <div className="flex items-center space-x-2">
+    <Calendar className="h-4 w-4 text-blue-600" />
+    <span className="text-sm text-blue-800">
+      {getText(`Printing schedule for year: ${new Date().getFullYear()}`, `Mencetak jadwal untuk tahun: ${new Date().getFullYear()}`)}
+    </span>
+  </div>
+</div>
                 <div className="flex space-x-3 pt-4">
                   <button 
                     type="button" 
