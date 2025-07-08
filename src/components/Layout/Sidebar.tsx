@@ -79,6 +79,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
             { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book'},
             { icon: Package, label: getText('Tool Lending', 'Peminjaman Alat'), path: '/tools'},
             { icon: CheckCircle, label: getText('Check Out', 'Pengembalian'), path: '/checkout'},
+            { icon: FileText, label: getText('Permit Letter', 'Surat Izin'), path: '/permit-letter', color: 'from-magenta-500 to-pink-500' }, // TAMBAH: Menu Surat Izin dengan warna magenta
         ];
 
         if (!user) return publicItems;
@@ -112,7 +113,8 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: UserCheck, label: getText('Session Schedule', 'Jadwal Sidang'), path: '/session-schedule' },
                 { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' },
                 { icon: FileText, label: getText('Reports', 'Laporan'), path: '/reports', badge: newReportsCount > 0 ? newReportsCount : null },
-                { icon: Settings, label: getText('System Settings', 'Pengaturan Sistem'), path: '/settings' },{ icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
+                { icon: Settings, label: getText('System Settings', 'Pengaturan Sistem'), path: '/settings' },
+                { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
         }
         return baseItems;
