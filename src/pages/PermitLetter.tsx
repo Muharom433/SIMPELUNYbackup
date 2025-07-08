@@ -169,6 +169,7 @@ const PermitLetter: React.FC = () => {
         .from('lending_tool')
         .select('*')
         .eq('status', 'borrow')
+        .eq('attachments','')
         .order('created_at', { ascending: false });
 
       if (lendingToolsError) {
