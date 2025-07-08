@@ -90,10 +90,6 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
         if (user.role === 'department_admin') {
             return [
                 { icon: PieChart, label: getText('Dashboard', 'Dasbor'), path: '/' },
-                { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book' },
-                { icon: Package, label: getText('Tool Lending', 'Peminjaman Alat'), path: '/tools' },
-                { icon: CheckCircle, label: getText('Check Out', 'Pengembalian'), path: '/checkout' },
-                { icon: FileText, label: getText('Permit Letter', 'Surat Izin'), path: '/permit-letter' }, // Hapus custom color
                 { icon: CalendarCheck, label: getText('Exam Management', 'Jadwal UAS'), path: '/exams' },
                 { icon: UserCheck, label: getText('Session Schedule', 'Jadwal Sidang'), path: '/session-schedule' },
                 { icon: Users, label: getText('User Management', 'Data Dosen/Mahasiswa'), path: '/users' },
