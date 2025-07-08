@@ -157,10 +157,11 @@ const SessionScheduleProgressive = () => {
 
   // ✅ Print Form Schema - Simplified
   const printSchema = useMemo(() => {
-    return z.object({
-        study_program_id: z.string().min(1, getText('Study Program is required', 'Program Studi wajib diisi')),
-    });
-  }, [getText]);
+  return z.object({
+      study_program_id: z.string().min(1, getText('Study Program is required', 'Program Studi wajib diisi')),
+      month: z.string().min(1, getText('Month is required', 'Bulan wajib diisi')),
+  });
+}, [getText]);
 
   const printForm = useForm<PrintFormData>({ resolver: zodResolver(printSchema) });
 
