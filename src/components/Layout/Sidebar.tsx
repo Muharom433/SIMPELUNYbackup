@@ -80,7 +80,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
             { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book' },
             { icon: Package, label: getText('Tool Lending', 'Peminjaman Alat'), path: '/tools' },
             { icon: CheckCircle, label: getText('Check Out', 'Pengembalian'), path: '/checkout' },
-            { icon: FileText, label: getText('Permit Letter', 'Surat Izin'), path: '/permit-letter', color: 'from-amber-600 to-orange-500' },
+            { icon: FileText, label: getText('Permit Letter', 'Surat Izin'), path: '/permit-letter' }, // Hapus custom color
         ];
 
         // Jika tidak ada user (belum login), return public items
@@ -93,7 +93,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book' },
                 { icon: Package, label: getText('Tool Lending', 'Peminjaman Alat'), path: '/tools' },
                 { icon: CheckCircle, label: getText('Check Out', 'Pengembalian'), path: '/checkout' },
-                { icon: FileText, label: getText('Permit Letter', 'Surat Izin'), path: '/permit-letter', color: 'from-amber-600 to-orange-500' },
+                { icon: FileText, label: getText('Permit Letter', 'Surat Izin'), path: '/permit-letter' }, // Hapus custom color
                 { icon: CalendarCheck, label: getText('Exam Management', 'Jadwal UAS'), path: '/exams' },
                 { icon: UserCheck, label: getText('Session Schedule', 'Jadwal Sidang'), path: '/session-schedule' },
                 { icon: Users, label: getText('User Management', 'Data Dosen/Mahasiswa'), path: '/users' },
@@ -110,7 +110,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book' },
                 { icon: Package, label: getText('Tool Lending', 'Peminjaman Alat'), path: '/tools' },
                 { icon: CheckCircle, label: getText('Check Out', 'Pengembalian'), path: '/checkout' },
-                { icon: FileText, label: getText('Permit Letter', 'Surat Izin'), path: '/permit-letter', color: 'from-amber-600 to-orange-500' },
+                { icon: FileText, label: getText('Permit Letter', 'Surat Izin'), path: '/permit-letter' }, // Hapus custom color
                 { icon: Building, label: getText('Room Management', 'Manajemen Ruangan'), path: '/rooms' },
                 { icon: Users, label: getText('User Management', 'Manajemen Pengguna'), path: '/users' },
                 { icon: MapPin, label: getText('Departments', 'Departemen'), path: '/departments' },
