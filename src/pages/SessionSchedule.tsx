@@ -1186,8 +1186,8 @@ const CalendarModal = () => {
         
         alert.error(
           getText(
-            `The Student name ${nameValue} (${nimValue}) already has a scheduled in Room: ${existingSession.room?.name || 'Unknown'}`,
-            `Mahasiswa ${nameValue} (${nimValue}) sudah memiliki jadwal sidang di Ruangan: ${existingSession.room?.name || 'Tidak diketahui'}.`
+            `The Student already has a scheduled in Room: ${existingSession.room?.name || 'Unknown'} Please go edit the data if it required`,
+            `Mahasiswa sudah terjadwal di Ruangan: ${existingSession.room?.name || 'Tidak diketahui'} silahkan edit data apa bila di perlukan.`
           )
         );
         return;
