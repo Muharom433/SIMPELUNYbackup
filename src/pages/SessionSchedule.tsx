@@ -2412,9 +2412,22 @@ const sessionsToPrint = allSessions.filter(session => {
 });
 
       if (sessionsToPrint.length === 0) {
-        alert.error(getText("No sessions found for the selected study program.", "Tidak ditemukan jadwal sidang untuk program studi yang dipilih."));
-        return;
-      }
+  const monthNames = getText('en') === 'en' ? [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ] : [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ];
+  
+  alert.error(
+    getText(
+      `No sessions found for ${monthNames[selectedMonth - 1]} ${currentYear} in the selected study program.`,
+      `Tidak ditemukan jadwal sidang untuk ${monthNames[selectedMonth - 1]} ${currentYear} pada program studi yang dipilih.`
+    )
+  );
+  return;
+}
 
       const doc = new jsPDF('landscape', 'mm', 'a4');
       const pageWidth = doc.internal.pageSize.getWidth();
