@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-    BookOpen, Search, Eye, Edit, Trash2, Check, X, Clock, Calendar, Users, AlertCircle, CheckCircle, XCircle, RefreshCw, Download, User, Building, Phone, Zap, Package, Hash, Wrench, Cpu, Wifi, FlaskConical, Armchair, Shield, Camera
+    BookOpen, Search, Eye, Edit, Trash2, Check, X, Clock, Calendar, Users, AlertCircle, CheckCircle, XCircle, RefreshCw, Download, User, Building, Phone, Zap, Package, Hash, Wrench, Cpu, Wifi, FlaskConical, Armchair, Shield, Camera,
+    FileText // 🔥 TAMBAHKAN INI
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
