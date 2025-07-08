@@ -166,10 +166,11 @@ const PermitLetter: React.FC = () => {
 
       // Fetch lending tools with status 'borrow'
       const { data: lendingToolsData, error: lendingToolsError } = await supabase
-        .from('lending_tool')
-        .select('*')
-        .eq('status', 'borrow')
-        .order('created_at', { ascending: false });
+  .from('lending_tool')
+  .select('*')
+  .eq('status', 'borrow')
+  .or('attachments.is.null,attachments.eq.{}') // 🔥 NULL atau empty array
+  .order('created_at', { ascending: false });
 
       if (lendingToolsError) {
         console.error('Error fetching lending tools:', lendingToolsError);
