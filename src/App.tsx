@@ -50,6 +50,7 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path="book" element={<BookRoom />} />
             <Route path="checkout" element={<CheckOut />} />
+            <Route path="permit-letter" element={<PermitLetter />} />
             
             {/* Public/Student Routes */}
             <Route path="tools" element={<ToolLending />} />
