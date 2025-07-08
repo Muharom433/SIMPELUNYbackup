@@ -2397,9 +2397,19 @@ const handleCancelDelete = () => {
       }
 
       // ✅ Filter sessions by study program only (tidak terbatas departemen)
-      const sessionsToPrint = allSessions.filter(session => 
-        session.student?.study_program?.id === formData.study_program_id
-      );
+      const currentYear = new Date().getFullYear();
+const selectedMonth = parseInt(formData.month);
+
+// ✅ Filter sessions by study program and month/year
+const sessionsToPrint = allSessions.filter(session => {
+  const sessionDate = new Date(session.date);
+  const sessionMonth = sessionDate.getMonth() + 1; // JavaScript months are 0-indexed
+  const sessionYear = sessionDate.getFullYear();
+  
+  return session.student?.study_program?.id === formData.study_program_id &&
+         sessionMonth === selectedMonth &&
+         sessionYear === currentYear;
+});
 
       if (sessionsToPrint.length === 0) {
         alert.error(getText("No sessions found for the selected study program.", "Tidak ditemukan jadwal sidang untuk program studi yang dipilih."));
