@@ -68,8 +68,8 @@ type SessionFormData = z.infer<typeof sessionSchema>;
 // ✅ Print Form Data Type - Simplified
 type PrintFormData = {
     study_program_id: string;
+    month: string;
 };
-
 // ✅ Helper function for image data URL
 const getImageDataUrl = async (url: string): Promise<string> => {
     const response = await fetch(url);
