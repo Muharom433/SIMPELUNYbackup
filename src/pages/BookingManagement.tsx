@@ -783,7 +783,7 @@ const BookingManagement: React.FC = () => {
           className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
         >
           <Download className="h-4 w-4" />
-          <span>{getText('Download All Documents', 'Unduh Semua Dokumen')}</span>
+          <span>{'Download All Documents'}</span>
         </button>
       </div>
     </div>
