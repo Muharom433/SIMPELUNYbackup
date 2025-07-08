@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
     Wrench, Search, Eye, Edit, Trash2, RefreshCw, Download, User, Package, 
     AlertCircle, Calendar, Clock, X, Phone, Mail, Hash, Building, Users, 
-    CheckCircle, XCircle, Plus, Minus, Settings, Loader2
+    CheckCircle, XCircle, Plus, Minus, Settings, Loader2,
+    FileText // 🔥 TAMBAHKAN INI JUGA
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
