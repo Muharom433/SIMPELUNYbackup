@@ -1186,7 +1186,7 @@ const CalendarModal = () => {
         
         alert.error(
           getText(
-            `⚠️ Duplicate Student Found!\n\nStudent ${nameValue} (${nimValue}) already has a scheduled session:\n📅 Date: ${existingDate}\n⏰ Time: ${existingTime}\n🏢 Room: ${existingSession.room?.name || 'Unknown'}\n\nPlease select a different student or edit the existing session.`,
+            `The Student name ${nameValue} (${nimValue}) already has a scheduled in Room: ${existingSession.room?.name || 'Unknown'}`,
             `Mahasiswa ${nameValue} (${nimValue}) sudah memiliki jadwal sidang di Ruangan: ${existingSession.room?.name || 'Tidak diketahui'}.`
           )
         );
