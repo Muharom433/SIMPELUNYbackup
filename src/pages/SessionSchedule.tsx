@@ -2467,9 +2467,16 @@ const sessionsToPrint = allSessions.filter(session => {
       doc.setLineWidth(1);
       doc.line(10, currentY, pageWidth - 10, currentY);
       currentY += 10;
+// ✅ Judul dengan bulan dan tahun
+const monthNames = getText('en') === 'en' ? [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+] : [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+];
 
-      // ✅ Judul sederhana dengan font yang lebih besar
-      const subtitle = `JADWAL SIDANG PROGRAM STUDI ${selectedProgram.name.toUpperCase()}`;
+const subtitle = `JADWAL SIDANG PROGRAM STUDI ${selectedProgram.name.toUpperCase()}\n${monthNames[selectedMonth - 1].toUpperCase()} ${currentYear}`;
       doc.setFontSize(14);
       doc.setFont('helvetica', 'bold');
       const titleMaxWidth = pageWidth - 40;
