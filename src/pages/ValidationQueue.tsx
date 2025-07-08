@@ -637,93 +637,135 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    // DELETE CHECKOUT FUNCTION
     const handleDeleteCheckout = async (checkoutId: string) => {
     setProcessingIds(prev => new Set(prev).add(checkoutId));
+    
     try {
         const checkout = checkouts.find(c => c.id === checkoutId);
         if (!checkout) throw new Error('Checkout not found');
 
-        // 1. First, revert any equipment quantities if items were checked
-        const { data: checkoutItems, error: getItemsError } = await supabase
-            .from('checkout_items')
-            .select('*')
-            .eq('checkout_id', checkoutId);
+        console.log(`Starting deletion process for checkout: ${checkoutId}`);
 
-        if (getItemsError) {
-            console.error('Error fetching checkout items:', getItemsError);
-        } else if (checkoutItems && checkoutItems.length > 0) {
-            // Revert equipment quantities
-            for (const item of checkoutItems) {
-                if (activeTab === 'room') {
-                    // For room checkouts, subtract 1 from equipment quantity
-                    await updateEquipmentQuantity(item.equipment_id, -1);
-                } else {
-                    // For equipment checkouts, subtract the returned quantity
-                    await updateEquipmentQuantity(item.equipment_id, -item.quantity);
+        // 1. First, get and revert any equipment quantities if items were checked
+        let checkoutItems = [];
+        try {
+            const { data, error: getItemsError } = await supabase
+                .from('checkout_items')
+                .select('*')
+                .eq('checkout_id', checkoutId);
+
+            if (getItemsError) {
+                console.warn('Error fetching checkout items:', getItemsError);
+            } else if (data && data.length > 0) {
+                checkoutItems = data;
+                console.log(`Found ${checkoutItems.length} checkout items to revert`);
+                
+                // Revert equipment quantities
+                for (const item of checkoutItems) {
+                    if (activeTab === 'room') {
+                        await updateEquipmentQuantity(item.equipment_id, -1);
+                    } else {
+                        await updateEquipmentQuantity(item.equipment_id, -item.quantity);
+                    }
                 }
+                console.log('Equipment quantities reverted');
             }
+        } catch (revertError) {
+            console.warn('Error reverting equipment quantities:', revertError);
+            // Continue with deletion even if revert fails
         }
 
-        // 2. Delete all related checkout_items (foreign key constraint)
+        // 2. Delete ALL related checkout_items (must be done before checkout)
+        console.log('Deleting checkout_items...');
         const { error: itemsError } = await supabase
             .from('checkout_items')
             .delete()
             .eq('checkout_id', checkoutId);
 
         if (itemsError) {
-            console.error('Error deleting checkout items:', itemsError);
+            console.error('Error deleting checkout_items:', itemsError);
             throw new Error(`Failed to delete checkout items: ${itemsError.message}`);
         }
+        console.log('✓ checkout_items deleted successfully');
 
-        // 3. Delete all related checkout_violations (foreign key constraint)
+        // 3. Delete ALL related checkout_violations (must be done before checkout)
+        console.log('Deleting checkout_violations...');
         const { error: violationsError } = await supabase
             .from('checkout_violations')
             .delete()
             .eq('checkout_id', checkoutId);
 
         if (violationsError) {
-            console.error('Error deleting checkout violations:', violationsError);
+            console.error('Error deleting checkout_violations:', violationsError);
             throw new Error(`Failed to delete checkout violations: ${violationsError.message}`);
         }
+        console.log('✓ checkout_violations deleted successfully');
 
-        // 4. Finally, delete the main checkout record
+        // 4. Verify no remaining foreign key references (double-check)
+        const { data: remainingItems } = await supabase
+            .from('checkout_items')
+            .select('id')
+            .eq('checkout_id', checkoutId);
+
+        const { data: remainingViolations } = await supabase
+            .from('checkout_violations')
+            .select('id')
+            .eq('checkout_id', checkoutId);
+
+        if (remainingItems && remainingItems.length > 0) {
+            throw new Error(`Still found ${remainingItems.length} checkout_items referencing this checkout`);
+        }
+
+        if (remainingViolations && remainingViolations.length > 0) {
+            throw new Error(`Still found ${remainingViolations.length} checkout_violations referencing this checkout`);
+        }
+
+        console.log('✓ Verified all foreign key references are cleared');
+
+        // 5. Now safely delete the main checkout record
+        console.log('Deleting main checkout record...');
         const { error: checkoutError } = await supabase
             .from('checkouts')
             .delete()
             .eq('id', checkoutId);
 
         if (checkoutError) {
+            console.error('Error deleting checkout:', checkoutError);
             throw new Error(`Failed to delete checkout: ${checkoutError.message}`);
         }
+        console.log('✓ Main checkout record deleted successfully');
 
-        // 5. Optional: Update related booking/lending_tool status if needed
+        // 6. Optional: Update related booking/lending_tool status if needed
         try {
             if (activeTab === 'room' && checkout.booking_id) {
-                // Reset booking status if needed
+                console.log('Updating booking status...');
                 const { error: bookingError } = await supabase
                     .from('bookings')
                     .update({ 
-                        status: 'approved', // or whatever the previous status should be
+                        status: 'approved',
                         updated_at: new Date().toISOString() 
                     })
                     .eq('id', checkout.booking_id);
 
                 if (bookingError) {
                     console.warn('Could not update booking status:', bookingError);
+                } else {
+                    console.log('✓ Booking status updated');
                 }
             } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
-                // Reset lending tool status if needed
+                console.log('Updating lending tool status...');
                 const { error: lendingError } = await supabase
                     .from('lending_tool')
                     .update({ 
-                        status: 'borrow', // or whatever the previous status should be
+                        status: 'borrow',
                         updated_at: new Date().toISOString() 
                     })
                     .eq('id', checkout.lendingTool_id);
 
                 if (lendingError) {
                     console.warn('Could not update lending tool status:', lendingError);
+                } else {
+                    console.log('✓ Lending tool status updated');
                 }
             }
         } catch (statusUpdateError) {
@@ -731,14 +773,20 @@ const ValidationQueue: React.FC = () => {
             // Don't throw here, as the main deletion was successful
         }
 
+        console.log('✅ Checkout deletion completed successfully');
         toast.success('Checkout and all related data deleted successfully');
         fetchPendingCheckouts();
         if (selectedCheckoutId === checkoutId) setShowDetailModal(false);
         setShowDeleteConfirm(null);
 
     } catch (error: any) {
-        console.error('Delete checkout error:', error);
+        console.error('❌ Delete checkout error:', error);
         toast.error(error.message || 'Failed to delete checkout');
+        
+        // Optionally show more detailed error to user in development
+        if (process.env.NODE_ENV === 'development') {
+            console.error('Full error details:', error);
+        }
     } finally {
         setProcessingIds(prev => { 
             const s = new Set(prev); 
