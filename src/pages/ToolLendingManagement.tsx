@@ -636,6 +636,120 @@ const ToolLendingManagement: React.FC = () => {
                                         ))}
                                     </div>
                                 </div>
+                              {selectedRecord.attachments && selectedRecord.attachments.length > 0 && (
+  <div>
+    <h4 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+      <FileText className="h-5 w-5 mr-2 text-green-600" />
+      {getText('Permit Documents', 'Dokumen Izin')}
+      <span className="ml-2 text-sm text-gray-500">({selectedRecord.attachments.length} files)</span>
+    </h4>
+    
+    <div className="bg-green-50 rounded-lg p-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        {selectedRecord.attachments.map((attachment, index) => {
+          const isPDF = attachment.startsWith('data:application/pdf') || attachment.toLowerCase().includes('.pdf');
+          
+          return (
+            <div key={index} className="relative group">
+              <div 
+                onClick={() => window.open(attachment, '_blank')}
+                className="cursor-pointer bg-white rounded-lg border border-green-200 p-3 hover:shadow-md transition-all duration-200 hover:scale-105"
+              >
+                {isPDF ? (
+                  <div className="flex flex-col items-center">
+                    <div className="h-16 w-16 bg-red-100 rounded-lg flex items-center justify-center mb-2">
+                      <FileText className="h-8 w-8 text-red-600" />
+                    </div>
+                    <span className="text-xs text-center text-gray-700 font-medium">
+                      PDF Document
+                    </span>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <img
+                      src={attachment}
+                      alt={`Permit Document ${index + 1}`}
+                      className="w-full h-16 object-cover rounded-lg mb-2"
+                    />
+                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg transition-all duration-200 flex items-center justify-center">
+                      <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                    </div>
+                    <span className="text-xs text-center text-gray-700 font-medium block">
+                      Image File
+                    </span>
+                  </div>
+                )}
+              </div>
+              
+              {/* Quick View Button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // Open in modal for better viewing
+                  const modal = document.createElement('div');
+                  modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4';
+                  modal.onclick = () => document.body.removeChild(modal);
+                  
+                  if (isPDF) {
+                    modal.innerHTML = `
+                      <div class="bg-white rounded-lg p-4 max-w-4xl w-full h-full max-h-[90vh] overflow-auto">
+                        <div class="flex justify-between items-center mb-4">
+                          <h3 class="text-lg font-semibold">PDF Document</h3>
+                          <button onclick="document.body.removeChild(this.closest('.fixed'))" class="text-gray-500 hover:text-gray-700">
+                            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                        <iframe src="${attachment}" class="w-full h-full" frameborder="0"></iframe>
+                      </div>
+                    `;
+                  } else {
+                    modal.innerHTML = `
+                      <div class="relative max-w-4xl max-h-[90vh]">
+                        <img src="${attachment}" alt="Document" class="max-w-full max-h-full object-contain rounded-lg" />
+                        <button onclick="document.body.removeChild(this.closest('.fixed'))" class="absolute top-4 right-4 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-75">
+                          <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    `;
+                  }
+                  
+                  document.body.appendChild(modal);
+                }}
+                className="absolute top-1 right-1 bg-green-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-green-700"
+                title={getText('Quick View', 'Lihat Cepat')}
+              >
+                <Eye className="h-3 w-3" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      
+      {/* Download All Button */}
+      <div className="mt-4 pt-4 border-t border-green-200">
+        <button
+          onClick={() => {
+            selectedRecord.attachments?.forEach((attachment, index) => {
+              const link = document.createElement('a');
+              link.href = attachment;
+              link.download = `permit_document_${index + 1}${attachment.startsWith('data:application/pdf') ? '.pdf' : '.jpg'}`;
+              link.click();
+            });
+            toast.success(getText('Documents downloaded', 'Dokumen berhasil diunduh'));
+          }}
+          className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200"
+        >
+          <Download className="h-4 w-4" />
+          <span>{getText('Download All Documents', 'Unduh Semua Dokumen')}</span>
+        </button>
+      </div>
+    </div>
+  </div>
+)}
                             </div>
                         </div>
                     </div>
