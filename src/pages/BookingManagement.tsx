@@ -679,7 +679,7 @@ const BookingManagement: React.FC = () => {
   <div>
     <h5 className="font-medium text-gray-900 mb-3 flex items-center">
       <FileText className="h-5 w-5 mr-2 text-blue-600" />
-      {getText('Permit Documents', 'Dokumen Izin')}
+      {'Permit Documents'}
       <span className="ml-2 text-sm text-gray-500">({selectedBooking.attachments.length} files)</span>
     </h5>
     
@@ -759,7 +759,7 @@ const BookingManagement: React.FC = () => {
                   document.body.appendChild(modal);
                 }}
                 className="absolute top-1 right-1 bg-blue-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-blue-700"
-                title={getText('Quick View', 'Lihat Cepat')}
+                title={'Quick View', 'Lihat Cepat'}
               >
                 <Eye className="h-3 w-3" />
               </button>
@@ -778,7 +778,7 @@ const BookingManagement: React.FC = () => {
               link.download = `permit_document_${index + 1}${attachment.startsWith('data:application/pdf') ? '.pdf' : '.jpg'}`;
               link.click();
             });
-            toast.success(getText('Documents downloaded', 'Dokumen berhasil diunduh'));
+            toast.success('Documents downloaded');
           }}
           className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
         >
