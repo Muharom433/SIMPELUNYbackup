@@ -2560,7 +2560,8 @@ const subtitle = `JADWAL SIDANG PROGRAM STUDI ${selectedProgram.name.toUpperCase
       });
 
       // ✅ Tidak ada tanda tangan, langsung save dengan nama yang bersih
-      const fileName = `Jadwal_Sidang_${selectedProgram.code || selectedProgram.name.replace(/\s+/g, '_')}.pdf`;
+      // ✅ Save dengan nama file yang include bulan dan tahun
+const fileName = `Jadwal_Sidang_${selectedProgram.code || selectedProgram.name.replace(/\s+/g, '_')}_${monthNames[selectedMonth - 1]}_${currentYear}.pdf`;
       doc.save(fileName);
       setShowPrintModal(false);
     } catch (e: any) {
