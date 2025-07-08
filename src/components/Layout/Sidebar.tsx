@@ -74,33 +74,43 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
     }, [user]);
 
     const getMenuItems = () => {
+        // Base public items untuk semua user (termasuk yang belum login)
         const publicItems = [
-            { icon: Home, label: getText('About SIMPEL', 'Tutorial SIMPEL'), path: '/'},
-            { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book'},
-            { icon: Package, label: getText('Tool Lending', 'Peminjaman Alat'), path: '/tools'},
-            { icon: CheckCircle, label: getText('Check Out', 'Pengembalian'), path: '/checkout'},
-            { icon: FileText, label: getText('Permit Letter', 'Surat Izin'), path: '/permit-letter', color: 'from-magenta-500 to-pink-500' }, // TAMBAH: Menu Surat Izin dengan warna magenta
+            { icon: Home, label: getText('About SIMPEL', 'Tutorial SIMPEL'), path: '/' },
+            { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book' },
+            { icon: Package, label: getText('Tool Lending', 'Peminjaman Alat'), path: '/tools' },
+            { icon: CheckCircle, label: getText('Check Out', 'Pengembalian'), path: '/checkout' },
+            { icon: FileText, label: getText('Permit Letter', 'Surat Izin'), path: '/permit-letter', color: 'from-amber-600 to-orange-500' },
         ];
 
+        // Jika tidak ada user (belum login), return public items
         if (!user) return publicItems;
 
-        const baseItems = [ ...publicItems, { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' } ];
-
+        // Jika user adalah department_admin
         if (user.role === 'department_admin') {
             return [
                 { icon: PieChart, label: getText('Dashboard', 'Dasbor'), path: '/' },
+                { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book' },
+                { icon: Package, label: getText('Tool Lending', 'Peminjaman Alat'), path: '/tools' },
+                { icon: CheckCircle, label: getText('Check Out', 'Pengembalian'), path: '/checkout' },
+                { icon: FileText, label: getText('Permit Letter', 'Surat Izin'), path: '/permit-letter', color: 'from-amber-600 to-orange-500' },
                 { icon: CalendarCheck, label: getText('Exam Management', 'Jadwal UAS'), path: '/exams' },
                 { icon: UserCheck, label: getText('Session Schedule', 'Jadwal Sidang'), path: '/session-schedule' },
                 { icon: Users, label: getText('User Management', 'Data Dosen/Mahasiswa'), path: '/users' },
                 { icon: Clock, label: getText('Lecture Schedules', 'Jadwal Kuliah'), path: '/schedules' },
-                { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' }, // Added tool administration for department admin
+                { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
         }
 
+        // Jika user adalah super_admin
         if (user.role === 'super_admin') {
             return [
                 { icon: BarChart3, label: getText('About SIMPEL', 'Tutor SIMPEL'), path: '/' },
+                { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book' },
+                { icon: Package, label: getText('Tool Lending', 'Peminjaman Alat'), path: '/tools' },
+                { icon: CheckCircle, label: getText('Check Out', 'Pengembalian'), path: '/checkout' },
+                { icon: FileText, label: getText('Permit Letter', 'Surat Izin'), path: '/permit-letter', color: 'from-amber-600 to-orange-500' },
                 { icon: Building, label: getText('Room Management', 'Manajemen Ruangan'), path: '/rooms' },
                 { icon: Users, label: getText('User Management', 'Manajemen Pengguna'), path: '/users' },
                 { icon: MapPin, label: getText('Departments', 'Departemen'), path: '/departments' },
@@ -117,7 +127,12 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
         }
-        return baseItems;
+
+        // Jika user adalah student atau lecturer (atau role lainnya)
+        return [
+            ...publicItems, // Semua public items
+            { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
+        ];
     };
 
     const menuItems = getMenuItems();
