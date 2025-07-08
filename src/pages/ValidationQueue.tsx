@@ -639,61 +639,114 @@ const ValidationQueue: React.FC = () => {
 
     // DELETE CHECKOUT FUNCTION
     const handleDeleteCheckout = async (checkoutId: string) => {
-        setProcessingIds(prev => new Set(prev).add(checkoutId));
-        try {
-            const checkout = checkouts.find(c => c.id === checkoutId);
-            if (!checkout) throw new Error('Checkout not found');
+    setProcessingIds(prev => new Set(prev).add(checkoutId));
+    try {
+        const checkout = checkouts.find(c => c.id === checkoutId);
+        if (!checkout) throw new Error('Checkout not found');
 
-            // First, revert any equipment quantities if items were checked
-            const checkoutItems = await supabase
-                .from('checkout_items')
-                .select('*')
-                .eq('checkout_id', checkoutId);
+        // 1. First, revert any equipment quantities if items were checked
+        const { data: checkoutItems, error: getItemsError } = await supabase
+            .from('checkout_items')
+            .select('*')
+            .eq('checkout_id', checkoutId);
 
-            if (checkoutItems.data) {
-                for (const item of checkoutItems.data) {
-                    if (activeTab === 'room') {
-                        await updateEquipmentQuantity(item.equipment_id, -1);
-                    } else {
-                        await updateEquipmentQuantity(item.equipment_id, -item.quantity);
-                    }
+        if (getItemsError) {
+            console.error('Error fetching checkout items:', getItemsError);
+        } else if (checkoutItems && checkoutItems.length > 0) {
+            // Revert equipment quantities
+            for (const item of checkoutItems) {
+                if (activeTab === 'room') {
+                    // For room checkouts, subtract 1 from equipment quantity
+                    await updateEquipmentQuantity(item.equipment_id, -1);
+                } else {
+                    // For equipment checkouts, subtract the returned quantity
+                    await updateEquipmentQuantity(item.equipment_id, -item.quantity);
                 }
             }
-
-            // Delete checkout items first (due to foreign key constraint)
-            const { error: itemsError } = await supabase
-                .from('checkout_items')
-                .delete()
-                .eq('checkout_id', checkoutId);
-
-            if (itemsError) throw itemsError;
-
-            // Delete any reports associated with this checkout
-            const { error: reportsError } = await supabase
-                .from('checkout_violations')
-                .delete()
-                .eq('checkout_id', checkoutId);
-
-            if (reportsError) console.error('Error deleting reports:', reportsError);
-
-            // Finally, delete the checkout
-            const { error: checkoutError } = await supabase
-                .from('checkouts')
-                .delete()
-                .eq('id', checkoutId);
-
-            if (checkoutError) throw checkoutError;
-
-            toast.success('Checkout deleted successfully');
-            fetchPendingCheckouts();
-            if (selectedCheckoutId === checkoutId) setShowDetailModal(false);
-            setShowDeleteConfirm(null);
-        } catch (error: any) {
-            toast.error(error.message || 'Failed to delete checkout');
-        } finally {
-            setProcessingIds(prev => { const s = new Set(prev); s.delete(checkoutId); return s; });
         }
-    };
+
+        // 2. Delete all related checkout_items (foreign key constraint)
+        const { error: itemsError } = await supabase
+            .from('checkout_items')
+            .delete()
+            .eq('checkout_id', checkoutId);
+
+        if (itemsError) {
+            console.error('Error deleting checkout items:', itemsError);
+            throw new Error(`Failed to delete checkout items: ${itemsError.message}`);
+        }
+
+        // 3. Delete all related checkout_violations (foreign key constraint)
+        const { error: violationsError } = await supabase
+            .from('checkout_violations')
+            .delete()
+            .eq('checkout_id', checkoutId);
+
+        if (violationsError) {
+            console.error('Error deleting checkout violations:', violationsError);
+            throw new Error(`Failed to delete checkout violations: ${violationsError.message}`);
+        }
+
+        // 4. Finally, delete the main checkout record
+        const { error: checkoutError } = await supabase
+            .from('checkouts')
+            .delete()
+            .eq('id', checkoutId);
+
+        if (checkoutError) {
+            throw new Error(`Failed to delete checkout: ${checkoutError.message}`);
+        }
+
+        // 5. Optional: Update related booking/lending_tool status if needed
+        try {
+            if (activeTab === 'room' && checkout.booking_id) {
+                // Reset booking status if needed
+                const { error: bookingError } = await supabase
+                    .from('bookings')
+                    .update({ 
+                        status: 'approved', // or whatever the previous status should be
+                        updated_at: new Date().toISOString() 
+                    })
+                    .eq('id', checkout.booking_id);
+
+                if (bookingError) {
+                    console.warn('Could not update booking status:', bookingError);
+                }
+            } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
+                // Reset lending tool status if needed
+                const { error: lendingError } = await supabase
+                    .from('lending_tool')
+                    .update({ 
+                        status: 'borrow', // or whatever the previous status should be
+                        updated_at: new Date().toISOString() 
+                    })
+                    .eq('id', checkout.lendingTool_id);
+
+                if (lendingError) {
+                    console.warn('Could not update lending tool status:', lendingError);
+                }
+            }
+        } catch (statusUpdateError) {
+            console.warn('Error updating related record status:', statusUpdateError);
+            // Don't throw here, as the main deletion was successful
+        }
+
+        toast.success('Checkout and all related data deleted successfully');
+        fetchPendingCheckouts();
+        if (selectedCheckoutId === checkoutId) setShowDetailModal(false);
+        setShowDeleteConfirm(null);
+
+    } catch (error: any) {
+        console.error('Delete checkout error:', error);
+        toast.error(error.message || 'Failed to delete checkout');
+    } finally {
+        setProcessingIds(prev => { 
+            const s = new Set(prev); 
+            s.delete(checkoutId); 
+            return s; 
+        });
+    }
+};
 
     const filteredCheckouts = checkouts.filter(c => { 
         const s = searchTerm.toLowerCase(); 
