@@ -631,12 +631,95 @@ const lecturerInputRef = useRef<HTMLInputElement>(null);
             });
         }
     };
+    
 
     const hideUserDropdown = () => {
         if (userDropdownRef.current) {
             userDropdownRef.current.style.display = 'none';
         }
     };
+  const showLecturerDropdown = (searchTerm: string) => {
+    if (!searchTerm.trim()) {
+        hideLecturerDropdown();
+        return;
+    }
+
+    const filteredLecturers = lecturers.filter(lecturer =>
+        lecturer.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        lecturer.identity_number.toLowerCase().includes(searchTerm.toLowerCase())
+    ).slice(0, 15); // Limit hasil
+
+    if (filteredLecturers.length === 0) {
+        hideLecturerDropdown();
+        return;
+    }
+
+    const dropdownHTML = `
+        <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+            ${filteredLecturers.map(lecturer => `
+                <div 
+                    class="lecturer-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                    data-lecturer-id="${lecturer.id}"
+                    data-lecturer-name="${lecturer.full_name}"
+                    data-lecturer-nim="${lecturer.identity_number}"
+                    data-lecturer-dept="${lecturer.department?.name || ''}"
+                >
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 bg-gradient-to-r from-green-500 to-teal-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                            ${lecturer.full_name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                            <div class="font-semibold text-gray-900">${lecturer.full_name}</div>
+                            <div class="text-sm text-gray-600">
+                                ${lecturer.identity_number} • lecturer
+                                ${lecturer.department ? ` • ${lecturer.department.name}` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    if (lecturerDropdownRef.current) {
+        lecturerDropdownRef.current.innerHTML = dropdownHTML;
+        lecturerDropdownRef.current.style.display = 'block';
+        
+        // Add click listeners
+        lecturerDropdownRef.current.querySelectorAll('.lecturer-dropdown-item').forEach(item => {
+            item.addEventListener('mousedown', (e) => e.preventDefault());
+            item.addEventListener('click', (e) => {
+                const element = e.currentTarget as HTMLElement;
+                const lecturerId = element.dataset.lecturerId;
+                const lecturerName = element.dataset.lecturerName;
+                const lecturerNim = element.dataset.lecturerNim;
+                const lecturerDept = element.dataset.lecturerDept;
+                
+                // Set selected lecturer
+                if (lecturerInputRef.current) {
+                    lecturerInputRef.current.value = lecturerName || '';
+                }
+                
+                // You can store the selected lecturer data here
+                console.log('Selected lecturer:', {
+                    id: lecturerId,
+                    name: lecturerName,
+                    nim: lecturerNim,
+                    department: lecturerDept
+                });
+                
+                hideLecturerDropdown();
+            });
+        });
+    }
+};
+
+const hideLecturerDropdown = () => {
+    if (lecturerDropdownRef.current) {
+        lecturerDropdownRef.current.style.display = 'none';
+    }
+};
+
 
     // Assign user to room
     const handleAssignUser = async () => {
@@ -878,6 +961,33 @@ const lecturerInputRef = useRef<HTMLInputElement>(null);
         </div>
     );
 
+  const LecturerSearchDropdown = () => (
+    <div className="relative">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+            Search Lecturer
+        </label>
+        <div className="relative">
+            <input
+                ref={lecturerInputRef}
+                type="text"
+                placeholder="Search by name or NIM..."
+                onChange={(e) => {
+                    showLecturerDropdown(e.target.value);
+                }}
+                onFocus={(e) => {
+                    showLecturerDropdown(e.target.value);
+                }}
+                onBlur={() => {
+                    setTimeout(() => hideLecturerDropdown(), 150);
+                }}
+                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                autoComplete="off"
+            />
+            <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <div ref={lecturerDropdownRef} style={{ display: 'none' }}></div>
+        </div>
+    </div>
+);
     // User Search Dropdown Component dengan manual DOM
     const UserSearchDropdown = () => (
         <div className="relative">
