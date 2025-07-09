@@ -1411,8 +1411,6 @@ const handleAssignUser = async () => {
                                         </div>
                                     </div>
                                 </div>
-
-                               
                               <div className="lg:col-span-2">
                                   <h3 className="text-lg font-semibold text-gray-800 mb-4">
                                       Complete Schedule for {searchDay}
