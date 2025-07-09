@@ -743,23 +743,9 @@ const handleAssignUser = async () => {
 
     // Unassign user from room
     const handleUnassignUser = async (roomUserId: string, userName: string) => {
-        if (!confirm(`Are you sure you want to remove ${userName} from this room?`)) return;
-        
-        try {
-            const { error } = await supabase
-                .from('room_users')
-                .delete()
-                .eq('id', roomUserId);
-            
-            if (error) throw error;
-            
-            toast.success(`${userName} removed from room successfully`);
-            fetchRoomUsers(showRoomDetail!.id);
-        } catch (error) {
-            console.error('Error unassigning user:', error);
-            toast.error('Failed to remove user from room');
-        }
-    };
+    setUserToUnassign({id: roomUserId, name: userName});
+    setShowUnassignModal(true);
+};
     
     useEffect(() => {
         if (showRoomDetail) {
