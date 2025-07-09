@@ -501,144 +501,136 @@ const RoomManagement: React.FC = () => {
     };
 
     // Enhanced fetch schedules - fetch ALL schedule types dan combine jadi satu
-    // Perbaikan di function fetchSchedulesForRoom
-const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: string) => { 
-    setLoadingSchedules(true); 
-    try { 
-        const dayToFetch = getIndonesianDay(day);
-        const today = format(new Date(), 'yyyy-MM-dd');
-        
-        const combined: CombinedSchedule[] = [];
+    const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: string) => { 
+        setLoadingSchedules(true); 
+        try { 
+            const dayToFetch = getIndonesianDay(day);
+            const today = format(new Date(), 'yyyy-MM-dd');
+            
+            const combined: CombinedSchedule[] = [];
 
-        // Fetch lecture schedules
-        const { data: lectureData, error: lectureError } = await supabase
-            .from('lecture_schedules')
-            .select('*')
-            .eq('day', dayToFetch)
-            .ilike('room', `%${roomName}%`)
-            .order('start_time'); 
-        if (!lectureError && lectureData) {
-            lectureData.forEach(lecture => {
-                combined.push({
-                    id: lecture.id,
-                    type: 'lecture',
-                    start_time: lecture.start_time?.substring(0,5) || '',
-                    end_time: lecture.end_time?.substring(0,5) || '',
-                    title: lecture.course_name || 'Lecture',
-                    subtitle: `Class ${lecture.class} • ${lecture.subject_study}`,
-                    description: `Course: ${lecture.course_name}`,
-                    icon: BookOpen,
-                    color: 'text-blue-700',
-                    bgColor: 'bg-blue-50',
-                    borderColor: 'border-blue-200'
+            // Fetch lecture schedules
+            const { data: lectureData, error: lectureError } = await supabase
+                .from('lecture_schedules')
+                .select('*')
+                .eq('day', dayToFetch)
+                .ilike('room', `%${roomName}%`)
+                .order('start_time'); 
+            if (!lectureError && lectureData) {
+                lectureData.forEach(lecture => {
+                    combined.push({
+                        id: lecture.id,
+                        type: 'lecture',
+                        start_time: lecture.start_time?.substring(0,5) || '',
+                        end_time: lecture.end_time?.substring(0,5) || '',
+                        title: lecture.course_name || 'Lecture',
+                        subtitle: `Class ${lecture.class} • ${lecture.subject_study}`,
+                        description: `Course: ${lecture.course_name}`,
+                        icon: BookOpen,
+                        color: 'text-blue-700',
+                        bgColor: 'bg-blue-50',
+                        borderColor: 'border-blue-200'
+                    });
                 });
-            });
-        }
+            }
 
-        // Fetch exam schedules
-        const { data: examData, error: examError } = await supabase
-            .from('exams')
-            .select(`
-                *,
-                lecturer:users!lecturer_id(full_name),
-                room:rooms(name, code)
-            `)
-            .eq('room_id', roomId)
-            .eq('date', today)
-            .order('start_time');
-        if (!examError && examData) {
-            examData.forEach(exam => {
-                combined.push({
-                    id: exam.id,
-                    type: 'exam',
-                    start_time: exam.is_take_home ? 'Take Home' : exam.start_time?.substring(0,5) || '',
-                    end_time: exam.is_take_home ? '' : exam.end_time?.substring(0,5) || '',
-                    title: exam.course_name || 'UAS Exam',
-                    subtitle: `${exam.student_amount} students • Semester ${exam.semester}`,
-                    description: `Class ${exam.class} • Inspector: ${exam.inspector}`,
-                    icon: GraduationCap,
-                    color: 'text-green-700',
-                    bgColor: 'bg-green-50',
-                    borderColor: 'border-green-200'
+            // Fetch exam schedules
+            const { data: examData, error: examError } = await supabase
+                .from('exams')
+                .select(`
+                    *,
+                    lecturer:users!lecturer_id(full_name),
+                    room:rooms(name, code)
+                `)
+                .eq('room_id', roomId)
+                .eq('date', today)
+                .order('start_time');
+            if (!examError && examData) {
+                examData.forEach(exam => {
+                    combined.push({
+                        id: exam.id,
+                        type: 'exam',
+                        start_time: exam.is_take_home ? 'Take Home' : exam.start_time?.substring(0,5) || '',
+                        end_time: exam.is_take_home ? '' : exam.end_time?.substring(0,5) || '',
+                        title: exam.course_name || 'UAS Exam',
+                        subtitle: `${exam.student_amount} students • Semester ${exam.semester}`,
+                        description: `Class ${exam.class} • Inspector: ${exam.inspector}`,
+                        icon: GraduationCap,
+                        color: 'text-green-700',
+                        bgColor: 'bg-green-50',
+                        borderColor: 'border-green-200'
+                    });
                 });
-            });
-        }
+            }
 
-        // Fetch final sessions
-        const { data: sessionData, error: sessionError } = await supabase
-            .from('final_sessions')
-            .select(`
-                *,
-                student:users!student_id(full_name, identity_number),
-                room:rooms(name, code)
-            `)
-            .eq('room_id', roomId)
-            .eq('date', today)
-            .order('start_time');
-        if (!sessionError && sessionData) {
-            sessionData.forEach(session => {
-                combined.push({
-                    id: session.id,
-                    type: 'session',
-                    start_time: session.start_time?.substring(0,5) || '',
-                    end_time: session.end_time?.substring(0,5) || '',
-                    title: session.student?.full_name || 'Final Session',
-                    subtitle: `ID: ${session.student?.identity_number}`,
-                    description: `Supervisor: ${session.supervisor} • Examiner: ${session.examiner}`,
-                    icon: UserCheck,
-                    color: 'text-purple-700',
-                    bgColor: 'bg-purple-50',
-                    borderColor: 'border-purple-200'
+            // Fetch final sessions
+            const { data: sessionData, error: sessionError } = await supabase
+                .from('final_sessions')
+                .select(`
+                    *,
+                    student:users!student_id(full_name, identity_number),
+                    room:rooms(name, code)
+                `)
+                .eq('room_id', roomId)
+                .eq('date', today)
+                .order('start_time');
+            if (!sessionError && sessionData) {
+                sessionData.forEach(session => {
+                    combined.push({
+                        id: session.id,
+                        type: 'session',
+                        start_time: session.start_time?.substring(0,5) || '',
+                        end_time: session.end_time?.substring(0,5) || '',
+                        title: session.student?.full_name || 'Final Session',
+                        subtitle: `ID: ${session.student?.identity_number}`,
+                        description: `Supervisor: ${session.supervisor} • Examiner: ${session.examiner}`,
+                        icon: UserCheck,
+                        color: 'text-purple-700',
+                        bgColor: 'bg-purple-50',
+                        borderColor: 'border-purple-200'
+                    });
                 });
-            });
-        }
+            }
 
-        // ✅ PERBAIKAN: Fetch bookings dengan field yang benar
-        const { data: bookingData, error: bookingError } = await supabase
-            .from('bookings')
-            .select(`
-                *,
-                user:users!user_id(full_name, identity_number),
-                room:rooms(name, code)
-            `)
-            .eq('room_id', roomId)
-            .eq('date', today) // ✅ UBAH dari 'start_time' ke 'date'
-            .order('start_time');
-        
-        if (!bookingError && bookingData) {
-            console.log('Booking data found:', bookingData); // Debug log
-            bookingData.forEach(booking => {
-                combined.push({
-                    id: booking.id,
-                    type: 'booking',
-                    start_time: booking.start_time?.substring(0,5) || '',
-                    end_time: booking.end_time?.substring(0,5) || '',
-                    title: booking.purpose || 'Room Booking',
-                    subtitle: `${booking.user?.full_name} • ${booking.user?.identity_number}`,
-                    description: `Status: ${booking.status}`,
-                    icon: CalendarIcon,
-                    color: 'text-orange-700',
-                    bgColor: 'bg-orange-50',
-                    borderColor: 'border-orange-200'
+            // Fetch bookings
+            const { data: bookingData, error: bookingError } = await supabase
+                .from('bookings')
+                .select(`
+                    *,
+                    user:users!user_id(full_name, identity_number),
+                    room:rooms(name, code)
+                `)
+                .eq('room_id', roomId)
+                .eq('start_time', today)
+                .order('start_time');
+            if (!bookingError && bookingData) {
+                bookingData.forEach(booking => {
+                    combined.push({
+                        id: booking.id,
+                        type: 'booking',
+                        start_time: booking.start_time?.substring(0,5) || '',
+                        end_time: booking.end_time?.substring(0,5) || '',
+                        title: booking.purpose || 'Room Booking',
+                        subtitle: `${booking.user?.full_name} • ${booking.user?.identity_number}`,
+                        description: `Status: ${booking.status}`,
+                        icon: CalendarIcon,
+                        color: 'text-orange-700',
+                        bgColor: 'bg-orange-50',
+                        borderColor: 'border-orange-200'
+                    });
                 });
-            });
-        } else if (bookingError) {
-            console.error('Booking query error:', bookingError); // Debug error
-        }
+            }
 
-        // Sort by start_time
-        combined.sort((a, b) => a.start_time.localeCompare(b.start_time));
-        setCombinedSchedules(combined);
+            // Sort by start_time
+            combined.sort((a, b) => a.start_time.localeCompare(b.start_time));
+            setCombinedSchedules(combined);
 
-        console.log('Combined schedules:', combined); // Debug final result
-
-    } catch (error: any) { 
-        console.error('Error fetching schedules:', error);
-        toast.error("Failed to load schedule for this room."); 
-    } finally { 
-        setLoadingSchedules(false); 
-    } 
-};
+        } catch (error: any) { 
+            toast.error("Failed to load schedule for this room."); 
+        } finally { 
+            setLoadingSchedules(false); 
+        } 
+    };
     
     const fetchEquipmentForRoom = async (roomId: string) => {
         setLoadingEquipment(true);
