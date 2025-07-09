@@ -692,44 +692,51 @@ const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: stri
     };
 
     // Assign user to room
-    const handleAssignUser = async () => {
-        if (!selectedUser || !showRoomDetail) return;
+    // Perbaikan di function handleAssignUser
+const handleAssignUser = async () => {
+    if (!selectedUser || !showRoomDetail) return;
+    
+    try {
+        // ✅ PERBAIKAN: Ubah dari .single() ke .maybeSingle() atau hapus .single()
+        const { data: existing, error: checkError } = await supabase
+            .from('room_users')
+            .select('id')
+            .eq('user_id', selectedUser.id)
+            .eq('room_id', showRoomDetail.id)
+            .maybeSingle(); // ✅ Gunakan maybeSingle() atau hapus sama sekali
         
-        try {
-            // Check if user is already assigned
-            const { data: existing } = await supabase
-                .from('room_users')
-                .select('id')
-                .eq('user_id', selectedUser.id)
-                .eq('room_id', showRoomDetail.id)
-                .single();
-            
-            if (existing) {
-                toast.error('User is already assigned to this room');
-                return;
-            }
-
-            const { error } = await supabase
-                .from('room_users').insert({
-                    user_id: selectedUser.id,
-                    room_id: showRoomDetail.id,
-                    assigned_at: new Date().toISOString()
-                });
-            
-            if (error) throw error;
-            
-            toast.success(`${selectedUser.full_name} assigned to room successfully`);
-            setSelectedUser(null);
-            if (userDisplayRef.current) {
-                userDisplayRef.current.value = '';
-            }
-            setShowAssignUserModal(false);
-            fetchRoomUsers(showRoomDetail.id);
-        } catch (error) {
-            console.error('Error assigning user:', error);
-            toast.error('Failed to assign user to room');
+        if (checkError && checkError.code !== 'PGRST116') {
+            // Hanya throw error jika bukan "no rows returned"
+            throw checkError;
         }
-    };
+        
+        if (existing) {
+            toast.error('User is already assigned to this room');
+            return;
+        }
+
+        const { error } = await supabase
+            .from('room_users')
+            .insert({
+                user_id: selectedUser.id,
+                room_id: showRoomDetail.id,
+                assigned_at: new Date().toISOString()
+            });
+        
+        if (error) throw error;
+        
+        toast.success(`${selectedUser.full_name} assigned to room successfully`);
+        setSelectedUser(null);
+        if (userDisplayRef.current) {
+            userDisplayRef.current.value = '';
+        }
+        setShowAssignUserModal(false);
+        fetchRoomUsers(showRoomDetail.id);
+    } catch (error) {
+        console.error('Error assigning user:', error);
+        toast.error('Failed to assign user to room');
+    }
+};
 
     // Unassign user from room
     const handleUnassignUser = async (roomUserId: string, userName: string) => {
