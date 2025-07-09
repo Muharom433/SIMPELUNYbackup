@@ -1009,13 +1009,25 @@ const handleAssignUser = async () => {
 
     // Component untuk menampilkan combined schedules dalam satu section
     const CombinedScheduleSection = () => {
-    // Calculate the date for the selected day from filter
-    const today = new Date();
-    const currentDayIndex = dayNamesEnglish.indexOf(format(today, 'EEEE'));
-    const selectedDayIndex = dayNamesEnglish.indexOf(searchDay);
-    const dayDifference = selectedDayIndex - currentDayIndex;
-    const targetDate = new Date(today);
-    targetDate.setDate(today.getDate() + dayDifference);
+    let titleText = '';
+    let subtitleText = '';
+    
+    if (isSearchMode) {
+        // Search mode: show specific day
+        const today = new Date();
+        const currentDayIndex = dayNamesEnglish.indexOf(format(today, 'EEEE'));
+        const selectedDayIndex = dayNamesEnglish.indexOf(searchDay);
+        const dayDifference = selectedDayIndex - currentDayIndex;
+        const targetDate = new Date(today);
+        targetDate.setDate(today.getDate() + dayDifference);
+        
+        titleText = `Schedule for ${searchDay}`;
+        subtitleText = format(targetDate, 'EEEE, MMMM d, yyyy');
+    } else {
+        // Normal mode: show today + upcoming
+        titleText = 'Room Schedule';
+        subtitleText = 'Today\'s lectures & upcoming sessions/bookings (1 month)';
+    }
     
     return (
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 overflow-hidden mb-4">
@@ -1026,10 +1038,8 @@ const handleAssignUser = async () => {
                             <Building className="h-5 w-5" />
                         </div>
                         <div>
-                            <h4 className="text-lg font-semibold">Jadwal Ruangan</h4>
-                            <p className="text-blue-100 text-sm">
-                                {format(targetDate, 'EEEE, MMMM d, yyyy')} {/* Dynamic date based on filter day */}
-                            </p>
+                            <h4 className="text-lg font-semibold">{titleText}</h4>
+                            <p className="text-blue-100 text-sm">{subtitleText}</p>
                         </div>
                     </div>
                     <div className="bg-white bg-opacity-20 rounded-lg px-3 py-1">
@@ -1099,7 +1109,12 @@ const handleAssignUser = async () => {
                     <div className="text-center py-12 text-gray-500">
                         <CalendarIcon className="h-16 w-16 mx-auto mb-4 opacity-50"/>
                         <p className="text-lg font-medium mb-2">Tidak ada jadwal</p>
-                        <p className="text-sm">Ruangan ini kosong untuk {searchDay}</p>
+                        <p className="text-sm">
+                            {isSearchMode 
+                                ? `Ruangan ini kosong untuk ${searchDay}`
+                                : 'Tidak ada jadwal hari ini atau dalam 1 bulan ke depan'
+                            }
+                        </p>
                     </div>
                 )}
             </div>
