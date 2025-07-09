@@ -229,7 +229,7 @@ const BookRoom: React.FC = () => {
 
     const fetchExistingUsers = async () => { 
         try { 
-            const { data, error } = await supabase.from('users').select(`id, identity_number, full_name, email, phone_number, department_id, study_program_id, study_program:study_programs(*, department:departments(*))`).eq('role', 'student').order('full_name'); 
+            const { data, error } = await supabase.from('users').select(`id, identity_number, full_name, email, phone_number, department_id, study_program_id, study_program:study_programs(*, department:departments(*))`).order('full_name'); 
             if (error) throw error; 
             const usersWithPrograms = (data || []).map(user => ({...user, study_program: user.study_program })); 
             setExistingUsers(usersWithPrograms); 
