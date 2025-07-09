@@ -606,9 +606,7 @@ const BookRoom: React.FC = () => {
                             <Clock className="h-5 w-5 text-blue-600" />
                             <div className="text-blue-800">
                                 <p className="font-semibold">
-                                    {
-                                      {getText(
-                                        `Showing room availability for ${format(new Date(watchStartTime), 'EEEE, MMMM d, yyyy \'at\' HH:mm')}`,
+                                    {getText(`Showing room availability for ${format(new Date(watchStartTime), 'EEEE, MMMM d, yyyy \'at\' HH:mm')}`,
                                         `Menampilkan ketersediaan ruangan untuk ${format(new Date(watchStartTime), 'EEEE, d MMMM yyyy \'pukul\' HH:mm')}`
                                     )}
                                 </p>
