@@ -915,11 +915,17 @@ const handleAssignUser = async () => {
     
    useEffect(() => {
     if (showRoomDetail) {
-        fetchSchedulesForRoom(showRoomDetail.name, showRoomDetail.id, searchDay); 
+        if (isSearchMode) {
+            // Jika dalam search mode, gunakan searchDay
+            fetchSchedulesForRoom(showRoomDetail.name, showRoomDetail.id, searchDay);
+        } else {
+            // Jika normal mode, tidak perlu day parameter (akan default ke hari ini + 1 bulan untuk sessions/bookings)
+            fetchSchedulesForRoom(showRoomDetail.name, showRoomDetail.id);
+        }
         fetchEquipmentForRoom(showRoomDetail.id);
         fetchRoomUsers(showRoomDetail.id);
     }
-}, [showRoomDetail, searchDay]); 
+}, [showRoomDetail, searchDay, isSearchMode]);
 
     const onSubmit = async (data: RoomForm) => { 
         try { 
