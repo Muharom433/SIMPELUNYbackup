@@ -996,6 +996,36 @@ const handleAssignUser = async () => {
         toast.error('Failed to assign user to room');
     }
 };
+  const handleToggleAvailability = async (roomId: string, newStatus: boolean) => {
+    try {
+        const { error } = await supabase
+            .from('rooms')
+            .update({ is_available: newStatus })
+            .eq('id', roomId);
+        
+        if (error) throw error;
+        
+        // Update local state
+        if (showRoomDetail) {
+            setShowRoomDetail({
+                ...showRoomDetail,
+                is_available: newStatus
+            });
+        }
+        
+        // Update rooms list
+        const updatedRooms = allRooms.map(room => 
+            room.id === roomId ? { ...room, is_available: newStatus } : room
+        );
+        setAllRooms(updatedRooms);
+        setDisplayedRooms(updatedRooms);
+        
+        toast.success(`Room ${newStatus ? 'enabled' : 'disabled'} successfully!`);
+    } catch (error) {
+        console.error('Error updating room availability:', error);
+        toast.error('Failed to update room status');
+    }
+};
 
     // Unassign user from room
     const handleUnassignUser = async (roomUserId: string, userName: string) => {
