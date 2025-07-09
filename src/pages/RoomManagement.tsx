@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-    Building, Plus, Search, Edit, Trash2, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench, ChevronDown
+    Building, Plus, Search, Edit, Trash2, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench, ChevronDown, BookOpen, GraduationCap, UserCheck, UserPlus, UserMinus
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -26,6 +26,61 @@ interface RoomWithDetails extends Room {
     equipment: Equipment[];
 }
 
+interface ExamSchedule {
+    id: string;
+    date: string;
+    start_time: string;
+    end_time: string;
+    course_name: string;
+    course_code: string;
+    semester: number;
+    class: string;
+    student_amount: number;
+    room_id: string;
+    lecturer: any;
+    inspector: string;
+    is_take_home: boolean;
+}
+
+interface FinalSession {
+    id: string;
+    date: string;
+    start_time: string;
+    end_time: string;
+    title: string;
+    supervisor: string;
+    examiner: string;
+    secretary: string;
+    room_id: string;
+    student: any;
+}
+
+interface Booking {
+    id: string;
+    date: string;
+    start_time: string;
+    end_time: string;
+    purpose: string;
+    user_id: string;
+    room_id: string;
+    status: string;
+    user: any;
+}
+
+interface RoomUser {
+    id: string;
+    user_id: string;
+    room_id: string;
+    assigned_at: string;
+    user: {
+        id: string;
+        full_name: string;
+        identity_number: string;
+        role: string;
+        department?: any;
+    };
+}
+
 const RoomManagement: React.FC = () => {
     const { profile } = useAuth();
     const [allRooms, setAllRooms] = useState<RoomWithDetails[]>([]);
@@ -36,10 +91,24 @@ const RoomManagement: React.FC = () => {
     const [showForm, setShowForm] = useState(false);
     const [editingRoom, setEditingRoom] = useState<RoomWithDetails | null>(null);
     const [showRoomDetail, setShowRoomDetail] = useState<RoomWithDetails | null>(null);
+    
+    // Schedule states
     const [roomSchedules, setRoomSchedules] = useState<LectureSchedule[]>([]);
+    const [roomExams, setRoomExams] = useState<ExamSchedule[]>([]);
+    const [roomSessions, setRoomSessions] = useState<FinalSession[]>([]);
+    const [roomBookings, setRoomBookings] = useState<Booking[]>([]);
     const [loadingSchedules, setLoadingSchedules] = useState(false);
+    
+    // Equipment and users states
     const [selectedRoomEquipment, setSelectedRoomEquipment] = useState<Equipment[]>([]);
     const [loadingEquipment, setLoadingEquipment] = useState(false);
+    const [roomUsers, setRoomUsers] = useState<RoomUser[]>([]);
+    const [loadingRoomUsers, setLoadingRoomUsers] = useState(false);
+    const [allUsers, setAllUsers] = useState<any[]>([]);
+    const [showAssignUserModal, setShowAssignUserModal] = useState(false);
+    const [userSearchTerm, setUserSearchTerm] = useState('');
+    const [selectedUser, setSelectedUser] = useState<any>(null);
+    
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState('all');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -225,6 +294,7 @@ const RoomManagement: React.FC = () => {
             refreshTodayStatus();
             fetchDepartments();
             fetchRoomSuggestions();
+            fetchAllUsers();
             const interval = setInterval(() => {
                 if (!isSearchMode) { refreshTodayStatus(); }
             }, 5 * 60 * 1000);
@@ -242,19 +312,86 @@ const RoomManagement: React.FC = () => {
         } 
     };
 
-    const fetchSchedulesForRoom = async (roomName: string, day: string) => { 
+    // Fetch all users for assignment dropdown
+    const fetchAllUsers = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('users')
+                .select(`
+                    id,
+                    full_name,
+                    identity_number,
+                    role,
+                    department:departments(name)
+                `)
+                .order('full_name');
+            
+            if (error) throw error;
+            setAllUsers(data || []);
+        } catch (error) {
+            console.error('Error fetching users:', error);
+        }
+    };
+
+    // Enhanced fetch schedules - fetch ALL schedule types
+    const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: string) => { 
         setLoadingSchedules(true); 
         try { 
-            const dayToFetch = getIndonesianDay(day); 
-            // Use LIKE for more flexible room name matching
-            const { data, error } = await supabase
+            const dayToFetch = getIndonesianDay(day);
+            const today = format(new Date(), 'yyyy-MM-dd');
+            
+            // Fetch lecture schedules
+            const { data: lectureData, error: lectureError } = await supabase
                 .from('lecture_schedules')
                 .select('*')
                 .eq('day', dayToFetch)
                 .ilike('room', `%${roomName}%`)
                 .order('start_time'); 
-            if (error) throw error; 
-            setRoomSchedules(data || []); 
+            if (lectureError) throw lectureError;
+            setRoomSchedules(lectureData || []);
+
+            // Fetch exam schedules
+            const { data: examData, error: examError } = await supabase
+                .from('exams')
+                .select(`
+                    *,
+                    lecturer:users!lecturer_id(full_name),
+                    room:rooms(name, code)
+                `)
+                .eq('room_id', roomId)
+                .eq('date', today)
+                .order('start_time');
+            if (examError) throw examError;
+            setRoomExams(examData || []);
+
+            // Fetch final sessions
+            const { data: sessionData, error: sessionError } = await supabase
+                .from('final_sessions')
+                .select(`
+                    *,
+                    student:users!student_id(full_name, identity_number),
+                    room:rooms(name, code)
+                `)
+                .eq('room_id', roomId)
+                .eq('date', today)
+                .order('start_time');
+            if (sessionError) throw sessionError;
+            setRoomSessions(sessionData || []);
+
+            // Fetch bookings
+            const { data: bookingData, error: bookingError } = await supabase
+                .from('bookings')
+                .select(`
+                    *,
+                    user:users!user_id(full_name, identity_number),
+                    room:rooms(name, code)
+                `)
+                .eq('room_id', roomId)
+                .eq('start_time', today) // Adjust based on your booking date field
+                .order('start_time');
+            if (bookingError) throw bookingError;
+            setRoomBookings(bookingData || []);
+
         } catch (error: any) { 
             toast.error("Failed to load schedule for this room."); 
         } finally { 
@@ -275,11 +412,100 @@ const RoomManagement: React.FC = () => {
             setLoadingEquipment(false);
         }
     };
+
+    // Fetch assigned users for room
+    const fetchRoomUsers = async (roomId: string) => {
+        setLoadingRoomUsers(true);
+        try {
+            const { data, error } = await supabase
+                .from('room_users')
+                .select(`
+                    *,
+                    user:users(
+                        id,
+                        full_name,
+                        identity_number,
+                        role,
+                        department:departments(name)
+                    )
+                `)
+                .eq('room_id', roomId)
+                .order('assigned_at', { ascending: false });
+            
+            if (error) throw error;
+            setRoomUsers(data || []);
+        } catch (error) {
+            console.error('Error fetching room users:', error);
+            toast.error("Failed to load assigned users.");
+        } finally {
+            setLoadingRoomUsers(false);
+        }
+    };
+
+    // Assign user to room
+    const handleAssignUser = async () => {
+        if (!selectedUser || !showRoomDetail) return;
+        
+        try {
+            // Check if user is already assigned
+            const { data: existing } = await supabase
+                .from('room_users')
+                .select('id')
+                .eq('user_id', selectedUser.id)
+                .eq('room_id', showRoomDetail.id)
+                .single();
+            
+            if (existing) {
+                toast.error('User is already assigned to this room');
+                return;
+            }
+
+            const { error } = await supabase
+                .from('room_users')
+                .insert({
+                    user_id: selectedUser.id,
+                    room_id: showRoomDetail.id,
+                    assigned_at: new Date().toISOString()
+                });
+            
+            if (error) throw error;
+            
+            toast.success(`${selectedUser.full_name} assigned to room successfully`);
+            setSelectedUser(null);
+            setUserSearchTerm('');
+            setShowAssignUserModal(false);
+            fetchRoomUsers(showRoomDetail.id);
+        } catch (error) {
+            console.error('Error assigning user:', error);
+            toast.error('Failed to assign user to room');
+        }
+    };
+
+    // Unassign user from room
+    const handleUnassignUser = async (roomUserId: string, userName: string) => {
+        if (!confirm(`Are you sure you want to remove ${userName} from this room?`)) return;
+        
+        try {
+            const { error } = await supabase
+                .from('room_users')
+                .delete()
+                .eq('id', roomUserId);
+            
+            if (error) throw error;
+            
+            toast.success(`${userName} removed from room successfully`);
+            fetchRoomUsers(showRoomDetail!.id);
+        } catch (error) {
+            console.error('Error unassigning user:', error);
+            toast.error('Failed to remove user from room');
+        }
+    };
     
     useEffect(() => {
         if (showRoomDetail) {
-            fetchSchedulesForRoom(showRoomDetail.name, searchDay);
+            fetchSchedulesForRoom(showRoomDetail.name, showRoomDetail.id, searchDay);
             fetchEquipmentForRoom(showRoomDetail.id);
+            fetchRoomUsers(showRoomDetail.id);
         }
     }, [showRoomDetail, searchDay]);
 
@@ -354,6 +580,16 @@ const RoomManagement: React.FC = () => {
         });
     }, [displayedRooms, searchTerm, filterStatus]);
 
+    // Filter users for assignment dropdown
+    const filteredUsers = useMemo(() => {
+        if (!userSearchTerm) return allUsers.slice(0, 10); // Limit initial results
+        
+        return allUsers.filter(user =>
+            user.full_name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
+            user.identity_number.toLowerCase().includes(userSearchTerm.toLowerCase())
+        ).slice(0, 20); // Limit search results
+    }, [allUsers, userSearchTerm]);
+
     const getStatusColor = (status: RoomWithDetails['status']) => { 
         switch (status) { 
             case 'In Use': return 'bg-red-100 text-red-800'; 
@@ -362,6 +598,193 @@ const RoomManagement: React.FC = () => {
             default: return 'bg-gray-100 text-gray-800'; 
         } 
     };
+
+    // Component for displaying different schedule types
+    const ScheduleTypeCard = ({ type, icon: Icon, color, data, emptyMessage }: any) => (
+        <div className={`bg-gradient-to-r ${color} rounded-xl border border-opacity-20 overflow-hidden mb-4`}>
+            <div className="bg-white bg-opacity-90 p-4">
+                <div className="flex items-center space-x-3 mb-3">
+                    <div className={`p-2 ${color.replace('from-', 'bg-').replace('-50', '-100').replace('to-', '').replace('-100', '')} rounded-lg`}>
+                        <Icon className="h-5 w-5 text-gray-700" />
+                    </div>
+                    <h4 className="text-lg font-semibold text-gray-900">{type}</h4>
+                    <span className="bg-gray-200 text-gray-700 px-2 py-1 rounded-full text-sm font-medium">
+                        {data.length}
+                    </span>
+                </div>
+                
+                {data.length > 0 ? (
+                    <div className="space-y-3">
+                        {data.map((item: any, index: number) => (
+                            <div key={item.id || index} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                                {type === 'Lecture Schedules' && (
+                                    <>
+                                        <div className="font-semibold text-gray-900">{item.course_name}</div>
+                                        <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
+                                            <div className="flex items-center space-x-1">
+                                                <Clock className="h-4 w-4"/>
+                                                <span>{item.start_time?.substring(0,5)} - {item.end_time?.substring(0,5)}</span>
+                                            </div>
+                                            <div className="flex items-center space-x-1">
+                                                <Users className="h-4 w-4"/>
+                                                <span>Class {item.class}</span>
+                                            </div>
+                                        </div>
+                                        <div className="text-xs text-gray-500 mt-1">Prodi: {item.subject_study}</div>
+                                    </>
+                                )}
+                                
+                                {type === 'UAS Exams' && (
+                                    <>
+                                        <div className="font-semibold text-gray-900">{item.course_name}</div>
+                                        <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
+                                            <div className="flex items-center space-x-1">
+                                                <Clock className="h-4 w-4"/>
+                                                <span>
+                                                    {item.is_take_home ? 'Take Home' : `${item.start_time?.substring(0,5)} - ${item.end_time?.substring(0,5)}`}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center space-x-1">
+                                                <Users className="h-4 w-4"/>
+                                                <span>{item.student_amount} students</span>
+                                            </div>
+                                        </div>
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            Semester {item.semester} • Class {item.class} • Inspector: {item.inspector}
+                                        </div>
+                                    </>
+                                )}
+                                
+                                {type === 'Final Sessions' && (
+                                    <>
+                                        <div className="font-semibold text-gray-900">{item.student?.full_name}</div>
+                                        <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
+                                            <div className="flex items-center space-x-1">
+                                                <Clock className="h-4 w-4"/>
+                                                <span>{item.start_time?.substring(0,5)} - {item.end_time?.substring(0,5)}</span>
+                                            </div>
+                                            <div className="flex items-center space-x-1">
+                                                <Hash className="h-4 w-4"/>
+                                                <span>{item.student?.identity_number}</span>
+                                            </div>
+                                        </div>
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            Supervisor: {item.supervisor} • Examiner: {item.examiner}
+                                        </div>
+                                    </>
+                                )}
+                                
+                                {type === 'Room Bookings' && (
+                                    <>
+                                        <div className="font-semibold text-gray-900">{item.purpose}</div>
+                                        <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
+                                            <div className="flex items-center space-x-1">
+                                                <Clock className="h-4 w-4"/>
+                                                          <span>{item.start_time?.substring(0,5)} - {item.end_time?.substring(0,5)}</span>
+                                            </div>
+                                            <div className="flex items-center space-x-1">
+                                                <Users className="h-4 w-4"/>
+                                                <span>{item.user?.full_name}</span>
+                                            </div>
+                                        </div>
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            Status: {item.status} • ID: {item.user?.identity_number}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="text-center py-6 text-gray-500">
+                        <CalendarIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">{emptyMessage}</p>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+
+    // User Search Dropdown Component
+    const UserSearchDropdown = () => (
+        <div className="relative">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Search and Select User</label>
+            <div className="relative">
+                <input
+                    type="text"
+                    placeholder="Search by name or NIM..."
+                    value={userSearchTerm}
+                    onChange={(e) => setUserSearchTerm(e.target.value)}
+                    className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            </div>
+            
+            {userSearchTerm && (
+                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {filteredUsers.length > 0 ? (
+                        filteredUsers.map((user) => (
+                            <button
+                                key={user.id}
+                                type="button"
+                                onClick={() => {
+                                    setSelectedUser(user);
+                                    setUserSearchTerm(user.full_name);
+                                }}
+                                className={`w-full px-4 py-3 text-left hover:bg-blue-50 transition-colors border-b border-gray-100 last:border-b-0 ${
+                                    selectedUser?.id === user.id ? 'bg-blue-50 border-blue-200' : ''
+                                }`}
+                            >
+                                <div className="flex items-center space-x-3">
+                                    <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                                        {user.full_name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div>
+                                        <div className="font-semibold text-gray-900">{user.full_name}</div>
+                                        <div className="text-sm text-gray-600">
+                                            {user.identity_number} • {user.role}
+                                            {user.department && ` • ${user.department.name}`}
+                                        </div>
+                                    </div>
+                                </div>
+                            </button>
+                        ))
+                    ) : (
+                        <div className="px-4 py-3 text-center text-gray-500">
+                            No users found
+                        </div>
+                    )}
+                </div>
+            )}
+            
+            {selectedUser && (
+                <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center text-white font-medium">
+                                {selectedUser.full_name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <div className="font-semibold text-gray-900">{selectedUser.full_name}</div>
+                                <div className="text-sm text-gray-600">
+                                    {selectedUser.identity_number} • {selectedUser.role}
+                                </div>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => {
+                                setSelectedUser(null);
+                                setUserSearchTerm('');
+                            }}
+                            className="text-gray-400 hover:text-gray-600"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
     
     if (loading) { 
         return <div className="flex justify-center items-center h-screen"><RefreshCw className="h-12 w-12 animate-spin text-blue-600" /></div>; 
@@ -396,6 +819,9 @@ const RoomManagement: React.FC = () => {
                             {isRefreshing && isSearchMode ? <Loader2 className="h-5 w-5 animate-spin"/> : <Search className="h-5 w-5" />} 
                             <span>Search</span>
                         </button>
+                    </div>
+                    <div className="mt-3 text-sm text-gray-600">
+                        💡 This search will check all schedules: Lectures, UAS Exams, Final Sessions, and Room Bookings
                     </div>
                 </div>
                 
@@ -650,10 +1076,10 @@ const RoomManagement: React.FC = () => {
                 </div> 
             )}
 
-            {/* Room Detail Modal */}
+            {/* Enhanced Room Detail Modal */}
             {showRoomDetail && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[9999] p-4">
-                    <div className="bg-gray-50 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+                    <div className="bg-gray-50 rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col">
                         <div className="p-6 border-b flex justify-between items-center">
                             <div className='flex items-center space-x-3'>
                                 <div className='bg-blue-100 p-2 rounded-lg'>
@@ -668,93 +1094,224 @@ const RoomManagement: React.FC = () => {
                                 <X/>
                             </button>
                         </div>
-                        <div className="p-6 grid grid-cols-1 lg:grid-cols-5 gap-6 overflow-y-auto">
-                            <div className="lg:col-span-2 space-y-6">
-                                <div>
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-3">Room Information</h3>
-                                    <div className="grid grid-cols-2 gap-4 text-sm">
-                                        <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
-                                            <Hash className="h-5 w-5 text-gray-400"/>
-                                            <div>
-                                                <p className="text-gray-500">Code</p>
-                                                <p className="font-semibold text-gray-800">{showRoomDetail.code}</p>
+                        
+                        <div className="flex-1 overflow-y-auto">
+                            <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                {/* Left Column - Room Info, Equipment, Assigned Users */}
+                                <div className="space-y-6">
+                                    {/* Room Information */}
+                                    <div>
+                                        <h3 className="text-lg font-semibold text-gray-800 mb-3">Room Information</h3>
+                                        <div className="grid grid-cols-1 gap-4 text-sm">
+                                            <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
+                                                <Hash className="h-5 w-5 text-gray-400"/>
+                                                <div>
+                                                    <p className="text-gray-500">Code</p>
+                                                    <p className="font-semibold text-gray-800">{showRoomDetail.code}</p>
+                                                </div>
                                             </div>
-                                        </div>
-                                        <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
-                                            <Users className="h-5 w-5 text-gray-400"/>
-                                            <div>
-                                                <p className="text-gray-500">Capacity</p>
-                                                <p className="font-semibold text-gray-800">{showRoomDetail.capacity} seats</p>
+                                            <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
+                                                <Users className="h-5 w-5 text-gray-400"/>
+                                                <div>
+                                                    <p className="text-gray-500">Capacity</p>
+                                                    <p className="font-semibold text-gray-800">{showRoomDetail.capacity} seats</p>
+                                                </div>
                                             </div>
-                                        </div>
-                                        <div className={`bg-white p-3 rounded-lg border flex items-center space-x-3 col-span-2`}>
-                                            {showRoomDetail.is_available ? <CheckCircle className="h-5 w-5 text-green-500"/> : <AlertCircle className="h-5 w-5 text-red-500"/>}
-                                            <div>
-                                                <p className="text-gray-500">Official Booking Status</p>
-                                                <p className={`font-semibold ${showRoomDetail.is_available ? 'text-green-600' : 'text-red-600'}`}>
-                                                    {showRoomDetail.is_available ? 'FREE' : 'BOOKED'}
-                                                </p>
+                                            <div className={`bg-white p-3 rounded-lg border flex items-center space-x-3`}>
+                                                {showRoomDetail.is_available ? <CheckCircle className="h-5 w-5 text-green-500"/> : <AlertCircle className="h-5 w-5 text-red-500"/>}
+                                                <div>
+                                                    <p className="text-gray-500">Official Booking Status</p>
+                                                    <p className={`font-semibold ${showRoomDetail.is_available ? 'text-green-600' : 'text-red-600'}`}>
+                                                        {showRoomDetail.is_available ? 'FREE' : 'BOOKED'}
+                                                    </p>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-3">Equipment in Room</h3>
-                                    <div className="space-y-2">
-                                        {loadingEquipment ? (
-                                            <div className="flex justify-center p-4">
-                                                <RefreshCw className="h-5 w-5 animate-spin"/>
-                                            </div>
-                                        ) : selectedRoomEquipment.length > 0 ? (
-                                            selectedRoomEquipment.map((eq) => (
-                                                <div key={eq.id} className="flex items-center justify-between p-3 bg-white rounded-lg border">
-                                                    <div>
-                                                        <p className="font-medium text-gray-800">{eq.name}</p>
-                                                        <p className="text-xs text-gray-500">{eq.code}</p>
-                                                    </div>
-                                                    {getEquipmentConditionChip(eq.status)}
+
+                                    {/* Equipment in Room */}
+                                    <div>
+                                        <h3 className="text-lg font-semibold text-gray-800 mb-3">Equipment in Room</h3>
+                                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                                            {loadingEquipment ? (
+                                                <div className="flex justify-center p-4">
+                                                    <RefreshCw className="h-5 w-5 animate-spin"/>
                                                 </div>
-                                            ))
+                                            ) : selectedRoomEquipment.length > 0 ? (
+                                                selectedRoomEquipment.map((eq) => (
+                                                    <div key={eq.id} className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                                                        <div>
+                                                            <p className="font-medium text-gray-800">{eq.name}</p>
+                                                            <p className="text-xs text-gray-500">{eq.code}</p>
+                                                        </div>
+                                                        {getEquipmentConditionChip(eq.status)}
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <p className="text-sm text-gray-500 text-center py-4">No equipment assigned to this room.</p>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Assigned Users Section */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h3 className="text-lg font-semibold text-gray-800">Assigned Users</h3>
+                                            <button
+                                                onClick={() => setShowAssignUserModal(true)}
+                                                className="flex items-center space-x-1 px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                                            >
+                                                <UserPlus className="h-4 w-4" />
+                                                <span>Assign</span>
+                                            </button>
+                                        </div>
+                                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                                            {loadingRoomUsers ? (
+                                                <div className="flex justify-center p-4">
+                                                    <RefreshCw className="h-5 w-5 animate-spin"/>
+                                                </div>
+                                            ) : roomUsers.length > 0 ? (
+                                                roomUsers.map((roomUser) => (
+                                                    <div key={roomUser.id} className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                                                        <div className="flex items-center space-x-3">
+                                                            <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-teal-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                                                                {roomUser.user.full_name.charAt(0).toUpperCase()}
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-medium text-gray-800 text-sm">{roomUser.user.full_name}</p>
+                                                                <p className="text-xs text-gray-500">
+                                                                    {roomUser.user.identity_number} • {roomUser.user.role}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleUnassignUser(roomUser.id, roomUser.user.full_name)}
+                                                            className="text-red-600 hover:text-red-800 p-1 rounded transition-colors"
+                                                            title="Remove user"
+                                                        >
+                                                            <UserMinus className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <div className="text-center py-6 text-gray-500">
+                                                    <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                                    <p className="text-sm">No users assigned</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Right Column - Enhanced Schedules */}
+                                <div className="lg:col-span-2">
+                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                                        Complete Schedule for {searchDay}
+                                    </h3>
+                                    
+                                    <div className="space-y-4 max-h-[600px] overflow-y-auto">
+                                        {loadingSchedules ? (
+                                            <div className="flex justify-center items-center h-32">
+                                                <RefreshCw className="animate-spin h-6 w-6 text-gray-500"/>
+                                            </div>
                                         ) : (
-                                            <p className="text-sm text-gray-500 text-center py-4">No equipment assigned to this room.</p>
+                                            <>
+                                                {/* Lecture Schedules */}
+                                                <ScheduleTypeCard
+                                                    type="Lecture Schedules"
+                                                    icon={BookOpen}
+                                                    color="from-blue-50 to-blue-100"
+                                                    data={roomSchedules}
+                                                    emptyMessage="No lecture schedules for this day"
+                                                />
+
+                                                {/* UAS Exams */}
+                                                <ScheduleTypeCard
+                                                    type="UAS Exams"
+                                                    icon={GraduationCap}
+                                                    color="from-green-50 to-green-100"
+                                                    data={roomExams}
+                                                    emptyMessage="No UAS exams scheduled for this day"
+                                                />
+
+                                                {/* Final Sessions */}
+                                                <ScheduleTypeCard
+                                                    type="Final Sessions"
+                                                    icon={UserCheck}
+                                                    color="from-purple-50 to-purple-100"
+                                                    data={roomSessions}
+                                                    emptyMessage="No final sessions scheduled for this day"
+                                                />
+
+                                                {/* Room Bookings */}
+                                                <ScheduleTypeCard
+                                                    type="Room Bookings"
+                                                    icon={CalendarIcon}
+                                                    color="from-orange-50 to-orange-100"
+                                                    data={roomBookings}
+                                                    emptyMessage="No room bookings for this day"
+                                                />
+
+                                                {/* All Empty State */}
+                                                {roomSchedules.length === 0 && roomExams.length === 0 && 
+                                                 roomSessions.length === 0 && roomBookings.length === 0 && (
+                                                    <div className="flex flex-col justify-center items-center py-12 text-center text-gray-500">
+                                                        <CalendarIcon className="h-16 w-16 mb-4 opacity-50"/>
+                                                        <p className="text-lg font-medium mb-2">No schedules found</p>
+                                                        <p className="text-sm">This room is completely free on {searchDay}</p>
+                                                    </div>
+                                                )}
+                                            </>
                                         )}
                                     </div>
                                 </div>
                             </div>
-                            <div className="lg:col-span-3">
-                                <h3 className="text-lg font-semibold text-gray-800 mb-3">Schedule for {searchDay}</h3>
-                                <div className="bg-white p-4 rounded-lg border h-full">
-                                    {loadingSchedules ? (
-                                        <div className="flex justify-center items-center h-full">
-                                            <RefreshCw className="animate-spin h-6 w-6 text-gray-500"/>
-                                        </div>
-                                    ) : roomSchedules.length > 0 ? (
-                                        <ul className="space-y-3">
-                                            {roomSchedules.map(schedule => (
-                                                <li key={schedule.id} className="p-4 bg-gray-50/80 rounded-lg border border-gray-200/80">
-                                                    <p className="font-semibold text-gray-900">{schedule.course_name}</p>
-                                                    <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
-                                                        <div className="flex items-center space-x-1.5">
-                                                            <Clock className="h-4 w-4"/>
-                                                            <span>{schedule.start_time?.substring(0,5)} - {schedule.end_time?.substring(0,5)}</span>
-                                                        </div>
-                                                        <div className="flex items-center space-x-1.5">
-                                                            <Users className="h-4 w-4"/>
-                                                            <span>{schedule.class}</span>
-                                                        </div>
-                                                    </div>
-                                                    <p className="text-xs text-gray-500 mt-2">Prodi: {schedule.subject_study}</p>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    ) : (
-                                        <div className="flex flex-col justify-center items-center h-full text-center text-gray-500">
-                                            <CalendarIcon className="h-10 w-10 mb-2"/>
-                                            <p className="font-medium">No schedules</p>
-                                            <p className="text-sm">This room is free on the selected day.</p>
-                                        </div>
-                                    )}
-                                </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Assign User Modal */}
+            {showAssignUserModal && showRoomDetail && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10000] p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+                        <div className="p-6">
+                            <div className="flex items-center justify-between mb-6">
+                                <h3 className="text-lg font-semibold text-gray-900">
+                                    Assign User to {showRoomDetail.name}
+                                </h3>
+                                <button
+                                    onClick={() => {
+                                        setShowAssignUserModal(false);
+                                        setSelectedUser(null);
+                                        setUserSearchTerm('');
+                                    }}
+                                    className="text-gray-400 hover:text-gray-600"
+                                >
+                                    <X className="h-6 w-6" />
+                                </button>
+                            </div>
+
+                            <UserSearchDropdown />
+
+                            <div className="flex space-x-3 pt-6">
+                                <button
+                                    onClick={() => {
+                                        setShowAssignUserModal(false);
+                                        setSelectedUser(null);
+                                        setUserSearchTerm('');
+                                    }}
+                                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleAssignUser}
+                                    disabled={!selectedUser}
+                                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    Assign User
+                                </button>
                             </div>
                         </div>
                     </div>
