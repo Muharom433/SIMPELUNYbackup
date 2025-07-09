@@ -11,7 +11,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { Room, Department, LectureSchedule, Equipment, StudyProgram } from '../types';
 import toast from 'react-hot-toast';
 import { alert } from '../components/Alert/AlertHelper';
-import { format, addMinutes, parse, startOfDay, endOfDay } from 'date-fns';
+import { format, addMinutes, parse } from 'date-fns';
 import { id as localeID } from 'date-fns/locale';
 
 const bookingSchema = z.object({
@@ -28,11 +28,9 @@ const bookingSchema = z.object({
     notes: z.string().optional(),
 });
 type BookingForm = z.infer<typeof bookingSchema>;
-
 interface StudyProgramWithDepartment extends StudyProgram {
     department?: Department;
 }
-
 interface ExistingUser {
     id: string;
     identity_number: string;
@@ -42,26 +40,9 @@ interface ExistingUser {
     study_program_id?: string;
     study_program?: StudyProgram & { department?: Department };
 }
-
 interface RoomWithStatus extends Room {
     department: Department | null;
     status: 'In Use' | 'Scheduled' | 'Available' | 'Loading';
-}
-
-interface Booking {
-    id: string;
-    room_id: string;
-    start_time: string;
-    end_time: string;
-    status: string;
-}
-
-interface FinalSession {
-    id: string;
-    room_id: string;
-    date: string;
-    start_time: string;
-    end_time: string;
 }
 
 const BookRoom: React.FC = () => {
@@ -102,211 +83,65 @@ const BookRoom: React.FC = () => {
     const watchEndTime = form.watch('end_time');
 
     const normalizeRoomName = (name: string): string => name ? name.toLowerCase().replace(/[\s.&-]/g, '') : '';
-
-    // Enhanced function to get room status based on specific date and time
-    const getRoomStatus = useCallback(async (room: Room, targetDate?: Date, startTime?: string, endTime?: string): Promise<'In Use' | 'Scheduled' | 'Available'> => {
-        // PERTAMA: Cek is_available - jika false, JANGAN TAMPILKAN SAMA SEKALI
-        if (!room.is_available) return 'Available'; // This won't be reached since we filter out unavailable rooms
-
-        const checkDate = targetDate || new Date();
-        const dayName = format(checkDate, 'EEEE', { locale: localeID });
-        const dateString = format(checkDate, 'yyyy-MM-dd');
-        
+    
+    const fetchRoomsWithStatus = useCallback(async () => {
         try {
-            // Check active bookings for this specific date
-            if (startTime && endTime) {
-                // Check for overlapping bookings
-                const bookingStartDateTime = new Date(`${dateString}T${startTime}`);
-                const bookingEndDateTime = new Date(`${dateString}T${endTime}`);
-                
-                const { data: bookings } = await supabase
-                    .from('bookings')
-                    .select('start_time, end_time')
-                    .eq('room_id', room.id)
-                    .eq('status', 'approved')
-                    .gte('start_time', startOfDay(checkDate).toISOString())
-                    .lte('start_time', endOfDay(checkDate).toISOString());
-
-                if (bookings && bookings.length > 0) {
-                    const hasConflict = bookings.some(booking => {
-                        const existingStart = new Date(booking.start_time);
-                        const existingEnd = new Date(booking.end_time);
-                        
-                        return (bookingStartDateTime < existingEnd && bookingEndDateTime > existingStart);
-                    });
-                    
-                    if (hasConflict) return 'In Use';
-                }
-
-                // Check for overlapping final sessions
-                const { data: sessions } = await supabase
-                    .from('final_sessions')
-                    .select('start_time, end_time')
-                    .eq('room_id', room.id)
-                    .eq('date', dateString);
-
-                if (sessions && sessions.length > 0) {
-                    const hasSessionConflict = sessions.some(session => {
-                        const sessionStart = new Date(`${dateString}T${session.start_time}`);
-                        const sessionEnd = new Date(`${dateString}T${session.end_time}`);
-                        
-                        return (bookingStartDateTime < sessionEnd && bookingEndDateTime > sessionStart);
-                    });
-                    
-                    if (hasSessionConflict) return 'In Use';
-                }
-            } else {
-                // For current time checking (when no specific time is selected)
-                const now = new Date();
-                
-                // Check current active bookings
-                const { data: currentBookings } = await supabase
-                    .from('bookings')
-                    .select('start_time, end_time')
-                    .eq('room_id', room.id)
-                    .eq('status', 'approved')
-                    .lte('start_time', now.toISOString())
-                    .gte('end_time', now.toISOString());
-
-                if (currentBookings && currentBookings.length > 0) return 'In Use';
-
-                // Check current final sessions
-                const { data: currentSessions } = await supabase
-                    .from('final_sessions')
-                    .select('start_time, end_time')
-                    .eq('room_id', room.id)
-                    .eq('date', dateString);
-
-                if (currentSessions && currentSessions.length > 0) {
-                    const isSessionActive = currentSessions.some(session => {
-                        const sessionStart = new Date(`${dateString}T${session.start_time}`);
-                        const sessionEnd = new Date(`${dateString}T${session.end_time}`);
-                        return now >= sessionStart && now <= sessionEnd;
-                    });
-                    
-                    if (isSessionActive) return 'In Use';
-                }
-            }
-
-            // Check lecture schedules for the day
-            const { data: schedules } = await supabase
-                .from('lecture_schedules')
-                .select('start_time, end_time')
-                .eq('day', dayName)
-                .ilike('room', `%${room.name}%`);
-
-            if (schedules && schedules.length > 0) {
-                if (startTime && endTime) {
-                    // Check for overlapping lecture schedules
-                    const hasLectureConflict = schedules.some(schedule => {
-                        if (!schedule.start_time || !schedule.end_time) return false;
-                        
-                        const lectureStart = parse(schedule.start_time, 'HH:mm:ss', checkDate);
-                        const lectureEnd = parse(schedule.end_time, 'HH:mm:ss', checkDate);
-                        const bookingStart = parse(startTime, 'HH:mm', checkDate);
-                        const bookingEnd = parse(endTime, 'HH:mm', checkDate);
-                        
-                        return (bookingStart < lectureEnd && bookingEnd > lectureStart);
-                    });
-                    
-                    if (hasLectureConflict) return 'Scheduled';
-                } else {
-                    // For current time, check if any lecture is currently active
-                    const now = new Date();
-                    const isLectureActive = schedules.some(schedule => {
-                        if (!schedule.start_time || !schedule.end_time) return false;
-                        try {
-                            const startTime = parse(schedule.start_time, 'HH:mm:ss', now);
-                            const endTime = parse(schedule.end_time, 'HH:mm:ss', now);
-                            return now >= startTime && now <= endTime;
-                        } catch (e) { 
-                            return false; 
-                        }
-                    });
-                    
-                    if (isLectureActive) return 'In Use';
-                    
-                    // If there are schedules but not currently active, mark as scheduled
-                    return 'Scheduled';
-                }
-            }
-
-            return 'Available';
-        } catch (error) {
-            console.error('Error checking room status:', error);
-            return 'Available';
-        }
-    }, []);
-
-    // ENHANCED: Fetch rooms with dynamic filtering berdasarkan waktu
-    const fetchRoomsWithStatus = useCallback(async (targetDate?: Date, startTime?: string, endTime?: string) => {
-        try {
-            setLoading(true);
-            
-            // HANYA AMBIL RUANGAN DENGAN is_available = true
-            const { data: roomsData, error: roomsError } = await supabase
-                .from('rooms')
-                .select(`*, department:departments(*)`)
-                .eq('is_available', true) // FILTER UTAMA: Hanya ruangan yang available
-                .order('name', { ascending: true });
-                
+            const now = new Date();
+            const todayDayName = format(now, 'EEEE', { locale: localeID });
+            const [roomsResponse, schedulesResponse] = await Promise.all([
+                supabase.from('rooms').select(`*, department:departments(*)`),
+                supabase.from('lecture_schedules').select('*').eq('day', todayDayName)
+            ]);
+            const { data: roomsData, error: roomsError } = roomsResponse;
             if (roomsError) throw roomsError;
-
-            // Get status for each room
-            const roomsWithStatus = await Promise.all(
-                roomsData.map(async (room) => {
-                    const status = await getRoomStatus(room, targetDate, startTime, endTime);
-                    return { 
-                        ...room, 
-                        department: room.department, 
-                        status,
-                        equipment: [] 
-                    };
-                })
-            );
-
+            const { data: schedulesData, error: schedulesError } = schedulesResponse;
+            if (schedulesError) throw schedulesError;
+            
+            const scheduleMap = new Map<string, LectureSchedule[]>();
+            schedulesData.forEach(schedule => { 
+                if (schedule.room) { 
+                    const normalizedName = normalizeRoomName(schedule.room); 
+                    if (!scheduleMap.has(normalizedName)) scheduleMap.set(normalizedName, []); 
+                    scheduleMap.get(normalizedName)?.push(schedule); 
+                }
+            });
+            
+            const roomsWithStatus = roomsData.map(room => {
+                let status: RoomWithStatus['status'] = 'Available';
+                
+                // First check: Room availability from database
+                if (!room.is_available) {
+                    status = 'In Use';
+                } else {
+                    // Second check: If room is available, check lecture schedules
+                    const normalizedRoomName = normalizeRoomName(room.name);
+                    const roomSchedules = scheduleMap.get(normalizedRoomName) || [];
+                    
+                    if (roomSchedules.length > 0) {
+                        const isCurrentlyInUse = roomSchedules.some(schedule => {
+                            if (!schedule.start_time || !schedule.end_time) return false;
+                            try {
+                                const startTime = parse(schedule.start_time, 'HH:mm:ss', now);
+                                const endTime = parse(schedule.end_time, 'HH:mm:ss', now);
+                                return now >= startTime && now <= endTime;
+                            } catch (e) { return false; }
+                        });
+                        
+                        // If lecture schedule shows it's in use, override with 'In Use'
+                        // Otherwise, if there are scheduled classes but not currently active, mark as 'Scheduled'
+                        status = isCurrentlyInUse ? 'In Use' : 'Scheduled';
+                    }
+                    // If room.is_available is true and no schedules, status remains 'Available'
+                }
+                
+                return { ...room, department: room.department, status };
+            });
             setRooms(roomsWithStatus as RoomWithStatus[]);
         } catch (error) { 
             console.error('Error fetching rooms with status:', error); 
             alert.error(getText('Failed to load room status.', 'Gagal memuat status ruangan.'));
-        } finally { 
-            setLoading(false); 
-        }
-    }, [getText, getRoomStatus]);
-
-    // Function to update room list when form date/time changes
-    const updateRoomAvailability = useCallback(async () => {
-        if (watchStartTime) {
-            const startDateTime = new Date(watchStartTime);
-            let endDateTime: Date;
-            
-            if (useManualEndTime && watchEndTime) {
-                endDateTime = new Date(watchEndTime);
-            } else if (watchSks > 0 && watchClassType) {
-                const duration = watchClassType === 'theory' ? watchSks * 50 : watchSks * 170;
-                endDateTime = addMinutes(startDateTime, duration);
-            } else {
-                return; // Can't determine end time
-            }
-
-            const startTimeString = format(startDateTime, 'HH:mm');
-            const endTimeString = format(endDateTime, 'HH:mm');
-            
-            await fetchRoomsWithStatus(startDateTime, startTimeString, endTimeString);
-        } else {
-            // No specific time selected, show current status
-            await fetchRoomsWithStatus();
-        }
-    }, [watchStartTime, watchEndTime, watchSks, watchClassType, useManualEndTime, fetchRoomsWithStatus]);
-
-    // Watch for form changes and update room availability
-    useEffect(() => {
-        const timeoutId = setTimeout(() => {
-            updateRoomAvailability();
-        }, 1000); // Debounce updates
-
-        return () => clearTimeout(timeoutId);
-    }, [updateRoomAvailability]);
+        } finally { setLoading(false); }
+    }, [getText]);
 
     const fetchSchedulesForRoom = async (roomName: string) => {
         setLoadingSchedules(true);
@@ -322,20 +157,15 @@ const BookRoom: React.FC = () => {
     };
 
     useEffect(() => {
-        if (profile) {
-            fetchRoomsWithStatus(); // Initial load with current time
-            fetchStudyPrograms();
-            fetchEquipment();
-            fetchExistingUsers();
-            const timer = setInterval(() => setCurrentTime(new Date()), 60000);
-            const statusRefreshTimer = setInterval(() => {
-                if (!watchStartTime) { // Only auto-refresh if no specific time is selected
-                    fetchRoomsWithStatus();
-                }
-            }, 5 * 60 * 1000);
-            return () => { clearInterval(timer); clearInterval(statusRefreshTimer); };
-        }
-    }, [profile, watchStartTime, fetchRoomsWithStatus]);
+        setLoading(true);
+        fetchRoomsWithStatus();
+        fetchStudyPrograms();
+        fetchEquipment();
+        fetchExistingUsers();
+        const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+        const statusRefreshTimer = setInterval(() => fetchRoomsWithStatus(), 5 * 60 * 1000);
+        return () => { clearInterval(timer); clearInterval(statusRefreshTimer); };
+    }, [fetchRoomsWithStatus]);
 
     useEffect(() => { if (viewingSchedulesFor) { fetchSchedulesForRoom(viewingSchedulesFor.name); } }, [viewingSchedulesFor]);
     
@@ -353,7 +183,6 @@ const BookRoom: React.FC = () => {
         }
     }, [selectedRoom, masterEquipmentList]);
 
-    // ✅ AUTO-FILL: Identity number auto-fill effect
     useEffect(() => { 
         if (watchIdentityNumber && watchIdentityNumber.length >= 5) { 
             const existingUser = existingUsers.find(user => user.identity_number === watchIdentityNumber); 
@@ -369,7 +198,6 @@ const BookRoom: React.FC = () => {
         } 
     }, [watchIdentityNumber, existingUsers, form, studyPrograms, getText]);
 
-    // ✅ AUTO-FILL: Study program auto-fill effect
     useEffect(() => { 
         if (watchStudyProgramId) { 
             const selectedProgram = studyPrograms.find(sp => sp.id === watchStudyProgramId); 
@@ -478,24 +306,13 @@ const BookRoom: React.FC = () => {
         
         setSubmitting(true);
         try {
-            // Check for existing conflicting bookings first
-            const { data: existingBookings, error: conflictError } = await supabase
-                .from('bookings')
-                .select('id')
-                .eq('room_id', data.room_id)
-                .eq('status', 'approved');
-            
+            const { data: existingBookings, error: conflictError } = await supabase.from('bookings').select('id').eq('room_id', data.room_id).eq('status', 'approved');
             if (conflictError) throw conflictError;
-            
-            // Mark existing approved bookings as completed
             if (existingBookings && existingBookings.length > 0) {
                 const idsToUpdate = existingBookings.map(b => b.id);
-                await supabase
-                    .from('bookings')
-                    .update({ status: 'completed' })
-                    .in('id', idsToUpdate);
+                await supabase.from('bookings').update({ status: 'completed' }).in('id', idsToUpdate);
             }
-
+            
             // Use manual end time if set, otherwise calculate automatically
             let endTime;
             if (useManualEndTime && data.end_time) {
@@ -509,7 +326,6 @@ const BookRoom: React.FC = () => {
             
             const selectedStudyProgram = studyPrograms.find(sp => sp.id === data.study_program_id);
             const departmentId = selectedStudyProgram?.department_id;
-            
             const bookingData = { 
                 room_id: data.room_id, 
                 start_time: data.start_time, 
@@ -530,11 +346,10 @@ const BookRoom: React.FC = () => {
                 }, 
                 user_id: profile?.id || null, 
             };
-            
             const { error } = await supabase.from('bookings').insert(bookingData);
             if (error) throw error;
-            
-            // ❌ JANGAN UPDATE is_available - biarkan admin yang kontrol
+            const { error: roomUpdateError } = await supabase.from('rooms').update({ is_available: false }).eq('id', data.room_id);
+            if (roomUpdateError) console.error('Error updating room availability:', roomUpdateError);
             
             // Call the enhanced success handler
             handleBookingSuccess(data, selectedRoom);
@@ -544,7 +359,7 @@ const BookRoom: React.FC = () => {
             setIdentitySearchTerm('');
             setStudyProgramSearchTerm('');
             setUseManualEndTime(false);
-            updateRoomAvailability(); // Refresh room list
+            fetchRoomsWithStatus();
             
         } catch (error: any) { 
             console.error('Error creating booking:', error); 
@@ -556,12 +371,7 @@ const BookRoom: React.FC = () => {
         }
     };
 
-    // ✅ DROPDOWN FILTERING: Identity number filtering
-    const filteredIdentityNumbers = existingUsers.filter(user => 
-        user.identity_number.toLowerCase().includes(identitySearchTerm.toLowerCase()) || 
-        user.full_name.toLowerCase().includes(identitySearchTerm.toLowerCase())
-    );
-    
+    const filteredIdentityNumbers = existingUsers.filter(user => user.identity_number.toLowerCase().includes(identitySearchTerm.toLowerCase()) || user.full_name.toLowerCase().includes(identitySearchTerm.toLowerCase()));
     const filteredRooms = useMemo(() => { 
         return rooms.filter(room => { 
             const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) || room.code.toLowerCase().includes(searchTerm.toLowerCase()); 
@@ -596,7 +406,7 @@ const BookRoom: React.FC = () => {
         ); 
     }
 
-    return (
+return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
             {/* Header Section */}
             <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 sticky top-0 z-40">
@@ -622,32 +432,10 @@ const BookRoom: React.FC = () => {
                             </div>
                         </div>
                     </div>
+                </div>
             </div>
 
             <div className="max-w-7xl mx-auto px-4 py-8">
-                {/* Dynamic availability notice */}
-                {watchStartTime && (
-                    <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
-                        <div className="flex items-center space-x-3">
-                            <Clock className="h-5 w-5 text-blue-600" />
-                            <div className="text-blue-800">
-                                <p className="font-semibold">
-                                    {getText(
-                                        `Showing room availability for ${format(new Date(watchStartTime), 'EEEE, MMMM d, yyyy \'at\' HH:mm')}`,
-                                        `Menampilkan ketersediaan ruangan untuk ${format(new Date(watchStartTime), 'EEEE, d MMMM yyyy \'pukul\' HH:mm')}`
-                                    )}
-                                </p>
-                                <p className="text-sm text-blue-600 mt-1">
-                                    {getText(
-                                        'Room status updates automatically based on your selected date and time',
-                                        'Status ruangan diperbarui otomatis berdasarkan tanggal dan waktu yang dipilih'
-                                    )}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
                 {/* Changed grid proportions: 5 columns for rooms, 7 columns for form */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                     {/* Left Column - Room Selection (5/12 width) */}
@@ -846,10 +634,7 @@ const BookRoom: React.FC = () => {
                                         {getText('No Rooms Available', 'Tidak Ada Ruangan Tersedia')}
                                     </h3>
                                     <p className="text-gray-500">
-                                        {watchStartTime 
-                                            ? getText('No rooms are available for the selected time.', 'Tidak ada ruangan yang tersedia untuk waktu yang dipilih.')
-                                            : getText('Try adjusting your search or showing rooms in use.', 'Coba sesuaikan pencarian atau tampilkan ruangan yang sedang digunakan.')
-                                        }
+                                        {getText('Try adjusting your search or showing rooms in use.', 'Coba sesuaikan pencarian atau tampilkan ruangan yang sedang digunakan.')}
                                     </p>
                                 </div>
                             )}
@@ -879,7 +664,6 @@ const BookRoom: React.FC = () => {
                                         </div>
                                         
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            {/* ✅ IDENTITY NUMBER DROPDOWN WITH AUTO-FILL */}
                                             <div className="md:col-span-2">
                                                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                                                     {getText('Identity Number (NIM/NIP)', 'Nomor Identitas (NIM/NIP)')} *
@@ -931,7 +715,6 @@ const BookRoom: React.FC = () => {
                                                 )}
                                             </div>
                                             
-                                            {/* ✅ FULL NAME (AUTO-FILLED) */}
                                             <div>
                                                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                                                     {getText('Full Name', 'Nama Lengkap')} *
@@ -949,7 +732,6 @@ const BookRoom: React.FC = () => {
                                                 )}
                                             </div>
                                             
-                                            {/* ✅ PHONE NUMBER (AUTO-FILLED) */}
                                             <div>
                                                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                                                     {getText('Phone Number', 'Nomor Telepon')} *
@@ -970,7 +752,6 @@ const BookRoom: React.FC = () => {
                                                 )}
                                             </div>
                                             
-                                            {/* ✅ STUDY PROGRAM DROPDOWN WITH AUTO-FILL */}
                                             <div className="md:col-span-2">
                                                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                                                     {getText('Study Program', 'Program Studi')} *
@@ -1186,7 +967,6 @@ const BookRoom: React.FC = () => {
                                     )}
                                 </div>
                                 
-                                {/* ✅ EQUIPMENT SELECTION WITH AUTO-MANDATORY */}
                                 {selectedRoom && availableEquipment.length > 0 && (
                                     <div className="space-y-6">
                                         <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
@@ -1233,19 +1013,6 @@ const BookRoom: React.FC = () => {
                                         </div>
                                     </div>
                                 )}
-
-                                {/* ✅ NOTES FIELD */}
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                        {getText('Additional Notes', 'Catatan Tambahan')}
-                                    </label>
-                                    <textarea 
-                                        {...form.register('notes')} 
-                                        rows={3}
-                                        placeholder={getText("Any additional information or special requirements...", "Informasi tambahan atau persyaratan khusus...")} 
-                                        className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200 resize-none" 
-                                    />
-                                </div>
                                 
                                 <div className="pt-6 border-t border-gray-200/50">
                                     <button 
