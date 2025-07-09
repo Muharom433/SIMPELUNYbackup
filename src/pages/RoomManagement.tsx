@@ -531,11 +531,19 @@ const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: stri
     setLoadingSchedules(true); 
     try { 
         const dayToFetch = getIndonesianDay(day);
-        const today = format(new Date(), 'yyyy-MM-dd');
+        
+        // Calculate target date based on selected day
+        const today = new Date();
+        const currentDayIndex = dayNamesEnglish.indexOf(format(today, 'EEEE'));
+        const selectedDayIndex = dayNamesEnglish.indexOf(day);
+        const dayDifference = selectedDayIndex - currentDayIndex;
+        const targetDate = new Date(today);
+        targetDate.setDate(today.getDate() + dayDifference);
+        const targetDateString = format(targetDate, 'yyyy-MM-dd');
         
         const combined: CombinedSchedule[] = [];
 
-        // Fetch lecture schedules
+        // Fetch lecture schedules (day-based, no date needed)
         const { data: lectureData, error: lectureError } = await supabase
             .from('lecture_schedules')
             .select('*')
@@ -560,7 +568,7 @@ const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: stri
             });
         }
 
-        // Fetch exam schedules
+        // Fetch exam schedules (date-based)
         const { data: examData, error: examError } = await supabase
             .from('exams')
             .select(`
@@ -569,7 +577,7 @@ const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: stri
                 room:rooms(name, code)
             `)
             .eq('room_id', roomId)
-            .eq('date', today)
+            .eq('date', targetDateString) // Use calculated date
             .order('start_time');
         if (!examError && examData) {
             examData.forEach(exam => {
@@ -589,7 +597,7 @@ const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: stri
             });
         }
 
-        // Fetch final sessions
+        // Fetch final sessions (date-based)
         const { data: sessionData, error: sessionError } = await supabase
             .from('final_sessions')
             .select(`
@@ -598,7 +606,7 @@ const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: stri
                 room:rooms(name, code)
             `)
             .eq('room_id', roomId)
-            .eq('date', today)
+            .eq('date', targetDateString) // Use calculated date
             .order('start_time');
         if (!sessionError && sessionData) {
             sessionData.forEach(session => {
@@ -618,9 +626,9 @@ const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: stri
             });
         }
 
-        // ✅ PERBAIKAN: Fetch bookings dengan filter timestamptz yang benar
-        const startOfDay = `${today}T00:00:00Z`;
-        const endOfDay = `${today}T23:59:59Z`;
+        // Fetch bookings (date-based)
+        const startOfDay = `${targetDateString}T00:00:00Z`;
+        const endOfDay = `${targetDateString}T23:59:59Z`;
         
         const { data: bookingData, error: bookingError } = await supabase
             .from('bookings')
@@ -630,14 +638,12 @@ const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: stri
                 room:rooms(name, code)
             `)
             .eq('room_id', roomId)
-            .gte('start_time', startOfDay) // Greater than or equal start of day
-            .lte('start_time', endOfDay)   // Less than or equal end of day
+            .gte('start_time', startOfDay)
+            .lte('start_time', endOfDay)
             .order('start_time');
         
         if (!bookingError && bookingData) {
-            console.log('Booking data found:', bookingData); // Debug log
             bookingData.forEach(booking => {
-                // Extract time dari timestamptz
                 const startDate = new Date(booking.start_time);
                 const endDate = new Date(booking.end_time);
                 
@@ -655,15 +661,11 @@ const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: stri
                     borderColor: 'border-orange-200'
                 });
             });
-        } else if (bookingError) {
-            console.error('Booking query error:', bookingError); // Debug error
         }
 
         // Sort by start_time
         combined.sort((a, b) => a.start_time.localeCompare(b.start_time));
         setCombinedSchedules(combined);
-
-        console.log('Combined schedules:', combined); // Debug final result
 
     } catch (error: any) { 
         console.error('Error fetching schedules:', error);
