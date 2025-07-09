@@ -164,7 +164,6 @@ const ToolLending: React.FC = () => {
             const { data, error } = await supabase
                 .from('users')
                 .select('id, identity_number, full_name, email, phone_number, study_program_id, study_program:study_programs(*, department:departments(*))')
-                .eq('role', 'student')
                 .order('updated_at', { ascending: false })
                 .limit(50); // Limit to recent 50 users for performance
 
