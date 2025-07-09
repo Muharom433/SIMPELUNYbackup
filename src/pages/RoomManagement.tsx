@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -81,6 +81,21 @@ interface RoomUser {
     };
 }
 
+// Combined schedule interface untuk semua jenis jadwal
+interface CombinedSchedule {
+    id: string;
+    type: 'lecture' | 'exam' | 'session' | 'booking';
+    start_time: string;
+    end_time: string;
+    title: string;
+    subtitle?: string;
+    description?: string;
+    icon: any;
+    color: string;
+    bgColor: string;
+    borderColor: string;
+}
+
 const RoomManagement: React.FC = () => {
     const { profile } = useAuth();
     const [allRooms, setAllRooms] = useState<RoomWithDetails[]>([]);
@@ -92,11 +107,8 @@ const RoomManagement: React.FC = () => {
     const [editingRoom, setEditingRoom] = useState<RoomWithDetails | null>(null);
     const [showRoomDetail, setShowRoomDetail] = useState<RoomWithDetails | null>(null);
     
-    // Schedule states
-    const [roomSchedules, setRoomSchedules] = useState<LectureSchedule[]>([]);
-    const [roomExams, setRoomExams] = useState<ExamSchedule[]>([]);
-    const [roomSessions, setRoomSessions] = useState<FinalSession[]>([]);
-    const [roomBookings, setRoomBookings] = useState<Booking[]>([]);
+    // Schedule states - Combined untuk semua jenis jadwal
+    const [combinedSchedules, setCombinedSchedules] = useState<CombinedSchedule[]>([]);
     const [loadingSchedules, setLoadingSchedules] = useState(false);
     
     // Equipment and users states
@@ -119,16 +131,22 @@ const RoomManagement: React.FC = () => {
     const [showRoomSuggestions, setShowRoomSuggestions] = useState(false);
     const [filteredRoomSuggestions, setFilteredRoomSuggestions] = useState<string[]>([]);
     
-    const dayNamesEnglish = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const dayNamesIndonesian = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
-    const getIndonesianDay = (englishDay: string) => dayNamesIndonesian[dayNamesEnglish.indexOf(englishDay)] || 'Senin';
-
+    // Search availability states
     const [searchDay, setSearchDay] = useState(format(new Date(), 'EEEE'));
     const [searchStartTime, setSearchStartTime] = useState('07:30');
     const [searchEndTime, setSearchEndTime] = useState('17:00');
     const [isSearchMode, setIsSearchMode] = useState(false);
 
+    // Refs untuk dropdown manual DOM manipulation
+    const userDropdownRef = useRef<HTMLDivElement>(null);
+    const userInputRef = useRef<HTMLInputElement>(null);
+
     const form = useForm<RoomForm>({ resolver: zodResolver(roomSchema) });
+
+    const dayNamesEnglish = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const dayNamesIndonesian = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+    const getIndonesianDay = (englishDay: string) => dayNamesIndonesian[dayNamesEnglish.indexOf(englishDay)] || 'Senin';
+
     const normalizeRoomName = (name: string): string => name ? name.toLowerCase().replace(/[\s.&-]/g, '') : '';
 
     // Fetch room suggestions from lecture_schedules
@@ -333,13 +351,15 @@ const RoomManagement: React.FC = () => {
         }
     };
 
-    // Enhanced fetch schedules - fetch ALL schedule types
+    // Enhanced fetch schedules - fetch ALL schedule types dan combine jadi satu
     const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: string) => { 
         setLoadingSchedules(true); 
         try { 
             const dayToFetch = getIndonesianDay(day);
             const today = format(new Date(), 'yyyy-MM-dd');
             
+            const combined: CombinedSchedule[] = [];
+
             // Fetch lecture schedules
             const { data: lectureData, error: lectureError } = await supabase
                 .from('lecture_schedules')
@@ -347,8 +367,23 @@ const RoomManagement: React.FC = () => {
                 .eq('day', dayToFetch)
                 .ilike('room', `%${roomName}%`)
                 .order('start_time'); 
-            if (lectureError) throw lectureError;
-            setRoomSchedules(lectureData || []);
+            if (!lectureError && lectureData) {
+                lectureData.forEach(lecture => {
+                    combined.push({
+                        id: lecture.id,
+                        type: 'lecture',
+                        start_time: lecture.start_time?.substring(0,5) || '',
+                        end_time: lecture.end_time?.substring(0,5) || '',
+                        title: lecture.course_name || 'Lecture',
+                        subtitle: `Class ${lecture.class} • ${lecture.subject_study}`,
+                        description: `Course: ${lecture.course_name}`,
+                        icon: BookOpen,
+                        color: 'text-blue-700',
+                        bgColor: 'bg-blue-50',
+                        borderColor: 'border-blue-200'
+                    });
+                });
+            }
 
             // Fetch exam schedules
             const { data: examData, error: examError } = await supabase
@@ -361,8 +396,23 @@ const RoomManagement: React.FC = () => {
                 .eq('room_id', roomId)
                 .eq('date', today)
                 .order('start_time');
-            if (examError) throw examError;
-            setRoomExams(examData || []);
+            if (!examError && examData) {
+                examData.forEach(exam => {
+                    combined.push({
+                        id: exam.id,
+                        type: 'exam',
+                        start_time: exam.is_take_home ? 'Take Home' : exam.start_time?.substring(0,5) || '',
+                        end_time: exam.is_take_home ? '' : exam.end_time?.substring(0,5) || '',
+                        title: exam.course_name || 'UAS Exam',
+                        subtitle: `${exam.student_amount} students • Semester ${exam.semester}`,
+                        description: `Class ${exam.class} • Inspector: ${exam.inspector}`,
+                        icon: GraduationCap,
+                        color: 'text-green-700',
+                        bgColor: 'bg-green-50',
+                        borderColor: 'border-green-200'
+                    });
+                });
+            }
 
             // Fetch final sessions
             const { data: sessionData, error: sessionError } = await supabase
@@ -375,8 +425,23 @@ const RoomManagement: React.FC = () => {
                 .eq('room_id', roomId)
                 .eq('date', today)
                 .order('start_time');
-            if (sessionError) throw sessionError;
-            setRoomSessions(sessionData || []);
+            if (!sessionError && sessionData) {
+                sessionData.forEach(session => {
+                    combined.push({
+                        id: session.id,
+                        type: 'session',
+                        start_time: session.start_time?.substring(0,5) || '',
+                        end_time: session.end_time?.substring(0,5) || '',
+                        title: session.student?.full_name || 'Final Session',
+                        subtitle: `ID: ${session.student?.identity_number}`,
+                        description: `Supervisor: ${session.supervisor} • Examiner: ${session.examiner}`,
+                        icon: UserCheck,
+                        color: 'text-purple-700',
+                        bgColor: 'bg-purple-50',
+                        borderColor: 'border-purple-200'
+                    });
+                });
+            }
 
             // Fetch bookings
             const { data: bookingData, error: bookingError } = await supabase
@@ -387,10 +452,29 @@ const RoomManagement: React.FC = () => {
                     room:rooms(name, code)
                 `)
                 .eq('room_id', roomId)
-                .eq('start_time', today) // Adjust based on your booking date field
+                .eq('start_time', today)
                 .order('start_time');
-            if (bookingError) throw bookingError;
-            setRoomBookings(bookingData || []);
+            if (!bookingError && bookingData) {
+                bookingData.forEach(booking => {
+                    combined.push({
+                        id: booking.id,
+                        type: 'booking',
+                        start_time: booking.start_time?.substring(0,5) || '',
+                        end_time: booking.end_time?.substring(0,5) || '',
+                        title: booking.purpose || 'Room Booking',
+                        subtitle: `${booking.user?.full_name} • ${booking.user?.identity_number}`,
+                        description: `Status: ${booking.status}`,
+                        icon: CalendarIcon,
+                        color: 'text-orange-700',
+                        bgColor: 'bg-orange-50',
+                        borderColor: 'border-orange-200'
+                    });
+                });
+            }
+
+            // Sort by start_time
+            combined.sort((a, b) => a.start_time.localeCompare(b.start_time));
+            setCombinedSchedules(combined);
 
         } catch (error: any) { 
             toast.error("Failed to load schedule for this room."); 
@@ -442,6 +526,92 @@ const RoomManagement: React.FC = () => {
         }
     };
 
+    // Manual DOM manipulation untuk user search dropdown (mirip dengan SessionSchedule.tsx)
+    const showUserDropdown = (searchTerm: string) => {
+        if (!searchTerm.trim()) {
+            hideUserDropdown();
+            return;
+        }
+
+        const filteredUsers = allUsers.filter(user =>
+            user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            user.identity_number.toLowerCase().includes(searchTerm.toLowerCase())
+        ).slice(0, 20); // Limit hasil
+
+        if (filteredUsers.length === 0) {
+            hideUserDropdown();
+            return;
+        }
+
+        const dropdownHTML = `
+            <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                ${filteredUsers.map(user => `
+                    <div 
+                        class="user-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                        data-user-id="${user.id}"
+                        data-user-name="${user.full_name}"
+                        data-user-nim="${user.identity_number}"
+                        data-user-role="${user.role}"
+                        data-user-dept="${user.department?.name || ''}"
+                    >
+                        <div class="flex items-center space-x-3">
+                            <div class="w-8 h-8 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                                ${user.full_name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <div class="font-semibold text-gray-900">${user.full_name}</div>
+                                <div class="text-sm text-gray-600">
+                                    ${user.identity_number} • ${user.role}
+                                    ${user.department ? ` • ${user.department.name}` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+
+        if (userDropdownRef.current) {
+            userDropdownRef.current.innerHTML = dropdownHTML;
+            userDropdownRef.current.style.display = 'block';
+            
+            // Add click listeners
+            userDropdownRef.current.querySelectorAll('.user-dropdown-item').forEach(item => {
+                item.addEventListener('mousedown', (e) => e.preventDefault());
+                item.addEventListener('click', (e) => {
+                    const element = e.currentTarget as HTMLElement;
+                    const userId = element.dataset.userId;
+                    const userName = element.dataset.userName;
+                    const userNim = element.dataset.userNim;
+                    const userRole = element.dataset.userRole;
+                    const userDept = element.dataset.userDept;
+                    
+                    const user = {
+                        id: userId,
+                        full_name: userName,
+                        identity_number: userNim,
+                        role: userRole,
+                        department: userDept ? { name: userDept } : null
+                    };
+                    
+                    setSelectedUser(user);
+                    if (userInputRef.current) {
+                        userInputRef.current.value = userName || '';
+                    }
+                    setUserSearchTerm(userName || '');
+                    
+                    hideUserDropdown();
+                });
+            });
+        }
+    };
+
+    const hideUserDropdown = () => {
+        if (userDropdownRef.current) {
+            userDropdownRef.current.style.display = 'none';
+        }
+    };
+
     // Assign user to room
     const handleAssignUser = async () => {
         if (!selectedUser || !showRoomDetail) return;
@@ -473,6 +643,9 @@ const RoomManagement: React.FC = () => {
             toast.success(`${selectedUser.full_name} assigned to room successfully`);
             setSelectedUser(null);
             setUserSearchTerm('');
+            if (userInputRef.current) {
+                userInputRef.current.value = '';
+            }
             setShowAssignUserModal(false);
             fetchRoomUsers(showRoomDetail.id);
         } catch (error) {
@@ -554,8 +727,8 @@ const RoomManagement: React.FC = () => {
 
     const handleDelete = async (roomId: string) => { 
         if (!confirm('Are you sure you want to delete this room?')) return; 
-        try { 
-            const { error } = await supabase.from('rooms').delete().eq('id', roomId); 
+        try {
+          const { error } = await supabase.from('rooms').delete().eq('id', roomId); 
             if (error) throw error; 
             toast.success('Room deleted successfully!'); 
             handleManualRefresh(); 
@@ -580,16 +753,6 @@ const RoomManagement: React.FC = () => {
         });
     }, [displayedRooms, searchTerm, filterStatus]);
 
-    // Filter users for assignment dropdown
-    const filteredUsers = useMemo(() => {
-        if (!userSearchTerm) return allUsers.slice(0, 10); // Limit initial results
-        
-        return allUsers.filter(user =>
-            user.full_name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-            user.identity_number.toLowerCase().includes(userSearchTerm.toLowerCase())
-        ).slice(0, 20); // Limit search results
-    }, [allUsers, userSearchTerm]);
-
     const getStatusColor = (status: RoomWithDetails['status']) => { 
         switch (status) { 
             case 'In Use': return 'bg-red-100 text-red-800'; 
@@ -599,163 +762,122 @@ const RoomManagement: React.FC = () => {
         } 
     };
 
-    // Component for displaying different schedule types
-    const ScheduleTypeCard = ({ type, icon: Icon, color, data, emptyMessage }: any) => (
-        <div className={`bg-gradient-to-r ${color} rounded-xl border border-opacity-20 overflow-hidden mb-4`}>
-            <div className="bg-white bg-opacity-90 p-4">
-                <div className="flex items-center space-x-3 mb-3">
-                    <div className={`p-2 ${color.replace('from-', 'bg-').replace('-50', '-100').replace('to-', '').replace('-100', '')} rounded-lg`}>
-                        <Icon className="h-5 w-5 text-gray-700" />
+    // Component untuk menampilkan combined schedules dalam satu section
+    const CombinedScheduleSection = () => (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 overflow-hidden mb-4">
+            <div className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white p-4">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                        <div className="p-2 bg-white bg-opacity-20 rounded-lg">
+                            <Building className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <h4 className="text-lg font-semibold">Jadwal Ruangan</h4>
+                            <p className="text-blue-100 text-sm">
+                                {format(new Date(), 'EEEE, MMMM d, yyyy')}
+                            </p>
+                        </div>
                     </div>
-                    <h4 className="text-lg font-semibold text-gray-900">{type}</h4>
-                    <span className="bg-gray-200 text-gray-700 px-2 py-1 rounded-full text-sm font-medium">
-                        {data.length}
-                    </span>
+                    <div className="bg-white bg-opacity-20 rounded-lg px-3 py-1">
+                        <span className="text-sm font-semibold">
+                            {combinedSchedules.length}
+                        </span>
+                    </div>
                 </div>
-                
-                {data.length > 0 ? (
+            </div>
+
+            <div className="p-4">
+                {loadingSchedules ? (
+                    <div className="flex justify-center items-center h-32">
+                        <RefreshCw className="animate-spin h-6 w-6 text-gray-500"/>
+                    </div>
+                ) : combinedSchedules.length > 0 ? (
                     <div className="space-y-3">
-                        {data.map((item: any, index: number) => (
-                            <div key={item.id || index} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
-                                {type === 'Lecture Schedules' && (
-                                    <>
-                                        <div className="font-semibold text-gray-900">{item.course_name}</div>
-                                        <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
-                                            <div className="flex items-center space-x-1">
-                                                <Clock className="h-4 w-4"/>
-                                                <span>{item.start_time?.substring(0,5)} - {item.end_time?.substring(0,5)}</span>
+                        {combinedSchedules.map((schedule, index) => {
+                            const IconComponent = schedule.icon;
+                            return (
+                                <div 
+                                    key={`${schedule.type}-${schedule.id}-${index}`} 
+                                    className={`${schedule.bgColor} rounded-lg p-4 border ${schedule.borderColor} hover:shadow-sm transition-shadow`}
+                                >
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center space-x-3">
+                                            <div className={`p-2 bg-white rounded-lg shadow-sm`}>
+                                                <IconComponent className={`h-4 w-4 ${schedule.color}`} />
                                             </div>
-                                            <div className="flex items-center space-x-1">
-                                                <Users className="h-4 w-4"/>
-                                                <span>Class {item.class}</span>
-                                            </div>
-                                        </div>
-                                        <div className="text-xs text-gray-500 mt-1">Prodi: {item.subject_study}</div>
-                                    </>
-                                )}
-                                
-                                {type === 'UAS Exams' && (
-                                    <>
-                                        <div className="font-semibold text-gray-900">{item.course_name}</div>
-                                        <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
-                                            <div className="flex items-center space-x-1">
-                                                <Clock className="h-4 w-4"/>
-                                                <span>
-                                                    {item.is_take_home ? 'Take Home' : `${item.start_time?.substring(0,5)} - ${item.end_time?.substring(0,5)}`}
+                                            <div className="flex items-center space-x-2">
+                                                <span className={`text-xs font-medium ${schedule.color} bg-white px-2 py-1 rounded-full uppercase tracking-wide`}>
+                                                    {schedule.type === 'lecture' ? 'Kuliah' : 
+                                                     schedule.type === 'exam' ? 'UAS' :
+                                                     schedule.type === 'session' ? 'Sidang' :
+                                                     'Booking'}
+                                                </span>
+                                                <span className="font-semibold text-gray-900 text-lg">
+                                                    {schedule.end_time ? 
+                                                        `${schedule.start_time} - ${schedule.end_time}` : 
+                                                        schedule.start_time
+                                                    }
                                                 </span>
                                             </div>
-                                            <div className="flex items-center space-x-1">
-                                                <Users className="h-4 w-4"/>
-                                                <span>{item.student_amount} students</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="space-y-2">
+                                        <div className="font-semibold text-gray-900 text-lg">
+                                            {schedule.title}
+                                        </div>
+                                        {schedule.subtitle && (
+                                            <div className={`text-sm ${schedule.color} font-medium`}>
+                                                {schedule.subtitle}
                                             </div>
-                                        </div>
-                                        <div className="text-xs text-gray-500 mt-1">
-                                            Semester {item.semester} • Class {item.class} • Inspector: {item.inspector}
-                                        </div>
-                                    </>
-                                )}
-                                
-                                {type === 'Final Sessions' && (
-                                    <>
-                                        <div className="font-semibold text-gray-900">{item.student?.full_name}</div>
-                                        <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
-                                            <div className="flex items-center space-x-1">
-                                                <Clock className="h-4 w-4"/>
-                                                <span>{item.start_time?.substring(0,5)} - {item.end_time?.substring(0,5)}</span>
+                                        )}
+                                        {schedule.description && (
+                                            <div className="text-sm text-gray-600">
+                                                {schedule.description}
                                             </div>
-                                            <div className="flex items-center space-x-1">
-                                                <Hash className="h-4 w-4"/>
-                                                <span>{item.student?.identity_number}</span>
-                                            </div>
-                                        </div>
-                                        <div className="text-xs text-gray-500 mt-1">
-                                            Supervisor: {item.supervisor} • Examiner: {item.examiner}
-                                        </div>
-                                    </>
-                                )}
-                                
-                                {type === 'Room Bookings' && (
-                                    <>
-                                        <div className="font-semibold text-gray-900">{item.purpose}</div>
-                                        <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
-                                            <div className="flex items-center space-x-1">
-                                                <Clock className="h-4 w-4"/>
-                                                          <span>{item.start_time?.substring(0,5)} - {item.end_time?.substring(0,5)}</span>
-                                            </div>
-                                            <div className="flex items-center space-x-1">
-                                                <Users className="h-4 w-4"/>
-                                                <span>{item.user?.full_name}</span>
-                                            </div>
-                                        </div>
-                                        <div className="text-xs text-gray-500 mt-1">
-                                            Status: {item.status} • ID: {item.user?.identity_number}
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        ))}
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 ) : (
-                    <div className="text-center py-6 text-gray-500">
-                        <CalendarIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">{emptyMessage}</p>
+                    <div className="text-center py-12 text-gray-500">
+                        <CalendarIcon className="h-16 w-16 mx-auto mb-4 opacity-50"/>
+                        <p className="text-lg font-medium mb-2">Tidak ada jadwal</p>
+                        <p className="text-sm">Ruangan ini kosong untuk hari ini</p>
                     </div>
                 )}
             </div>
         </div>
     );
 
-    // User Search Dropdown Component
+    // User Search Dropdown Component dengan manual DOM
     const UserSearchDropdown = () => (
         <div className="relative">
             <label className="block text-sm font-medium text-gray-700 mb-2">Search and Select User</label>
             <div className="relative">
                 <input
+                    ref={userInputRef}
                     type="text"
                     placeholder="Search by name or NIM..."
                     value={userSearchTerm}
-                    onChange={(e) => setUserSearchTerm(e.target.value)}
+                    onChange={(e) => {
+                        setUserSearchTerm(e.target.value);
+                        showUserDropdown(e.target.value);
+                    }}
+                    onFocus={(e) => {
+                        showUserDropdown(e.target.value);
+                    }}
+                    onBlur={() => {
+                        setTimeout(() => hideUserDropdown(), 150);
+                    }}
                     className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    autoComplete="off"
                 />
                 <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <div ref={userDropdownRef} style={{ display: 'none' }}></div>
             </div>
-            
-            {userSearchTerm && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                    {filteredUsers.length > 0 ? (
-                        filteredUsers.map((user) => (
-                            <button
-                                key={user.id}
-                                type="button"
-                                onClick={() => {
-                                    setSelectedUser(user);
-                                    setUserSearchTerm(user.full_name);
-                                }}
-                                className={`w-full px-4 py-3 text-left hover:bg-blue-50 transition-colors border-b border-gray-100 last:border-b-0 ${
-                                    selectedUser?.id === user.id ? 'bg-blue-50 border-blue-200' : ''
-                                }`}
-                            >
-                                <div className="flex items-center space-x-3">
-                                    <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                                        {user.full_name.charAt(0).toUpperCase()}
-                                    </div>
-                                    <div>
-                                        <div className="font-semibold text-gray-900">{user.full_name}</div>
-                                        <div className="text-sm text-gray-600">
-                                            {user.identity_number} • {user.role}
-                                            {user.department && ` • ${user.department.name}`}
-                                        </div>
-                                    </div>
-                                </div>
-                            </button>
-                        ))
-                    ) : (
-                        <div className="px-4 py-3 text-center text-gray-500">
-                            No users found
-                        </div>
-                    )}
-                </div>
-            )}
             
             {selectedUser && (
                 <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -775,6 +897,9 @@ const RoomManagement: React.FC = () => {
                             onClick={() => {
                                 setSelectedUser(null);
                                 setUserSearchTerm('');
+                                if (userInputRef.current) {
+                                    userInputRef.current.value = '';
+                                }
                             }}
                             className="text-gray-400 hover:text-gray-600"
                         >
@@ -1113,7 +1238,7 @@ const RoomManagement: React.FC = () => {
                                             <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
                                                 <Users className="h-5 w-5 text-gray-400"/>
                                                 <div>
-                                                    <p className="text-gray-500">Capacity</p>
+                                                  <p className="text-gray-500">Capacity</p>
                                                     <p className="font-semibold text-gray-800">{showRoomDetail.capacity} seats</p>
                                                 </div>
                                             </div>
@@ -1203,66 +1328,14 @@ const RoomManagement: React.FC = () => {
                                     </div>
                                 </div>
 
-                                {/* Right Column - Enhanced Schedules */}
+                                {/* Right Column - Combined Schedules */}
                                 <div className="lg:col-span-2">
                                     <h3 className="text-lg font-semibold text-gray-800 mb-4">
                                         Complete Schedule for {searchDay}
                                     </h3>
                                     
                                     <div className="space-y-4 max-h-[600px] overflow-y-auto">
-                                        {loadingSchedules ? (
-                                            <div className="flex justify-center items-center h-32">
-                                                <RefreshCw className="animate-spin h-6 w-6 text-gray-500"/>
-                                            </div>
-                                        ) : (
-                                            <>
-                                                {/* Lecture Schedules */}
-                                                <ScheduleTypeCard
-                                                    type="Lecture Schedules"
-                                                    icon={BookOpen}
-                                                    color="from-blue-50 to-blue-100"
-                                                    data={roomSchedules}
-                                                    emptyMessage="No lecture schedules for this day"
-                                                />
-
-                                                {/* UAS Exams */}
-                                                <ScheduleTypeCard
-                                                    type="UAS Exams"
-                                                    icon={GraduationCap}
-                                                    color="from-green-50 to-green-100"
-                                                    data={roomExams}
-                                                    emptyMessage="No UAS exams scheduled for this day"
-                                                />
-
-                                                {/* Final Sessions */}
-                                                <ScheduleTypeCard
-                                                    type="Final Sessions"
-                                                    icon={UserCheck}
-                                                    color="from-purple-50 to-purple-100"
-                                                    data={roomSessions}
-                                                    emptyMessage="No final sessions scheduled for this day"
-                                                />
-
-                                                {/* Room Bookings */}
-                                                <ScheduleTypeCard
-                                                    type="Room Bookings"
-                                                    icon={CalendarIcon}
-                                                    color="from-orange-50 to-orange-100"
-                                                    data={roomBookings}
-                                                    emptyMessage="No room bookings for this day"
-                                                />
-
-                                                {/* All Empty State */}
-                                                {roomSchedules.length === 0 && roomExams.length === 0 && 
-                                                 roomSessions.length === 0 && roomBookings.length === 0 && (
-                                                    <div className="flex flex-col justify-center items-center py-12 text-center text-gray-500">
-                                                        <CalendarIcon className="h-16 w-16 mb-4 opacity-50"/>
-                                                        <p className="text-lg font-medium mb-2">No schedules found</p>
-                                                        <p className="text-sm">This room is completely free on {searchDay}</p>
-                                                    </div>
-                                                )}
-                                            </>
-                                        )}
+                                        <CombinedScheduleSection />
                                     </div>
                                 </div>
                             </div>
@@ -1285,6 +1358,9 @@ const RoomManagement: React.FC = () => {
                                         setShowAssignUserModal(false);
                                         setSelectedUser(null);
                                         setUserSearchTerm('');
+                                        if (userInputRef.current) {
+                                            userInputRef.current.value = '';
+                                        }
                                     }}
                                     className="text-gray-400 hover:text-gray-600"
                                 >
@@ -1300,6 +1376,9 @@ const RoomManagement: React.FC = () => {
                                         setShowAssignUserModal(false);
                                         setSelectedUser(null);
                                         setUserSearchTerm('');
+                                        if (userInputRef.current) {
+                                            userInputRef.current.value = '';
+                                        }
                                     }}
                                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                                 >
