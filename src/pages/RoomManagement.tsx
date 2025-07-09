@@ -1412,16 +1412,16 @@ const handleAssignUser = async () => {
                                     </div>
                                 </div>
 
-                                {/* Right Column - Combined Schedules */}
-                                <div className="lg:col-span-2">
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                                        Complete Schedule for {searchDay}
-                                    </h3>
-                                    
-                                    <div className="space-y-4 max-h-[600px] overflow-y-auto">
-                                        <CombinedScheduleSection />
-                                    </div>
-                                </div>
+                               
+                              <div className="lg:col-span-2">
+                                  <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                                      Complete Schedule for {searchDay}
+                                  </h3>
+                                  
+                                  <div className="space-y-4 max-h-[600px] overflow-y-auto">
+                                      <CombinedScheduleSection />
+                                  </div>
+                              </div>
                             </div>
                         </div>
                     </div>
