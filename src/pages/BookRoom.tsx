@@ -530,7 +530,7 @@ return (
                                                 </span>
                                             </div>
                                             
-                                            <div className="space-y-3">
+                                            <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
                                                 <div className="flex items-center space-x-2">
                                                     <Users className={`h-4 w-4 ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-400'}`} />
                                                     <span className={`text-sm ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-600'}`}>
