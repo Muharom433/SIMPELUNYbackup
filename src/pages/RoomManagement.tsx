@@ -1619,15 +1619,41 @@ const handleAssignUser = async () => {
                                                     <p className="font-semibold text-gray-800">{showRoomDetail.capacity} seats</p>
                                                 </div>
                                             </div>
-                                            <div className={`bg-white p-3 rounded-lg border flex items-center space-x-3`}>
-                                                {showRoomDetail.is_available ? <CheckCircle className="h-5 w-5 text-green-500"/> : <AlertCircle className="h-5 w-5 text-red-500"/>}
-                                                <div>
-                                                    <p className="text-gray-500">Official Booking Status</p>
-                                                    <p className={`font-semibold ${showRoomDetail.is_available ? 'text-green-600' : 'text-red-600'}`}>
-                                                        {showRoomDetail.is_available ? 'FREE' : 'BOOKED'}
-                                                    </p>
-                                                </div>
-                                            </div>
+                                            <div className="bg-white p-3 rounded-lg border">
+    <div className="flex items-center justify-between mb-2">
+        <p className="text-gray-500">Official Booking Status</p>
+        <button
+            onClick={() => handleToggleAvailability(showRoomDetail.id, !showRoomDetail.is_available)}
+            className={`p-1 rounded transition-colors ${
+                showRoomDetail.is_available 
+                    ? 'text-green-600 hover:bg-green-50' 
+                    : 'text-red-600 hover:bg-red-50'
+            }`}
+            title={`Click to ${showRoomDetail.is_available ? 'disable' : 'enable'} room`}
+        >
+            <Edit className="h-4 w-4" />
+        </button>
+    </div>
+    
+    <div className="flex items-center space-x-3">
+        {showRoomDetail.is_available ? (
+            <CheckCircle className="h-5 w-5 text-green-500"/>
+        ) : (
+            <AlertCircle className="h-5 w-5 text-red-500"/>
+        )}
+        <div className="flex-1">
+            <p className={`font-semibold ${showRoomDetail.is_available ? 'text-green-600' : 'text-red-600'}`}>
+                {showRoomDetail.is_available ? 'AVAILABLE' : 'UNAVAILABLE'}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+                {showRoomDetail.is_available 
+                    ? 'Room can be booked officially' 
+                    : 'Room is disabled for booking'
+                }
+            </p>
+        </div>
+    </div>
+</div>
                                         </div>
                                     </div>
 
