@@ -103,11 +103,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
         if (user.role === 'super_admin') {
             return [
                 { icon: BarChart3, label: getText('About SIMPEL', 'Tutor SIMPEL'), path: '/' },
-                { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book' },
-                { icon: Package, label: getText('Tool Lending', 'Peminjaman Alat'), path: '/tools' },
-                { icon: CheckCircle, label: getText('Check Out', 'Pengembalian'), path: '/checkout' },
-                { icon: FileText, label: getText('Permit Letter', 'Surat Izin'), path: '/permit-letter' }, // Hapus custom color
-                { icon: Building, label: getText('Room Management', 'Manajemen Ruangan'), path: '/rooms' },
+               { icon: Building, label: getText('Room Management', 'Manajemen Ruangan'), path: '/rooms' },
                 { icon: Users, label: getText('User Management', 'Manajemen Pengguna'), path: '/users' },
                 { icon: MapPin, label: getText('Departments', 'Departemen'), path: '/departments' },
                 { icon: GraduationCap, label: getText('Study Programs', 'Program Studi'), path: '/study-programs' },
