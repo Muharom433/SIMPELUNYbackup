@@ -304,6 +304,28 @@ const [userToUnassign, setUserToUnassign] = useState<{id: string, name: string} 
         }
     };
 
+  const confirmUnassignUser = async () => {
+    if (!userToUnassign) return;
+    
+    try {
+        const { error } = await supabase
+            .from('room_users')
+            .delete()
+            .eq('id', userToUnassign.id);
+        
+        if (error) throw error;
+        
+        toast.success(`${userToUnassign.name} removed from room successfully`);
+        fetchRoomUsers(showRoomDetail!.id);
+    } catch (error) {
+        console.error('Error unassigning user:', error);
+        toast.error('Failed to remove user from room');
+    } finally {
+        setShowUnassignModal(false);
+        setUserToUnassign(null);
+    }
+};
+
     const handleManualRefresh = () => {
         setIsSearchMode(false);
         refreshTodayStatus(true);
