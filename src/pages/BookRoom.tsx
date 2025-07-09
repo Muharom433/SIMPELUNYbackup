@@ -11,7 +11,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { Room, Department, LectureSchedule, Equipment, StudyProgram } from '../types';
 import toast from 'react-hot-toast';
 import { alert } from '../components/Alert/AlertHelper';
-import { format, addMinutes, parse, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
+import { format, addMinutes, parse, startOfDay, endOfDay } from 'date-fns';
 import { id as localeID } from 'date-fns/locale';
 
 const bookingSchema = z.object({
@@ -105,7 +105,7 @@ const BookRoom: React.FC = () => {
 
     // Enhanced function to get room status based on specific date and time
     const getRoomStatus = useCallback(async (room: Room, targetDate?: Date, startTime?: string, endTime?: string): Promise<'In Use' | 'Scheduled' | 'Available'> => {
-        // If room is not available in database, don't show it at all (handled in fetch)
+        // PERTAMA: Cek is_available - jika false, JANGAN TAMPILKAN SAMA SEKALI
         if (!room.is_available) return 'Available'; // This won't be reached since we filter out unavailable rooms
 
         const checkDate = targetDate || new Date();
@@ -238,16 +238,16 @@ const BookRoom: React.FC = () => {
         }
     }, []);
 
-    // Enhanced function to fetch rooms with dynamic filtering
+    // ENHANCED: Fetch rooms with dynamic filtering berdasarkan waktu
     const fetchRoomsWithStatus = useCallback(async (targetDate?: Date, startTime?: string, endTime?: string) => {
         try {
             setLoading(true);
             
-            // Only fetch rooms where is_available = true
+            // HANYA AMBIL RUANGAN DENGAN is_available = true
             const { data: roomsData, error: roomsError } = await supabase
                 .from('rooms')
                 .select(`*, department:departments(*)`)
-                .eq('is_available', true) // Only get available rooms
+                .eq('is_available', true) // FILTER UTAMA: Hanya ruangan yang available
                 .order('name', { ascending: true });
                 
             if (roomsError) throw roomsError;
@@ -534,7 +534,7 @@ const BookRoom: React.FC = () => {
             const { error } = await supabase.from('bookings').insert(bookingData);
             if (error) throw error;
             
-            // DON'T UPDATE is_available - leave it as is for admin control
+            // ❌ JANGAN UPDATE is_available - biarkan admin yang kontrol
             
             // Call the enhanced success handler
             handleBookingSuccess(data, selectedRoom);
@@ -622,7 +622,6 @@ const BookRoom: React.FC = () => {
                             </div>
                         </div>
                     </div>
-                </div>
             </div>
 
             <div className="max-w-7xl mx-auto px-4 py-8">
@@ -1067,25 +1066,6 @@ const BookRoom: React.FC = () => {
                                                 {form.formState.errors.start_time.message}
                                             </p>
                                         )}
-                                    </div>
-                                    
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                                {getText('SKS (Credits)', 'SKS (Kredit)')} *
-                                            </label>
-                                            <input 
-                                                {...form.register('sks', { valueAsNumber: true })} 
-                                                type="number" 
-                                                min="1" 
-                                                max="6" 
-                                                className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200" 
-                                            />
-                                            {form.formState.errors.sks && (
-                                                <p className="mt-2 text-sm text-red-600 font-medium">
-                                                    {form.formState.errors.sks.message}
-                                                </p>
-                                            )}
                                         </div>
                                         <div>
                                             <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -1234,7 +1214,7 @@ const BookRoom: React.FC = () => {
                                         </div>
                                     </div>
                                 )}
-                                
+
                                 {/* ✅ NOTES FIELD */}
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-700 mb-2">
