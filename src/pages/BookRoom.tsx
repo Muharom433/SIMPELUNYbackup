@@ -1165,7 +1165,6 @@ const BookRoom: React.FC = () => {
                                             </div>
                                         </div>
                                     )}
-                                </div>
                                 
                                 {/* ✅ EQUIPMENT SELECTION WITH AUTO-MANDATORY */}
                                 {selectedRoom && availableEquipment.length > 0 && (
