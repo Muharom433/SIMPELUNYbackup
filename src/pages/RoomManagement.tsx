@@ -335,6 +335,26 @@ const lecturerInputRef = useRef<HTMLInputElement>(null);
             toast.error('Failed to load departments'); 
         } 
     };
+  const fetchLecturers = async () => {
+    try {
+        const { data, error } = await supabase
+            .from('users')
+            .select(`
+                id,
+                full_name,
+                identity_number,
+                role,
+                department:departments(name)
+            `)
+            .eq('role', 'lecturer')
+            .order('full_name');
+        
+        if (error) throw error;
+        setLecturers(data || []);
+    } catch (error) {
+        console.error('Error fetching lecturers:', error);
+    }
+};
 
     // Fetch all users for assignment dropdown
     const fetchAllUsers = async () => {
