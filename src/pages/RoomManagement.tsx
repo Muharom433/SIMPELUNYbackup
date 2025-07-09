@@ -600,6 +600,31 @@ const [userToUnassign, setUserToUnassign] = useState<{id: string, name: string} 
         });
     };
 
+  const calculateTargetDate = (selectedDay: string, isSearchAction = false) => {
+    const today = new Date();
+    const currentDayIndex = dayNamesEnglish.indexOf(format(today, 'EEEE')); // 0=Monday, 6=Sunday
+    const selectedDayIndex = dayNamesEnglish.indexOf(selectedDay);
+    
+    let targetDate = new Date(today);
+    
+    // ✨ LOGIC: Jika search action dan day == today, ambil minggu depan
+    if (isSearchAction && selectedDayIndex === currentDayIndex) {
+        // Sama dengan hari ini DAN ini adalah search action → ambil minggu depan
+        targetDate.setDate(today.getDate() + 7);
+        console.log(`🔄 Search for ${selectedDay}: Taking NEXT week (${format(targetDate, 'MMM dd')}) instead of today`);
+    } else if (selectedDayIndex >= currentDayIndex) {
+        // Hari yang dipilih masih dalam minggu ini (hari ini atau setelahnya)
+        const daysToAdd = selectedDayIndex - currentDayIndex;
+        targetDate.setDate(today.getDate() + daysToAdd);
+    } else {
+        // Hari yang dipilih sudah lewat minggu ini, ambil minggu depan
+        const daysToAdd = (7 - currentDayIndex) + selectedDayIndex;
+        targetDate.setDate(today.getDate() + daysToAdd);
+    }
+    
+    return targetDate;
+};
+
     const hideUserDropdown = () => {
         if (userDropdownRef.current) {
             userDropdownRef.current.style.display = 'none';
