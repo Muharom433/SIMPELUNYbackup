@@ -1066,6 +1066,25 @@ const BookRoom: React.FC = () => {
                                                 {form.formState.errors.start_time.message}
                                             </p>
                                         )}
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                                {getText('SKS (Credits)', 'SKS (Kredit)')} *
+                                            </label>
+                                            <input 
+                                                {...form.register('sks', { valueAsNumber: true })} 
+                                                type="number" 
+                                                min="1" 
+                                                max="6" 
+                                                className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200" 
+                                            />
+                                            {form.formState.errors.sks && (
+                                                <p className="mt-2 text-sm text-red-600 font-medium">
+                                                    {form.formState.errors.sks.message}
+                                                </p>
+                                            )}
                                         </div>
                                         <div>
                                             <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -1165,6 +1184,7 @@ const BookRoom: React.FC = () => {
                                             </div>
                                         </div>
                                     )}
+                                </div>
                                 
                                 {/* ✅ EQUIPMENT SELECTION WITH AUTO-MANDATORY */}
                                 {selectedRoom && availableEquipment.length > 0 && (
