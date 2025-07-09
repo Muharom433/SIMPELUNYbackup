@@ -280,19 +280,16 @@ const [userToUnassign, setUserToUnassign] = useState<{id: string, name: string} 
         const searchStart = parse(searchStartTime, 'HH:mm', new Date());
         const searchEnd = parse(searchEndTime, 'HH:mm', new Date());
         
-        // Calculate target date for the selected day
-        const today = new Date();
-        const currentDayIndex = dayNamesEnglish.indexOf(format(today, 'EEEE'));
-        const selectedDayIndex = dayNamesEnglish.indexOf(searchDay);
-        const dayDifference = selectedDayIndex - currentDayIndex;
-        const targetDate = new Date(today);
-        targetDate.setDate(today.getDate() + dayDifference);
+        // Calculate exact target date using weekly logic dengan search flag
+        const targetDate = calculateTargetDate(searchDay, true); // true = adalah search action
         const targetDateString = format(targetDate, 'yyyy-MM-dd');
+        
+        console.log(`🗓️ Search for ${searchDay} (${targetDateString}) from ${searchStartTime} to ${searchEndTime}`);
         
         const busyRoomIds = new Set<string>();
         const busyRoomNames = new Set<string>();
         
-        // 1. Check lecture schedules (by room name and day)
+        // 1. Check lecture schedules (by room name and day) - RECURRING setiap minggu
         const { data: lectureData, error: lectureError } = await supabase
             .from('lecture_schedules')
             .select('room, start_time, end_time')
@@ -307,15 +304,16 @@ const [userToUnassign, setUserToUnassign] = useState<{id: string, name: string} 
                     // Check if lecture time conflicts with search time
                     if (lectureStart < searchEnd && lectureEnd > searchStart) {
                         busyRoomNames.add(normalizeRoomName(lecture.room));
+                        console.log(`📚 Lecture conflict: ${lecture.room} at ${lecture.start_time}-${lecture.end_time}`);
                     }
                 }
             });
         }
         
-        // 2. Check exam schedules (by room_id and date)
+        // 2. Check exam schedules (by room_id and EXACT DATE)
         const { data: examData, error: examError } = await supabase
             .from('exams')
-            .select('room_id, start_time, end_time, is_take_home')
+            .select('room_id, start_time, end_time, is_take_home, course_name')
             .eq('date', targetDateString);
         
         if (!examError && examData) {
@@ -326,48 +324,38 @@ const [userToUnassign, setUserToUnassign] = useState<{id: string, name: string} 
                     
                     if (examStart < searchEnd && examEnd > searchStart) {
                         busyRoomIds.add(exam.room_id);
+                        console.log(`📝 Exam conflict: ${exam.course_name} at ${exam.start_time}-${exam.end_time} (Room ID: ${exam.room_id})`);
                     }
                 }
             });
         }
         
-        // 3. Check final sessions (by room_id and date)
-        const { data: sessionData, error: sessionError } = await supabase
-            .from('final_sessions')
-            .select('room_id, start_time, end_time')
-            .eq('date', targetDateString);
+        // 3. SKIP final sessions - karena mengikuti jadwal kuliah (tidak akan bentrok)
+        console.log(`⏭️ Skipping final sessions check - follows lecture schedule`);
         
-        if (!sessionError && sessionData) {
-            sessionData.forEach(session => {
-                if (session.room_id && session.start_time && session.end_time) {
-                    const sessionStart = parse(session.start_time, 'HH:mm:ss', new Date());
-                    const sessionEnd = parse(session.end_time, 'HH:mm:ss', new Date());
-                    
-                    if (sessionStart < searchEnd && sessionEnd > searchStart) {
-                        busyRoomIds.add(session.room_id);
-                    }
-                }
-            });
-        }
-        
-        // 4. Check bookings (by room_id and timestamp)
-        const startOfDay = `${targetDateString}T${searchStartTime}:00Z`;
-        const endOfDay = `${targetDateString}T${searchEndTime}:00Z`;
+        // 4. Check bookings (by room_id and EXACT DATE with timestamp) - WEEKLY LOGIC
+        const startOfDay = `${targetDateString}T00:00:00Z`;
+        const endOfDay = `${targetDateString}T23:59:59Z`;
         
         const { data: bookingData, error: bookingError } = await supabase
             .from('bookings')
-            .select('room_id, start_time, end_time')
+            .select('room_id, start_time, end_time, purpose, status')
             .eq('status', 'approved') // Only check approved bookings
-            .gte('start_time', `${targetDateString}T00:00:00Z`)
-            .lte('start_time', `${targetDateString}T23:59:59Z`);
+            .gte('start_time', startOfDay)
+            .lte('start_time', endOfDay);
         
         if (!bookingError && bookingData) {
             bookingData.forEach(booking => {
                 const bookingStart = new Date(booking.start_time);
                 const bookingEnd = new Date(booking.end_time);
                 
-                if (bookingStart < new Date(endOfDay) && bookingEnd > new Date(startOfDay)) {
+                // Convert search times to full datetime for comparison
+                const searchStartDateTime = new Date(`${targetDateString}T${searchStartTime}:00Z`);
+                const searchEndDateTime = new Date(`${targetDateString}T${searchEndTime}:00Z`);
+                
+                if (bookingStart < searchEndDateTime && bookingEnd > searchStartDateTime) {
                     busyRoomIds.add(booking.room_id);
+                    console.log(`📅 Booking conflict: ${booking.purpose} at ${format(bookingStart, 'HH:mm')}-${format(bookingEnd, 'HH:mm')} (Room ID: ${booking.room_id})`);
                 }
             });
         }
@@ -376,7 +364,13 @@ const [userToUnassign, setUserToUnassign] = useState<{id: string, name: string} 
         const availableRooms = allRooms.filter(room => {
             const isRoomIdBusy = busyRoomIds.has(room.id);
             const isRoomNameBusy = busyRoomNames.has(normalizeRoomName(room.name));
-            return !isRoomIdBusy && !isRoomNameBusy;
+            const isAvailable = !isRoomIdBusy && !isRoomNameBusy;
+            
+            if (!isAvailable) {
+                console.log(`❌ Room ${room.name} is busy`);
+            }
+            
+            return isAvailable;
         });
         
         const availableRoomsWithStatus = availableRooms.map(r => ({
@@ -385,7 +379,15 @@ const [userToUnassign, setUserToUnassign] = useState<{id: string, name: string} 
         }));
 
         setDisplayedRooms(availableRoomsWithStatus);
-        toast.success(`Found ${availableRooms.length} available rooms for ${searchDay} ${searchStartTime}-${searchEndTime}`);
+        
+        // Enhanced success message with date info
+        const today = new Date();
+        const isThisWeek = targetDate <= new Date(today.getTime() + 6 * 24 * 60 * 60 * 1000);
+        const weekInfo = isThisWeek ? 'this week' : 'next week';
+        
+        toast.success(
+            `Found ${availableRooms.length} available rooms for ${searchDay} (${format(targetDate, 'MMM dd')}, ${weekInfo}) ${searchStartTime}-${searchEndTime}`
+        );
         
     } catch (error) {
         console.error('Error searching for available rooms:', error);
