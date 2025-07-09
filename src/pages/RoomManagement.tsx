@@ -1478,6 +1478,62 @@ const handleAssignUser = async () => {
                     </div>
                 </div>
             )}
+          {showUnassignModal && userToUnassign && (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001] p-4">
+        <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900">
+                        Confirm Removal
+                    </h3>
+                    <button
+                        onClick={() => {
+                            setShowUnassignModal(false);
+                            setUserToUnassign(null);
+                        }}
+                        className="text-gray-400 hover:text-gray-600"
+                    >
+                        <X className="h-6 w-6" />
+                    </button>
+                </div>
+                
+                <div className="mb-6">
+                    <div className="flex items-center space-x-3 p-4 bg-red-50 rounded-lg border border-red-200">
+                        <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                            <UserMinus className="h-5 w-5 text-red-600" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-900">
+                                Are you sure you want to remove <strong>{userToUnassign.name}</strong> from this room?
+                            </p>
+                            <p className="text-xs text-gray-600 mt-1">
+                                This action cannot be undone. The user will lose access to this room.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex space-x-3">
+                    <button
+                        onClick={() => {
+                            setShowUnassignModal(false);
+                            setUserToUnassign(null);
+                        }}
+                        className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={confirmUnassignUser}
+                        className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                    >
+                        Remove User
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+)}
         </div>
     );
 };
