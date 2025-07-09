@@ -498,7 +498,7 @@ return (
                             </div>
                             
                             {viewMode === 'grid' ? (
-                                <div className="grid grid-cols-1 gap-4">
+                                <div className="grid grid-cols-1 gap-4 max-h-96 overflow-y-auto pr-2">
                                     {filteredRooms.map((room) => (
                                         <div 
                                             key={room.id} 
