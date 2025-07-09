@@ -769,13 +769,13 @@ const handleAssignUser = async () => {
     setShowUnassignModal(true);
 };
     
-    useEffect(() => {
-        if (showRoomDetail) {
-            fetchSchedulesForRoom(showRoomDetail.name, showRoomDetail.id, searchDay);
-            fetchEquipmentForRoom(showRoomDetail.id);
-            fetchRoomUsers(showRoomDetail.id);
-        }
-    }, [showRoomDetail, searchDay]);
+   useEffect(() => {
+    if (showRoomDetail) {
+        fetchSchedulesForRoom(showRoomDetail.name, showRoomDetail.id, searchDay); 
+        fetchEquipmentForRoom(showRoomDetail.id);
+        fetchRoomUsers(showRoomDetail.id);
+    }
+}, [showRoomDetail, searchDay]); 
 
     const onSubmit = async (data: RoomForm) => { 
         try { 
