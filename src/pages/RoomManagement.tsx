@@ -858,7 +858,16 @@ const handleAssignUser = async () => {
     };
 
     // Component untuk menampilkan combined schedules dalam satu section
-    const CombinedScheduleSection = () => (
+    const CombinedScheduleSection = () => {
+    // Calculate the date for the selected day from filter
+    const today = new Date();
+    const currentDayIndex = dayNamesEnglish.indexOf(format(today, 'EEEE'));
+    const selectedDayIndex = dayNamesEnglish.indexOf(searchDay);
+    const dayDifference = selectedDayIndex - currentDayIndex;
+    const targetDate = new Date(today);
+    targetDate.setDate(today.getDate() + dayDifference);
+    
+    return (
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 overflow-hidden mb-4">
             <div className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white p-4">
                 <div className="flex items-center justify-between">
@@ -869,7 +878,7 @@ const handleAssignUser = async () => {
                         <div>
                             <h4 className="text-lg font-semibold">Jadwal Ruangan</h4>
                             <p className="text-blue-100 text-sm">
-                                {format(new Date(), 'EEEE, MMMM d, yyyy')}
+                                {format(targetDate, 'EEEE, MMMM d, yyyy')} {/* Dynamic date based on filter day */}
                             </p>
                         </div>
                     </div>
@@ -940,12 +949,13 @@ const handleAssignUser = async () => {
                     <div className="text-center py-12 text-gray-500">
                         <CalendarIcon className="h-16 w-16 mx-auto mb-4 opacity-50"/>
                         <p className="text-lg font-medium mb-2">Tidak ada jadwal</p>
-                        <p className="text-sm">Ruangan ini kosong untuk hari ini</p>
+                        <p className="text-sm">Ruangan ini kosong untuk {searchDay}</p>
                     </div>
                 )}
             </div>
         </div>
     );
+};
 
     // User Search Dropdown Component dengan manual DOM (SEMUA ROLE)
     const UserSearchDropdown = () => (
