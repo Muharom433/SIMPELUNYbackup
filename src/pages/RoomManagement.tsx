@@ -1103,20 +1103,18 @@ const handleAssignUser = async () => {
     let subtitleText = '';
     
     if (isSearchMode) {
-        // Search mode: show specific day
+        // Search mode: show specific date calculation
+        const targetDate = calculateTargetDate(searchDay, true); // true = search action
         const today = new Date();
-        const currentDayIndex = dayNamesEnglish.indexOf(format(today, 'EEEE'));
-        const selectedDayIndex = dayNamesEnglish.indexOf(searchDay);
-        const dayDifference = selectedDayIndex - currentDayIndex;
-        const targetDate = new Date(today);
-        targetDate.setDate(today.getDate() + dayDifference);
+        const isThisWeek = targetDate <= new Date(today.getTime() + 6 * 24 * 60 * 60 * 1000);
+        const weekInfo = isThisWeek ? 'this week' : 'next week';
         
         titleText = `Schedule for ${searchDay}`;
-        subtitleText = format(targetDate, 'EEEE, MMMM d, yyyy');
+        subtitleText = `${format(targetDate, 'EEEE, MMMM d, yyyy')} (${weekInfo})`;
     } else {
         // Normal mode: show today + upcoming
         titleText = 'Room Schedule';
-        subtitleText = 'Today\'s lectures & upcoming sessions/bookings (1 month)';
+        subtitleText = 'Today\'s lectures, all exams, current month sessions & upcoming bookings';
     }
     
     return (
@@ -1201,8 +1199,8 @@ const handleAssignUser = async () => {
                         <p className="text-lg font-medium mb-2">Tidak ada jadwal</p>
                         <p className="text-sm">
                             {isSearchMode 
-                                ? `Ruangan ini kosong untuk ${searchDay}`
-                                : 'Tidak ada jadwal hari ini atau dalam 1 bulan ke depan'
+                                ? `Ruangan ini kosong untuk ${searchDay} (${format(calculateTargetDate(searchDay, true), 'MMM dd')})`
+                                : 'Tidak ada jadwal hari ini, ujian, sidang bulan ini, atau booking yang akan datang'
                             }
                         </p>
                     </div>
