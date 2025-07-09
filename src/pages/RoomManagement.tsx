@@ -315,16 +315,17 @@ const lecturerInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (profile) {
-            refreshTodayStatus();
-            fetchDepartments();
-            fetchRoomSuggestions();
-            fetchAllUsers();
-            const interval = setInterval(() => {
-                if (!isSearchMode) { refreshTodayStatus(); }
-            }, 5 * 60 * 1000);
-            return () => clearInterval(interval);
-        }
-    }, [profile, isSearchMode, refreshTodayStatus]);
+        refreshTodayStatus();
+        fetchDepartments();
+        fetchRoomSuggestions();
+        fetchAllUsers();
+        fetchLecturers(); // Tambah ini
+        const interval = setInterval(() => {
+            if (!isSearchMode) { refreshTodayStatus(); }
+        }, 5 * 60 * 1000);
+        return () => clearInterval(interval);
+    }
+}, [profile, isSearchMode, refreshTodayStatus]);
 
     const fetchDepartments = async () => { 
         try { 
