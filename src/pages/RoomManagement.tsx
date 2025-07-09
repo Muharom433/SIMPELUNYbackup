@@ -619,29 +619,37 @@ const [userToUnassign, setUserToUnassign] = useState<{id: string, name: string} 
 
     // Enhanced fetch schedules - fetch ALL schedule types dan combine jadi satu
     // Perbaikan di function fetchSchedulesForRoom untuk handle timestamptz
-const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: string) => { 
+const fetchSchedulesForRoom = async (roomName: string, roomId: string, day?: string) => { 
     setLoadingSchedules(true); 
     try { 
-        const dayToFetch = getIndonesianDay(day);
-        
-        // Calculate target date based on selected day
-        const today = new Date();
-        const currentDayIndex = dayNamesEnglish.indexOf(format(today, 'EEEE'));
-        const selectedDayIndex = dayNamesEnglish.indexOf(day);
-        const dayDifference = selectedDayIndex - currentDayIndex;
-        const targetDate = new Date(today);
-        targetDate.setDate(today.getDate() + dayDifference);
-        const targetDateString = format(targetDate, 'yyyy-MM-dd');
-        
         const combined: CombinedSchedule[] = [];
+        const today = new Date();
+        const todayString = format(today, 'yyyy-MM-dd');
+        const todayDayName = getIndonesianDay(format(today, 'EEEE'));
+        
+        // Jika dalam search mode, gunakan day parameter
+        // Jika normal mode, selalu tampilkan hari ini
+        const targetDay = isSearchMode && day ? day : format(today, 'EEEE');
+        const targetDayIndonesian = getIndonesianDay(targetDay);
+        
+        let targetDateString = todayString;
+        if (isSearchMode && day && day !== format(today, 'EEEE')) {
+            const currentDayIndex = dayNamesEnglish.indexOf(format(today, 'EEEE'));
+            const selectedDayIndex = dayNamesEnglish.indexOf(day);
+            const dayDifference = selectedDayIndex - currentDayIndex;
+            const targetDate = new Date(today);
+            targetDate.setDate(today.getDate() + dayDifference);
+            targetDateString = format(targetDate, 'yyyy-MM-dd');
+        }
 
-        // Fetch lecture schedules (day-based, no date needed)
+        // 1. Fetch lecture schedules untuk hari yang diminta
         const { data: lectureData, error: lectureError } = await supabase
             .from('lecture_schedules')
             .select('*')
-            .eq('day', dayToFetch)
+            .eq('day', targetDayIndonesian)
             .ilike('room', `%${roomName}%`)
             .order('start_time'); 
+            
         if (!lectureError && lectureData) {
             lectureData.forEach(lecture => {
                 combined.push({
@@ -660,7 +668,7 @@ const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: stri
             });
         }
 
-        // Fetch exam schedules (date-based)
+        // 2. Fetch exam schedules untuk tanggal yang diminta
         const { data: examData, error: examError } = await supabase
             .from('exams')
             .select(`
@@ -669,8 +677,9 @@ const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: stri
                 room:rooms(name, code)
             `)
             .eq('room_id', roomId)
-            .eq('date', targetDateString) // Use calculated date
+            .eq('date', targetDateString)
             .order('start_time');
+            
         if (!examError && examData) {
             examData.forEach(exam => {
                 combined.push({
@@ -689,25 +698,43 @@ const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: stri
             });
         }
 
-        // Fetch final sessions (date-based)
-        const { data: sessionData, error: sessionError } = await supabase
+        // 3. Fetch final sessions - UNTUK 1 BULAN jika normal mode, atau hari tertentu jika search mode
+        let sessionQuery = supabase
             .from('final_sessions')
             .select(`
                 *,
                 student:users!student_id(full_name, identity_number),
                 room:rooms(name, code)
             `)
-            .eq('room_id', roomId)
-            .eq('date', targetDateString) // Use calculated date
-            .order('start_time');
+            .eq('room_id', roomId);
+            
+        if (isSearchMode) {
+            // Jika search mode, hanya untuk tanggal tertentu
+            sessionQuery = sessionQuery.eq('date', targetDateString);
+        } else {
+            // Jika normal mode, untuk 1 bulan ke depan
+            const oneMonthLater = new Date(today);
+            oneMonthLater.setMonth(today.getMonth() + 1);
+            const oneMonthLaterString = format(oneMonthLater, 'yyyy-MM-dd');
+            
+            sessionQuery = sessionQuery
+                .gte('date', todayString)
+                .lte('date', oneMonthLaterString);
+        }
+        
+        const { data: sessionData, error: sessionError } = await sessionQuery.order('date', { ascending: true }).order('start_time');
+        
         if (!sessionError && sessionData) {
             sessionData.forEach(session => {
+                const sessionDate = new Date(session.date);
+                const dateLabel = isSearchMode ? '' : ` (${format(sessionDate, 'MMM dd')})`;
+                
                 combined.push({
                     id: session.id,
                     type: 'session',
                     start_time: session.start_time?.substring(0,5) || '',
                     end_time: session.end_time?.substring(0,5) || '',
-                    title: session.student?.full_name || 'Final Session',
+                    title: `${session.student?.full_name || 'Final Session'}${dateLabel}`,
                     subtitle: `ID: ${session.student?.identity_number}`,
                     description: `Supervisor: ${session.supervisor} • Examiner: ${session.examiner}`,
                     icon: UserCheck,
@@ -718,11 +745,8 @@ const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: stri
             });
         }
 
-        // Fetch bookings (date-based)
-        const startOfDay = `${targetDateString}T00:00:00Z`;
-        const endOfDay = `${targetDateString}T23:59:59Z`;
-        
-        const { data: bookingData, error: bookingError } = await supabase
+        // 4. Fetch bookings dengan status approved
+        let bookingQuery = supabase
             .from('bookings')
             .select(`
                 *,
@@ -730,23 +754,43 @@ const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: stri
                 room:rooms(name, code)
             `)
             .eq('room_id', roomId)
-            .gte('start_time', startOfDay)
-            .lte('start_time', endOfDay)
-            .order('start_time');
+            .eq('status', 'approved'); // Hanya yang approved
+            
+        if (isSearchMode) {
+            // Jika search mode, hanya untuk tanggal tertentu
+            const startOfDay = `${targetDateString}T00:00:00Z`;
+            const endOfDay = `${targetDateString}T23:59:59Z`;
+            bookingQuery = bookingQuery
+                .gte('start_time', startOfDay)
+                .lte('start_time', endOfDay);
+        } else {
+            // Jika normal mode, untuk 1 bulan ke depan
+            const oneMonthLater = new Date(today);
+            oneMonthLater.setMonth(today.getMonth() + 1);
+            const oneMonthLaterString = `${format(oneMonthLater, 'yyyy-MM-dd')}T23:59:59Z`;
+            const todayStart = `${todayString}T00:00:00Z`;
+            
+            bookingQuery = bookingQuery
+                .gte('start_time', todayStart)
+                .lte('start_time', oneMonthLaterString);
+        }
+        
+        const { data: bookingData, error: bookingError } = await bookingQuery.order('start_time');
         
         if (!bookingError && bookingData) {
             bookingData.forEach(booking => {
                 const startDate = new Date(booking.start_time);
                 const endDate = new Date(booking.end_time);
+                const dateLabel = isSearchMode ? '' : ` (${format(startDate, 'MMM dd')})`;
                 
                 combined.push({
                     id: booking.id,
                     type: 'booking',
                     start_time: format(startDate, 'HH:mm'),
                     end_time: format(endDate, 'HH:mm'),
-                    title: booking.purpose || 'Room Booking',
+                    title: `${booking.purpose || 'Room Booking'}${dateLabel}`,
                     subtitle: `${booking.user?.full_name} • ${booking.user?.identity_number}`,
-                    description: `Status: ${booking.status}`,
+                    description: `Status: APPROVED`,
                     icon: CalendarIcon,
                     color: 'text-orange-700',
                     bgColor: 'bg-orange-50',
@@ -755,8 +799,14 @@ const fetchSchedulesForRoom = async (roomName: string, roomId: string, day: stri
             });
         }
 
-        // Sort by start_time
-        combined.sort((a, b) => a.start_time.localeCompare(b.start_time));
+        // Sort by date first, then by start_time
+        combined.sort((a, b) => {
+            // Untuk sessions dan bookings yang ada tanggal di title, extract tanggal dulu
+            const aTime = a.start_time === 'Take Home' ? '00:00' : a.start_time;
+            const bTime = b.start_time === 'Take Home' ? '00:00' : b.start_time;
+            return aTime.localeCompare(bTime);
+        });
+        
         setCombinedSchedules(combined);
 
     } catch (error: any) { 
