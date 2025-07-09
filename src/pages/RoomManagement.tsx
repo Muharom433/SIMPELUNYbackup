@@ -117,6 +117,7 @@ const RoomManagement: React.FC = () => {
     const [roomUsers, setRoomUsers] = useState<RoomUser[]>([]);
     const [loadingRoomUsers, setLoadingRoomUsers] = useState(false);
     const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [lecturers, setLecturers] = useState<any[]>([]);
     const [showAssignUserModal, setShowAssignUserModal] = useState(false);
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -144,6 +145,11 @@ const RoomManagement: React.FC = () => {
     const form = useForm<RoomForm>({ resolver: zodResolver(roomSchema) });
 
     const dayNamesEnglish = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  
+
+// Refs untuk dropdown dosen
+const lecturerDropdownRef = useRef<HTMLDivElement>(null);
+const lecturerInputRef = useRef<HTMLInputElement>(null);
     const dayNamesIndonesian = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
     const getIndonesianDay = (englishDay: string) => dayNamesIndonesian[dayNamesEnglish.indexOf(englishDay)] || 'Senin';
 
