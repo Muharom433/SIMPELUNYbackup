@@ -140,6 +140,9 @@ const RoomManagement: React.FC = () => {
     const userDropdownRef = useRef<HTMLDivElement>(null);
     const userDisplayRef = useRef<HTMLInputElement>(null);
 
+  const [showUnassignModal, setShowUnassignModal] = useState(false);
+const [userToUnassign, setUserToUnassign] = useState<{id: string, name: string} | null>(null);
+
     const form = useForm<RoomForm>({ resolver: zodResolver(roomSchema) });
 
     const dayNamesEnglish = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
