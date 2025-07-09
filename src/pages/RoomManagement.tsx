@@ -117,9 +117,7 @@ const RoomManagement: React.FC = () => {
     const [roomUsers, setRoomUsers] = useState<RoomUser[]>([]);
     const [loadingRoomUsers, setLoadingRoomUsers] = useState(false);
     const [allUsers, setAllUsers] = useState<any[]>([]);
-  const [lecturers, setLecturers] = useState<any[]>([]);
     const [showAssignUserModal, setShowAssignUserModal] = useState(false);
-    const [userSearchTerm, setUserSearchTerm] = useState('');
     const [selectedUser, setSelectedUser] = useState<any>(null);
     
     const [searchTerm, setSearchTerm] = useState('');
@@ -140,16 +138,11 @@ const RoomManagement: React.FC = () => {
 
     // Refs untuk dropdown manual DOM manipulation
     const userDropdownRef = useRef<HTMLDivElement>(null);
-    const userInputRef = useRef<HTMLInputElement>(null);
+    const userDisplayRef = useRef<HTMLInputElement>(null);
 
     const form = useForm<RoomForm>({ resolver: zodResolver(roomSchema) });
 
     const dayNamesEnglish = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-  
-
-// Refs untuk dropdown dosen
-const lecturerDropdownRef = useRef<HTMLDivElement>(null);
-const lecturerInputRef = useRef<HTMLInputElement>(null);
     const dayNamesIndonesian = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
     const getIndonesianDay = (englishDay: string) => dayNamesIndonesian[dayNamesEnglish.indexOf(englishDay)] || 'Senin';
 
@@ -315,17 +308,16 @@ const lecturerInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (profile) {
-        refreshTodayStatus();
-        fetchDepartments();
-        fetchRoomSuggestions();
-        fetchAllUsers();
-        fetchLecturers(); // Tambah ini
-        const interval = setInterval(() => {
-            if (!isSearchMode) { refreshTodayStatus(); }
-        }, 5 * 60 * 1000);
-        return () => clearInterval(interval);
-    }
-}, [profile, isSearchMode, refreshTodayStatus]);
+            refreshTodayStatus();
+            fetchDepartments();
+            fetchRoomSuggestions();
+            fetchAllUsers();
+            const interval = setInterval(() => {
+                if (!isSearchMode) { refreshTodayStatus(); }
+            }, 5 * 60 * 1000);
+            return () => clearInterval(interval);
+        }
+    }, [profile, isSearchMode, refreshTodayStatus]);
 
     const fetchDepartments = async () => { 
         try { 
@@ -336,28 +328,8 @@ const lecturerInputRef = useRef<HTMLInputElement>(null);
             toast.error('Failed to load departments'); 
         } 
     };
-  const fetchLecturers = async () => {
-    try {
-        const { data, error } = await supabase
-            .from('users')
-            .select(`
-                id,
-                full_name,
-                identity_number,
-                role,
-                department:departments(name)
-            `)
-            .eq('role', 'lecturer')
-            .order('full_name');
-        
-        if (error) throw error;
-        setLecturers(data || []);
-    } catch (error) {
-        console.error('Error fetching lecturers:', error);
-    }
-};
 
-    // Fetch all users for assignment dropdown
+    // Fetch ALL users (semua role) untuk assignment dropdown
     const fetchAllUsers = async () => {
         try {
             const { data, error } = await supabase
@@ -375,6 +347,156 @@ const lecturerInputRef = useRef<HTMLInputElement>(null);
             setAllUsers(data || []);
         } catch (error) {
             console.error('Error fetching users:', error);
+        }
+    };
+
+    // Manual DOM manipulation untuk user dropdown dengan search internal (SEMUA ROLE)
+    const showUserDropdown = () => {
+        const dropdownHTML = `
+            <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
+                <div class="p-3 border-b border-gray-100">
+                    <div class="relative">
+                        <input
+                            type="text"
+                            placeholder="Search by name or NIM..."
+                            class="w-full px-3 py-2 pl-10 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                            id="user-search-input"
+                            autocomplete="off"
+                        />
+                        <svg class="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                    </div>
+                </div>
+                <div class="max-h-60 overflow-y-auto" id="user-list">
+                    ${allUsers.map(user => `
+                        <div 
+                            class="user-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                            data-user-id="${user.id}"
+                            data-user-name="${user.full_name}"
+                            data-user-nim="${user.identity_number}"
+                            data-user-role="${user.role}"
+                            data-user-dept="${user.department?.name || ''}"
+                        >
+                            <div class="flex items-center space-x-3">
+                                <div class="w-8 h-8 bg-gradient-to-r ${getRoleColor(user.role)} rounded-full flex items-center justify-center text-white text-sm font-medium">
+                                    ${user.full_name.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                    <div class="font-semibold text-gray-900">${user.full_name}</div>
+                                    <div class="text-sm text-gray-600">
+                                        ${user.identity_number} • ${user.role}
+                                        ${user.department ? ` • ${user.department.name}` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+
+        if (userDropdownRef.current) {
+            userDropdownRef.current.innerHTML = dropdownHTML;
+            userDropdownRef.current.style.display = 'block';
+            
+            const searchInput = userDropdownRef.current.querySelector('#user-search-input');
+            const userList = userDropdownRef.current.querySelector('#user-list');
+            
+            // Focus pada search input
+            if (searchInput) {
+                (searchInput as HTMLInputElement).focus();
+                
+                // Real-time search tanpa delay
+                searchInput.addEventListener('input', (e) => {
+                    const searchTerm = (e.target as HTMLInputElement).value.toLowerCase();
+                    
+                    const filteredUsers = allUsers.filter(user =>
+                        user.full_name.toLowerCase().includes(searchTerm) ||
+                        user.identity_number.toLowerCase().includes(searchTerm) ||
+                        user.role.toLowerCase().includes(searchTerm)
+                    );
+                    
+                    if (userList) {
+                        userList.innerHTML = filteredUsers.map(user => `
+                            <div 
+                                class="user-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                                data-user-id="${user.id}"
+                                data-user-name="${user.full_name}"
+                                data-user-nim="${user.identity_number}"
+                                data-user-role="${user.role}"
+                                data-user-dept="${user.department?.name || ''}"
+                            >
+                                <div class="flex items-center space-x-3">
+                                    <div class="w-8 h-8 bg-gradient-to-r ${getRoleColor(user.role)} rounded-full flex items-center justify-center text-white text-sm font-medium">
+                                        ${user.full_name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div>
+                                        <div class="font-semibold text-gray-900">${user.full_name}</div>
+                                        <div class="text-sm text-gray-600">
+                                            ${user.identity_number} • ${user.role}
+                                            ${user.department ? ` • ${user.department.name}` : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('');
+                        
+                        // Re-add click listeners after re-rendering
+                        addUserListeners();
+                    }
+                });
+            }
+            
+            // Add initial click listeners
+            addUserListeners();
+        }
+    };
+
+    const addUserListeners = () => {
+        userDropdownRef.current?.querySelectorAll('.user-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                const userId = (e.currentTarget as HTMLElement).dataset.userId;
+                const userName = (e.currentTarget as HTMLElement).dataset.userName;
+                const userNim = (e.currentTarget as HTMLElement).dataset.userNim;
+                const userRole = (e.currentTarget as HTMLElement).dataset.userRole;
+                const userDept = (e.currentTarget as HTMLElement).dataset.userDept;
+                
+                const user = {
+                    id: userId,
+                    full_name: userName,
+                    identity_number: userNim,
+                    role: userRole,
+                    department: userDept ? { name: userDept } : null
+                };
+                
+                setSelectedUser(user);
+                
+                // Set display value
+                if (userDisplayRef.current) {
+                    userDisplayRef.current.value = userName || '';
+                }
+                
+                // Hide dropdown
+                hideUserDropdown();
+            });
+        });
+    };
+
+    const hideUserDropdown = () => {
+        if (userDropdownRef.current) {
+            userDropdownRef.current.style.display = 'none';
+        }
+    };
+
+    // Function untuk mendapatkan warna berdasarkan role
+    const getRoleColor = (role: string) => {
+        switch (role) {
+            case 'student': return 'from-blue-500 to-indigo-500';
+            case 'lecturer': return 'from-green-500 to-teal-500';
+            case 'department_admin': return 'from-purple-500 to-pink-500';
+            case 'super_admin': return 'from-red-500 to-orange-500';
+            default: return 'from-gray-500 to-gray-600';
         }
     };
 
@@ -553,175 +675,6 @@ const lecturerInputRef = useRef<HTMLInputElement>(null);
         }
     };
 
-    // Manual DOM manipulation untuk user search dropdown (mirip dengan SessionSchedule.tsx)
-    const showUserDropdown = (searchTerm: string) => {
-        if (!searchTerm.trim()) {
-            hideUserDropdown();
-            return;
-        }
-
-        const filteredUsers = allUsers.filter(user =>
-            user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            user.identity_number.toLowerCase().includes(searchTerm.toLowerCase())
-        ).slice(0, 20); // Limit hasil
-
-        if (filteredUsers.length === 0) {
-            hideUserDropdown();
-            return;
-        }
-
-        const dropdownHTML = `
-            <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-                ${filteredUsers.map(user => `
-                    <div 
-                        class="user-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                        data-user-id="${user.id}"
-                        data-user-name="${user.full_name}"
-                        data-user-nim="${user.identity_number}"
-                        data-user-role="${user.role}"
-                        data-user-dept="${user.department?.name || ''}"
-                    >
-                        <div class="flex items-center space-x-3">
-                            <div class="w-8 h-8 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                                ${user.full_name.charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                                <div class="font-semibold text-gray-900">${user.full_name}</div>
-                                <div class="text-sm text-gray-600">
-                                    ${user.identity_number} • ${user.role}
-                                    ${user.department ? ` • ${user.department.name}` : ''}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-
-        if (userDropdownRef.current) {
-            userDropdownRef.current.innerHTML = dropdownHTML;
-            userDropdownRef.current.style.display = 'block';
-            
-            // Add click listeners
-            userDropdownRef.current.querySelectorAll('.user-dropdown-item').forEach(item => {
-                item.addEventListener('mousedown', (e) => e.preventDefault());
-                item.addEventListener('click', (e) => {
-                    const element = e.currentTarget as HTMLElement;
-                    const userId = element.dataset.userId;
-                    const userName = element.dataset.userName;
-                    const userNim = element.dataset.userNim;
-                    const userRole = element.dataset.userRole;
-                    const userDept = element.dataset.userDept;
-                    
-                    const user = {
-                        id: userId,
-                        full_name: userName,
-                        identity_number: userNim,
-                        role: userRole,
-                        department: userDept ? { name: userDept } : null
-                    };
-                    
-                    setSelectedUser(user);
-                    if (userInputRef.current) {
-                        userInputRef.current.value = userName || '';
-                    }
-                    setUserSearchTerm(userName || '');
-                    
-                    hideUserDropdown();
-                });
-            });
-        }
-    };
-    
-
-    const hideUserDropdown = () => {
-        if (userDropdownRef.current) {
-            userDropdownRef.current.style.display = 'none';
-        }
-    };
-  const showLecturerDropdown = (searchTerm: string) => {
-    if (!searchTerm.trim()) {
-        hideLecturerDropdown();
-        return;
-    }
-
-    const filteredLecturers = lecturers.filter(lecturer =>
-        lecturer.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        lecturer.identity_number.toLowerCase().includes(searchTerm.toLowerCase())
-    ).slice(0, 15); // Limit hasil
-
-    if (filteredLecturers.length === 0) {
-        hideLecturerDropdown();
-        return;
-    }
-
-    const dropdownHTML = `
-        <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-            ${filteredLecturers.map(lecturer => `
-                <div 
-                    class="lecturer-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                    data-lecturer-id="${lecturer.id}"
-                    data-lecturer-name="${lecturer.full_name}"
-                    data-lecturer-nim="${lecturer.identity_number}"
-                    data-lecturer-dept="${lecturer.department?.name || ''}"
-                >
-                    <div class="flex items-center space-x-3">
-                        <div class="w-8 h-8 bg-gradient-to-r from-green-500 to-teal-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                            ${lecturer.full_name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                            <div class="font-semibold text-gray-900">${lecturer.full_name}</div>
-                            <div class="text-sm text-gray-600">
-                                ${lecturer.identity_number} • lecturer
-                                ${lecturer.department ? ` • ${lecturer.department.name}` : ''}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `).join('')}
-        </div>
-    `;
-
-    if (lecturerDropdownRef.current) {
-        lecturerDropdownRef.current.innerHTML = dropdownHTML;
-        lecturerDropdownRef.current.style.display = 'block';
-        
-        // Add click listeners
-        lecturerDropdownRef.current.querySelectorAll('.lecturer-dropdown-item').forEach(item => {
-            item.addEventListener('mousedown', (e) => e.preventDefault());
-            item.addEventListener('click', (e) => {
-                const element = e.currentTarget as HTMLElement;
-                const lecturerId = element.dataset.lecturerId;
-                const lecturerName = element.dataset.lecturerName;
-                const lecturerNim = element.dataset.lecturerNim;
-                const lecturerDept = element.dataset.lecturerDept;
-                
-                // Set selected lecturer
-                if (lecturerInputRef.current) {
-                    lecturerInputRef.current.value = lecturerName || '';
-                }
-                
-                // You can store the selected lecturer data here
-                console.log('Selected lecturer:', {
-                    id: lecturerId,
-                    name: lecturerName,
-                    nim: lecturerNim,
-                    department: lecturerDept
-                });
-                
-                hideLecturerDropdown();
-            });
-        });
-    }
-};
-
-const hideLecturerDropdown = () => {
-    if (lecturerDropdownRef.current) {
-        lecturerDropdownRef.current.style.display = 'none';
-    }
-};
-
-
     // Assign user to room
     const handleAssignUser = async () => {
         if (!selectedUser || !showRoomDetail) return;
@@ -741,8 +694,7 @@ const hideLecturerDropdown = () => {
             }
 
             const { error } = await supabase
-                .from('room_users')
-                .insert({
+                .from('room_users').insert({
                     user_id: selectedUser.id,
                     room_id: showRoomDetail.id,
                     assigned_at: new Date().toISOString()
@@ -752,9 +704,8 @@ const hideLecturerDropdown = () => {
             
             toast.success(`${selectedUser.full_name} assigned to room successfully`);
             setSelectedUser(null);
-            setUserSearchTerm('');
-            if (userInputRef.current) {
-                userInputRef.current.value = '';
+            if (userDisplayRef.current) {
+                userDisplayRef.current.value = '';
             }
             setShowAssignUserModal(false);
             fetchRoomUsers(showRoomDetail.id);
@@ -837,8 +788,8 @@ const hideLecturerDropdown = () => {
 
     const handleDelete = async (roomId: string) => { 
         if (!confirm('Are you sure you want to delete this room?')) return; 
-        try {
-          const { error } = await supabase.from('rooms').delete().eq('id', roomId); 
+        try { 
+            const { error } = await supabase.from('rooms').delete().eq('id', roomId); 
             if (error) throw error; 
             toast.success('Room deleted successfully!'); 
             handleManualRefresh(); 
@@ -962,57 +913,20 @@ const hideLecturerDropdown = () => {
         </div>
     );
 
-  const LecturerSearchDropdown = () => (
-    <div className="relative">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-            Search Lecturer
-        </label>
-        <div className="relative">
-            <input
-                ref={lecturerInputRef}
-                type="text"
-                placeholder="Search by name or NIM..."
-                onChange={(e) => {
-                    showLecturerDropdown(e.target.value);
-                }}
-                onFocus={(e) => {
-                    showLecturerDropdown(e.target.value);
-                }}
-                onBlur={() => {
-                    setTimeout(() => hideLecturerDropdown(), 150);
-                }}
-                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                autoComplete="off"
-            />
-            <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <div ref={lecturerDropdownRef} style={{ display: 'none' }}></div>
-        </div>
-    </div>
-);
-    // User Search Dropdown Component dengan manual DOM
+    // User Search Dropdown Component dengan manual DOM (SEMUA ROLE)
     const UserSearchDropdown = () => (
         <div className="relative">
             <label className="block text-sm font-medium text-gray-700 mb-2">Search and Select User</label>
             <div className="relative">
                 <input
-                    ref={userInputRef}
+                    ref={userDisplayRef}
                     type="text"
-                    placeholder="Search by name or NIM..."
-                    value={userSearchTerm}
-                    onChange={(e) => {
-                        setUserSearchTerm(e.target.value);
-                        showUserDropdown(e.target.value);
-                    }}
-                    onFocus={(e) => {
-                        showUserDropdown(e.target.value);
-                    }}
-                    onBlur={() => {
-                        setTimeout(() => hideUserDropdown(), 150);
-                    }}
-                    className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    autoComplete="off"
+                    readOnly
+                    placeholder="Click to select user..."
+                    onClick={showUserDropdown}
+                    className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer bg-white"
                 />
-                <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
                 <div ref={userDropdownRef} style={{ display: 'none' }}></div>
             </div>
             
@@ -1020,22 +934,22 @@ const hideLecturerDropdown = () => {
                 <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center text-white font-medium">
+                            <div className={`w-10 h-10 bg-gradient-to-r ${getRoleColor(selectedUser.role)} rounded-full flex items-center justify-center text-white font-medium`}>
                                 {selectedUser.full_name.charAt(0).toUpperCase()}
                             </div>
                             <div>
                                 <div className="font-semibold text-gray-900">{selectedUser.full_name}</div>
                                 <div className="text-sm text-gray-600">
                                     {selectedUser.identity_number} • {selectedUser.role}
+                                    {selectedUser.department && ` • ${selectedUser.department.name}`}
                                 </div>
                             </div>
                         </div>
                         <button
                             onClick={() => {
                                 setSelectedUser(null);
-                                setUserSearchTerm('');
-                                if (userInputRef.current) {
-                                    userInputRef.current.value = '';
+                                if (userDisplayRef.current) {
+                                    userDisplayRef.current.value = '';
                                 }
                             }}
                             className="text-gray-400 hover:text-gray-600"
@@ -1195,8 +1109,7 @@ const hideLecturerDropdown = () => {
                     </div>
                 )}
             </div>
-
-            {/* Enhanced Add/Edit Room Form Modal with Autocomplete */}
+          {/* Enhanced Add/Edit Room Form Modal with Autocomplete */}
             {showForm && ( 
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9998] p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-lg w-full">
@@ -1375,7 +1288,7 @@ const hideLecturerDropdown = () => {
                                             <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
                                                 <Users className="h-5 w-5 text-gray-400"/>
                                                 <div>
-                                                  <p className="text-gray-500">Capacity</p>
+                                                    <p className="text-gray-500">Capacity</p>
                                                     <p className="font-semibold text-gray-800">{showRoomDetail.capacity} seats</p>
                                                 </div>
                                             </div>
@@ -1436,7 +1349,7 @@ const hideLecturerDropdown = () => {
                                                 roomUsers.map((roomUser) => (
                                                     <div key={roomUser.id} className="flex items-center justify-between p-3 bg-white rounded-lg border">
                                                         <div className="flex items-center space-x-3">
-                                                            <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-teal-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                                                            <div className={`w-8 h-8 bg-gradient-to-r ${getRoleColor(roomUser.user.role)} rounded-full flex items-center justify-center text-white text-sm font-medium`}>
                                                                 {roomUser.user.full_name.charAt(0).toUpperCase()}
                                                             </div>
                                                             <div>
@@ -1481,7 +1394,7 @@ const hideLecturerDropdown = () => {
                 </div>
             )}
 
-            {/* Assign User Modal */}
+            {/* Assign User Modal dengan Dropdown Search Internal */}
             {showAssignUserModal && showRoomDetail && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10000] p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
@@ -1494,9 +1407,8 @@ const hideLecturerDropdown = () => {
                                     onClick={() => {
                                         setShowAssignUserModal(false);
                                         setSelectedUser(null);
-                                        setUserSearchTerm('');
-                                        if (userInputRef.current) {
-                                            userInputRef.current.value = '';
+                                        if (userDisplayRef.current) {
+                                            userDisplayRef.current.value = '';
                                         }
                                     }}
                                     className="text-gray-400 hover:text-gray-600"
@@ -1512,9 +1424,8 @@ const hideLecturerDropdown = () => {
                                     onClick={() => {
                                         setShowAssignUserModal(false);
                                         setSelectedUser(null);
-                                        setUserSearchTerm('');
-                                        if (userInputRef.current) {
-                                            userInputRef.current.value = '';
+                                        if (userDisplayRef.current) {
+                                            userDisplayRef.current.value = '';
                                         }
                                     }}
                                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
