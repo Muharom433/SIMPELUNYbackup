@@ -353,6 +353,7 @@ const BookRoom: React.FC = () => {
         }
     }, [selectedRoom, masterEquipmentList]);
 
+    // ✅ AUTO-FILL: Identity number auto-fill effect
     useEffect(() => { 
         if (watchIdentityNumber && watchIdentityNumber.length >= 5) { 
             const existingUser = existingUsers.find(user => user.identity_number === watchIdentityNumber); 
@@ -368,6 +369,7 @@ const BookRoom: React.FC = () => {
         } 
     }, [watchIdentityNumber, existingUsers, form, studyPrograms, getText]);
 
+    // ✅ AUTO-FILL: Study program auto-fill effect
     useEffect(() => { 
         if (watchStudyProgramId) { 
             const selectedProgram = studyPrograms.find(sp => sp.id === watchStudyProgramId); 
@@ -476,6 +478,24 @@ const BookRoom: React.FC = () => {
         
         setSubmitting(true);
         try {
+            // Check for existing conflicting bookings first
+            const { data: existingBookings, error: conflictError } = await supabase
+                .from('bookings')
+                .select('id')
+                .eq('room_id', data.room_id)
+                .eq('status', 'approved');
+            
+            if (conflictError) throw conflictError;
+            
+            // Mark existing approved bookings as completed
+            if (existingBookings && existingBookings.length > 0) {
+                const idsToUpdate = existingBookings.map(b => b.id);
+                await supabase
+                    .from('bookings')
+                    .update({ status: 'completed' })
+                    .in('id', idsToUpdate);
+            }
+
             // Use manual end time if set, otherwise calculate automatically
             let endTime;
             if (useManualEndTime && data.end_time) {
@@ -489,6 +509,7 @@ const BookRoom: React.FC = () => {
             
             const selectedStudyProgram = studyPrograms.find(sp => sp.id === data.study_program_id);
             const departmentId = selectedStudyProgram?.department_id;
+            
             const bookingData = { 
                 room_id: data.room_id, 
                 start_time: data.start_time, 
@@ -509,6 +530,7 @@ const BookRoom: React.FC = () => {
                 }, 
                 user_id: profile?.id || null, 
             };
+            
             const { error } = await supabase.from('bookings').insert(bookingData);
             if (error) throw error;
             
@@ -534,7 +556,12 @@ const BookRoom: React.FC = () => {
         }
     };
 
-    const filteredIdentityNumbers = existingUsers.filter(user => user.identity_number.toLowerCase().includes(identitySearchTerm.toLowerCase()) || user.full_name.toLowerCase().includes(identitySearchTerm.toLowerCase()));
+    // ✅ DROPDOWN FILTERING: Identity number filtering
+    const filteredIdentityNumbers = existingUsers.filter(user => 
+        user.identity_number.toLowerCase().includes(identitySearchTerm.toLowerCase()) || 
+        user.full_name.toLowerCase().includes(identitySearchTerm.toLowerCase())
+    );
+    
     const filteredRooms = useMemo(() => { 
         return rooms.filter(room => { 
             const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) || room.code.toLowerCase().includes(searchTerm.toLowerCase()); 
@@ -606,7 +633,8 @@ const BookRoom: React.FC = () => {
                             <Clock className="h-5 w-5 text-blue-600" />
                             <div className="text-blue-800">
                                 <p className="font-semibold">
-                                    {getText(`Showing room availability for ${format(new Date(watchStartTime), 'EEEE, MMMM d, yyyy \'at\' HH:mm')}`,
+                                    {getText(
+                                        `Showing room availability for ${format(new Date(watchStartTime), 'EEEE, MMMM d, yyyy \'at\' HH:mm')}`,
                                         `Menampilkan ketersediaan ruangan untuk ${format(new Date(watchStartTime), 'EEEE, d MMMM yyyy \'pukul\' HH:mm')}`
                                     )}
                                 </p>
@@ -852,6 +880,7 @@ const BookRoom: React.FC = () => {
                                         </div>
                                         
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            {/* ✅ IDENTITY NUMBER DROPDOWN WITH AUTO-FILL */}
                                             <div className="md:col-span-2">
                                                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                                                     {getText('Identity Number (NIM/NIP)', 'Nomor Identitas (NIM/NIP)')} *
@@ -903,6 +932,7 @@ const BookRoom: React.FC = () => {
                                                 )}
                                             </div>
                                             
+                                            {/* ✅ FULL NAME (AUTO-FILLED) */}
                                             <div>
                                                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                                                     {getText('Full Name', 'Nama Lengkap')} *
@@ -920,6 +950,7 @@ const BookRoom: React.FC = () => {
                                                 )}
                                             </div>
                                             
+                                            {/* ✅ PHONE NUMBER (AUTO-FILLED) */}
                                             <div>
                                                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                                                     {getText('Phone Number', 'Nomor Telepon')} *
@@ -940,6 +971,7 @@ const BookRoom: React.FC = () => {
                                                 )}
                                             </div>
                                             
+                                            {/* ✅ STUDY PROGRAM DROPDOWN WITH AUTO-FILL */}
                                             <div className="md:col-span-2">
                                                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                                                     {getText('Study Program', 'Program Studi')} *
@@ -1155,6 +1187,7 @@ const BookRoom: React.FC = () => {
                                     )}
                                 </div>
                                 
+                                {/* ✅ EQUIPMENT SELECTION WITH AUTO-MANDATORY */}
                                 {selectedRoom && availableEquipment.length > 0 && (
                                     <div className="space-y-6">
                                         <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
@@ -1201,6 +1234,19 @@ const BookRoom: React.FC = () => {
                                         </div>
                                     </div>
                                 )}
+                                
+                                {/* ✅ NOTES FIELD */}
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                        {getText('Additional Notes', 'Catatan Tambahan')}
+                                    </label>
+                                    <textarea 
+                                        {...form.register('notes')} 
+                                        rows={3}
+                                        placeholder={getText("Any additional information or special requirements...", "Informasi tambahan atau persyaratan khusus...")} 
+                                        className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200 resize-none" 
+                                    />
+                                </div>
                                 
                                 <div className="pt-6 border-t border-gray-200/50">
                                     <button 
