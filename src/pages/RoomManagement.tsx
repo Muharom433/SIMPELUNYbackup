@@ -266,43 +266,135 @@ const [userToUnassign, setUserToUnassign] = useState<{id: string, name: string} 
         }
     }, [isSearchMode, allRooms.length]);
 
-    const findAvailableRooms = async () => {
-        if (!searchDay || !searchStartTime || !searchEndTime) { toast.error("Please complete all search filters."); return; }
-        setIsRefreshing(true);
-        setLoading(true);
-        setIsSearchMode(true);
-        try {
-            const dayToFetch = getIndonesianDay(searchDay);
-            const searchStart = parse(searchStartTime, 'HH:mm', new Date());
-            const searchEnd = parse(searchEndTime, 'HH:mm', new Date());
-            
-            const { data: schedulesData, error: schedulesError } = await supabase.from('lecture_schedules').select('room, start_time, end_time').eq('day', dayToFetch);
-            if (schedulesError) throw schedulesError;
-
-            const busyRoomNames = new Set<string>();
-            schedulesData.forEach(schedule => {
-                if(schedule.room && schedule.start_time && schedule.end_time) {
-                    const scheduleStart = parse(schedule.start_time, 'HH:mm:ss', new Date());
-                    const scheduleEnd = parse(schedule.end_time, 'HH:mm:ss', new Date());
-                    if(scheduleStart < searchEnd && scheduleEnd > searchStart) {
-                         busyRoomNames.add(normalizeRoomName(schedule.room));
+  const findAvailableRooms = async () => {
+    if (!searchDay || !searchStartTime || !searchEndTime) { 
+        toast.error("Please complete all search filters."); 
+        return; 
+    }
+    setIsRefreshing(true);
+    setLoading(true);
+    setIsSearchMode(true);
+    
+    try {
+        const dayToFetch = getIndonesianDay(searchDay);
+        const searchStart = parse(searchStartTime, 'HH:mm', new Date());
+        const searchEnd = parse(searchEndTime, 'HH:mm', new Date());
+        
+        // Calculate target date for the selected day
+        const today = new Date();
+        const currentDayIndex = dayNamesEnglish.indexOf(format(today, 'EEEE'));
+        const selectedDayIndex = dayNamesEnglish.indexOf(searchDay);
+        const dayDifference = selectedDayIndex - currentDayIndex;
+        const targetDate = new Date(today);
+        targetDate.setDate(today.getDate() + dayDifference);
+        const targetDateString = format(targetDate, 'yyyy-MM-dd');
+        
+        const busyRoomIds = new Set<string>();
+        const busyRoomNames = new Set<string>();
+        
+        // 1. Check lecture schedules (by room name and day)
+        const { data: lectureData, error: lectureError } = await supabase
+            .from('lecture_schedules')
+            .select('room, start_time, end_time')
+            .eq('day', dayToFetch);
+        
+        if (!lectureError && lectureData) {
+            lectureData.forEach(lecture => {
+                if (lecture.room && lecture.start_time && lecture.end_time) {
+                    const lectureStart = parse(lecture.start_time, 'HH:mm:ss', new Date());
+                    const lectureEnd = parse(lecture.end_time, 'HH:mm:ss', new Date());
+                    
+                    // Check if lecture time conflicts with search time
+                    if (lectureStart < searchEnd && lectureEnd > searchStart) {
+                        busyRoomNames.add(normalizeRoomName(lecture.room));
                     }
                 }
             });
-            
-            const availableRooms = allRooms.filter(room => !busyRoomNames.has(normalizeRoomName(room.name)));
-            const availableRoomsWithStatus = availableRooms.map(r => ({...r, status: 'Available' as 'Available'}));
-
-            setDisplayedRooms(availableRoomsWithStatus as RoomWithDetails[]);
-            toast.success(`Found ${availableRooms.length} available rooms.`);
-        } catch (error) {
-             console.error('Error searching for available rooms:', error);
-             toast.error('Failed to perform search.');
-        } finally {
-            setIsRefreshing(false);
-            setLoading(false);
         }
-    };
+        
+        // 2. Check exam schedules (by room_id and date)
+        const { data: examData, error: examError } = await supabase
+            .from('exams')
+            .select('room_id, start_time, end_time, is_take_home')
+            .eq('date', targetDateString);
+        
+        if (!examError && examData) {
+            examData.forEach(exam => {
+                if (exam.room_id && !exam.is_take_home && exam.start_time && exam.end_time) {
+                    const examStart = parse(exam.start_time, 'HH:mm:ss', new Date());
+                    const examEnd = parse(exam.end_time, 'HH:mm:ss', new Date());
+                    
+                    if (examStart < searchEnd && examEnd > searchStart) {
+                        busyRoomIds.add(exam.room_id);
+                    }
+                }
+            });
+        }
+        
+        // 3. Check final sessions (by room_id and date)
+        const { data: sessionData, error: sessionError } = await supabase
+            .from('final_sessions')
+            .select('room_id, start_time, end_time')
+            .eq('date', targetDateString);
+        
+        if (!sessionError && sessionData) {
+            sessionData.forEach(session => {
+                if (session.room_id && session.start_time && session.end_time) {
+                    const sessionStart = parse(session.start_time, 'HH:mm:ss', new Date());
+                    const sessionEnd = parse(session.end_time, 'HH:mm:ss', new Date());
+                    
+                    if (sessionStart < searchEnd && sessionEnd > searchStart) {
+                        busyRoomIds.add(session.room_id);
+                    }
+                }
+            });
+        }
+        
+        // 4. Check bookings (by room_id and timestamp)
+        const startOfDay = `${targetDateString}T${searchStartTime}:00Z`;
+        const endOfDay = `${targetDateString}T${searchEndTime}:00Z`;
+        
+        const { data: bookingData, error: bookingError } = await supabase
+            .from('bookings')
+            .select('room_id, start_time, end_time')
+            .eq('status', 'approved') // Only check approved bookings
+            .gte('start_time', `${targetDateString}T00:00:00Z`)
+            .lte('start_time', `${targetDateString}T23:59:59Z`);
+        
+        if (!bookingError && bookingData) {
+            bookingData.forEach(booking => {
+                const bookingStart = new Date(booking.start_time);
+                const bookingEnd = new Date(booking.end_time);
+                
+                if (bookingStart < new Date(endOfDay) && bookingEnd > new Date(startOfDay)) {
+                    busyRoomIds.add(booking.room_id);
+                }
+            });
+        }
+        
+        // Filter available rooms (not busy)
+        const availableRooms = allRooms.filter(room => {
+            const isRoomIdBusy = busyRoomIds.has(room.id);
+            const isRoomNameBusy = busyRoomNames.has(normalizeRoomName(room.name));
+            return !isRoomIdBusy && !isRoomNameBusy;
+        });
+        
+        const availableRoomsWithStatus = availableRooms.map(r => ({
+            ...r, 
+            status: 'Available' as 'Available'
+        }));
+
+        setDisplayedRooms(availableRoomsWithStatus);
+        toast.success(`Found ${availableRooms.length} available rooms for ${searchDay} ${searchStartTime}-${searchEndTime}`);
+        
+    } catch (error) {
+        console.error('Error searching for available rooms:', error);
+        toast.error('Failed to perform search.');
+    } finally {
+        setIsRefreshing(false);
+        setLoading(false);
+    }
+};
 
   const confirmUnassignUser = async () => {
     if (!userToUnassign) return;
