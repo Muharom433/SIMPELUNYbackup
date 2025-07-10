@@ -98,6 +98,8 @@ const BookRoom: React.FC = () => {
     const [checkedEquipment, setCheckedEquipment] = useState<Set<string>>(new Set());
     const [useManualEndTime, setUseManualEndTime] = useState(false);
     const [calculatingRoomStatus, setCalculatingRoomStatus] = useState(false);
+    const [preloadedData, setPreloadedData] = useState<PreloadedData | null>(null);
+    const [dataLoading, setDataLoading] = useState(true);
 
     const form = useForm<BookingForm>({
         resolver: zodResolver(bookingSchema),
