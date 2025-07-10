@@ -166,108 +166,68 @@ const BookRoom: React.FC = () => {
 };
 
     // Check schedule conflicts (lectures and exams)
-    const checkScheduleConflicts = async (roomName: string, roomId: string, startTime: Date, endTime: Date): Promise<ScheduleConflict[]> => {
-    try {
-        const conflicts: ScheduleConflict[] = [];
-        const dayName = format(startTime, 'EEEE', { locale: localeID });
-        const dateString = format(startTime, 'yyyy-MM-dd');
-        
-        // Convert times to HH:mm format (without seconds)
-        const searchStartTime = format(startTime, 'HH:mm');
-        const searchEndTime = format(endTime, 'HH:mm');
+    const checkScheduleConflicts = (roomName: string, roomId: string, startTime: Date, endTime: Date): ScheduleConflict[] => {
+    if (!preloadedData) return [];
+    
+    const conflicts: ScheduleConflict[] = [];
+    const dayName = format(startTime, 'EEEE', { locale: localeID });
+    const dateString = format(startTime, 'yyyy-MM-dd');
+    const searchStartTime = format(startTime, 'HH:mm');
+    const searchEndTime = format(endTime, 'HH:mm');
 
-        console.log(`🔍 Checking conflicts for room ${roomName} (${roomId})`);
-        console.log(`📅 Date: ${dateString}, Day: ${dayName}`);
-        console.log(`⏰ Time range: ${searchStartTime} - ${searchEndTime}`);
+    // Check lecture schedules (in-memory filtering)
+    const relevantLectures = preloadedData.lectureSchedules.filter(lecture => 
+        lecture.day === dayName && 
+        lecture.room && 
+        normalizeRoomName(lecture.room) === normalizeRoomName(roomName)
+    );
 
-        // Check lecture schedules (by day and room name)
-        try {
-            const { data: lectureData, error: lectureError } = await supabase
-                .from('lecture_schedules')
-                .select('*')
-                .eq('day', dayName)
-                .ilike('room', `%${roomName}%`);
-
-            if (lectureError) {
-                console.error('Lecture schedules error:', lectureError);
-            } else if (lectureData) {
-                // Filter manually for time conflicts since Supabase time comparison can be tricky
-                lectureData.forEach(lecture => {
-                    if (lecture.start_time && lecture.end_time) {
-                        // Parse lecture times to comparable format (HH:mm)
-                        const lectureStart = lecture.start_time.substring(0, 5); // Get HH:mm part
-                        const lectureEnd = lecture.end_time.substring(0, 5); // Get HH:mm part
-                        
-                        // Check if there's a time overlap
-                        const hasOverlap = (lectureStart < searchEndTime && lectureEnd > searchStartTime);
-                        
-                        if (hasOverlap) {
-                            console.log(`📚 Lecture conflict found: ${lecture.course_name} (${lectureStart}-${lectureEnd})`);
-                            conflicts.push({
-                                id: lecture.id,
-                                start_time: lectureStart,
-                                end_time: lectureEnd,
-                                course_name: lecture.course_name || 'Lecture',
-                                class: lecture.class,
-                                subject_study: lecture.subject_study,
-                                type: 'lecture'
-                            });
-                        }
-                    }
+    relevantLectures.forEach(lecture => {
+        if (lecture.start_time && lecture.end_time) {
+            const lectureStart = lecture.start_time.substring(0, 5);
+            const lectureEnd = lecture.end_time.substring(0, 5);
+            
+            if (lectureStart < searchEndTime && lectureEnd > searchStartTime) {
+                conflicts.push({
+                    id: lecture.id,
+                    start_time: lectureStart,
+                    end_time: lectureEnd,
+                    course_name: lecture.course_name || 'Lecture',
+                    class: lecture.class,
+                    subject_study: lecture.subject_study,
+                    type: 'lecture'
                 });
             }
-        } catch (error) {
-            console.error('Error checking lecture schedules:', error);
         }
+    });
 
-        // Check exam schedules (by date and room_id)
-        try {
-            const { data: examData, error: examError } = await supabase
-                .from('exams')
-                .select('*')
-                .eq('room_id', roomId)
-                .eq('date', dateString)
-                .eq('is_take_home', false);
+    // Check exam schedules (in-memory filtering)
+    const relevantExams = preloadedData.exams.filter(exam => 
+        exam.room_id === roomId && 
+        exam.date === dateString && 
+        !exam.is_take_home
+    );
 
-            if (examError) {
-                console.error('Exam schedules error:', examError);
-            } else if (examData) {
-                // Filter manually for time conflicts
-                examData.forEach(exam => {
-                    if (exam.start_time && exam.end_time) {
-                        // Parse exam times to comparable format (HH:mm)
-                        const examStart = exam.start_time.substring(0, 5); // Get HH:mm part
-                        const examEnd = exam.end_time.substring(0, 5); // Get HH:mm part
-                        
-                        // Check if there's a time overlap
-                        const hasOverlap = (examStart < searchEndTime && examEnd > searchStartTime);
-                        
-                        if (hasOverlap) {
-                            console.log(`📝 Exam conflict found: ${exam.course_name} (${examStart}-${examEnd})`);
-                            conflicts.push({
-                                id: exam.id,
-                                start_time: examStart,
-                                end_time: examEnd,
-                                course_name: exam.course_name || 'UAS Exam',
-                                class: exam.class,
-                                subject_study: `Semester ${exam.semester}`,
-                                type: 'exam'
-                            });
-                        }
-                    }
+    relevantExams.forEach(exam => {
+        if (exam.start_time && exam.end_time) {
+            const examStart = exam.start_time.substring(0, 5);
+            const examEnd = exam.end_time.substring(0, 5);
+            
+            if (examStart < searchEndTime && examEnd > searchStartTime) {
+                conflicts.push({
+                    id: exam.id,
+                    start_time: examStart,
+                    end_time: examEnd,
+                    course_name: exam.course_name || 'UAS Exam',
+                    class: exam.class,
+                    subject_study: `Semester ${exam.semester}`,
+                    type: 'exam'
                 });
             }
-        } catch (error) {
-            console.error('Error checking exam schedules:', error);
         }
+    });
 
-        console.log(`✅ Found ${conflicts.length} schedule conflicts`);
-        return conflicts;
-        
-    } catch (error) {
-        console.error('Error in checkScheduleConflicts:', error);
-        return [];
-    }
+    return conflicts;
 };
 
     // Calculate room status for specific time
