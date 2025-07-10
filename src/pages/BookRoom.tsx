@@ -33,6 +33,13 @@ interface StudyProgramWithDepartment extends StudyProgram {
     department?: Department;
 }
 
+interface PreloadedData {
+    lectureSchedules: LectureSchedule[];
+    exams: any[];
+    approvedBookings: any[];
+    lastUpdated: Date;
+}
+
 interface ExistingUser {
     id: string;
     identity_number: string;
