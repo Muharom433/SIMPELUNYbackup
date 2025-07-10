@@ -135,34 +135,42 @@ const BookRoom: React.FC = () => {
     }, [useManualEndTime, watchEndTime, watchStartTime, watchSks, watchClassType]);
 
     // Check booking conflicts
-    const checkBookingConflicts = async (roomId: string, startTime: Date, endTime: Date): Promise<BookingConflict[]> => {
-    try {
-        console.log(`🔍 Checking booking conflicts for room ${roomId}`);
-        console.log(`⏰ Time range: ${startTime.toISOString()} - ${endTime.toISOString()}`);
-
-        const { data, error } = await supabase
-            .from('bookings')
-            .select(`
-                id, start_time, end_time, purpose,
-                user:users(full_name, identity_number)
-            `)
-            .eq('room_id', roomId)
-            .eq('status', 'approved')
-            .lt('start_time', endTime.toISOString())
-            .gt('end_time', startTime.toISOString());
-
-        if (error) {
-            console.error('Booking conflicts error:', error);
-            throw error;
-        }
-
-        console.log(`✅ Found ${data?.length || 0} booking conflicts`);
-        return data || [];
-        
-    } catch (error) {
-        console.error('Error checking booking conflicts:', error);
-        return [];
+    const checkBookingConflicts = (room: Room, startTime: Date, endTime: Date): RoomWithStatus => {
+    // Stage 1: Check if room is available in database
+    if (!room.is_available) {
+        return {
+            ...room,
+            department: room.department,
+            status: 'In Use' // Won't be shown anyway
+        };
     }
+
+    // Stage 2: Check active bookings (in-memory)
+    const bookingConflicts = checkBookingConflictsSync(room.id, startTime, endTime);
+    if (bookingConflicts.length > 0) {
+        return {
+            ...room,
+            department: room.department,
+            status: 'In Use'
+        };
+    }
+
+    // Stage 3: Check scheduled activities (in-memory)
+    const scheduleConflicts = checkScheduleConflictsSync(room.name, room.id, startTime, endTime);
+    if (scheduleConflicts.length > 0) {
+        return {
+            ...room,
+            department: room.department,
+            status: 'Scheduled'
+        };
+    }
+
+    // Stage 4: Available
+    return {
+        ...room,
+        department: room.department,
+        status: 'Available'
+    };
 };
 
     // Check schedule conflicts (lectures and exams)
