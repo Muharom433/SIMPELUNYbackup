@@ -127,25 +127,34 @@ const BookRoom: React.FC = () => {
 
     // Check booking conflicts
     const checkBookingConflicts = async (roomId: string, startTime: Date, endTime: Date): Promise<BookingConflict[]> => {
-        try {
-            const { data, error } = await supabase
-                .from('bookings')
-                .select(`
-                    id, start_time, end_time, purpose,
-                    user:users(full_name, identity_number)
-                `)
-                .eq('room_id', roomId)
-                .eq('status', 'approved')
-                .lt('start_time', endTime.toISOString())
-                .gt('end_time', startTime.toISOString());
+    try {
+        console.log(`🔍 Checking booking conflicts for room ${roomId}`);
+        console.log(`⏰ Time range: ${startTime.toISOString()} - ${endTime.toISOString()}`);
 
-            if (error) throw error;
-            return data || [];
-        } catch (error) {
-            console.error('Error checking booking conflicts:', error);
-            return [];
+        const { data, error } = await supabase
+            .from('bookings')
+            .select(`
+                id, start_time, end_time, purpose,
+                user:users(full_name, identity_number)
+            `)
+            .eq('room_id', roomId)
+            .eq('status', 'approved')
+            .lt('start_time', endTime.toISOString())
+            .gt('end_time', startTime.toISOString());
+
+        if (error) {
+            console.error('Booking conflicts error:', error);
+            throw error;
         }
-    };
+
+        console.log(`✅ Found ${data?.length || 0} booking conflicts`);
+        return data || [];
+        
+    } catch (error) {
+        console.error('Error checking booking conflicts:', error);
+        return [];
+    }
+};
 
     // Check schedule conflicts (lectures and exams)
     const checkScheduleConflicts = async (roomName: string, roomId: string, startTime: Date, endTime: Date): Promise<ScheduleConflict[]> => {
