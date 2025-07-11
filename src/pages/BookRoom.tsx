@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-    Building, Plus, Search, Edit, Trash2, Eye, Users, User, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Zap, Tv2, Speaker, Presentation, Mic, AirVent, Loader2, Hash, DoorClosed, Calendar, Phone, Send, ChevronDown
+    Building, Plus, Search, Edit, Trash2, Eye, Users, User, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Zap, Tv2, Speaker, Presentation, Mic, AirVent, Loader2, Hash, DoorClosed, Calendar, Phone, Send, ChevronDown, BookOpen, GraduationCap
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -83,6 +83,8 @@ interface ExamConflict {
 const BookRoom: React.FC = () => {
     const { profile } = useAuth();
     const { getText, formatTime, formatDate } = useLanguage();
+    
+    // State declarations
     const [rooms, setRooms] = useState<RoomWithStatus[]>([]);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
@@ -115,7 +117,19 @@ const BookRoom: React.FC = () => {
 
     const form = useForm<BookingForm>({
         resolver: zodResolver(bookingSchema),
-        defaultValues: { class_type: 'theory', sks: 2, equipment_requested: [] },
+        defaultValues: { 
+            class_type: 'theory', 
+            sks: 2, 
+            equipment_requested: [],
+            full_name: '',
+            identity_number: '',
+            study_program_id: '',
+            phone_number: '',
+            room_id: '',
+            start_time: '',
+            end_time: '',
+            notes: ''
+        },
     });
 
     const watchSks = form.watch('sks');
@@ -125,7 +139,10 @@ const BookRoom: React.FC = () => {
     const watchStartTime = form.watch('start_time');
     const watchEndTime = form.watch('end_time');
 
-    const normalizeRoomName = (name: string): string => name ? name.toLowerCase().replace(/[\s.&-]/g, '') : '';
+    const normalizeRoomName = (name: string): string => {
+        if (!name) return '';
+        return name.toLowerCase().replace(/[\s.&-]/g, '');
+    };
     
     // ✅ FIXED: Implementasi logic status yang benar
     const fetchRoomsWithStatus = useCallback(async () => {
@@ -178,88 +195,94 @@ const BookRoom: React.FC = () => {
             const examConflicts = new Map<string, ExamConflict[]>();
 
             // Process booking conflicts (by room_id)
-            bookingsData.forEach(booking => {
-                if (booking.room_id && booking.start_time && booking.end_time) {
-                    const startTime = new Date(booking.start_time);
-                    const endTime = new Date(booking.end_time);
-                    
-                    // Check if booking is currently active
-                    if (now >= startTime && now <= endTime) {
-                        if (!bookingConflicts.has(booking.room_id)) {
-                            bookingConflicts.set(booking.room_id, []);
+            if (bookingsData) {
+                bookingsData.forEach(booking => {
+                    if (booking.room_id && booking.start_time && booking.end_time) {
+                        const startTime = new Date(booking.start_time);
+                        const endTime = new Date(booking.end_time);
+                        
+                        // Check if booking is currently active
+                        if (now >= startTime && now <= endTime) {
+                            if (!bookingConflicts.has(booking.room_id)) {
+                                bookingConflicts.set(booking.room_id, []);
+                            }
+                            bookingConflicts.get(booking.room_id)?.push({
+                                id: booking.room_id,
+                                start_time: format(startTime, 'HH:mm'),
+                                end_time: format(endTime, 'HH:mm'),
+                                purpose: booking.purpose || 'Room Booking',
+                                user: booking.user
+                            });
                         }
-                        bookingConflicts.get(booking.room_id)?.push({
-                            id: booking.room_id,
-                            start_time: format(startTime, 'HH:mm'),
-                            end_time: format(endTime, 'HH:mm'),
-                            purpose: booking.purpose || 'Room Booking',
-                            user: booking.user
-                        });
                     }
-                }
-            });
+                });
+            }
 
             // Process lecture conflicts (by room name)
-            lecturesData.forEach(lecture => {
-                if (lecture.room && lecture.start_time && lecture.end_time) {
-                    const normalizedRoomName = normalizeRoomName(lecture.room);
-                    
-                    try {
-                        const startTime = parse(lecture.start_time, 'HH:mm:ss', now);
-                        const endTime = parse(lecture.end_time, 'HH:mm:ss', now);
+            if (lecturesData) {
+                lecturesData.forEach(lecture => {
+                    if (lecture.room && lecture.start_time && lecture.end_time) {
+                        const normalizedRoomName = normalizeRoomName(lecture.room);
                         
-                        // Check if lecture is currently active
-                        if (now >= startTime && now <= endTime) {
-                            if (!lectureConflicts.has(normalizedRoomName)) {
-                                lectureConflicts.set(normalizedRoomName, []);
+                        try {
+                            const startTime = parse(lecture.start_time, 'HH:mm:ss', now);
+                            const endTime = parse(lecture.end_time, 'HH:mm:ss', now);
+                            
+                            // Check if lecture is currently active
+                            if (now >= startTime && now <= endTime) {
+                                if (!lectureConflicts.has(normalizedRoomName)) {
+                                    lectureConflicts.set(normalizedRoomName, []);
+                                }
+                                lectureConflicts.get(normalizedRoomName)?.push({
+                                    id: lecture.room,
+                                    start_time: lecture.start_time.substring(0, 5),
+                                    end_time: lecture.end_time.substring(0, 5),
+                                    course_name: lecture.course_name || 'Lecture',
+                                    class: lecture.class || '',
+                                    subject_study: lecture.subject_study || ''
+                                });
                             }
-                            lectureConflicts.get(normalizedRoomName)?.push({
-                                id: lecture.room,
-                                start_time: lecture.start_time.substring(0, 5),
-                                end_time: lecture.end_time.substring(0, 5),
-                                course_name: lecture.course_name || 'Lecture',
-                                class: lecture.class || '',
-                                subject_study: lecture.subject_study || ''
-                            });
+                        } catch (e) {
+                            console.error('Error parsing lecture time:', e);
                         }
-                    } catch (e) {
-                        console.error('Error parsing lecture time:', e);
                     }
-                }
-            });
+                });
+            }
 
             // Process exam conflicts (by room_id)
-            examsData.forEach(exam => {
-                if (exam.room_id && !exam.is_take_home && exam.start_time && exam.end_time) {
-                    try {
-                        const startTime = parse(exam.start_time, 'HH:mm:ss', now);
-                        const endTime = parse(exam.end_time, 'HH:mm:ss', now);
-                        
-                        // Check if exam is currently active
-                        if (now >= startTime && now <= endTime) {
-                            if (!examConflicts.has(exam.room_id)) {
-                                examConflicts.set(exam.room_id, []);
+            if (examsData) {
+                examsData.forEach(exam => {
+                    if (exam.room_id && !exam.is_take_home && exam.start_time && exam.end_time) {
+                        try {
+                            const startTime = parse(exam.start_time, 'HH:mm:ss', now);
+                            const endTime = parse(exam.end_time, 'HH:mm:ss', now);
+                            
+                            // Check if exam is currently active
+                            if (now >= startTime && now <= endTime) {
+                                if (!examConflicts.has(exam.room_id)) {
+                                    examConflicts.set(exam.room_id, []);
+                                }
+                                examConflicts.get(exam.room_id)?.push({
+                                    id: exam.room_id,
+                                    start_time: exam.start_time.substring(0, 5),
+                                    end_time: exam.end_time.substring(0, 5),
+                                    course_name: exam.course_name || 'Exam',
+                                    course_code: exam.course_code || '',
+                                    semester: exam.semester || 0,
+                                    class: exam.class || '',
+                                    student_amount: exam.student_amount || 0,
+                                    is_take_home: exam.is_take_home || false
+                                });
                             }
-                            examConflicts.get(exam.room_id)?.push({
-                                id: exam.room_id,
-                                start_time: exam.start_time.substring(0, 5),
-                                end_time: exam.end_time.substring(0, 5),
-                                course_name: exam.course_name || 'Exam',
-                                course_code: exam.course_code || '',
-                                semester: exam.semester || 0,
-                                class: exam.class || '',
-                                student_amount: exam.student_amount || 0,
-                                is_take_home: exam.is_take_home || false
-                            });
+                        } catch (e) {
+                            console.error('Error parsing exam time:', e);
                         }
-                    } catch (e) {
-                        console.error('Error parsing exam time:', e);
                     }
-                }
-            });
+                });
+            }
 
             // 6. ✅ DETERMINE STATUS dengan logic yang benar
-            const roomsWithStatus = roomsData.map(room => {
+            const roomsWithStatus = (roomsData || []).map(room => {
                 let status: RoomWithStatus['status'] = 'Available';
                 
                 // Priority 1: Check booking conflicts (by room_id)
@@ -277,9 +300,9 @@ const BookRoom: React.FC = () => {
                 // Priority 4: Check if there are any schedules today (for "Scheduled" status)
                 else {
                     // Check if room has any schedules today (not currently active)
-                    const hasBookingsToday = bookingsData.some(b => b.room_id === room.id);
-                    const hasLecturesToday = lecturesData.some(l => normalizeRoomName(l.room || '') === normalizeRoomName(room.name));
-                    const hasExamsToday = examsData.some(e => e.room_id === room.id && !e.is_take_home);
+                    const hasBookingsToday = bookingsData?.some(b => b.room_id === room.id) || false;
+                    const hasLecturesToday = lecturesData?.some(l => normalizeRoomName(l.room || '') === normalizeRoomName(room.name)) || false;
+                    const hasExamsToday = examsData?.some(e => e.room_id === room.id && !e.is_take_home) || false;
                     
                     if (hasBookingsToday || hasLecturesToday || hasExamsToday) {
                         status = 'Scheduled';
@@ -294,7 +317,9 @@ const BookRoom: React.FC = () => {
             
         } catch (error) { 
             console.error('Error fetching rooms with status:', error); 
-            alert.error(getText('Failed to load room status.', 'Gagal memuat status ruangan.'));
+            if (alert && alert.error) {
+                alert.error(getText('Failed to load room status.', 'Gagal memuat status ruangan.'));
+            }
         } finally { 
             setLoading(false); 
         }
@@ -375,7 +400,9 @@ const BookRoom: React.FC = () => {
             setSchedulesForModal({ bookings, lectures, exams });
 
         } catch (error) { 
-            alert.error(getText("Failed to load schedule for this room.", "Gagal memuat jadwal untuk ruangan ini.")); 
+            if (alert && alert.error) {
+                alert.error(getText("Failed to load schedule for this room.", "Gagal memuat jadwal untuk ruangan ini."));
+            }
             setSchedulesForModal({ bookings: [], lectures: [], exams: [] });
         } finally { 
             setLoadingSchedules(false); 
@@ -426,7 +453,7 @@ const BookRoom: React.FC = () => {
                 }  
             } 
         } 
-    }, [watchIdentityNumber, existingUsers, form, studyPrograms, getText]);
+    }, [watchIdentityNumber, existingUsers, form, studyPrograms]);
 
     useEffect(() => { 
         if (watchStudyProgramId) { 
@@ -442,7 +469,9 @@ const BookRoom: React.FC = () => {
             setStudyPrograms(data || []); 
         } catch (error) { 
             console.error('Error fetching study programs:', error); 
-            alert.error(getText('Failed to load study programs.', 'Gagal memuat program studi.')); 
+            if (alert && alert.error) {
+                alert.error(getText('Failed to load study programs.', 'Gagal memuat program studi.')); 
+            }
         } 
     };
 
@@ -453,7 +482,9 @@ const BookRoom: React.FC = () => {
             setMasterEquipmentList(data || []); 
         } catch (error) { 
             console.error('Error fetching equipment:', error); 
-            alert.error(getText('Failed to load equipment.', 'Gagal memuat peralatan.')); 
+            if (alert && alert.error) {
+                alert.error(getText('Failed to load equipment.', 'Gagal memuat peralatan.')); 
+            }
         } 
     };
 
@@ -500,12 +531,14 @@ const BookRoom: React.FC = () => {
         const equipmentCount = checkedEquipment.size;
         
         // Show detailed success toast
-        alert.success(
-            getText(
-                `✅ Booking submitted successfully!\n🏢 Room: ${roomName}\n⏰ Time: ${startTime}${equipmentCount > 0 ? `\n⚡ Equipment: ${equipmentCount} items` : ''}\n📝 Status: Pending approval`,
-                `✅ Pemesanan berhasil dikirim!\n🏢 Ruangan: ${roomName}\n⏰ Waktu: ${startTime}${equipmentCount > 0 ? `\n⚡ Peralatan: ${equipmentCount} item` : ''}\n📝 Status: Menunggu persetujuan`
-            )
-        );
+        if (alert && alert.success) {
+            alert.success(
+                getText(
+                    `✅ Booking submitted successfully!\n🏢 Room: ${roomName}\n⏰ Time: ${startTime}${equipmentCount > 0 ? `\n⚡ Equipment: ${equipmentCount} items` : ''}\n📝 Status: Pending approval`,
+                    `✅ Pemesanan berhasil dikirim!\n🏢 Ruangan: ${roomName}\n⏰ Waktu: ${startTime}${equipmentCount > 0 ? `\n⚡ Peralatan: ${equipmentCount} item` : ''}\n📝 Status: Menunggu persetujuan`
+                )
+            );
+        }
 
         // Show additional info toast
         setTimeout(() => {
@@ -530,7 +563,9 @@ const BookRoom: React.FC = () => {
     
     const onSubmit = async (data: BookingForm) => {
         if (!selectedRoom) { 
-            alert.error(getText('Please select a room', 'Silakan pilih ruangan')); 
+            if (alert && alert.error) {
+                alert.error(getText('Please select a room', 'Silakan pilih ruangan')); 
+            }
             return; 
         }
         
@@ -584,7 +619,19 @@ const BookRoom: React.FC = () => {
             // Call the enhanced success handler
             handleBookingSuccess(data, selectedRoom);
             
-            form.reset({ class_type: 'theory', sks: 2, equipment_requested: [], });
+            form.reset({ 
+                class_type: 'theory', 
+                sks: 2, 
+                equipment_requested: [],
+                full_name: '',
+                identity_number: '',
+                study_program_id: '',
+                phone_number: '',
+                room_id: '',
+                start_time: '',
+                end_time: '',
+                notes: ''
+            });
             setSelectedRoom(null);
             setIdentitySearchTerm('');
             setStudyProgramSearchTerm('');
@@ -593,19 +640,25 @@ const BookRoom: React.FC = () => {
             
         } catch (error: any) { 
             console.error('Error creating booking:', error); 
-            alert.error(
-                error.message || getText('Failed to create booking', 'Gagal membuat pemesanan')
-            ); 
+          if (alert && alert.error) {
+                alert.error(
+                    error.message || getText('Failed to create booking', 'Gagal membuat pemesanan')
+                ); 
+            }
         } finally { 
             setSubmitting(false); 
         }
     };
 
-    const filteredIdentityNumbers = existingUsers.filter(user => user.identity_number.toLowerCase().includes(identitySearchTerm.toLowerCase()) || user.full_name.toLowerCase().includes(identitySearchTerm.toLowerCase()));
+    const filteredIdentityNumbers = existingUsers.filter(user => 
+        user.identity_number.toLowerCase().includes(identitySearchTerm.toLowerCase()) || 
+        user.full_name.toLowerCase().includes(identitySearchTerm.toLowerCase())
+    );
     
     const filteredRooms = useMemo(() => { 
         return rooms.filter(room => { 
-            const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) || room.code.toLowerCase().includes(searchTerm.toLowerCase()); 
+            const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                                room.code.toLowerCase().includes(searchTerm.toLowerCase()); 
             const matchesStatus = room.status !== 'In Use' || showInUse; 
             return matchesSearch && matchesStatus; 
         }); 
@@ -881,7 +934,7 @@ const BookRoom: React.FC = () => {
                                                         className="w-full px-4 py-3 pr-10 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200" 
                                                     />
                                                     <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                                    {showIdentityDropdown && (
+                                                    {showIdentityDropdown && filteredIdentityNumbers.length > 0 && (
                                                         <div 
                                                             onMouseLeave={() => setShowIdentityDropdown(false)} 
                                                             className="absolute z-10 w-full mt-1 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-xl max-h-60 overflow-y-auto"
@@ -1067,7 +1120,7 @@ const BookRoom: React.FC = () => {
                                     <button 
                                         type="submit" 
                                         disabled={!selectedRoom || submitting || (!profile && !form.watch('identity_number'))} 
-                                        className="w-full flex items-center justify-center space-x-3 px-6 py-4 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold rounded-xl hover:from-blue-600 hover:to-indigo-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl disabled:hover:shadow-lg"
+                                       className="w-full flex items-center justify-center space-x-3 px-6 py-4 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold rounded-xl hover:from-blue-600 hover:to-indigo-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl disabled:hover:shadow-lg"
                                     >
                                         {submitting ? (
                                             <>
@@ -1080,7 +1133,7 @@ const BookRoom: React.FC = () => {
                                                 <span>{getText('Submit Booking', 'Kirim Pemesanan')}</span>
                                             </>
                                         )}
-                                      </button>
+                                    </button>
                                 </div>
                             </form>
                         </div>
@@ -1178,7 +1231,7 @@ const BookRoom: React.FC = () => {
                                                 </span>
                                             </div>
                                             
-                                            <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                                            <div className="space-y-3">
                                                 <div className="flex items-center space-x-2">
                                                     <Users className={`h-4 w-4 ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-400'}`} />
                                                     <span className={`text-sm ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-600'}`}>
