@@ -284,17 +284,6 @@ const BookingManagement: React.FC = () => {
             .eq('id', bookingId);
 
         if (error) throw error;
-
-        // ❌ HAPUS: Jangan update room availability
-        // Room availability hanya boleh diubah manual oleh admin di RoomManagement
-        /*
-        if (bookingToDelete?.room_id) {
-            const { error: roomUpdateError } = await supabase
-                .from('rooms')
-                .update({ is_available: true })
-                .eq('id', bookingToDelete.room_id);
-        }
-        */
         
         toast.success('Booking deleted successfully');
         setShowDeleteConfirm(null);
