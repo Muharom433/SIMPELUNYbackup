@@ -194,74 +194,72 @@ const BookingManagement: React.FC = () => {
     };
 
     const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 'rejected') => {
-        try {
-            setProcessingIds(prev => new Set(prev).add(bookingId));
-            
-            // Get the current booking data first
-            const currentBooking = bookings.find(b => b.id === bookingId);
-            if (!currentBooking) {
-                throw new Error("Booking not found");
-            }
-
-            const { data: updatedBooking, error } = await supabase
-                .from('bookings')
-                .update({ status: newStatus, updated_at: new Date().toISOString() })
-                .eq('id', bookingId)
-                .select()
-                .single();
-
-            if (error) throw error;
-            if (!updatedBooking) throw new Error("Booking not found");
-
-            // Update room availability
-            if (updatedBooking.room_id) {
-                const newAvailability = newStatus === 'approved' ? false : true;
-                const { error: roomUpdateError } = await supabase
-                    .from('rooms')
-                    .update({ is_available: newAvailability })
-                    .eq('id', updatedBooking.room_id);
-
-                if (roomUpdateError) {
-                    console.error('Room update error:', roomUpdateError);
-                    toast.error('Booking status updated, but failed to update room status.');
-                }
-            }
-
-            // Update equipment quantities based on status change
-            if (updatedBooking.equipment_requested && updatedBooking.equipment_requested.length > 0) {
-                try {
-                    if (newStatus === 'approved') {
-                        // Decrease equipment quantities when approved
-                        await updateEquipmentQuantities(updatedBooking.equipment_requested, 'decrease');
-                        console.log('Equipment quantities decreased for approved booking');
-                    } else if (newStatus === 'rejected') {
-                        // If the booking was previously approved and now rejected, increase quantities back
-                        if (currentBooking.status === 'approved') {
-                            await updateEquipmentQuantities(updatedBooking.equipment_requested, 'increase');
-                            console.log('Equipment quantities increased for rejected booking (was previously approved)');
-                        }
-                    }
-                } catch (equipmentError) {
-                    console.error('Equipment update error:', equipmentError);
-                    toast.error(`Booking ${newStatus} successfully, but failed to update equipment quantities.`);
-                    return; // Don't proceed with success message if equipment update failed
-                }
-            }
-            
-            toast.success(`Booking ${newStatus} successfully`);
-            await fetchBookings();
-            
-        } catch (error: any) {
-            console.error(`Error ${newStatus} booking:`, error);
-            toast.error(error.message || `Failed to ${newStatus} booking`);
-        } finally {
-            setProcessingIds(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(bookingId);
-                return newSet;
-            });
+    try {
+        setProcessingIds(prev => new Set(prev).add(bookingId));
+        
+        // Get the current booking data first
+        const currentBooking = bookings.find(b => b.id === bookingId);
+        if (!currentBooking) {
+            throw new Error("Booking not found");
         }
-    };
+
+        const { data: updatedBooking, error } = await supabase
+            .from('bookings')
+            .update({ status: newStatus, updated_at: new Date().toISOString() })
+            .eq('id', bookingId)
+            .select()
+            .single();
+
+        if (error) throw error;
+        if (!updatedBooking) throw new Error("Booking not found");
+
+        // ❌ HAPUS: Jangan update room availability
+        // Room availability hanya boleh diubah manual oleh admin di RoomManagement
+        /*
+        if (updatedBooking.room_id) {
+            const newAvailability = newStatus === 'approved' ? false : true;
+            const { error: roomUpdateError } = await supabase
+                .from('rooms')
+                .update({ is_available: newAvailability })
+                .eq('id', updatedBooking.room_id);
+        }
+        */
+
+        // Update equipment quantities based on status change
+        if (updatedBooking.equipment_requested && updatedBooking.equipment_requested.length > 0) {
+            try {
+                if (newStatus === 'approved') {
+                    // Decrease equipment quantities when approved
+                    await updateEquipmentQuantities(updatedBooking.equipment_requested, 'decrease');
+                    console.log('Equipment quantities decreased for approved booking');
+                } else if (newStatus === 'rejected') {
+                    // If the booking was previously approved and now rejected, increase quantities back
+                    if (currentBooking.status === 'approved') {
+                        await updateEquipmentQuantities(updatedBooking.equipment_requested, 'increase');
+                        console.log('Equipment quantities increased for rejected booking (was previously approved)');
+                    }
+                }
+            } catch (equipmentError) {
+                console.error('Equipment update error:', equipmentError);
+                toast.error(`Booking ${newStatus} successfully, but failed to update equipment quantities.`);
+                return; // Don't proceed with success message if equipment update failed
+            }
+        }
+        
+        toast.success(`Booking ${newStatus} successfully`);
+        await fetchBookings();
+        
+    } catch (error: any) {
+        console.error(`Error ${newStatus} booking:`, error);
+        toast.error(error.message || `Failed to ${newStatus} booking`);
+    } finally {
+        setProcessingIds(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(bookingId);
+            return newSet;
+        });
+    }
+};
 
     const handleDelete = async (bookingId: string) => {
         try {
