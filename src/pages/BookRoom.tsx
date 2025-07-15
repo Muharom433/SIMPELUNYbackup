@@ -85,7 +85,8 @@ const BookRoom: React.FC = () => {
     const { getText, formatTime, formatDate } = useLanguage();
     
     // State declarations
-    const [rooms, setRooms] = useState<RoomWithStatus[]>([]);
+    const [allRooms, setAllRooms] = useState<RoomWithStatus[]>([]);
+    const [filteredRooms, setFilteredRooms] = useState<RoomWithStatus[]>([]);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [showInUse, setShowInUse] = useState(false);
@@ -115,6 +116,10 @@ const BookRoom: React.FC = () => {
     const [checkedEquipment, setCheckedEquipment] = useState<Set<string>>(new Set());
     const [useManualEndTime, setUseManualEndTime] = useState(false);
 
+    // ✅ NEW: DateTime filtering states
+    const [isFilteringRooms, setIsFilteringRooms] = useState(false);
+    const [hasAppliedFilter, setHasAppliedFilter] = useState(false);
+
     const form = useForm<BookingForm>({
         resolver: zodResolver(bookingSchema),
         defaultValues: { 
@@ -143,198 +148,220 @@ const BookRoom: React.FC = () => {
         if (!name) return '';
         return name.toLowerCase().replace(/[\s.&-]/g, '');
     };
+
+    // Helper functions for date calculations (from RoomManagement)
+    const dayNamesEnglish = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const dayNamesIndonesian = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+    const getIndonesianDay = (englishDay: string) => dayNamesIndonesian[dayNamesEnglish.indexOf(englishDay)] || 'Senin';
+
+    const calculateTargetDate = (selectedDay: string, isSearchAction = false) => {
+        const today = new Date();
+        const currentDayIndex = dayNamesEnglish.indexOf(format(today, 'EEEE'));
+        const selectedDayIndex = dayNamesEnglish.indexOf(selectedDay);
+        
+        let targetDate = new Date(today);
+        
+        if (isSearchAction && selectedDayIndex === currentDayIndex) {
+            targetDate.setDate(today.getDate() + 7);
+        } else if (selectedDayIndex >= currentDayIndex) {
+            const daysToAdd = selectedDayIndex - currentDayIndex;
+            targetDate.setDate(today.getDate() + daysToAdd);
+        } else {
+            const daysToAdd = (7 - currentDayIndex) + selectedDayIndex;
+            targetDate.setDate(today.getDate() + daysToAdd);
+        }
+        
+        return targetDate;
+    };
     
-    // ✅ FIXED: Implementasi logic status yang benar
-    const fetchRoomsWithStatus = useCallback(async () => {
+    // ✅ INITIAL: Fetch all rooms (unfiltered)
+    const fetchAllRooms = useCallback(async () => {
         try {
-            const now = new Date();
-            const todayDayName = format(now, 'EEEE', { locale: localeID });
-            const todayDateString = format(now, 'yyyy-MM-dd');
-            
-            // 1. Fetch semua ruangan dengan is_available = true saja
             const { data: roomsData, error: roomsError } = await supabase
                 .from('rooms')
                 .select(`*, department:departments(*)`)
-                .eq('is_available', true) // ✅ HANYA tampilkan ruangan yang available
+                .eq('is_available', true)
                 .order('name', { ascending: true });
                 
             if (roomsError) throw roomsError;
 
-            // 2. Fetch bookings yang approved untuk hari ini
-            const startOfDay = `${todayDateString}T00:00:00Z`;
-            const endOfDay = `${todayDateString}T23:59:59Z`;
-            
-            const { data: bookingsData, error: bookingsError } = await supabase
-                .from('bookings')
-                .select('room_id, start_time, end_time, purpose, user:users(full_name, identity_number)')
-                .eq('status', 'approved')
-                .gte('start_time', startOfDay)
-                .lte('start_time', endOfDay);
-                
-            if (bookingsError) throw bookingsError;
+            const roomsWithDefaultStatus = (roomsData || []).map(room => ({
+                ...room,
+                department: room.department,
+                status: 'Available' as 'Available'
+            }));
 
-            // 3. Fetch lecture schedules untuk hari ini
-            const { data: lecturesData, error: lecturesError } = await supabase
-                .from('lecture_schedules')
-                .select('room, start_time, end_time, course_name, class, subject_study, day')
-                .eq('day', todayDayName);
-                
-            if (lecturesError) throw lecturesError;
-
-            // 4. Fetch exam schedules untuk hari ini
-            const { data: examsData, error: examsError } = await supabase
-                .from('exams')
-                .select('room_id, start_time, end_time, course_name, course_code, semester, class, student_amount, is_take_home, date')
-                .eq('date', todayDateString);
-                
-            if (examsError) throw examsError;
-
-            // 5. Map untuk tracking conflicts per room
-            const bookingConflicts = new Map<string, BookingConflict[]>();
-            const lectureConflicts = new Map<string, LectureConflict[]>();
-            const examConflicts = new Map<string, ExamConflict[]>();
-
-            // Process booking conflicts (by room_id)
-            if (bookingsData) {
-                bookingsData.forEach(booking => {
-                    if (booking.room_id && booking.start_time && booking.end_time) {
-                        const startTime = new Date(booking.start_time);
-                        const endTime = new Date(booking.end_time);
-                        
-                        // Check if booking is currently active
-                        if (now >= startTime && now <= endTime) {
-                            if (!bookingConflicts.has(booking.room_id)) {
-                                bookingConflicts.set(booking.room_id, []);
-                            }
-                            bookingConflicts.get(booking.room_id)?.push({
-                                id: booking.room_id,
-                                start_time: format(startTime, 'HH:mm'),
-                                end_time: format(endTime, 'HH:mm'),
-                                purpose: booking.purpose || 'Room Booking',
-                                user: booking.user
-                            });
-                        }
-                    }
-                });
-            }
-
-            // Process lecture conflicts (by room name)
-            if (lecturesData) {
-                lecturesData.forEach(lecture => {
-                    if (lecture.room && lecture.start_time && lecture.end_time) {
-                        const normalizedRoomName = normalizeRoomName(lecture.room);
-                        
-                        try {
-                            const startTime = parse(lecture.start_time, 'HH:mm:ss', now);
-                            const endTime = parse(lecture.end_time, 'HH:mm:ss', now);
-                            
-                            // Check if lecture is currently active
-                            if (now >= startTime && now <= endTime) {
-                                if (!lectureConflicts.has(normalizedRoomName)) {
-                                    lectureConflicts.set(normalizedRoomName, []);
-                                }
-                                lectureConflicts.get(normalizedRoomName)?.push({
-                                    id: lecture.room,
-                                    start_time: lecture.start_time.substring(0, 5),
-                                    end_time: lecture.end_time.substring(0, 5),
-                                    course_name: lecture.course_name || 'Lecture',
-                                    class: lecture.class || '',
-                                    subject_study: lecture.subject_study || ''
-                                });
-                            }
-                        } catch (e) {
-                            console.error('Error parsing lecture time:', e);
-                        }
-                    }
-                });
-            }
-
-            // Process exam conflicts (by room_id)
-            if (examsData) {
-                examsData.forEach(exam => {
-                    if (exam.room_id && !exam.is_take_home && exam.start_time && exam.end_time) {
-                        try {
-                            const startTime = parse(exam.start_time, 'HH:mm:ss', now);
-                            const endTime = parse(exam.end_time, 'HH:mm:ss', now);
-                            
-                            // Check if exam is currently active
-                            if (now >= startTime && now <= endTime) {
-                                if (!examConflicts.has(exam.room_id)) {
-                                    examConflicts.set(exam.room_id, []);
-                                }
-                                examConflicts.get(exam.room_id)?.push({
-                                    id: exam.room_id,
-                                    start_time: exam.start_time.substring(0, 5),
-                                    end_time: exam.end_time.substring(0, 5),
-                                    course_name: exam.course_name || 'Exam',
-                                    course_code: exam.course_code || '',
-                                    semester: exam.semester || 0,
-                                    class: exam.class || '',
-                                    student_amount: exam.student_amount || 0,
-                                    is_take_home: exam.is_take_home || false
-                                });
-                            }
-                        } catch (e) {
-                            console.error('Error parsing exam time:', e);
-                        }
-                    }
-                });
-            }
-
-            // 6. ✅ DETERMINE STATUS dengan logic yang benar
-            const roomsWithStatus = (roomsData || []).map(room => {
-                let status: RoomWithStatus['status'] = 'Available';
-                
-                // Priority 1: Check booking conflicts (by room_id)
-                if (bookingConflicts.has(room.id)) {
-                    status = 'In Use';
-                }
-                // Priority 2: Check exam conflicts (by room_id) 
-                else if (examConflicts.has(room.id)) {
-                    status = 'In Use';
-                }
-                // Priority 3: Check lecture conflicts (by room name)
-                else if (lectureConflicts.has(normalizeRoomName(room.name))) {
-                    status = 'In Use';
-                }
-                // Priority 4: Check if there are any schedules today (for "Scheduled" status)
-                else {
-                    // Check if room has any schedules today (not currently active)
-                    const hasBookingsToday = bookingsData?.some(b => b.room_id === room.id) || false;
-                    const hasLecturesToday = lecturesData?.some(l => normalizeRoomName(l.room || '') === normalizeRoomName(room.name)) || false;
-                    const hasExamsToday = examsData?.some(e => e.room_id === room.id && !e.is_take_home) || false;
-                    
-                    if (hasBookingsToday || hasLecturesToday || hasExamsToday) {
-                        status = 'Scheduled';
-                    }
-                    // Else: status remains 'Available'
-                }
-                
-                return { ...room, department: room.department, status };
-            });
-
-            setRooms(roomsWithStatus as RoomWithStatus[]);
+            setAllRooms(roomsWithDefaultStatus as RoomWithStatus[]);
+            setFilteredRooms(roomsWithDefaultStatus as RoomWithStatus[]);
             
         } catch (error) { 
-            console.error('Error fetching rooms with status:', error); 
+            console.error('Error fetching all rooms:', error); 
             if (alert && alert.error) {
-                alert.error(getText('Failed to load room status.', 'Gagal memuat status ruangan.'));
+                alert.error(getText('Failed to load rooms.', 'Gagal memuat ruangan.'));
             }
         } finally { 
             setLoading(false); 
         }
     }, [getText]);
 
+    // ✅ NEW: Filter rooms based on selected datetime (like RoomManagement)
+    const filterRoomsByDateTime = useCallback(async (startTime: string, endTime: string) => {
+        if (!startTime || !endTime) return;
+        
+        setIsFilteringRooms(true);
+        
+        try {
+            const startDate = new Date(startTime);
+            const endDate = new Date(endTime);
+            const targetDateString = format(startDate, 'yyyy-MM-dd');
+            const selectedDay = format(startDate, 'EEEE');
+            const dayToFetch = getIndonesianDay(selectedDay);
+            
+            console.log(`🔍 Filtering rooms for ${selectedDay} (${targetDateString}) from ${format(startDate, 'HH:mm')} to ${format(endDate, 'HH:mm')}`);
+            
+            const busyRoomIds = new Set<string>();
+            const busyRoomNames = new Set<string>();
+            
+            // 1. Check lecture schedules (by room name and day) - RECURRING setiap minggu
+            const { data: lectureData, error: lectureError } = await supabase
+                .from('lecture_schedules')
+                .select('room, start_time, end_time')
+                .eq('day', dayToFetch);
+            
+            if (!lectureError && lectureData) {
+                lectureData.forEach(lecture => {
+                    if (lecture.room && lecture.start_time && lecture.end_time) {
+                        const lectureStart = parse(lecture.start_time, 'HH:mm:ss', startDate);
+                        const lectureEnd = parse(lecture.end_time, 'HH:mm:ss', startDate);
+                        
+                        // Check if lecture time conflicts with selected time
+                        if (lectureStart < endDate && lectureEnd > startDate) {
+                            busyRoomNames.add(normalizeRoomName(lecture.room));
+                            console.log(`📚 Lecture conflict: ${lecture.room} at ${lecture.start_time}-${lecture.end_time}`);
+                        }
+                    }
+                });
+            }
+            
+            // 2. Check exam schedules (by room_id and EXACT DATE)
+            const { data: examData, error: examError } = await supabase
+                .from('exams')
+                .select('room_id, start_time, end_time, is_take_home, course_name')
+                .eq('date', targetDateString);
+            
+            if (!examError && examData) {
+                examData.forEach(exam => {
+                    if (exam.room_id && !exam.is_take_home && exam.start_time && exam.end_time) {
+                        const examStart = parse(exam.start_time, 'HH:mm:ss', startDate);
+                        const examEnd = parse(exam.end_time, 'HH:mm:ss', startDate);
+                        
+                        if (examStart < endDate && examEnd > startDate) {
+                            busyRoomIds.add(exam.room_id);
+                            console.log(`📝 Exam conflict: ${exam.course_name} at ${exam.start_time}-${exam.end_time} (Room ID: ${exam.room_id})`);
+                        }
+                    }
+                });
+            }
+            
+            // 3. Check bookings (by room_id and EXACT DATE with timestamp)
+            const startOfTargetDay = `${targetDateString}T00:00:00Z`;
+            const endOfTargetDay = `${targetDateString}T23:59:59Z`;
+            
+            const { data: bookingData, error: bookingError } = await supabase
+                .from('bookings')
+                .select('room_id, start_time, end_time, purpose, status')
+                .eq('status', 'approved')
+                .gte('start_time', startOfTargetDay)
+                .lte('start_time', endOfTargetDay);
+            
+            if (!bookingError && bookingData) {
+                bookingData.forEach(booking => {
+                    const bookingStart = new Date(booking.start_time);
+                    const bookingEnd = new Date(booking.end_time);
+                    
+                    if (bookingStart < endDate && bookingEnd > startDate) {
+                        busyRoomIds.add(booking.room_id);
+                        console.log(`📅 Booking conflict: ${booking.purpose} at ${format(bookingStart, 'HH:mm')}-${format(bookingEnd, 'HH:mm')} (Room ID: ${booking.room_id})`);
+                    }
+                });
+            }
+            
+            // Filter available rooms and set status
+            const availableRooms = allRooms.map(room => {
+                const isRoomIdBusy = busyRoomIds.has(room.id);
+                const isRoomNameBusy = busyRoomNames.has(normalizeRoomName(room.name));
+                
+                let status: RoomWithStatus['status'] = 'Available';
+                
+                if (isRoomIdBusy || isRoomNameBusy) {
+                    // Further check if it's currently active or just scheduled
+                    const now = new Date();
+                    const isCurrentTimeInRange = startDate <= now && now <= endDate;
+                    status = isCurrentTimeInRange ? 'In Use' : 'Scheduled';
+                } else {
+                    status = 'Available';
+                }
+                
+                return { ...room, status };
+            });
+            
+            setFilteredRooms(availableRooms);
+            setHasAppliedFilter(true);
+            
+            // Success message
+            const availableCount = availableRooms.filter(r => r.status === 'Available').length;
+            
+            if (alert && alert.success) {
+                alert.success(
+                    getText(
+                        `Found ${availableCount} available rooms for ${selectedDay} ${format(startDate, 'MMM dd')} from ${format(startDate, 'HH:mm')} to ${format(endDate, 'HH:mm')}`,
+                        `Ditemukan ${availableCount} ruangan tersedia untuk ${selectedDay} ${format(startDate, 'MMM dd')} dari ${format(startDate, 'HH:mm')} hingga ${format(endDate, 'HH:mm')}`
+                    )
+                );
+            }
+            
+        } catch (error) {
+            console.error('Error filtering rooms by datetime:', error);
+            if (alert && alert.error) {
+                alert.error('Failed to filter rooms.');
+            }
+        } finally {
+            setIsFilteringRooms(false);
+        }
+    }, [allRooms, getText]);
+
+    // ✅ AUTO-FILTER: When start_time and end_time change
+    useEffect(() => {
+        if (watchStartTime && watchEndTime) {
+            filterRoomsByDateTime(watchStartTime, watchEndTime);
+        } else if (watchStartTime && watchSks > 0 && watchClassType && !useManualEndTime) {
+            // Auto calculate end time and filter
+            const calculatedEndTime = calculateEndTime(watchStartTime, watchSks, watchClassType);
+            if (calculatedEndTime) {
+                const endTimeString = format(calculatedEndTime, "yyyy-MM-dd'T'HH:mm");
+                form.setValue('end_time', endTimeString);
+                filterRoomsByDateTime(watchStartTime, endTimeString);
+            }
+        } else {
+            // Reset to show all rooms if no time selected
+            if (hasAppliedFilter) {
+                setFilteredRooms(allRooms);
+                setHasAppliedFilter(false);
+            }
+        }
+    }, [watchStartTime, watchEndTime, watchSks, watchClassType, useManualEndTime, filterRoomsByDateTime, allRooms, hasAppliedFilter, form]);
+
     // ✅ FIXED: Fetch schedules untuk modal dengan detail yang lengkap
     const fetchSchedulesForRoom = async (roomName: string, roomId: string) => {
         setLoadingSchedules(true);
         try {
-            const todayDayName = format(new Date(), 'EEEE', { locale: localeID });
-            const todayDateString = format(new Date(), 'yyyy-MM-dd');
+            const targetDate = watchStartTime ? new Date(watchStartTime) : new Date();
+            const todayDayName = getIndonesianDay(format(targetDate, 'EEEE'));
+            const todayDateString = format(targetDate, 'yyyy-MM-dd');
             const startOfDay = `${todayDateString}T00:00:00Z`;
             const endOfDay = `${todayDateString}T23:59:59Z`;
 
-            // Fetch bookings untuk hari ini
+            // Fetch bookings untuk target date
             const { data: bookingsData, error: bookingsError } = await supabase
                 .from('bookings')
                 .select(`
@@ -347,7 +374,7 @@ const BookRoom: React.FC = () => {
                 .lte('start_time', endOfDay)
                 .order('start_time');
 
-            // Fetch lecture schedules untuk hari ini
+            // Fetch lecture schedules untuk target day
             const { data: lecturesData, error: lecturesError } = await supabase
                 .from('lecture_schedules')
                 .select('*')
@@ -355,7 +382,7 @@ const BookRoom: React.FC = () => {
                 .ilike('room', `%${roomName}%`)
                 .order('start_time');
 
-            // Fetch exam schedules untuk hari ini
+            // Fetch exam schedules untuk target date
             const { data: examsData, error: examsError } = await supabase
                 .from('exams')
                 .select('*')
@@ -411,20 +438,19 @@ const BookRoom: React.FC = () => {
 
     useEffect(() => {
         setLoading(true);
-        fetchRoomsWithStatus();
+        fetchAllRooms();
         fetchStudyPrograms();
         fetchEquipment();
         fetchExistingUsers();
         const timer = setInterval(() => setCurrentTime(new Date()), 60000);
-        const statusRefreshTimer = setInterval(() => fetchRoomsWithStatus(), 5 * 60 * 1000);
-        return () => { clearInterval(timer); clearInterval(statusRefreshTimer); };
-    }, [fetchRoomsWithStatus]);
+        return () => { clearInterval(timer); };
+    }, [fetchAllRooms]);
 
     useEffect(() => { 
         if (viewingSchedulesFor) { 
             fetchSchedulesForRoom(viewingSchedulesFor.name, viewingSchedulesFor.id); 
         } 
-    }, [viewingSchedulesFor]);
+    }, [viewingSchedulesFor, watchStartTime]);
     
     useEffect(() => {
         if (selectedRoom) {
@@ -613,8 +639,6 @@ const BookRoom: React.FC = () => {
             };
             const { error } = await supabase.from('bookings').insert(bookingData);
             if (error) throw error;
-            const { error: roomUpdateError } = await supabase.from('rooms').update({ is_available: false }).eq('id', data.room_id);
-            if (roomUpdateError) console.error('Error updating room availability:', roomUpdateError);
             
             // Call the enhanced success handler
             handleBookingSuccess(data, selectedRoom);
@@ -636,11 +660,12 @@ const BookRoom: React.FC = () => {
             setIdentitySearchTerm('');
             setStudyProgramSearchTerm('');
             setUseManualEndTime(false);
-            fetchRoomsWithStatus();
+            setHasAppliedFilter(false);
+            setFilteredRooms(allRooms);
             
         } catch (error: any) { 
             console.error('Error creating booking:', error); 
-          if (alert && alert.error) {
+            if (alert && alert.error) {
                 alert.error(
                     error.message || getText('Failed to create booking', 'Gagal membuat pemesanan')
                 ); 
@@ -655,14 +680,14 @@ const BookRoom: React.FC = () => {
         user.full_name.toLowerCase().includes(identitySearchTerm.toLowerCase())
     );
     
-    const filteredRooms = useMemo(() => { 
-        return rooms.filter(room => { 
+    const displayedRooms = useMemo(() => { 
+        return filteredRooms.filter(room => { 
             const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                                 room.code.toLowerCase().includes(searchTerm.toLowerCase()); 
             const matchesStatus = room.status !== 'In Use' || showInUse; 
             return matchesSearch && matchesStatus; 
         }); 
-    }, [rooms, searchTerm, showInUse]);
+    }, [filteredRooms, searchTerm, showInUse]);
 
     const getStatusColor = (status: RoomWithStatus['status']) => { 
         switch (status) { 
@@ -886,8 +911,38 @@ const BookRoom: React.FC = () => {
                                         </div>
                                     )}
 
+                                    {/* ✅ NEW: DateTime Filter Status */}
+                                    {(watchStartTime || watchEndTime) && (
+                                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-xl p-4">
+                                            <div className="flex items-start space-x-3">
+                                                {isFilteringRooms ? (
+                                                    <Loader2 className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0 animate-spin" />
+                                                ) : (
+                                                    <Search className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                                                )}
+                                                <div className="text-sm text-blue-800">
+                                                    <p className="font-semibold">
+                                                        {isFilteringRooms ? 
+                                                            getText('Filtering Rooms...', 'Memfilter Ruangan...') :
+                                                            getText('Rooms Filtered by Selected Time', 'Ruangan Difilter Berdasarkan Waktu Terpilih')
+                                                        }
+                                                    </p>
+                                                    <p className="mt-1">
+                                                        {hasAppliedFilter ? 
+                                                            getText(
+                                                                `Showing rooms available for ${watchStartTime ? format(new Date(watchStartTime), 'MMM d, yyyy HH:mm') : 'selected time'}`,
+                                                                `Menampilkan ruangan tersedia untuk ${watchStartTime ? format(new Date(watchStartTime), 'MMM d, yyyy HH:mm') : 'waktu terpilih'}`
+                                                            ) :
+                                                            getText('Select both start and end time to filter available rooms', 'Pilih waktu mulai dan selesai untuk memfilter ruangan tersedia')
+                                                        }
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* ✅ Room Selection Required Warning */}
-                                    {!selectedRoom && (
+                                    {!selectedRoom && (watchStartTime || watchEndTime) && (
                                         <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200/50 rounded-xl p-4">
                                             <div className="flex items-start space-x-3">
                                                 <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
@@ -896,7 +951,7 @@ const BookRoom: React.FC = () => {
                                                         {getText('Room Selection Required', 'Pilih Ruangan Terlebih Dahulu')}
                                                     </p>
                                                     <p className="mt-1">
-                                                        {getText('Please select a room from the right panel before filling personal information.', 'Silakan pilih ruangan dari panel sebelah kanan sebelum mengisi informasi pribadi.')}
+                                                        {getText('Please select a room from the right panel to continue.', 'Silakan pilih ruangan dari panel sebelah kanan untuk melanjutkan.')}
                                                     </p>
                                                 </div>
                                             </div>
@@ -904,7 +959,7 @@ const BookRoom: React.FC = () => {
                                     )}
                                 </div>
 
-                                {/* ✅ STEP 2: Personal Information - SEKARANG HANYA MUNCUL JIKA ROOM TERPILIH */}
+                                {/* ✅ STEP 2: Personal Information - HANYA MUNCUL JIKA ROOM TERPILIH */}
                                 {selectedRoom && !profile && (
                                     <div className="space-y-6">
                                         <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
@@ -1120,7 +1175,7 @@ const BookRoom: React.FC = () => {
                                     <button 
                                         type="submit" 
                                         disabled={!selectedRoom || submitting || (!profile && !form.watch('identity_number'))} 
-                                       className="w-full flex items-center justify-center space-x-3 px-6 py-4 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold rounded-xl hover:from-blue-600 hover:to-indigo-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl disabled:hover:shadow-lg"
+                                        className="w-full flex items-center justify-center space-x-3 px-6 py-4 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold rounded-xl hover:from-blue-600 hover:to-indigo-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl disabled:hover:shadow-lg"
                                     >
                                         {submitting ? (
                                             <>
@@ -1191,153 +1246,176 @@ const BookRoom: React.FC = () => {
                         <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
                             <div className="flex items-center justify-between mb-6">
                                 <h2 className="text-2xl font-bold text-gray-800">
-                                    {getText('Available Rooms', 'Ruangan Tersedia')}
+                                    {hasAppliedFilter ? 
+                                        getText('Filtered Rooms', 'Ruangan Terfilter') : 
+                                        getText('Available Rooms', 'Ruangan Tersedia')
+                                    }
                                 </h2>
                                 <div className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-                                    {filteredRooms.length} {getText('rooms', 'ruangan')}
+                                    {displayedRooms.length} {getText('rooms', 'ruangan')}
                                 </div>
                             </div>
                             
-                            {viewMode === 'grid' ? (
-                                <div className="grid grid-cols-1 gap-4 max-h-96 overflow-y-auto pr-2">
-                                    {filteredRooms.map((room) => (
-                                        <div 
-                                            key={room.id} 
-                                            onClick={() => { 
-                                                setSelectedRoom(room); 
-                                                form.setValue('room_id', room.id); 
-                                            }} 
-                                            className={`group relative p-6 rounded-xl cursor-pointer transition-all duration-300 hover:shadow-xl hover:scale-[1.02] ${
-                                                selectedRoom?.id === room.id 
-                                                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg' 
-                                                    : 'bg-white/80 hover:bg-white border border-gray-200/50'
-                                            }`}
-                                        >
-                                            <div className="flex items-start justify-between mb-4">
-                                                <div>
-                                                    <h3 className={`font-bold text-lg ${selectedRoom?.id === room.id ? 'text-white' : 'text-gray-800'}`}>
-                                                        {room.name}
-                                                    </h3>
-                                                    <p className={`text-sm ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-500'}`}>
-                                                        {room.code}
-                                                    </p>
-                                                </div>
-                                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold transition-all duration-200 ${
-                                                    selectedRoom?.id === room.id 
-                                                        ? 'bg-white/20 text-white' 
-                                                        : getStatusColor(room.status)
-                                                }`}>
-                                                    {getStatusText(room.status)}
-                                                </span>
-                                            </div>
-                                            
-                                            <div className="space-y-3">
-                                                <div className="flex items-center space-x-2">
-                                                    <Users className={`h-4 w-4 ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-400'}`} />
-                                                    <span className={`text-sm ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-600'}`}>
-                                                        {room.capacity} {getText('seats', 'kursi')}
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-center space-x-2">
-                                                    <MapPin className={`h-4 w-4 ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-400'}`} />
-                                                    <span className={`text-sm ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-600'}`}>
-                                                        {room.department?.name || getText('General', 'Umum')}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            
-                                            {room.status === 'Scheduled' && (
-                                                <button 
-                                                    title={getText("View Schedule", "Lihat Jadwal")} 
-                                                    onClick={(e) => { 
-                                                        e.stopPropagation(); 
-                                                        setViewingSchedulesFor(room); 
-                                                    }} 
-                                                    className={`absolute bottom-4 right-4 p-2 rounded-full transition-all duration-200 ${
-                                                        selectedRoom?.id === room.id 
-                                                            ? 'bg-white/20 text-white hover:bg-white/30' 
-                                                            : 'bg-gray-100 text-gray-400 hover:bg-blue-500 hover:text-white'
-                                                    } opacity-0 group-hover:opacity-100`}
-                                                >
-                                                    <Eye className="h-4 w-4"/>
-                                                </button>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="space-y-3">
-                                    {filteredRooms.map((room) => (
-                                        <div 
-                                            key={room.id} 
-                                            onClick={() => { 
-                                                setSelectedRoom(room); 
-                                                form.setValue('room_id', room.id); 
-                                            }} 
-                                            className={`group p-5 rounded-xl cursor-pointer transition-all duration-300 hover:shadow-lg flex items-center justify-between ${
-                                                selectedRoom?.id === room.id 
-                                                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg' 
-                                                    : 'bg-white/80 hover:bg-white border border-gray-200/50'
-                                            }`}
-                                        >
-                                            <div className="flex items-center space-x-4">
-                                                <div>
-                                                    <h3 className={`font-bold ${selectedRoom?.id === room.id ? 'text-white' : 'text-gray-800'}`}>
-                                                        {room.name}
-                                                    </h3>
-                                                    <p className={`text-sm ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-500'}`}>
-                                                        {room.code} • {room.department?.name || getText('General', 'Umum')}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center space-x-4">
-                                                <div className="flex items-center space-x-2">
-                                                    <Users className={`h-4 w-4 ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-400'}`} />
-                                                    <span className={`text-sm ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-600'}`}>
-                                                        {room.capacity} {getText('seats', 'kursi')}
-                                                    </span>
-                                                </div>
-                                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
-                                                    selectedRoom?.id === room.id 
-                                                        ? 'bg-white/20 text-white' 
-                                                        : getStatusColor(room.status)
-                                                }`}>
-                                                    {getStatusText(room.status)}
-                                                </span>
-                                                {room.status === 'Scheduled' && (
-                                                    <button 
-                                                        title={getText("View Schedule", "Lihat Jadwal")} 
-                                                        onClick={(e) => { 
-                                                            e.stopPropagation(); 
-                                                            setViewingSchedulesFor(room); 
-                                                        }} 
-                                                        className={`p-2 rounded-full transition-all duration-200 ${
-                                                            selectedRoom?.id === room.id 
-                                                                ? 'bg-white/20 text-white hover:bg-white/30' 
-                                                                : 'bg-gray-100 text-gray-400 hover:bg-blue-500 hover:text-white'
-                                                        }`}
-                                                    >
-                                                        <Eye className="h-4 w-4"/>
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
+                            {/* Loading indicator for filtering */}
+                            {isFilteringRooms && (
+                                <div className="text-center py-8">
+                                    <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-3" />
+                                    <p className="text-gray-600">
+                                        {getText('Filtering rooms based on selected time...', 'Memfilter ruangan berdasarkan waktu terpilih...')}
+                                    </p>
                                 </div>
                             )}
                             
-                            {filteredRooms.length === 0 && !loading && (
-                                <div className="text-center py-12">
-                                    <div className="p-4 bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                                        <Building className="h-8 w-8 text-gray-400" />
-                                    </div>
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                                        {getText('No Rooms Available', 'Tidak Ada Ruangan Tersedia')}
-                                    </h3>
-                                    <p className="text-gray-500">
-                                        {getText('Try adjusting your search or showing rooms in use.', 'Coba sesuaikan pencarian atau tampilkan ruangan yang sedang digunakan.')}
-                                    </p>
-                                </div>
+                            {!isFilteringRooms && (
+                                <>
+                                    {viewMode === 'grid' ? (
+                                        <div className="grid grid-cols-1 gap-4 max-h-96 overflow-y-auto pr-2">
+                                            {displayedRooms.map((room) => (
+                                                <div 
+                                                    key={room.id} 
+                                                    onClick={() => { 
+                                                        setSelectedRoom(room); 
+                                                        form.setValue('room_id', room.id); 
+                                                    }} 
+                                                    className={`group relative p-6 rounded-xl cursor-pointer transition-all duration-300 hover:shadow-xl hover:scale-[1.02] ${
+                                                        selectedRoom?.id === room.id 
+                                                            ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg' 
+                                                            : 'bg-white/80 hover:bg-white border border-gray-200/50'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-start justify-between mb-4">
+                                                        <div>
+                                                            <h3 className={`font-bold text-lg ${selectedRoom?.id === room.id ? 'text-white' : 'text-gray-800'}`}>
+                                                                {room.name}
+                                                            </h3>
+                                                            <p className={`text-sm ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-500'}`}>
+                                                                {room.code}
+                                                            </p>
+                                                        </div>
+                                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold transition-all duration-200 ${
+                                                            selectedRoom?.id === room.id 
+                                                                ? 'bg-white/20 text-white' 
+                                                                : getStatusColor(room.status)
+                                                        }`}>
+                                                            {getStatusText(room.status)}
+                                                        </span>
+                                                    </div>
+                                                    
+                                                    <div className="space-y-3">
+                                                        <div className="flex items-center space-x-2">
+                                                            <Users className={`h-4 w-4 ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-400'}`} />
+                                                            <span className={`text-sm ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-600'}`}>
+                                                                {room.capacity} {getText('seats', 'kursi')}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex items-center space-x-2">
+                                                            <MapPin className={`h-4 w-4 ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-400'}`} />
+                                                            <span className={`text-sm ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-600'}`}>
+                                                                {room.department?.name || getText('General', 'Umum')}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    {room.status === 'Scheduled' && (
+                                                        <button 
+                                                            title={getText("View Schedule", "Lihat Jadwal")} 
+                                                            onClick={(e) => { 
+                                                                e.stopPropagation(); 
+                                                                setViewingSchedulesFor(room); 
+                                                            }} 
+                                                            className={`absolute bottom-4 right-4 p-2 rounded-full transition-all duration-200 ${
+                                                                selectedRoom?.id === room.id 
+                                                                    ? 'bg-white/20 text-white hover:bg-white/30' 
+                                                                    : 'bg-gray-100 text-gray-400 hover:bg-blue-500 hover:text-white'
+                                                            } opacity-0 group-hover:opacity-100`}
+                                                        >
+                                                            <Eye className="h-4 w-4"/>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {displayedRooms.map((room) => (
+                                                <div 
+                                                    key={room.id} 
+                                                    onClick={() => { 
+                                                        setSelectedRoom(room); 
+                                                        form.setValue('room_id', room.id); 
+                                                    }} 
+                                                    className={`group p-5 rounded-xl cursor-pointer transition-all duration-300 hover:shadow-lg flex items-center justify-between ${
+                                                        selectedRoom?.id === room.id 
+                                                            ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg' 
+                                                            : 'bg-white/80 hover:bg-white border border-gray-200/50'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center space-x-4">
+                                                        <div>
+                                                            <h3 className={`font-bold ${selectedRoom?.id === room.id ? 'text-white' : 'text-gray-800'}`}>
+                                                                {room.name}
+                                                            </h3>
+                                                            <p className={`text-sm ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-500'}`}>
+                                                                {room.code} • {room.department?.name || getText('General', 'Umum')}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center space-x-4">
+                                                        <div className="flex items-center space-x-2">
+                                                            <Users className={`h-4 w-4 ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-400'}`} />
+                                                            <span className={`text-sm ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-600'}`}>
+                                                                {room.capacity} {getText('seats', 'kursi')}
+                                                            </span>
+                                                        </div>
+                                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
+                                                            selectedRoom?.id === room.id 
+                                                                ? 'bg-white/20 text-white' 
+                                                                : getStatusColor(room.status)
+                                                        }`}>
+                                                            {getStatusText(room.status)}
+                                                        </span>
+                                                        {room.status === 'Scheduled' && (
+                                                            <button 
+                                                                title={getText("View Schedule", "Lihat Jadwal")} 
+                                                                onClick={(e) => { 
+                                                                    e.stopPropagation(); 
+                                                                    setViewingSchedulesFor(room); 
+                                                                }} 
+                                                                className={`p-2 rounded-full transition-all duration-200 ${
+                                                                    selectedRoom?.id === room.id 
+                                                                        ? 'bg-white/20 text-white hover:bg-white/30' 
+                                                                        : 'bg-gray-100 text-gray-400 hover:bg-blue-500 hover:text-white'
+                                                                }`}
+                                                            >
+                                                                <Eye className="h-4 w-4"/>
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    
+                                    {displayedRooms.length === 0 && !loading && !isFilteringRooms && (
+                                        <div className="text-center py-12">
+                                            <div className="p-4 bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                                                <Building className="h-8 w-8 text-gray-400" />
+                                            </div>
+                                            <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                                                {hasAppliedFilter ? 
+                                                    getText('No Rooms Available for Selected Time', 'Tidak Ada Ruangan Tersedia untuk Waktu Terpilih') :
+                                                    getText('No Rooms Available', 'Tidak Ada Ruangan Tersedia')
+                                                }
+                                            </h3>
+                                            <p className="text-gray-500">
+                                                {hasAppliedFilter ?
+                                                    getText('Try selecting a different time slot or adjust your search criteria.', 'Coba pilih slot waktu berbeda atau sesuaikan kriteria pencarian.') :
+                                                    getText('Try adjusting your search or showing rooms in use.', 'Coba sesuaikan pencarian atau tampilkan ruangan yang sedang digunakan.')
+                                                }
+                                            </p>
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     </div>
@@ -1351,9 +1429,14 @@ const BookRoom: React.FC = () => {
                         <div className="p-6 border-b border-gray-200/50 flex justify-between items-center">
                             <div>
                                 <h3 className="text-xl font-bold text-gray-800">
-                                    {getText("Today's Schedule", "Jadwal Hari Ini")}
+                                    {hasAppliedFilter ? 
+                                        getText("Schedule for Selected Date", "Jadwal untuk Tanggal Terpilih") :
+                                        getText("Today's Schedule", "Jadwal Hari Ini")
+                                    }
                                 </h3>
-                                <p className="text-sm text-gray-600 mt-1">{viewingSchedulesFor.name}</p>
+                                <p className="text-sm text-gray-600 mt-1">
+                                    {viewingSchedulesFor.name} • {watchStartTime ? format(new Date(watchStartTime), 'EEEE, MMM dd, yyyy') : format(new Date(), 'EEEE, MMM dd, yyyy')}
+                                </p>
                             </div>
                             <button 
                                 onClick={() => setViewingSchedulesFor(null)} 
@@ -1456,10 +1539,10 @@ const BookRoom: React.FC = () => {
                                                 <Calendar className="h-8 w-8 text-gray-400" />
                                             </div>
                                             <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                                                {getText('No Schedule Today', 'Tidak Ada Jadwal Hari Ini')}
+                                                {getText('No Schedule Found', 'Tidak Ada Jadwal')}
                                             </h3>
                                             <p className="text-gray-500">
-                                                {getText('This room is available for booking today.', 'Ruangan ini tersedia untuk dipesan hari ini.')}
+                                                {getText('This room is available for the selected time.', 'Ruangan ini tersedia untuk waktu yang dipilih.')}
                                             </p>
                                         </div>
                                     )}
