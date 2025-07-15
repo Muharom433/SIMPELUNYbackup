@@ -262,56 +262,55 @@ const BookingManagement: React.FC = () => {
 };
 
     const handleDelete = async (bookingId: string) => {
-        try {
-            setProcessingIds(prev => new Set(prev).add(bookingId));
-            const bookingToDelete = bookings.find(b => b.id === bookingId);
-            
-            // If the booking was approved, restore equipment quantities before deletion
-            if (bookingToDelete?.status === 'approved' && bookingToDelete.equipment_requested?.length > 0) {
-                try {
-                    await updateEquipmentQuantities(bookingToDelete.equipment_requested, 'increase');
-                    console.log('Equipment quantities restored before booking deletion');
-                } catch (equipmentError) {
-                    console.error('Equipment restoration error:', equipmentError);
-                    toast.error('Failed to restore equipment quantities. Deletion cancelled.');
-                    return;
-                }
+    try {
+        setProcessingIds(prev => new Set(prev).add(bookingId));
+        const bookingToDelete = bookings.find(b => b.id === bookingId);
+        
+        // If the booking was approved, restore equipment quantities before deletion
+        if (bookingToDelete?.status === 'approved' && bookingToDelete.equipment_requested?.length > 0) {
+            try {
+                await updateEquipmentQuantities(bookingToDelete.equipment_requested, 'increase');
+                console.log('Equipment quantities restored before booking deletion');
+            } catch (equipmentError) {
+                console.error('Equipment restoration error:', equipmentError);
+                toast.error('Failed to restore equipment quantities. Deletion cancelled.');
+                return;
             }
-
-            const { error } = await supabase
-                .from('bookings')
-                .delete()
-                .eq('id', bookingId);
-
-            if (error) throw error;
-
-            if (bookingToDelete?.room_id) {
-                const { error: roomUpdateError } = await supabase
-                    .from('rooms')
-                    .update({ is_available: true })
-                    .eq('id', bookingToDelete.room_id);
-
-                if (roomUpdateError) {
-                    console.error('Room update error:', roomUpdateError);
-                    toast.error('Booking deleted, but failed to update room status.');
-                }
-            }
-            
-            toast.success('Booking deleted successfully');
-            setShowDeleteConfirm(null);
-            await fetchBookings();
-            
-        } catch (error: any) {
-            console.error('Error deleting booking:', error);
-            toast.error(error.message || 'Failed to delete booking');
-        } finally {
-            setProcessingIds(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(bookingId);
-                return newSet;
-            });
         }
-    };
+
+        const { error } = await supabase
+            .from('bookings')
+            .delete()
+            .eq('id', bookingId);
+
+        if (error) throw error;
+
+        // ❌ HAPUS: Jangan update room availability
+        // Room availability hanya boleh diubah manual oleh admin di RoomManagement
+        /*
+        if (bookingToDelete?.room_id) {
+            const { error: roomUpdateError } = await supabase
+                .from('rooms')
+                .update({ is_available: true })
+                .eq('id', bookingToDelete.room_id);
+        }
+        */
+        
+        toast.success('Booking deleted successfully');
+        setShowDeleteConfirm(null);
+        await fetchBookings();
+        
+    } catch (error: any) {
+        console.error('Error deleting booking:', error);
+        toast.error(error.message || 'Failed to delete booking');
+    } finally {
+        setProcessingIds(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(bookingId);
+            return newSet;
+        });
+    }
+};
 
     const filteredBookings = bookings.filter(booking => {
         const matchesSearch = 
