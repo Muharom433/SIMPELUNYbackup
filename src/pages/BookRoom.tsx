@@ -554,7 +554,6 @@ import {
   List as ListIcon,
   CheckSquare as CheckSquareIcon,
   Square as SquareIcon2,
-  Minus,
   Plus as PlusIcon,
   Equal,
   NotEqual,
