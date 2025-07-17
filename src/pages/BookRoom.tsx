@@ -981,7 +981,7 @@ const BookRoom: React.FC = () => {
               </div>
 
               {/* Room List */}
-              <div className="space-y-4 max-h-[600px] overflow-y-auto p-2 -m-2">
+              <div className="space-y-4 max-h-[300px] overflow-y-auto p-2 -m-2">
                 {roomsLoading && filteredAndSortedRooms.length === 0 ? (
                   <div className="flex items-center justify-center h-32">
                     <div className="flex items-center space-x-2">
