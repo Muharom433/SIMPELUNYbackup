@@ -87,7 +87,7 @@ interface Equipment {
   category: string;
   is_mandatory: boolean;
   is_available: boolean;
-  quantity: number; // Assuming quantity field exists
+  quantity: number;
 }
 
 const BookRoom: React.FC = () => {
@@ -404,8 +404,8 @@ const BookRoom: React.FC = () => {
         .select('*')
         // Fetch equipment for this room OR general equipment (rooms_id is null)
         .or(`rooms_id.eq.${roomId},rooms_id.is.null`)
-        // And the quantity must be greater than 1
-        .gt('quantity', 1)
+        // Also, fetch if it's mandatory (regardless of quantity) OR if quantity > 1
+        .or('is_mandatory.eq.true,quantity.gt.1')
         .order('name');
 
       if (error) throw error;
