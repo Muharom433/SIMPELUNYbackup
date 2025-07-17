@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-    Building, Plus, Search, Edit, Trash2, Eye, Users, User, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Zap, Tv2, Speaker, Presentation, Mic, AirVent, Loader2, Hash, DoorClosed, Calendar, Phone, Send, ChevronDown, BookOpen, GraduationCap
+    Building, Plus, Search, Edit, Trash2, Eye, Users, User, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Zap, Tv2, Speaker, Presentation, Mic, AirVent, Loader2, Hash, DoorClosed, Calendar, Phone, Send, ChevronDown, BookOpen, GraduationCap, ArrowUpDown
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -46,6 +46,12 @@ interface ExistingUser {
 interface RoomWithStatus extends Room {
     department: Department | null;
     status: 'In Use' | 'Scheduled' | 'Available' | 'Loading';
+    currentBooking?: any;
+    scheduleDetails?: {
+        lectures: any[];
+        exams: any[];
+        sessions: any[];
+    };
 }
 
 interface BookingConflict {
@@ -115,6 +121,11 @@ const BookRoom: React.FC = () => {
     const [checkedEquipment, setCheckedEquipment] = useState<Set<string>>(new Set());
     const [useManualEndTime, setUseManualEndTime] = useState(false);
 
+    // ✅ NEW: Sorting states
+    const [sortBy, setSortBy] = useState<'name' | 'capacity' | 'status'>('name');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+    const [filterStatus, setFilterStatus] = useState<'all' | 'Available' | 'Scheduled' | 'In Use'>('all');
+
     const form = useForm<BookingForm>({
         resolver: zodResolver(bookingSchema),
         defaultValues: { 
@@ -144,23 +155,23 @@ const BookRoom: React.FC = () => {
         return name.toLowerCase().replace(/[\s.&-]/g, '');
     };
     
-    // ✅ FIXED: Implementasi logic status yang benar
+    // ✅ IMPROVED: Enhanced room status logic dengan prioritas yang benar
     const fetchRoomsWithStatus = useCallback(async () => {
         try {
             const now = new Date();
             const todayDayName = format(now, 'EEEE', { locale: localeID });
             const todayDateString = format(now, 'yyyy-MM-dd');
             
-            // 1. Fetch semua ruangan dengan is_available = true saja
+            // 1. Fetch ONLY AVAILABLE rooms (is_available = true)
             const { data: roomsData, error: roomsError } = await supabase
                 .from('rooms')
                 .select(`*, department:departments(*)`)
-                .eq('is_available', true) // ✅ HANYA tampilkan ruangan yang available
+                .eq('is_available', true) // ✅ ONLY available rooms dapat di-book
                 .order('name', { ascending: true });
                 
             if (roomsError) throw roomsError;
 
-            // 2. Fetch bookings yang approved untuk hari ini
+            // 2. Fetch current approved bookings untuk TODAY
             const startOfDay = `${todayDateString}T00:00:00Z`;
             const endOfDay = `${todayDateString}T23:59:59Z`;
             
@@ -173,7 +184,7 @@ const BookRoom: React.FC = () => {
                 
             if (bookingsError) throw bookingsError;
 
-            // 3. Fetch lecture schedules untuk hari ini
+            // 3. Fetch lecture schedules untuk TODAY
             const { data: lecturesData, error: lecturesError } = await supabase
                 .from('lecture_schedules')
                 .select('room, start_time, end_time, course_name, class, subject_study, day')
@@ -181,7 +192,7 @@ const BookRoom: React.FC = () => {
                 
             if (lecturesError) throw lecturesError;
 
-            // 4. Fetch exam schedules untuk hari ini
+            // 4. Fetch exam schedules untuk TODAY
             const { data: examsData, error: examsError } = await supabase
                 .from('exams')
                 .select('room_id, start_time, end_time, course_name, course_code, semester, class, student_amount, is_take_home, date')
@@ -189,128 +200,74 @@ const BookRoom: React.FC = () => {
                 
             if (examsError) throw examsError;
 
-            // 5. Map untuk tracking conflicts per room
-            const bookingConflicts = new Map<string, BookingConflict[]>();
-            const lectureConflicts = new Map<string, LectureConflict[]>();
-            const examConflicts = new Map<string, ExamConflict[]>();
+            // 5. Fetch final sessions untuk TODAY
+            const { data: sessionsData, error: sessionsError } = await supabase
+                .from('final_sessions')
+                .select('room_id, start_time, end_time, title, supervisor, examiner, secretary, date')
+                .eq('date', todayDateString);
+                
+            if (sessionsError) throw sessionsError;
 
-            // Process booking conflicts (by room_id)
-            if (bookingsData) {
-                bookingsData.forEach(booking => {
-                    if (booking.room_id && booking.start_time && booking.end_time) {
-                        const startTime = new Date(booking.start_time);
-                        const endTime = new Date(booking.end_time);
-                        
-                        // Check if booking is currently active
-                        if (now >= startTime && now <= endTime) {
-                            if (!bookingConflicts.has(booking.room_id)) {
-                                bookingConflicts.set(booking.room_id, []);
-                            }
-                            bookingConflicts.get(booking.room_id)?.push({
-                                id: booking.room_id,
-                                start_time: format(startTime, 'HH:mm'),
-                                end_time: format(endTime, 'HH:mm'),
-                                purpose: booking.purpose || 'Room Booking',
-                                user: booking.user
-                            });
-                        }
-                    }
-                });
-            }
-
-            // Process lecture conflicts (by room name)
-            if (lecturesData) {
-                lecturesData.forEach(lecture => {
-                    if (lecture.room && lecture.start_time && lecture.end_time) {
-                        const normalizedRoomName = normalizeRoomName(lecture.room);
-                        
-                        try {
-                            const startTime = parse(lecture.start_time, 'HH:mm:ss', now);
-                            const endTime = parse(lecture.end_time, 'HH:mm:ss', now);
-                            
-                            // Check if lecture is currently active
-                            if (now >= startTime && now <= endTime) {
-                                if (!lectureConflicts.has(normalizedRoomName)) {
-                                    lectureConflicts.set(normalizedRoomName, []);
-                                }
-                                lectureConflicts.get(normalizedRoomName)?.push({
-                                    id: lecture.room,
-                                    start_time: lecture.start_time.substring(0, 5),
-                                    end_time: lecture.end_time.substring(0, 5),
-                                    course_name: lecture.course_name || 'Lecture',
-                                    class: lecture.class || '',
-                                    subject_study: lecture.subject_study || ''
-                                });
-                            }
-                        } catch (e) {
-                            console.error('Error parsing lecture time:', e);
-                        }
-                    }
-                });
-            }
-
-            // Process exam conflicts (by room_id)
-            if (examsData) {
-                examsData.forEach(exam => {
-                    if (exam.room_id && !exam.is_take_home && exam.start_time && exam.end_time) {
-                        try {
-                            const startTime = parse(exam.start_time, 'HH:mm:ss', now);
-                            const endTime = parse(exam.end_time, 'HH:mm:ss', now);
-                            
-                            // Check if exam is currently active
-                            if (now >= startTime && now <= endTime) {
-                                if (!examConflicts.has(exam.room_id)) {
-                                    examConflicts.set(exam.room_id, []);
-                                }
-                                examConflicts.get(exam.room_id)?.push({
-                                    id: exam.room_id,
-                                    start_time: exam.start_time.substring(0, 5),
-                                    end_time: exam.end_time.substring(0, 5),
-                                    course_name: exam.course_name || 'Exam',
-                                    course_code: exam.course_code || '',
-                                    semester: exam.semester || 0,
-                                    class: exam.class || '',
-                                    student_amount: exam.student_amount || 0,
-                                    is_take_home: exam.is_take_home || false
-                                });
-                            }
-                        } catch (e) {
-                            console.error('Error parsing exam time:', e);
-                        }
-                    }
-                });
-            }
-
-            // 6. ✅ DETERMINE STATUS dengan logic yang benar
+            // 6. Process room status dengan priority logic yang benar
             const roomsWithStatus = (roomsData || []).map(room => {
                 let status: RoomWithStatus['status'] = 'Available';
-                
-                // Priority 1: Check booking conflicts (by room_id)
-                if (bookingConflicts.has(room.id)) {
+                let currentBooking = null;
+                let scheduleDetails = {
+                    lectures: [] as any[],
+                    exams: [] as any[],
+                    sessions: [] as any[]
+                };
+
+                // PRIORITY 1: Check for CURRENT active bookings (IN USE)
+                const activeBooking = bookingsData?.find(booking => {
+                    if (booking.room_id !== room.id) return false;
+                    const startTime = new Date(booking.start_time);
+                    const endTime = new Date(booking.end_time);
+                    return now >= startTime && now <= endTime;
+                });
+
+                if (activeBooking) {
                     status = 'In Use';
+                    currentBooking = activeBooking;
                 }
-                // Priority 2: Check exam conflicts (by room_id) 
-                else if (examConflicts.has(room.id)) {
-                    status = 'In Use';
-                }
-                // Priority 3: Check lecture conflicts (by room name)
-                else if (lectureConflicts.has(normalizeRoomName(room.name))) {
-                    status = 'In Use';
-                }
-                // Priority 4: Check if there are any schedules today (for "Scheduled" status)
-                else {
-                    // Check if room has any schedules today (not currently active)
-                    const hasBookingsToday = bookingsData?.some(b => b.room_id === room.id) || false;
-                    const hasLecturesToday = lecturesData?.some(l => normalizeRoomName(l.room || '') === normalizeRoomName(room.name)) || false;
-                    const hasExamsToday = examsData?.some(e => e.room_id === room.id && !e.is_take_home) || false;
+
+                // PRIORITY 2: Check for SCHEDULED events untuk hari ini
+                if (status === 'Available') {
+                    // Check lectures by room name
+                    const roomLectures = lecturesData?.filter(lecture => 
+                        lecture.room && normalizeRoomName(lecture.room) === normalizeRoomName(room.name)
+                    ) || [];
+
+                    // Check exams by room_id
+                    const roomExams = examsData?.filter(exam => 
+                        exam.room_id === room.id && !exam.is_take_home
+                    ) || [];
+
+                    // Check final sessions by room_id
+                    const roomSessions = sessionsData?.filter(session => 
+                        session.room_id === room.id
+                    ) || [];
+
+                    // Check if ada jadwal hari ini
+                    const hasScheduleToday = roomLectures.length > 0 || roomExams.length > 0 || roomSessions.length > 0;
                     
-                    if (hasBookingsToday || hasLecturesToday || hasExamsToday) {
+                    if (hasScheduleToday) {
                         status = 'Scheduled';
+                        scheduleDetails = {
+                            lectures: roomLectures,
+                            exams: roomExams,
+                            sessions: roomSessions
+                        };
                     }
-                    // Else: status remains 'Available'
                 }
-                
-                return { ...room, department: room.department, status };
+
+                return { 
+                    ...room, 
+                    department: room.department, 
+                    status,
+                    currentBooking,
+                    scheduleDetails
+                };
             });
 
             setRooms(roomsWithStatus as RoomWithStatus[]);
@@ -325,7 +282,7 @@ const BookRoom: React.FC = () => {
         }
     }, [getText]);
 
-    // ✅ FIXED: Fetch schedules untuk modal dengan detail yang lengkap
+    // ✅ IMPROVED: Enhanced schedules fetch dengan detail lengkap
     const fetchSchedulesForRoom = async (roomName: string, roomId: string) => {
         setLoadingSchedules(true);
         try {
@@ -363,9 +320,18 @@ const BookRoom: React.FC = () => {
                 .eq('date', todayDateString)
                 .order('start_time');
 
+            // Fetch final sessions untuk hari ini
+            const { data: sessionsData, error: sessionsError } = await supabase
+                .from('final_sessions')
+                .select('*')
+                .eq('room_id', roomId)
+                .eq('date', todayDateString)
+                .order('start_time');
+
             if (bookingsError) throw bookingsError;
             if (lecturesError) throw lecturesError;
             if (examsError) throw examsError;
+            if (sessionsError) throw sessionsError;
 
             // Transform data untuk modal
             const bookings: BookingConflict[] = (bookingsData || []).map(booking => ({
@@ -561,6 +527,7 @@ const BookRoom: React.FC = () => {
         }, 1000);
     };
     
+    // ✅ IMPROVED: Enhanced submit function dengan late booking logic
     const onSubmit = async (data: BookingForm) => {
         if (!selectedRoom) { 
             if (alert && alert.error) {
@@ -571,11 +538,12 @@ const BookRoom: React.FC = () => {
         
         setSubmitting(true);
         try {
-            const { data: existingBookings, error: conflictError } = await supabase.from('bookings').select('id').eq('room_id', data.room_id).eq('status', 'approved');
-            if (conflictError) throw conflictError;
-            if (existingBookings && existingBookings.length > 0) {
-                const idsToUpdate = existingBookings.map(b => b.id);
-                await supabase.from('bookings').update({ status: 'completed' }).in('id', idsToUpdate);
+            // ✅ Handle late booking: Mark existing approved bookings as completed
+            if (selectedRoom.status === 'In Use' && selectedRoom.currentBooking) {
+                await supabase
+                    .from('bookings')
+                    .update({ status: 'completed' })
+                    .eq('id', selectedRoom.currentBooking.id);
             }
             
             // Use manual end time if set, otherwise calculate automatically
@@ -613,8 +581,6 @@ const BookRoom: React.FC = () => {
             };
             const { error } = await supabase.from('bookings').insert(bookingData);
             if (error) throw error;
-            const { error: roomUpdateError } = await supabase.from('rooms').update({ is_available: false }).eq('id', data.room_id);
-            if (roomUpdateError) console.error('Error updating room availability:', roomUpdateError);
             
             // Call the enhanced success handler
             handleBookingSuccess(data, selectedRoom);
@@ -654,15 +620,42 @@ const BookRoom: React.FC = () => {
         user.identity_number.toLowerCase().includes(identitySearchTerm.toLowerCase()) || 
         user.full_name.toLowerCase().includes(identitySearchTerm.toLowerCase())
     );
-    
-    const filteredRooms = useMemo(() => { 
-        return rooms.filter(room => { 
+
+    // ✅ NEW: Enhanced room filtering dengan sorting
+    const filteredAndSortedRooms = useMemo(() => { 
+        let filtered = rooms.filter(room => { 
             const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                                 room.code.toLowerCase().includes(searchTerm.toLowerCase()); 
-            const matchesStatus = room.status !== 'In Use' || showInUse; 
-            return matchesSearch && matchesStatus; 
-        }); 
-    }, [rooms, searchTerm, showInUse]);
+            const matchesStatus = filterStatus === 'all' || room.status === filterStatus;
+            const matchesVisibility = room.status !== 'In Use' || showInUse; 
+            return matchesSearch && matchesStatus && matchesVisibility; 
+        });
+
+        // Apply sorting
+        filtered.sort((a, b) => {
+            let comparison = 0;
+            
+            switch (sortBy) {
+                case 'name':
+                    comparison = a.name.localeCompare(b.name);
+                    break;
+                case 'capacity':
+                    comparison = a.capacity - b.capacity;
+                    break;
+                case 'status':
+                    // Custom status order: Available -> Scheduled -> In Use
+                    const statusOrder = { 'Available': 1, 'Scheduled': 2, 'In Use': 3 };
+                    comparison = statusOrder[a.status] - statusOrder[b.status];
+                    break;
+                default:
+                    comparison = 0;
+            }
+            
+            return sortOrder === 'asc' ? comparison : -comparison;
+        });
+
+        return filtered;
+    }, [rooms, searchTerm, filterStatus, showInUse, sortBy, sortOrder]);
 
     const getStatusColor = (status: RoomWithStatus['status']) => { 
         switch (status) { 
@@ -679,6 +672,16 @@ const BookRoom: React.FC = () => {
             case 'Scheduled': return getText('Scheduled', 'Terjadwal');
             case 'Available': return getText('Available', 'Tersedia');
             default: return status;
+        }
+    };
+
+    // ✅ NEW: Handle sorting change
+    const handleSortChange = (newSortBy: 'name' | 'capacity' | 'status') => {
+        if (sortBy === newSortBy) {
+            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortBy(newSortBy);
+            setSortOrder('asc');
         }
     };
 
@@ -735,12 +738,12 @@ const BookRoom: React.FC = () => {
                             </div>
                             
                             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-                                {/* ✅ STEP 1: Booking Details - SEKARANG DI ATAS */}
+                                {/* ✅ STEP 1: Booking Details - PERTAMA */}
                                 <div className="space-y-6">
                                     <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
                                         <Calendar className="h-5 w-5 text-blue-500" />
                                         <h3 className="text-lg font-semibold text-gray-800">
-                                            {getText('Booking Details', 'Detail Pemesanan')}
+                                            {getText('1. Booking Details', '1. Detail Pemesanan')}
                                         </h3>
                                     </div>
                                     
@@ -886,8 +889,87 @@ const BookRoom: React.FC = () => {
                                         </div>
                                     )}
 
-                                    {/* ✅ Room Selection Required Warning */}
-                                    {!selectedRoom && (
+                                    {/* Additional Notes */}
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                            {getText('Additional Notes (Optional)', 'Catatan Tambahan (Opsional)')}
+                                        </label>
+                                        <textarea 
+                                            {...form.register('notes')} 
+                                            rows={3}
+                                            placeholder={getText("Any special requirements or notes...", "Persyaratan khusus atau catatan...")}
+                                            className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200 resize-none" 
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* ✅ STEP 2: Room Selection - KEDUA (diisi otomatis saat pilih room) */}
+                                <div className="space-y-6">
+                                    <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
+                                        <Building className="h-5 w-5 text-blue-500" />
+                                        <h3 className="text-lg font-semibold text-gray-800">
+                                            {getText('2. Room Selection', '2. Pilih Ruangan')}
+                                        </h3>
+                                    </div>
+                                    
+                                    {selectedRoom ? (
+                                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-xl p-4">
+                                            <div className="flex items-start space-x-3">
+                                                <CheckCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                                                <div className="flex-1">
+                                                    <p className="font-semibold text-blue-800 text-lg">
+                                                        {selectedRoom.name} ({selectedRoom.code})
+                                                    </p>
+                                                    <div className="mt-2 grid grid-cols-2 gap-4 text-sm">
+                                                        <div>
+                                                            <span className="text-blue-600 font-medium">
+                                                                {getText('Capacity:', 'Kapasitas:')}
+                                                            </span>
+                                                            <span className="ml-2 text-blue-800">
+                                                                {selectedRoom.capacity} {getText('seats', 'kursi')}
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-blue-600 font-medium">
+                                                                {getText('Department:', 'Departemen:')}
+                                                            </span>
+                                                            <span className="ml-2 text-blue-800">
+                                                                {selectedRoom.department?.name || getText('General', 'Umum')}
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-blue-600 font-medium">
+                                                                {getText('Status:', 'Status:')}
+                                                            </span>
+                                                            <span className={`ml-2 px-2 py-1 rounded-full text-xs font-bold ${getStatusColor(selectedRoom.status)}`}>
+                                                                {getStatusText(selectedRoom.status)}
+                                                            </span>
+                                                        </div>
+                                                        {selectedRoom.status === 'In Use' && (
+                                                            <div className="col-span-2">
+                                                                <span className="text-orange-600 font-medium">
+                                                                    ⚠️ {getText('Late Booking:', 'Peminjaman Terlambat:')}
+                                                                </span>
+                                                                <span className="ml-2 text-orange-800 text-xs">
+                                                                    {getText('Current booking will be marked as completed', 'Pemesanan saat ini akan ditandai selesai')}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelectedRoom(null);
+                                                            form.setValue('room_id', '');
+                                                        }}
+                                                        className="mt-3 text-sm text-blue-600 hover:text-blue-800 font-medium"
+                                                    >
+                                                        {getText('Change Room', 'Ganti Ruangan')}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
                                         <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200/50 rounded-xl p-4">
                                             <div className="flex items-start space-x-3">
                                                 <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
@@ -896,7 +978,7 @@ const BookRoom: React.FC = () => {
                                                         {getText('Room Selection Required', 'Pilih Ruangan Terlebih Dahulu')}
                                                     </p>
                                                     <p className="mt-1">
-                                                        {getText('Please select a room from the right panel before filling personal information.', 'Silakan pilih ruangan dari panel sebelah kanan sebelum mengisi informasi pribadi.')}
+                                                        {getText('Please select a room from the right panel to continue.', 'Silakan pilih ruangan dari panel sebelah kanan untuk melanjutkan.')}
                                                     </p>
                                                 </div>
                                             </div>
@@ -904,13 +986,61 @@ const BookRoom: React.FC = () => {
                                     )}
                                 </div>
 
-                                {/* ✅ STEP 2: Personal Information - SEKARANG HANYA MUNCUL JIKA ROOM TERPILIH */}
+                                {/* ✅ STEP 3: Equipment Request - KETIGA (hanya muncul jika room terpilih) */}
+                                {selectedRoom && availableEquipment.length > 0 && (
+                                    <div className="space-y-6">
+                                        <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
+                                            <Zap className="h-5 w-5 text-blue-500" />
+                                            <h3 className="text-lg font-semibold text-gray-800">
+                                                {getText('3. Equipment Request', '3. Permintaan Peralatan')}
+                                            </h3>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-48 overflow-y-auto pr-2">
+                                            {availableEquipment.map(eq => (
+                                                <label 
+                                                    key={eq.id} 
+                                                    className="flex items-center p-4 bg-white/50 rounded-xl cursor-pointer hover:bg-white/70 border border-gray-200/50 transition-all duration-200"
+                                                >
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={checkedEquipment.has(eq.id)} 
+                                                        disabled={eq.is_mandatory} 
+                                                        onChange={(e) => { 
+                                                            setCheckedEquipment(prev => { 
+                                                                const newSet = new Set(prev); 
+                                                                if (e.target.checked) { 
+                                                                    newSet.add(eq.id); 
+                                                                } else { 
+                                                                    newSet.delete(eq.id); 
+                                                                } 
+                                                                return newSet; 
+                                                            }) 
+                                                        }} 
+                                                        className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed" 
+                                                    />
+                                                    <div className="ml-4 flex-1">
+                                                        <span className={`text-sm font-medium ${eq.is_mandatory ? 'text-gray-900' : 'text-gray-700'}`}>
+                                                            {eq.name}
+                                                        </span>
+                                                        {eq.is_mandatory && (
+                                                            <span className="block mt-1 text-xs font-bold text-blue-600">
+                                                                {getText('Mandatory', 'Wajib')}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* ✅ STEP 4: Personal Information - KEEMPAT (hanya muncul jika bukan profile dan room terpilih) */}
                                 {selectedRoom && !profile && (
                                     <div className="space-y-6">
                                         <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
                                             <User className="h-5 w-5 text-blue-500" />
                                             <h3 className="text-lg font-semibold text-gray-800">
-                                                {getText('Personal Information', 'Informasi Pribadi')}
+                                                {getText('4. Personal Information', '4. Informasi Pribadi')}
                                             </h3>
                                         </div>
                                         
@@ -1025,7 +1155,7 @@ const BookRoom: React.FC = () => {
                                                             onMouseLeave={() => setShowStudyProgramDropdown(false)} 
                                                             className="absolute z-10 w-full mt-1 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-xl max-h-60 overflow-y-auto"
                                                         >
-                                                            {studyPrograms.filter(p => p.name.toLowerCase().includes(studyProgramSearchTerm.toLowerCase())).map((program) => (
+                                                           {studyPrograms.filter(p => p.name.toLowerCase().includes(studyProgramSearchTerm.toLowerCase())).map((program) => (
                                                                 <div 
                                                                     key={program.id} 
                                                                     onClick={() => { 
@@ -1067,54 +1197,6 @@ const BookRoom: React.FC = () => {
                                     </div>
                                 )}
                                 
-                                {/* Equipment Request Section - HANYA MUNCUL JIKA ROOM TERPILIH */}
-                                {selectedRoom && availableEquipment.length > 0 && (
-                                    <div className="space-y-6">
-                                        <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
-                                            <Zap className="h-5 w-5 text-blue-500" />
-                                            <h3 className="text-lg font-semibold text-gray-800">
-                                                {getText('Request Equipment', 'Permintaan Peralatan')}
-                                            </h3>
-                                        </div>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-48 overflow-y-auto pr-2">
-                                            {availableEquipment.map(eq => (
-                                                <label 
-                                                    key={eq.id} 
-                                                    className="flex items-center p-4 bg-white/50 rounded-xl cursor-pointer hover:bg-white/70 border border-gray-200/50 transition-all duration-200"
-                                                >
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={checkedEquipment.has(eq.id)} 
-                                                        disabled={eq.is_mandatory} 
-                                                        onChange={(e) => { 
-                                                            setCheckedEquipment(prev => { 
-                                                                const newSet = new Set(prev); 
-                                                                if (e.target.checked) { 
-                                                                    newSet.add(eq.id); 
-                                                                } else { 
-                                                                    newSet.delete(eq.id); 
-                                                                } 
-                                                                return newSet; 
-                                                            }) 
-                                                        }} 
-                                                        className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed" 
-                                                    />
-                                                    <div className="ml-4 flex-1">
-                                                        <span className={`text-sm font-medium ${eq.is_mandatory ? 'text-gray-900' : 'text-gray-700'}`}>
-                                                            {eq.name}
-                                                        </span>
-                                                        {eq.is_mandatory && (
-                                                            <span className="block mt-1 text-xs font-bold text-blue-600">
-                                                                {getText('Mandatory', 'Wajib')}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                                
                                 {/* Submit Button */}
                                 <div className="pt-6 border-t border-gray-200/50">
                                     <button 
@@ -1141,9 +1223,9 @@ const BookRoom: React.FC = () => {
 
                     {/* Right Column - Room Selection (5/12 width) */}
                     <div className="lg:col-span-5 space-y-6">
-                        {/* Search and Filter Controls */}
+                        {/* ✅ IMPROVED: Enhanced Search and Filter Controls */}
                         <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-                            <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
+                            <div className="flex flex-col sm:flex-row gap-4 justify-between items-center mb-4">
                                 <div className="flex-1 relative w-full sm:w-auto">
                                     <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                                     <input 
@@ -1171,7 +1253,50 @@ const BookRoom: React.FC = () => {
                                     </div>
                                 </div>
                             </div>
-                            <div className="mt-6 flex items-center">
+
+                            {/* ✅ NEW: Enhanced Filter and Sort Controls */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        {getText('Filter by Status', 'Filter berdasarkan Status')}
+                                    </label>
+                                    <select 
+                                        value={filterStatus} 
+                                        onChange={(e) => setFilterStatus(e.target.value as any)}
+                                        className="w-full px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
+                                    >
+                                        <option value="all">{getText('All Status', 'Semua Status')}</option>
+                                        <option value="Available">{getText('Available', 'Tersedia')}</option>
+                                        <option value="Scheduled">{getText('Scheduled', 'Terjadwal')}</option>
+                                        <option value="In Use">{getText('In Use', 'Sedang Digunakan')}</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        {getText('Sort by', 'Urutkan berdasarkan')}
+                                    </label>
+                                    <div className="flex space-x-2">
+                                        <select 
+                                            value={sortBy} 
+                                            onChange={(e) => handleSortChange(e.target.value as any)}
+                                            className="flex-1 px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
+                                        >
+                                            <option value="name">{getText('Name', 'Nama')}</option>
+                                            <option value="capacity">{getText('Capacity', 'Kapasitas')}</option>
+                                            <option value="status">{getText('Status', 'Status')}</option>
+                                        </select>
+                                        <button
+                                            onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                                            className="px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg hover:bg-gray-100/50 transition-colors"
+                                            title={getText(`Sort ${sortOrder === 'asc' ? 'Descending' : 'Ascending'}`, `Urutkan ${sortOrder === 'asc' ? 'Menurun' : 'Menaik'}`)}
+                                        >
+                                            <ArrowUpDown className={`h-4 w-4 text-gray-600 transition-transform ${sortOrder === 'desc' ? 'rotate-180' : ''}`} />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center">
                                 <div className="flex items-center space-x-3">
                                     <input 
                                         id="show-in-use" 
@@ -1187,20 +1312,20 @@ const BookRoom: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Rooms Grid/List */}
+                        {/* ✅ IMPROVED: Enhanced Rooms Display */}
                         <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
                             <div className="flex items-center justify-between mb-6">
                                 <h2 className="text-2xl font-bold text-gray-800">
                                     {getText('Available Rooms', 'Ruangan Tersedia')}
                                 </h2>
                                 <div className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-                                    {filteredRooms.length} {getText('rooms', 'ruangan')}
+                                    {filteredAndSortedRooms.length} {getText('rooms', 'ruangan')}
                                 </div>
                             </div>
                             
                             {viewMode === 'grid' ? (
                                 <div className="grid grid-cols-1 gap-4 max-h-96 overflow-y-auto pr-2">
-                                    {filteredRooms.map((room) => (
+                                    {filteredAndSortedRooms.map((room) => (
                                         <div 
                                             key={room.id} 
                                             onClick={() => { 
@@ -1244,9 +1369,40 @@ const BookRoom: React.FC = () => {
                                                         {room.department?.name || getText('General', 'Umum')}
                                                     </span>
                                                 </div>
+
+                                                {/* ✅ NEW: Enhanced Status Details */}
+                                                {room.status === 'In Use' && room.currentBooking && (
+                                                    <div className={`text-xs ${selectedRoom?.id === room.id ? 'text-orange-200' : 'text-orange-600'}`}>
+                                                        <p className="font-medium">
+                                                            🔄 {getText('Late booking available', 'Bisa dipinjam terlambat')}
+                                                        </p>
+                                                        <p className="mt-1">
+                                                            {getText('Current:', 'Saat ini:')} {room.currentBooking.user?.full_name}
+                                                        </p>
+                                                    </div>
+                                                )}
+
+                                                {room.status === 'Scheduled' && room.scheduleDetails && (
+                                                    <div className={`text-xs ${selectedRoom?.id === room.id ? 'text-yellow-200' : 'text-yellow-600'}`}>
+                                                        <p className="font-medium">
+                                                            📅 {getText('Has scheduled events today', 'Ada jadwal hari ini')}
+                                                        </p>
+                                                        <div className="mt-1 space-y-1">
+                                                            {room.scheduleDetails.lectures.length > 0 && (
+                                                                <p>📚 {room.scheduleDetails.lectures.length} {getText('lectures', 'kuliah')}</p>
+                                                            )}
+                                                            {room.scheduleDetails.exams.length > 0 && (
+                                                                <p>📝 {room.scheduleDetails.exams.length} {getText('exams', 'ujian')}</p>
+                                                            )}
+                                                            {room.scheduleDetails.sessions.length > 0 && (
+                                                                <p>🎓 {room.scheduleDetails.sessions.length} {getText('sessions', 'sidang')}</p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                             
-                                            {room.status === 'Scheduled' && (
+                                            {(room.status === 'Scheduled' || room.status === 'In Use') && (
                                                 <button 
                                                     title={getText("View Schedule", "Lihat Jadwal")} 
                                                     onClick={(e) => { 
@@ -1267,7 +1423,7 @@ const BookRoom: React.FC = () => {
                                 </div>
                             ) : (
                                 <div className="space-y-3">
-                                    {filteredRooms.map((room) => (
+                                    {filteredAndSortedRooms.map((room) => (
                                         <div 
                                             key={room.id} 
                                             onClick={() => { 
@@ -1288,6 +1444,17 @@ const BookRoom: React.FC = () => {
                                                     <p className={`text-sm ${selectedRoom?.id === room.id ? 'text-blue-100' : 'text-gray-500'}`}>
                                                         {room.code} • {room.department?.name || getText('General', 'Umum')}
                                                     </p>
+                                                    {/* ✅ NEW: Status details in list view */}
+                                                    {room.status === 'In Use' && room.currentBooking && (
+                                                        <p className={`text-xs mt-1 ${selectedRoom?.id === room.id ? 'text-orange-200' : 'text-orange-600'}`}>
+                                                            🔄 {getText('Current user:', 'Pengguna saat ini:')} {room.currentBooking.user?.full_name}
+                                                        </p>
+                                                    )}
+                                                    {room.status === 'Scheduled' && room.scheduleDetails && (
+                                                        <p className={`text-xs mt-1 ${selectedRoom?.id === room.id ? 'text-yellow-200' : 'text-yellow-600'}`}>
+                                                            📅 {room.scheduleDetails.lectures.length + room.scheduleDetails.exams.length + room.scheduleDetails.sessions.length} {getText('events today', 'jadwal hari ini')}
+                                                        </p>
+                                                    )}
                                                 </div>
                                             </div>
                                             <div className="flex items-center space-x-4">
@@ -1304,7 +1471,7 @@ const BookRoom: React.FC = () => {
                                                 }`}>
                                                     {getStatusText(room.status)}
                                                 </span>
-                                                {room.status === 'Scheduled' && (
+                                                {(room.status === 'Scheduled' || room.status === 'In Use') && (
                                                     <button 
                                                         title={getText("View Schedule", "Lihat Jadwal")} 
                                                         onClick={(e) => { 
@@ -1326,7 +1493,7 @@ const BookRoom: React.FC = () => {
                                 </div>
                             )}
                             
-                            {filteredRooms.length === 0 && !loading && (
+                            {filteredAndSortedRooms.length === 0 && !loading && (
                                 <div className="text-center py-12">
                                     <div className="p-4 bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
                                         <Building className="h-8 w-8 text-gray-400" />
@@ -1335,7 +1502,7 @@ const BookRoom: React.FC = () => {
                                         {getText('No Rooms Available', 'Tidak Ada Ruangan Tersedia')}
                                     </h3>
                                     <p className="text-gray-500">
-                                        {getText('Try adjusting your search or showing rooms in use.', 'Coba sesuaikan pencarian atau tampilkan ruangan yang sedang digunakan.')}
+                                        {getText('Try adjusting your search or filters.', 'Coba sesuaikan pencarian atau filter Anda.')}
                                     </p>
                                 </div>
                             )}
