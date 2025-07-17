@@ -2,24 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import {
-  Calendar, Clock, Users, Building, MapPin, Package, User, Phone, Mail, Hash, 
-  GraduationCap, ChevronDown, Search, Eye, X, Upload, FileText, Download,
-  Loader2, CheckCircle, AlertTriangle, Zap, Star, ArrowRight, Plus, Minus,
-  RefreshCw, Filter, Grid, List, SortAsc, SortDesc, MoreHorizontal, Info,
-  BookOpen, Award, Target, TrendingUp, Activity, BarChart3, PieChart,
-  Settings, Bell, HelpCircle, ExternalLink, Copy, Share2, Bookmark,
-  Heart, MessageSquare, ThumbsUp, Flag, Shield, Lock, Unlock, Key,
-  Home, Briefcase, School, Coffee, Wifi, Car, Camera, Music, Video,
-  Headphones, Smartphone, Laptop, Monitor, Printer, Scanner, Projector,
-  Microphone, Speaker, Router, Cable, Battery, Power, Signal, Volume,
-  Brightness, Contrast, Zoom, Maximize, Minimize, RotateCcw, RotateCw,
-  FlipHorizontal, FlipVertical, Crop, Edit, Save, Trash2, Archive,
-  FolderOpen, File, FileImage, FilePdf, FileSpreadsheet, FileVideo,
-  CloudUpload, CloudDownload, Cloud, Server, Database, HardDrive,
-  Cpu, Memory, Network, Globe, Link, Anchor, Navigation, Compass,
-  Map, Route, Direction, Location, Pin, Marker, Flag as FlagIcon
-} from 'lucide-react';
+import { Calendar, Clock, Users, Building, MapPin, Package, User, Phone, Mail, Hash, GraduationCap, ChevronDown, Search, Eye, X, Upload, FileText, Download, Loader2, CheckCircle, AlertTriangle, Zap, Star, ArrowRight, Plus, Minus, RefreshCw, Filter, Grid, List, SortAsc, SortDesc, MoreHorizontal, Info, BookOpen, Award, Target, TrendingUp, Activity, BarChart3, PieChart, Settings, Bell, HelpCircle, ExternalLink, Copy, Share2, Bookmark, Heart, MessageSquare, ThumbsUp, Flag, Shield, Lock, Unlock, Key, Home, Briefcase, School, Coffee, Wifi, Car, Camera, Music, Video, Headphones, Smartphone, Laptop, Monitor, Printer, Scan as Scanner, Projector, Microscope as Microphone, Speaker, Router, Cable, Battery, Power, Signal, Volume, Copyright as Brightness, Contrast, ZoomIn as Zoom, Maximize, Minimize, RotateCcw, RotateCw, FlipHorizontal, FlipVertical, Crop, Edit, Save, Trash2, Archive, FolderOpen, File, FileImage, File as FilePdf, FileSpreadsheet, FileVideo, UploadCloud as CloudUpload, DownloadCloud as CloudDownload, Cloud, Server, Database, HardDrive, Cpu, MemoryStick as Memory, Network, Globe, Link, Anchor, Navigation, Compass, Map, Route, TextSelection as Direction, Locate as Location, Pin, BookMarked as Marker, Flag as FlagIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
 import { alert } from '../components/Alert/AlertHelper';
