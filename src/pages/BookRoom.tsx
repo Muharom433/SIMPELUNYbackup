@@ -576,9 +576,9 @@ const BookRoom: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Left Column - Form */}
-          <div className="lg:col-span-7">
+           <div className="lg:col-span-7">
             <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-white/20 p-8">
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+              <form id="booking-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
                 
                 {/* STEP 1: BOOKING DETAILS */}
                 <div className="space-y-6">
@@ -1043,6 +1043,9 @@ const BookRoom: React.FC = () => {
                     )}
                   </div>
                 </div>
+              </form>
+            </div>
+          </div>
 
                 {/* STEP 4: SUBMIT BUTTON */}
                 <div className="pt-6 border-t border-gray-200/50">
