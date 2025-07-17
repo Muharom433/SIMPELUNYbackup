@@ -10,6 +10,7 @@ import {
   BookOpen, Award, Target, TrendingUp, Activity, BarChart3, PieChart
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { enUS, id } from 'date-fns/locale';
 import { useLanguage } from '../contexts/LanguageContext';
 import { alert } from '../components/Alert/AlertHelper';
 import { format, addMinutes, parseISO, isAfter, isBefore, addDays } from 'date-fns';
@@ -92,6 +93,21 @@ interface Equipment {
 
 const BookRoom: React.FC = () => {
   const { getText } = useLanguage();
+  
+  // Add debug logging for date and day name
+  const selectedDate = form.watch('date');
+  
+  useEffect(() => {
+    if (selectedDate) {
+      const date = new Date(selectedDate);
+      const englishDay = format(date, 'EEEE', { locale: enUS });
+      const indonesianDay = format(date, 'EEEE', { locale: id });
+      console.log('🗓️ Selected Date:', selectedDate);
+      console.log('📅 English Day:', englishDay);
+      console.log('📅 Indonesian Day:', indonesianDay);
+      console.log('📅 Date Object:', date);
+    }
+  }, [selectedDate]);
 
   // Form management
   const form = useForm<BookingForm>({

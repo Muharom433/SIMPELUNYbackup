@@ -5,6 +5,7 @@
 
 import { supabase } from '../lib/supabase';
 import { format, parseISO, startOfDay, endOfDay, addDays } from 'date-fns';
+import { enUS, id } from 'date-fns/locale';
 
 // Enhanced interfaces for 2-layer status
 export interface EnhancedRoomStatus {
@@ -59,6 +60,32 @@ export interface FutureBooking {
   user_identity?: string;
   relative_date: string; // "Tomorrow", "Next Monday", etc.
 }
+
+// Helper function to get day name in both languages and find matches
+const getDayNameVariations = (date: Date) => {
+  const englishDay = format(date, 'EEEE', { locale: enUS }); // Monday, Tuesday, etc.
+  const indonesianDay = format(date, 'EEEE', { locale: id }); // Senin, Selasa, etc.
+  
+  // Also include common variations
+  const dayMappings = {
+    'Monday': ['Monday', 'Senin', 'monday', 'senin'],
+    'Tuesday': ['Tuesday', 'Selasa', 'tuesday', 'selasa'],
+    'Wednesday': ['Wednesday', 'Rabu', 'wednesday', 'rabu'],
+    'Thursday': ['Thursday', 'Kamis', 'thursday', 'kamis'],
+    'Friday': ['Friday', 'Jumat', 'friday', 'jumat'],
+    'Saturday': ['Saturday', 'Sabtu', 'saturday', 'sabtu'],
+    'Sunday': ['Sunday', 'Minggu', 'sunday', 'minggu']
+  };
+  
+  // Find all possible variations for this day
+  for (const [key, variations] of Object.entries(dayMappings)) {
+    if (variations.includes(englishDay) || variations.includes(indonesianDay)) {
+      return variations;
+    }
+  }
+  
+  return [englishDay, indonesianDay];
+};
 
 // ================================
 // ENHANCED API FUNCTIONS
@@ -200,14 +227,15 @@ export const getEnhancedRoomStatusSingle = async (
  */
 export const checkScheduledEventsForDate = async (room: any, date: string): Promise<boolean> => {
   try {
-    const dayName = format(parseISO(date), 'EEEE');
+    const targetDate = parseISO(date);
+    const dayVariations = getDayNameVariations(targetDate);
     
     // Check lecture schedules
     const { data: lectures } = await supabase
       .from('lecture_schedules')
       .select('*')
       .ilike('room', `%${room.name}%`)
-      .eq('day', dayName);
+      .in('day', dayVariations);
 
     // Check exams
     const { data: exams } = await supabase
@@ -237,14 +265,15 @@ export const checkScheduledEventsForDate = async (room: any, date: string): Prom
  */
 export const getScheduleDetailsForDate = async (room: any, date: string) => {
   try {
-    const dayName = format(parseISO(date), 'EEEE');
+    const targetDate = parseISO(date);
+    const dayVariations = getDayNameVariations(targetDate);
     
     // Get lecture schedules
     const { data: lectures } = await supabase
       .from('lecture_schedules')
       .select('*')
       .ilike('room', `%${room.name}%`)
-      .eq('day', dayName);
+      .in('day', dayVariations);
 
     // Get exams
     const { data: exams } = await supabase
@@ -356,7 +385,7 @@ export const checkRoomAvailability = async (
 
     // Check schedule conflicts (lectures, exams, sessions)
     const startDate = parseISO(startDateTime);
-    const dayName = format(startDate, 'EEEE');
+    const dayVariations = getDayNameVariations(startDate);
     const dateString = format(startDate, 'yyyy-MM-dd');
     
     // Get room name for lecture check
@@ -374,7 +403,7 @@ export const checkRoomAvailability = async (
         .from('lecture_schedules')
         .select('*')
         .ilike('room', `%${roomData.name}%`)
-        .eq('day', dayName);
+        .in('day', dayVariations);
       
       // Check exam conflicts
       const { data: examConflicts } = await supabase
