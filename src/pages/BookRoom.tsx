@@ -1,8 +1,27 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Calendar, Clock, Users, Building, MapPin, Package, User, Phone, Mail, Hash, GraduationCap, ChevronDown, Search, Eye, X, Upload, FileText, Download, Loader2, CheckCircle, AlertTriangle, Zap, Star, ArrowRight, Plus, Minus, RefreshCw, Filter, Grid, List, SortAsc, SortDesc, MoreHorizontal, Info, BookOpen, Award, Target, TrendingUp, Activity, BarChart3, PieChart, Settings, Bell, HelpCircle, ExternalLink, Copy, Share2, Bookmark, Heart, MessageSquare, ThumbsUp, Flag, Shield, Lock, Unlock, Key, Home, Briefcase, School, Coffee, Wifi, Car, Camera, Music, Video, Headphones, Smartphone, Laptop, Monitor, Printer, Scan as Scanner, Projector, Microscope as Microphone, Speaker, Router, Cable, Battery, Power, Signal, Volume, Copyright as Brightness, Contrast, ZoomIn as Zoom, Maximize, Minimize, RotateCcw, RotateCw, FlipHorizontal, FlipVertical, Crop, Edit, Save, Trash2, Archive, FolderOpen, File, FileImage, File as FilePdf, FileSpreadsheet, FileVideo, UploadCloud as CloudUpload, DownloadCloud as CloudDownload, Cloud, Server, Database, HardDrive, Cpu, MemoryStick as Memory, Network, Globe, Link, Anchor, Navigation, Compass, Map, Route, TextSelection as Direction, Locate as Location, Pin, BookMarked as Marker, Flag as FlagIcon } from 'lucide-react';
+import {
+  Calendar, Clock, Users, Building, MapPin, Package, User, Phone, Mail, Hash, 
+  GraduationCap, ChevronDown, Search, Eye, X, Upload, FileText, Download, 
+  Loader2, CheckCircle, AlertTriangle, Zap, Star, ArrowRight, Plus, Minus, 
+  RefreshCw, Filter, Grid, List, SortAsc, SortDesc, MoreHorizontal, Info, 
+  BookOpen, Award, Target, TrendingUp, Activity, BarChart3, PieChart, 
+  Settings, Bell, HelpCircle, ExternalLink, Copy, Share2, Bookmark, Heart, 
+  MessageSquare, ThumbsUp, Flag, Shield, Lock, Unlock, Key, Home, Briefcase, 
+  School, Coffee, Wifi, Car, Camera, Music, Video, Headphones, Smartphone, 
+  Laptop, Monitor, Printer, Scan as Scanner, Projector, 
+  Microscope as Microphone, Speaker, Router, Cable, Battery, Power, Signal, 
+  Volume, Copyright as Brightness, Contrast, ZoomIn as Zoom, Maximize, 
+  Minimize, RotateCcw, RotateCw, FlipHorizontal, FlipVertical, Crop, Edit, 
+  Save, Trash2, Archive, FolderOpen, File, FileImage, File as FilePdf, 
+  FileSpreadsheet, FileVideo, UploadCloud as CloudUpload, 
+  DownloadCloud as CloudDownload, Cloud, Server, Database, HardDrive, Cpu, 
+  MemoryStick as Memory, Network, Globe, Link, Anchor, Navigation, Compass, 
+  Map, Route, TextSelection as Direction, Locate as Location, Pin, 
+  BookMarked as Marker, Flag as FlagIcon
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
 import { alert } from '../components/Alert/AlertHelper';
@@ -100,9 +119,13 @@ const BookRoom: React.FC = () => {
   const [attachments, setAttachments] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   
-  // ✅ FIXED: Only Identity search states (removed study program search states)
-  const [identitySearchTerm, setIdentitySearchTerm] = useState('');
-  const [showIdentityDropdown, setShowIdentityDropdown] = useState(false);
+  // ✅ REFS for DOM manipulation like SessionSchedule
+  const identityInputRef = useRef<HTMLInputElement>(null);
+  const fullNameInputRef = useRef<HTMLInputElement>(null);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
+  const studyProgramDisplayRef = useRef<HTMLInputElement>(null);
+  
+  // ✅ Identity search states (simplified)
   const [identitySearchResults, setIdentitySearchResults] = useState<User[]>([]);
   const [identitySearchLoading, setIdentitySearchLoading] = useState(false);
   
@@ -156,45 +179,213 @@ const BookRoom: React.FC = () => {
     }
   }, [watchStartTime, watchSks, watchClassType, useManualEndTime, form]);
 
-  // Smart identity search
-  const searchUsers = useCallback(async (term: string) => {
-    if (term.length < 3) {
-      setIdentitySearchResults([]);
-      setShowIdentityDropdown(false);
+  // ✅ Smart identity search with DOM manipulation (like SessionSchedule)
+  const showIdentityDropdown = useCallback((searchTerm: string) => {
+    if (!searchTerm.trim()) {
+      hideIdentityDropdown();
       return;
     }
 
     setIdentitySearchLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select(`
-          id, full_name, identity_number, email, phone_number, study_program_id,
-          study_program:study_programs(id, name, code)
-        `)
-        .or(`full_name.ilike.%${term}%,identity_number.ilike.%${term}%`)
-        .limit(10);
+    
+    // Filter users based on search term
+    supabase
+      .from('users')
+      .select(`
+        id, full_name, identity_number, email, phone_number, study_program_id,
+        study_program:study_programs(id, name, code)
+      `)
+      .or(`full_name.ilike.%${searchTerm}%,identity_number.ilike.%${searchTerm}%`)
+      .limit(10)
+      .then(({ data, error }) => {
+        setIdentitySearchLoading(false);
+        
+        if (error) {
+          console.error('Error searching users:', error);
+          hideIdentityDropdown();
+          return;
+        }
 
-      if (error) throw error;
-      setIdentitySearchResults(data || []);
-      setShowIdentityDropdown(true);
-    } catch (error) {
-      console.error('Error searching users:', error);
-    } finally {
-      setIdentitySearchLoading(false);
+        const filteredUsers = data || [];
+        setIdentitySearchResults(filteredUsers);
+
+        if (filteredUsers.length === 0) {
+          hideIdentityDropdown();
+          return;
+        }
+
+        // ✅ Create dropdown HTML like SessionSchedule
+        const dropdownHTML = `
+          <div class="absolute z-[9999] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+            ${filteredUsers.map(user => `
+              <div 
+                class="identity-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                data-user-id="${user.id}"
+                data-user-nim="${user.identity_number}"
+                data-user-name="${user.full_name}"
+                data-user-email="${user.email || ''}"
+                data-user-phone="${user.phone_number || ''}"
+                data-program-id="${user.study_program_id || ''}"
+              >
+                <div class="font-semibold text-gray-800">${user.identity_number}</div>
+                <div class="text-sm text-gray-600">${user.full_name}</div>
+                ${user.study_program ? `<div class="text-xs text-gray-500">${user.study_program.name}</div>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        `;
+
+        const dropdownContainer = document.querySelector('#identity-dropdown');
+        if (dropdownContainer) {
+          dropdownContainer.innerHTML = dropdownHTML;
+          dropdownContainer.style.display = 'block';
+          
+          // Add event listeners
+          dropdownContainer.querySelectorAll('.identity-dropdown-item').forEach(item => {
+            item.addEventListener('mousedown', (e) => e.preventDefault());
+            item.addEventListener('click', (e) => {
+              const target = e.currentTarget as HTMLElement;
+              const userId = target.dataset.userId;
+              const userNim = target.dataset.userNim;
+              const userName = target.dataset.userName;
+              const userEmail = target.dataset.userEmail;
+              const userPhone = target.dataset.userPhone;
+              const programId = target.dataset.programId;
+              
+              // ✅ Fill all form fields
+              if (identityInputRef.current) {
+                identityInputRef.current.value = userNim || '';
+              }
+              if (fullNameInputRef.current) {
+                fullNameInputRef.current.value = userName || '';
+              }
+              if (phoneInputRef.current) {
+                phoneInputRef.current.value = userPhone || '';
+              }
+              
+              // Set form values
+              form.setValue('identity_number', userNim || '');
+              form.setValue('full_name', userName || '');
+              form.setValue('phone_number', userPhone || '');
+              
+              // Handle study program selection
+              if (programId) {
+                form.setValue('study_program_id', programId);
+                const program = studyPrograms.find(p => p.id === programId);
+                if (program && studyProgramDisplayRef.current) {
+                  const display = `${program.name} (${program.code})`;
+                  studyProgramDisplayRef.current.value = display;
+                }
+              }
+              
+              hideIdentityDropdown();
+              identityInputRef.current?.focus();
+            });
+          });
+        }
+      });
+  }, [form, studyPrograms]);
+
+  const hideIdentityDropdown = useCallback(() => {
+    const dropdownContainer = document.querySelector('#identity-dropdown');
+    if (dropdownContainer) {
+      dropdownContainer.style.display = 'none';
     }
   }, []);
 
-  // Debounced user search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (identitySearchTerm) {
-        searchUsers(identitySearchTerm);
-      }
-    }, 300);
+  // ✅ Study Program dropdown with DOM manipulation
+  const showStudyProgramDropdown = useCallback(() => {
+    const dropdownHTML = `
+      <div class="absolute z-[9999] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
+        <div class="p-3 border-b border-gray-100">
+          <input
+            type="text"
+            placeholder="${getText("Search programs...", "Cari program studi...")}"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            id="program-search-input"
+            autocomplete="off"
+          />
+        </div>
+        <div class="max-h-60 overflow-y-auto" id="program-list">
+          ${studyPrograms.map(program => `
+            <div 
+              class="program-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+              data-program-id="${program.id}"
+              data-program-name="${program.name}"
+              data-program-code="${program.code || ''}"
+            >
+              <div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
 
-    return () => clearTimeout(timer);
-  }, [identitySearchTerm, searchUsers]);
+    const dropdownContainer = document.querySelector('#study-program-dropdown');
+    if (dropdownContainer) {
+      dropdownContainer.innerHTML = dropdownHTML;
+      dropdownContainer.style.display = 'block';
+      
+      const searchInput = dropdownContainer.querySelector('#program-search-input') as HTMLInputElement;
+      const programList = dropdownContainer.querySelector('#program-list');
+      
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.addEventListener('input', (e) => {
+          const target = e.target as HTMLInputElement;
+          const searchTerm = target.value.toLowerCase();
+          const filteredPrograms = studyPrograms.filter(program =>
+            program.name.toLowerCase().includes(searchTerm) ||
+            (program.code && program.code.toLowerCase().includes(searchTerm))
+          );
+          
+          if (programList) {
+            programList.innerHTML = filteredPrograms.map(program => `
+              <div 
+                class="program-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                data-program-id="${program.id}"
+                data-program-name="${program.name}"
+                data-program-code="${program.code || ''}"
+              >
+                <div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div>
+              </div>
+            `).join('');
+            
+            addStudyProgramListeners();
+          }
+        });
+      }
+      
+      addStudyProgramListeners();
+    }
+  }, [getText, studyPrograms]);
+
+  const addStudyProgramListeners = useCallback(() => {
+    document.querySelectorAll('.program-dropdown-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        const target = e.currentTarget as HTMLElement;
+        const programId = target.dataset.programId;
+        const programName = target.dataset.programName;
+        const programCode = target.dataset.programCode;
+        
+        const display = `${programName} (${programCode})`;
+        
+        if (studyProgramDisplayRef.current) {
+          studyProgramDisplayRef.current.value = display;
+        }
+        
+        form.setValue('study_program_id', programId || '');
+        hideStudyProgramDropdown();
+      });
+    });
+  }, [form]);
+
+  const hideStudyProgramDropdown = useCallback(() => {
+    const dropdownContainer = document.querySelector('#study-program-dropdown');
+    if (dropdownContainer) {
+      dropdownContainer.style.display = 'none';
+    }
+  }, []);
 
   const fetchStudyPrograms = async () => {
     try {
@@ -225,21 +416,6 @@ const BookRoom: React.FC = () => {
       console.error('Error fetching equipment:', error);
       setAvailableEquipment([]);
     }
-  };
-
-  // ✅ FIXED: Simplified identity selection handler
-  const handleIdentitySelect = (user: User) => {
-    setIdentitySearchTerm(user.identity_number);
-    form.setValue('identity_number', user.identity_number);
-    form.setValue('full_name', user.full_name);
-    form.setValue('phone_number', user.phone_number || '');
-    
-    // Auto-select study program in standard dropdown
-    if (user.study_program_id) {
-      form.setValue('study_program_id', user.study_program_id);
-    }
-    
-    setShowIdentityDropdown(false);
   };
 
   // Handle room selection
@@ -381,7 +557,12 @@ const BookRoom: React.FC = () => {
       setSelectedRoom(null);
       setAttachments([]);
       setCurrentStep(1);
-      setIdentitySearchTerm('');
+      
+      // Clear DOM inputs
+      if (identityInputRef.current) identityInputRef.current.value = '';
+      if (fullNameInputRef.current) fullNameInputRef.current.value = '';
+      if (phoneInputRef.current) phoneInputRef.current.value = '';
+      if (studyProgramDisplayRef.current) studyProgramDisplayRef.current.value = '';
       
       // Refresh room data
       fetchRoomData(targetBookingDate, true);
@@ -431,7 +612,7 @@ const BookRoom: React.FC = () => {
                     </h3>
                   </div>
 
-                  {/* ✅ FIXED: Identity Number with Smart Search - stopPropagation added */}
+                  {/* ✅ Identity Number with DOM manipulation (like SessionSchedule) */}
                   <div className="relative">
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                       {getText('Identity Number (NIM/NIP)', 'Nomor Identitas (NIM/NIP)')} *
@@ -440,46 +621,29 @@ const BookRoom: React.FC = () => {
                       <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                       <input
                         {...form.register('identity_number')}
+                        ref={identityInputRef}
                         type="text"
-                        placeholder={getText("Enter or select your ID", "Masukkan atau pilih ID Anda")}
-                        value={identitySearchTerm}
-                        onChange={(e) => {
-                          setIdentitySearchTerm(e.target.value);
-                          form.setValue('identity_number', e.target.value);
-                          setShowIdentityDropdown(true);
+                        placeholder={getText("Enter or search your ID", "Masukkan atau cari ID Anda")}
+                        onInput={(e) => {
+                          const target = e.target as HTMLInputElement;
+                          showIdentityDropdown(target.value);
                         }}
-                        onFocus={() => setShowIdentityDropdown(true)}
+                        onFocus={(e) => {
+                          const target = e.target as HTMLInputElement;
+                          showIdentityDropdown(target.value);
+                        }}
+                        onBlur={() => {
+                          setTimeout(() => hideIdentityDropdown(), 200);
+                        }}
                         className="w-full pl-10 pr-10 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
+                        autoComplete="off"
                       />
                       {identitySearchLoading && (
                         <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 animate-spin" />
                       )}
+                      {/* ✅ Dropdown container - NO OVERLAY BLOCKING */}
+                      <div id="identity-dropdown" style={{ display: 'none' }}></div>
                     </div>
-                    
-                    {/* ✅ FIXED: Identity Search Dropdown with stopPropagation */}
-                    {showIdentityDropdown && identitySearchResults.length > 0 && (
-                      <div 
-                        className="absolute z-50 w-full mt-1 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-xl max-h-60 overflow-y-auto"
-                        onClick={(e) => e.stopPropagation()} // ✅ PREVENT overlay click
-                      >
-                        {identitySearchResults.map((user) => (
-                          <div
-                            key={user.id}
-                            onClick={(e) => {
-                              e.stopPropagation(); // ✅ PREVENT overlay click
-                              handleIdentitySelect(user);
-                            }}
-                            className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100/50 last:border-b-0 transition-colors duration-150"
-                          >
-                            <div className="font-semibold text-gray-800">{user.identity_number}</div>
-                            <div className="text-sm text-gray-600">{user.full_name}</div>
-                            {user.study_program && (
-                              <div className="text-xs text-gray-500">{user.study_program.name}</div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
                     
                     {form.formState.errors.identity_number && (
                       <p className="mt-1 text-sm text-red-600 font-medium">
@@ -497,6 +661,7 @@ const BookRoom: React.FC = () => {
                       <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                       <input
                         {...form.register('full_name')}
+                        ref={fullNameInputRef}
                         type="text"
                         placeholder={getText("Enter your full name", "Masukkan nama lengkap Anda")}
                         className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
@@ -518,6 +683,7 @@ const BookRoom: React.FC = () => {
                       <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                       <input
                         {...form.register('phone_number')}
+                        ref={phoneInputRef}
                         type="tel"
                         placeholder="08xxxxxxxxxx"
                         className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
@@ -530,29 +696,24 @@ const BookRoom: React.FC = () => {
                     )}
                   </div>
 
-                  {/* ✅ FIXED: Study Program - Standard HTML Select */}
-                  <div>
+                  {/* ✅ Study Program with DOM manipulation (like SessionSchedule) */}
+                  <div className="relative">
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                       {getText('Study Program', 'Program Studi')} *
                     </label>
                     <div className="relative">
                       <GraduationCap className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                      <select
-                        {...form.register('study_program_id')}
-                        className="w-full pl-10 pr-8 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm appearance-none cursor-pointer"
-                      >
-                        <option value="">
-                          {getText('Select Study Program', 'Pilih Program Studi')}
-                        </option>
-                        {studyPrograms
-                          .sort((a, b) => a.name.localeCompare(b.name))
-                          .map((program) => (
-                            <option key={program.id} value={program.id}>
-                              {program.name} ({program.code})
-                            </option>
-                          ))}
-                      </select>
+                      <input
+                        ref={studyProgramDisplayRef}
+                        type="text"
+                        readOnly
+                        placeholder={getText("Click to select study program", "Klik untuk pilih program studi")}
+                        onClick={showStudyProgramDropdown}
+                        className="w-full pl-10 pr-8 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm cursor-pointer"
+                      />
                       <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                      {/* ✅ Dropdown container - NO OVERLAY BLOCKING */}
+                      <div id="study-program-dropdown" style={{ display: 'none' }}></div>
                     </div>
                     
                     {form.formState.errors.study_program_id && (
@@ -1255,13 +1416,7 @@ const BookRoom: React.FC = () => {
         {/* Dynamic toasts will be inserted here */}
       </div>
 
-      {/* ✅ FIXED: Simplified Click Outside Handler - Only for Identity Dropdown */}
-      {showIdentityDropdown && (
-        <div
-          className="fixed inset-0 z-30"  // ✅ CHANGED from z-40 to z-30
-          onClick={() => setShowIdentityDropdown(false)}
-        />
-      )}
+      {/* ✅ NO CLICK OUTSIDE OVERLAY - Dropdowns use DOM manipulation with proper event handling */}
 
       {/* Quick Action Buttons - Optional Enhancement */}
       <div className="fixed bottom-6 left-6 z-40">
@@ -1334,6 +1489,25 @@ const BookRoom: React.FC = () => {
           <div>Selected: {selectedRoom ? selectedRoom.name : 'None'}</div>
         </div>
       )}
+
+      {/* ✅ Event listeners cleanup on unmount */}
+      {React.useEffect(() => {
+        return () => {
+          // Cleanup any remaining dropdown event listeners
+          const identityDropdown = document.querySelector('#identity-dropdown');
+          const studyProgramDropdown = document.querySelector('#study-program-dropdown');
+          
+          if (identityDropdown) {
+            identityDropdown.innerHTML = '';
+            identityDropdown.style.display = 'none';
+          }
+          
+          if (studyProgramDropdown) {
+            studyProgramDropdown.innerHTML = '';
+            studyProgramDropdown.style.display = 'none';
+          }
+        };
+      }, [])}
     </div>
   );
 };
