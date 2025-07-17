@@ -27,22 +27,35 @@ const bookingSchema = z.object({
   // Booking Details
   start_time: z.string().min(1, 'Start time is required'),
   end_time: z.string().min(1, 'End time is required'),
-  purpose: z.string().min(5, 'Purpose must be at least 5 characters'),
+  purpose: z.enum(['Class/Lecture', 'Other'], { required_error: 'Purpose is required' }),
   sks: z.number().min(1, 'SKS must be at least 1').max(6, 'SKS cannot exceed 6'),
   class_type: z.enum(['theory', 'practical']),
 
   // Equipment & Notes
   equipment_requested: z.array(z.string()).optional(),
   notes: z.string().optional(),
-}).refine((data) => {
+  attachments: z.array(z.string()).optional(),
+}).superRefine((data, ctx) => {
+  // Validate end_time is after start_time
   if (data.start_time && data.end_time) {
-    return new Date(data.end_time) > new Date(data.start_time);
+    if (new Date(data.end_time) <= new Date(data.start_time)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "End time must be after start time",
+        path: ["end_time"],
+      });
+    }
   }
-  return true;
-}, {
-  message: "End time must be after start time",
-  path: ["end_time"],
+  // Validate attachments are required if purpose is 'Other'
+  if (data.purpose === 'Other' && (!data.attachments || data.attachments.length === 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Attachments are required when purpose is 'Other'",
+      path: ['attachments'],
+    });
+  }
 });
+
 
 type BookingForm = z.infer<typeof bookingSchema>;
 
@@ -85,20 +98,23 @@ const BookRoom: React.FC = () => {
     defaultValues: {
       sks: 2,
       class_type: 'theory',
+      purpose: 'Class/Lecture',
       equipment_requested: [],
+      attachments: [],
     },
   });
 
-  // Watch form values for auto-calculation
+  // Watch form values for dynamic UI changes
   const watchStartTime = form.watch('start_time');
   const watchSks = form.watch('sks');
   const watchClassType = form.watch('class_type');
+  const watchPurpose = form.watch('purpose');
+  const watchAttachments = form.watch('attachments');
 
   // Core state management
   const [selectedRoom, setSelectedRoom] = useState<any>(null);
   const [studyPrograms, setStudyPrograms] = useState<StudyProgram[]>([]);
   const [availableEquipment, setAvailableEquipment] = useState<Equipment[]>([]);
-  const [attachments, setAttachments] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Identity search states
@@ -408,11 +424,14 @@ const BookRoom: React.FC = () => {
     const files = event.target.files;
     if (!files) return;
 
+    const currentAttachments = form.getValues('attachments') || [];
+    
     Array.from(files).forEach((file) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const result = e.target?.result as string;
-        setAttachments(prev => [...prev, result]);
+        // We create a new array to ensure React re-renders
+        form.setValue('attachments', [...currentAttachments, result], { shouldValidate: true });
       };
       reader.readAsDataURL(file);
     });
@@ -420,7 +439,9 @@ const BookRoom: React.FC = () => {
 
   // Remove attachment
   const removeAttachment = (index: number) => {
-    setAttachments(prev => prev.filter((_, i) => i !== index));
+    const currentAttachments = form.getValues('attachments') || [];
+    const updatedAttachments = currentAttachments.filter((_, i) => i !== index);
+    form.setValue('attachments', updatedAttachments, { shouldValidate: true });
   };
 
   // Filter and sort rooms
@@ -507,7 +528,7 @@ const BookRoom: React.FC = () => {
         room_id: selectedRoom.id,
         equipment_requested: data.equipment_requested || [],
         notes: data.notes,
-        attachments: attachments,
+        attachments: data.attachments || [],
         status: 'pending',
         user_info: {
           full_name: data.full_name,
@@ -533,7 +554,6 @@ const BookRoom: React.FC = () => {
       // Reset form
       form.reset();
       setSelectedRoom(null);
-      setAttachments([]);
 
       // Clear DOM inputs
       if (identityInputRef.current) identityInputRef.current.value = '';
@@ -733,19 +753,21 @@ const BookRoom: React.FC = () => {
                 </div>
               )}
 
-              {/* Purpose */}
+              {/* Purpose Dropdown */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   {getText('Purpose', 'Tujuan')} *
                 </label>
                 <div className="relative">
-                  <FileText className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
-                  <textarea
+                  <Target className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <select
                     {...form.register('purpose')}
-                    rows={3}
-                    placeholder={getText("Describe the purpose of your booking", "Jelaskan tujuan pemesanan Anda")}
-                    className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm resize-none"
-                  />
+                    className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm appearance-none"
+                  >
+                    <option value="Class/Lecture">{getText('Class/Lecture', 'Kuliah')}</option>
+                    <option value="Other">{getText('Other', 'Lainnya')}</option>
+                  </select>
+                   <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
                 </div>
                 {form.formState.errors.purpose && (
                   <p className="mt-1 text-sm text-red-600 font-medium">
@@ -753,73 +775,83 @@ const BookRoom: React.FC = () => {
                   </p>
                 )}
               </div>
-
-              {/* Notes */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {getText('Additional Notes', 'Catatan Tambahan')}
-                </label>
-                <div className="relative">
-                  <FileText className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
-                  <textarea
-                    {...form.register('notes')}
-                    rows={2}
-                    placeholder={getText("Any additional information or special requests", "Informasi tambahan atau permintaan khusus")}
-                    className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm resize-none"
-                  />
-                </div>
-              </div>
-
-              {/* File Attachments */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {getText('Attachments', 'Lampiran')}
-                </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors duration-200">
-                  <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-sm text-gray-600 mb-2">
-                    {getText('Upload supporting documents', 'Unggah dokumen pendukung')}
-                  </p>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*,.pdf,.doc,.docx"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    id="file-upload"
-                  />
-                  <label
-                    htmlFor="file-upload"
-                    className="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 cursor-pointer transition-colors duration-200"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    {getText('Choose Files', 'Pilih File')}
-                  </label>
-                </div>
-
-                {/* Attachment Preview */}
-                {attachments.length > 0 && (
-                  <div className="mt-4 space-y-2">
-                    {attachments.map((attachment, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <FileText className="h-5 w-5 text-gray-400" />
-                          <span className="text-sm text-gray-700">
-                            {getText('Attachment', 'Lampiran')} {index + 1}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeAttachment(index)}
-                          className="text-red-600 hover:text-red-800 transition-colors duration-200"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
+              
+              {/* Conditional Fields for 'Other' Purpose */}
+              {watchPurpose === 'Other' && (
+                <>
+                  {/* Notes */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      {getText('Additional Notes', 'Catatan Tambahan')}
+                    </label>
+                    <div className="relative">
+                      <FileText className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                      <textarea
+                        {...form.register('notes')}
+                        rows={2}
+                        placeholder={getText("Any additional information or special requests", "Informasi tambahan atau permintaan khusus")}
+                        className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm resize-none"
+                      />
+                    </div>
                   </div>
-                )}
-              </div>
+
+                  {/* File Attachments */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      {getText('Attachments', 'Lampiran')} *
+                    </label>
+                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors duration-200">
+                      <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                      <p className="text-sm text-gray-600 mb-2">
+                        {getText('Upload supporting documents', 'Unggah dokumen pendukung')}
+                      </p>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*,.pdf,.doc,.docx"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                        id="file-upload"
+                      />
+                      <label
+                        htmlFor="file-upload"
+                        className="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 cursor-pointer transition-colors duration-200"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        {getText('Choose Files', 'Pilih File')}
+                      </label>
+                    </div>
+
+                    {/* Attachment Preview */}
+                    {watchAttachments && watchAttachments.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        {watchAttachments.map((attachment, index) => (
+                          <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <div className="flex items-center space-x-3 overflow-hidden">
+                              <FileText className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                              <span className="text-sm text-gray-700 truncate">
+                                {getText('Attachment', 'Lampiran')} {index + 1}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeAttachment(index)}
+                              className="text-red-600 hover:text-red-800 transition-colors duration-200 flex-shrink-0 ml-2"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                     {form.formState.errors.attachments && (
+                      <p className="mt-1 text-sm text-red-600 font-medium">
+                        {form.formState.errors.attachments.message}
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* STEP 2: ROOM SELECTION */}
