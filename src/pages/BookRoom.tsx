@@ -142,7 +142,6 @@ const BookRoom: React.FC = () => {
   const [identitySearchResults, setIdentitySearchResults] = useState<User[]>([]);
   const [identitySearchLoading, setIdentitySearchLoading] = useState(false);
 
-  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [useManualEndTime, setUseManualEndTime] = useState(false);
   const [calculatedEndTime, setCalculatedEndTime] = useState<Date | null>(null);
 
