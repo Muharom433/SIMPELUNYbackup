@@ -1,19 +1,25 @@
 // ================================
-// BACKEND API ENDPOINTS
-// File: src/api/roomStatus.ts (atau sesuai struktur project Anda)
+// ENHANCED API ENDPOINTS FOR 2-LAYER ROOM STATUS
+// File: src/api/roomStatus.ts
 // ================================
 
 import { supabase } from '../lib/supabase';
+import { format, parseISO, startOfDay, endOfDay, addDays } from 'date-fns';
 
-// Types untuk enhanced room status
+// Enhanced interfaces for 2-layer status
 export interface EnhancedRoomStatus {
   id: string;
   name: string;
   code: string;
   capacity: number;
   department: any;
+  equipment: string[];
   is_available: boolean;
+  
+  // 2-LAYER STATUS
   todayStatus: 'In Use' | 'Scheduled' | 'Available';
+  targetDateStatus: 'Scheduled' | 'Available';
+  
   currentBooking?: {
     id: string;
     purpose: string;
@@ -24,7 +30,8 @@ export interface EnhancedRoomStatus {
       identity_number: string;
     };
   };
-  scheduleDetails?: {
+  targetDateBookings: any[];
+  scheduleDetails: {
     lectures: any[];
     exams: any[];
     sessions: any[];
@@ -54,23 +61,19 @@ export interface FutureBooking {
 }
 
 // ================================
-// API FUNCTIONS
+// ENHANCED API FUNCTIONS
 // ================================
 
 /**
- * Get enhanced room status with today + future bookings
+ * Get enhanced room status with 2-layer logic
  */
 export const getEnhancedRoomStatus = async (targetDate?: string): Promise<EnhancedRoomStatus[]> => {
   try {
-    const dateParam = targetDate || new Date().toISOString().split('T')[0];
+    const dateParam = targetDate || format(new Date(), 'yyyy-MM-dd');
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const isToday = dateParam === today;
     
-    // 1. Get room status untuk tanggal tertentu menggunakan function
-    const { data: roomStatusData, error: statusError } = await supabase
-      .rpc('get_room_status_for_date', { target_date: dateParam });
-    
-    if (statusError) throw statusError;
-
-    // 2. Get room basic info
+    // 1. Get room basic info
     const { data: roomsData, error: roomsError } = await supabase
       .from('rooms')
       .select(`*, department:departments(*)`)
@@ -78,84 +81,14 @@ export const getEnhancedRoomStatus = async (targetDate?: string): Promise<Enhanc
       .order('name');
     
     if (roomsError) throw roomsError;
+    if (!roomsData) return [];
 
-    // 3. Get future bookings untuk semua rooms
-    const now = new Date();
-    const oneMonthLater = new Date(now);
-    oneMonthLater.setMonth(now.getMonth() + 1);
-    
-    const { data: futureBookingsData, error: futureError } = await supabase
-      .from('bookings')
-      .select(`
-        id, room_id, start_time, end_time, purpose,
-        user:users(full_name, identity_number)
-      `)
-      .eq('status', 'approved')
-      .gt('start_time', now.toISOString())
-      .lte('start_time', oneMonthLater.toISOString())
-      .order('start_time');
-    
-    if (futureError) throw futureError;
-
-    // 4. Combine data
-    const enhancedRooms: EnhancedRoomStatus[] = roomsData.map(room => {
-      // Find status data for this room
-      const statusInfo = roomStatusData?.find(s => s.room_id === room.id);
-      
-      // Find future bookings for this room
-      const roomFutureBookings = futureBookingsData?.filter(b => b.room_id === room.id) || [];
-      
-      // Calculate future booking stats
-      const nextWeek = new Date(now);
-      nextWeek.setDate(now.getDate() + 7);
-      
-      const thisWeekBookings = roomFutureBookings.filter(b => 
-        new Date(b.start_time) <= nextWeek
-      ).length;
-      
-      const nextBooking = roomFutureBookings[0]; // Already sorted by start_time
-      
-      // Process future bookings with relative dates
-      const upcomingBookings: FutureBooking[] = roomFutureBookings.slice(0, 5).map(booking => ({
-        id: booking.id,
-        start_time: booking.start_time,
-        end_time: booking.end_time,
-        purpose: booking.purpose,
-        user_name: booking.user?.full_name,
-        user_identity: booking.user?.identity_number,
-        relative_date: getRelativeDate(new Date(booking.start_time))
-      }));
-
-      return {
-        id: room.id,
-        name: room.name,
-        code: room.code,
-        capacity: room.capacity,
-        department: room.department,
-        is_available: room.is_available,
-        todayStatus: statusInfo?.status || 'Available',
-        currentBooking: statusInfo?.current_booking ? {
-          id: statusInfo.current_booking.id,
-          purpose: statusInfo.current_booking.purpose,
-          start_time: statusInfo.current_booking.start_time,
-          end_time: statusInfo.current_booking.end_time,
-          user: statusInfo.current_booking.user
-        } : undefined,
-        scheduleDetails: statusInfo?.schedule_details,
-        futureBookings: {
-          count: roomFutureBookings.length,
-          nextBooking: nextBooking ? {
-            date: format(new Date(nextBooking.start_time), 'yyyy-MM-dd'),
-            time: format(new Date(nextBooking.start_time), 'HH:mm'),
-            purpose: nextBooking.purpose,
-            user: nextBooking.user?.full_name
-          } : undefined,
-          thisWeek: thisWeekBookings,
-          thisMonth: roomFutureBookings.length,
-          upcoming: upcomingBookings
-        }
-      };
-    });
+    // 2. Process each room for enhanced status
+    const enhancedRooms = await Promise.all(
+      roomsData.map(async (room) => {
+        return await getEnhancedRoomStatusSingle(room, dateParam, isToday);
+      })
+    );
 
     return enhancedRooms;
     
@@ -166,36 +99,239 @@ export const getEnhancedRoomStatus = async (targetDate?: string): Promise<Enhanc
 };
 
 /**
- * Get future bookings detail untuk specific room
+ * Get enhanced status for a single room
  */
-export const getRoomFutureBookings = async (roomId: string, daysAhead: number = 30): Promise<FutureBooking[]> => {
+export const getEnhancedRoomStatusSingle = async (
+  room: any, 
+  targetDate: string, 
+  isToday: boolean = false
+): Promise<EnhancedRoomStatus> => {
   try {
-    const { data, error } = await supabase
-      .rpc('get_room_future_bookings', { 
-        room_id_param: roomId, 
-        days_ahead: daysAhead 
-      });
-    
-    if (error) throw error;
-    
-    return data.map(booking => ({
-      id: booking.booking_id,
-      start_time: booking.start_time,
-      end_time: booking.end_time,
-      purpose: booking.purpose,
-      user_name: booking.user_name,
-      user_identity: booking.user_identity,
-      relative_date: getRelativeDate(new Date(booking.start_time))
-    }));
-    
+    // Layer 1: Today Status (Real-time) - only if checking today
+    let todayStatus: 'In Use' | 'Scheduled' | 'Available' = 'Available';
+    let currentBooking = null;
+
+    if (isToday) {
+      // Check current active bookings
+      const now = new Date();
+      const { data: activeBookings } = await supabase
+        .from('bookings')
+        .select(`
+          *,
+          user:users(full_name, identity_number)
+        `)
+        .eq('room_id', room.id)
+        .eq('status', 'approved')
+        .lte('start_time', now.toISOString())
+        .gte('end_time', now.toISOString())
+        .limit(1);
+
+      if (activeBookings && activeBookings.length > 0) {
+        todayStatus = 'In Use';
+        currentBooking = activeBookings[0];
+      } else {
+        // Check if room has any scheduled events today
+        const hasScheduleToday = await checkScheduledEventsForDate(room, targetDate);
+        if (hasScheduleToday) {
+          todayStatus = 'Scheduled';
+        }
+      }
+    }
+
+    // Layer 2: Target Date Status
+    let targetDateStatus: 'Scheduled' | 'Available' = 'Available';
+    let targetDateBookings = [];
+    let scheduleDetails = { lectures: [], exams: [], sessions: [] };
+
+    // Check bookings for target date
+    const startOfTargetDate = startOfDay(parseISO(targetDate));
+    const endOfTargetDate = endOfDay(parseISO(targetDate));
+
+    const { data: dateBookings } = await supabase
+      .from('bookings')
+      .select(`
+        *,
+        user:users(full_name, identity_number)
+      `)
+      .eq('room_id', room.id)
+      .eq('status', 'approved')
+      .gte('start_time', startOfTargetDate.toISOString())
+      .lte('start_time', endOfTargetDate.toISOString());
+
+    if (dateBookings && dateBookings.length > 0) {
+      targetDateStatus = 'Scheduled';
+      targetDateBookings = dateBookings;
+    }
+
+    // Check scheduled events for target date
+    const scheduleData = await getScheduleDetailsForDate(room, targetDate);
+    if (scheduleData.lectures.length > 0 || scheduleData.exams.length > 0 || scheduleData.sessions.length > 0) {
+      targetDateStatus = 'Scheduled';
+      scheduleDetails = scheduleData;
+    }
+
+    // Get future bookings analytics
+    const futureBookings = await getFutureBookingsAnalytics(room.id);
+
+    return {
+      ...room,
+      todayStatus,
+      targetDateStatus,
+      currentBooking,
+      targetDateBookings,
+      scheduleDetails,
+      futureBookings,
+    };
   } catch (error) {
-    console.error('Error fetching room future bookings:', error);
-    throw error;
+    console.error('Error getting enhanced room status for single room:', error);
+    return {
+      ...room,
+      todayStatus: 'Available',
+      targetDateStatus: 'Available',
+      targetDateBookings: [],
+      scheduleDetails: { lectures: [], exams: [], sessions: [] },
+      futureBookings: { count: 0, thisWeek: 0, thisMonth: 0, upcoming: [] },
+    };
   }
 };
 
 /**
- * Check room availability untuk specific date range
+ * Check scheduled events for a room on a specific date
+ */
+export const checkScheduledEventsForDate = async (room: any, date: string): Promise<boolean> => {
+  try {
+    const dayName = format(parseISO(date), 'EEEE');
+    
+    // Check lecture schedules
+    const { data: lectures } = await supabase
+      .from('lecture_schedules')
+      .select('*')
+      .ilike('room', `%${room.name}%`)
+      .eq('day', dayName);
+
+    // Check exams
+    const { data: exams } = await supabase
+      .from('exams')
+      .select('*')
+      .eq('room_id', room.id)
+      .eq('date', date);
+
+    // Check final sessions
+    const { data: sessions } = await supabase
+      .from('final_sessions')
+      .select('*')
+      .eq('room_id', room.id)
+      .eq('date', date);
+
+    return (lectures && lectures.length > 0) || 
+           (exams && exams.length > 0) || 
+           (sessions && sessions.length > 0);
+  } catch (error) {
+    console.error('Error checking scheduled events:', error);
+    return false;
+  }
+};
+
+/**
+ * Get detailed schedule information for a specific date
+ */
+export const getScheduleDetailsForDate = async (room: any, date: string) => {
+  try {
+    const dayName = format(parseISO(date), 'EEEE');
+    
+    // Get lecture schedules
+    const { data: lectures } = await supabase
+      .from('lecture_schedules')
+      .select('*')
+      .ilike('room', `%${room.name}%`)
+      .eq('day', dayName);
+
+    // Get exams
+    const { data: exams } = await supabase
+      .from('exams')
+      .select('*')
+      .eq('room_id', room.id)
+      .eq('date', date);
+
+    // Get final sessions
+    const { data: sessions } = await supabase
+      .from('final_sessions')
+      .select('*')
+      .eq('room_id', room.id)
+      .eq('date', date);
+
+    return {
+      lectures: lectures || [],
+      exams: exams || [],
+      sessions: sessions || [],
+    };
+  } catch (error) {
+    console.error('Error getting schedule details:', error);
+    return { lectures: [], exams: [], sessions: [] };
+  }
+};
+
+/**
+ * Get future bookings analytics for a room
+ */
+export const getFutureBookingsAnalytics = async (roomId: string) => {
+  try {
+    const now = new Date();
+    const oneWeekLater = addDays(now, 7);
+    const oneMonthLater = addDays(now, 30);
+
+    const { data: futureBookings } = await supabase
+      .from('bookings')
+      .select(`
+        *,
+        user:users(full_name, identity_number)
+      `)
+      .eq('room_id', roomId)
+      .eq('status', 'approved')
+      .gt('start_time', now.toISOString())
+      .lte('start_time', oneMonthLater.toISOString())
+      .order('start_time');
+
+    if (!futureBookings) {
+      return { count: 0, thisWeek: 0, thisMonth: 0, upcoming: [] };
+    }
+
+    const thisWeekBookings = futureBookings.filter(b => 
+      parseISO(b.start_time) <= oneWeekLater
+    );
+
+    const nextBooking = futureBookings[0];
+
+    const upcomingBookings: FutureBooking[] = futureBookings.slice(0, 5).map(booking => ({
+      id: booking.id,
+      start_time: booking.start_time,
+      end_time: booking.end_time,
+      purpose: booking.purpose,
+      user_name: booking.user?.full_name,
+      user_identity: booking.user?.identity_number,
+      relative_date: getRelativeDate(parseISO(booking.start_time))
+    }));
+
+    return {
+      count: futureBookings.length,
+      nextBooking: nextBooking ? {
+        date: format(parseISO(nextBooking.start_time), 'yyyy-MM-dd'),
+        time: format(parseISO(nextBooking.start_time), 'HH:mm'),
+        purpose: nextBooking.purpose,
+        user: nextBooking.user?.full_name,
+      } : undefined,
+      thisWeek: thisWeekBookings.length,
+      thisMonth: futureBookings.length,
+      upcoming: upcomingBookings,
+    };
+  } catch (error) {
+    console.error('Error getting future bookings analytics:', error);
+    return { count: 0, thisWeek: 0, thisMonth: 0, upcoming: [] };
+  }
+};
+
+/**
+ * Check room availability for specific date range
  */
 export const checkRoomAvailability = async (
   roomId: string, 
@@ -219,7 +355,7 @@ export const checkRoomAvailability = async (
     if (bookingError) throw bookingError;
 
     // Check schedule conflicts (lectures, exams, sessions)
-    const startDate = new Date(startDateTime);
+    const startDate = parseISO(startDateTime);
     const dayName = format(startDate, 'EEEE');
     const dateString = format(startDate, 'yyyy-MM-dd');
     
@@ -303,11 +439,11 @@ function getRelativeDate(targetDate: Date): string {
 }
 
 /**
- * Generate time suggestions saat ada conflict
+ * Generate time suggestions when there are conflicts
  */
 function generateTimeSuggestions(startDateTime: string, endDateTime: string): string[] {
-  const start = new Date(startDateTime);
-  const end = new Date(endDateTime);
+  const start = parseISO(startDateTime);
+  const end = parseISO(endDateTime);
   const duration = end.getTime() - start.getTime();
   
   const suggestions = [];
@@ -329,5 +465,40 @@ function generateTimeSuggestions(startDateTime: string, endDateTime: string): st
   return suggestions;
 }
 
-// Import format function
-import { format } from 'date-fns';
+/**
+ * Get future bookings detail for specific room
+ */
+export const getRoomFutureBookings = async (roomId: string, daysAhead: number = 30): Promise<FutureBooking[]> => {
+  try {
+    const now = new Date();
+    const futureDate = addDays(now, daysAhead);
+    
+    const { data, error } = await supabase
+      .from('bookings')
+      .select(`
+        *,
+        user:users(full_name, identity_number)
+      `)
+      .eq('room_id', roomId)
+      .eq('status', 'approved')
+      .gt('start_time', now.toISOString())
+      .lte('start_time', futureDate.toISOString())
+      .order('start_time');
+    
+    if (error) throw error;
+    
+    return (data || []).map(booking => ({
+      id: booking.id,
+      start_time: booking.start_time,
+      end_time: booking.end_time,
+      purpose: booking.purpose,
+      user_name: booking.user?.full_name,
+      user_identity: booking.user?.identity_number,
+      relative_date: getRelativeDate(parseISO(booking.start_time))
+    }));
+    
+  } catch (error) {
+    console.error('Error fetching room future bookings:', error);
+    throw error;
+  }
+};
