@@ -824,7 +824,7 @@ const BookRoom: React.FC = () => {
                   </div>
                 </div>
 
-                {/* STEP 2: ROOM SELECTION & EQUIPMENT */}
+                {/* STEP 2: ROOM SELECTION */}
                 <div className="space-y-6">
                   <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
                     <div className="bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">2</div>
@@ -925,8 +925,8 @@ const BookRoom: React.FC = () => {
                   )}
                 </div>
 
-                {/* STEP 3: PERSONAL INFORMATION */}
-                <div className="space-y-6">
+                {/* STEP 3: PERSONAL INFORMATION - Moved to the bottom for mobile */}
+                <div className="space-y-6 order-last lg:order-none">
                   <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
                     <div className="bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">3</div>
                     <h3 className="text-xl font-bold text-gray-900">
@@ -1042,51 +1042,51 @@ const BookRoom: React.FC = () => {
                       </p>
                     )}
                   </div>
-                </div>
+                  
+                  {/* SUBMIT BUTTON - Moved to after personal information */}
+                  <div className="pt-6 border-t border-gray-200/50">
+                    <button
+                      type="submit"
+                      disabled={loading || !selectedRoom}
+                      className="w-full flex items-center justify-center space-x-3 py-4 px-6 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-2xl hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-[1.02] disabled:hover:scale-100"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          <span>{getText('Submitting...', 'Mengirim...')}</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="h-5 w-5" />
+                          <span>{getText('Submit Booking Request', 'Kirim Permintaan Pemesanan')}</span>
+                          <ArrowRight className="h-4 w-4" />
+                        </>
+                      )}
+                    </button>
 
-                {/* STEP 4: SUBMIT BUTTON */}
-                <div className="pt-6 border-t border-gray-200/50">
-                  <button
-                    type="submit"
-                    disabled={loading || !selectedRoom}
-                    className="w-full flex items-center justify-center space-x-3 py-4 px-6 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-2xl hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-[1.02] disabled:hover:scale-100"
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                        <span>{getText('Submitting...', 'Mengirim...')}</span>
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="h-5 w-5" />
-                        <span>{getText('Submit Booking Request', 'Kirim Permintaan Pemesanan')}</span>
-                        <ArrowRight className="h-4 w-4" />
-                      </>
+                    {!selectedRoom && (
+                      <p className="mt-2 text-sm text-amber-600 text-center">
+                        {getText('Please select a room to continue', 'Silakan pilih ruangan untuk melanjutkan')}
+                      </p>
                     )}
-                  </button>
 
-                  {!selectedRoom && (
-                    <p className="mt-2 text-sm text-amber-600 text-center">
-                      {getText('Please select a room to continue', 'Silakan pilih ruangan untuk melanjutkan')}
-                    </p>
-                  )}
-
-                  {/* Late Booking Warning */}
-                  {selectedRoom && getRoomStatus(selectedRoom) === 'In Use' && (
-                    <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4">
-                      <div className="flex items-center space-x-3">
-                        <AlertTriangle className="h-5 w-5 text-orange-600" />
-                        <div className="text-sm text-orange-800">
-                          <p className="font-semibold">
-                            ⚠️ {getText('Late Booking Warning', 'Peringatan Pemesanan Terlambat')}
-                          </p>
-                          <p>
-                            {getText('Current booking will be marked as completed', 'Pemesanan saat ini akan ditandai sebagai selesai')}
-                          </p>
+                    {/* Late Booking Warning */}
+                    {selectedRoom && getRoomStatus(selectedRoom) === 'In Use' && (
+                      <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4">
+                        <div className="flex items-center space-x-3">
+                          <AlertTriangle className="h-5 w-5 text-orange-600" />
+                          <div className="text-sm text-orange-800">
+                            <p className="font-semibold">
+                              ⚠️ {getText('Late Booking Warning', 'Peringatan Pemesanan Terlambat')}
+                            </p>
+                            <p>
+                              {getText('Current booking will be marked as completed', 'Pemesanan saat ini akan ditandai sebagai selesai')}
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </form>
             </div>
@@ -1198,7 +1198,8 @@ const BookRoom: React.FC = () => {
                     </p>
                   </div>
                 ) : (
-                  filteredAndSortedRooms.map((room) => {
+                  <div className="grid grid-cols-1 gap-4">
+                    {filteredAndSortedRooms.map((room) => {
                     const status = getRoomStatus(room);
                     const isSelected = selectedRoom?.id === room.id;
                     
@@ -1302,7 +1303,8 @@ const BookRoom: React.FC = () => {
                         )}
                       </div>
                     );
-                  })
+                  })}
+                  </div>
                 )}
               </div>
             </div>
