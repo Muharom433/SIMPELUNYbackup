@@ -7,20 +7,7 @@ import {
   GraduationCap, ChevronDown, Search, Eye, X, Upload, FileText, Download, 
   Loader2, CheckCircle, AlertTriangle, Zap, Star, ArrowRight, Plus, Minus, 
   RefreshCw, Filter, Grid, List, SortAsc, SortDesc, MoreHorizontal, Info, 
-  BookOpen, Award, Target, TrendingUp, Activity, BarChart3, PieChart, 
-  Settings, Bell, HelpCircle, ExternalLink, Copy, Share2, Bookmark, Heart, 
-  MessageSquare, ThumbsUp, Flag, Shield, Lock, Unlock, Key, Home, Briefcase, 
-  School, Coffee, Wifi, Car, Camera, Music, Video, Headphones, Smartphone, 
-  Laptop, Monitor, Printer, Scan as Scanner, Projector, 
-  Microscope as Microphone, Speaker, Router, Cable, Battery, Power, Signal, 
-  Volume, Copyright as Brightness, Contrast, ZoomIn as Zoom, Maximize, 
-  Minimize, RotateCcw, RotateCw, FlipHorizontal, FlipVertical, Crop, Edit, 
-  Save, Trash2, Archive, FolderOpen, File, FileImage, File as FilePdf, 
-  FileSpreadsheet, FileVideo, UploadCloud as CloudUpload, 
-  DownloadCloud as CloudDownload, Cloud, Server, Database, HardDrive, Cpu, 
-  MemoryStick as Memory, Network, Globe, Link, Anchor, Navigation, Compass, 
-  Map, Route, TextSelection as Direction, Locate as Location, Pin, 
-  BookMarked as Marker, Flag as FlagIcon
+  BookOpen, Award, Target, TrendingUp, Activity, BarChart3, PieChart
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -28,7 +15,6 @@ import { alert } from '../components/Alert/AlertHelper';
 import { format, addMinutes, parseISO, isAfter, isBefore, addDays } from 'date-fns';
 import { useRoomData } from '../hooks/useRoomData';
 import { useRealTimeRoomUpdates } from '../hooks/useRealTimeRoomUpdates';
-import { usePerformanceMonitor } from '../hooks/usePerformanceMonitor';
 
 // Form validation schema
 const bookingSchema = z.object({
@@ -93,9 +79,6 @@ interface Equipment {
 const BookRoom: React.FC = () => {
   const { getText } = useLanguage();
   
-  // Performance monitoring
-  usePerformanceMonitor();
-  
   // Form management
   const form = useForm<BookingForm>({
     resolver: zodResolver(bookingSchema),
@@ -111,21 +94,18 @@ const BookRoom: React.FC = () => {
   const watchSks = form.watch('sks');
   const watchClassType = form.watch('class_type');
 
-  // State management
-  const [currentStep, setCurrentStep] = useState(1);
+  // Core state management
   const [selectedRoom, setSelectedRoom] = useState<any>(null);
   const [studyPrograms, setStudyPrograms] = useState<StudyProgram[]>([]);
   const [availableEquipment, setAvailableEquipment] = useState<Equipment[]>([]);
   const [attachments, setAttachments] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   
-  // ✅ REFS for DOM manipulation like SessionSchedule
+  // Identity search states
   const identityInputRef = useRef<HTMLInputElement>(null);
   const fullNameInputRef = useRef<HTMLInputElement>(null);
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const studyProgramDisplayRef = useRef<HTMLInputElement>(null);
-  
-  // ✅ Identity search states (simplified)
   const [identitySearchResults, setIdentitySearchResults] = useState<User[]>([]);
   const [identitySearchLoading, setIdentitySearchLoading] = useState(false);
   
@@ -133,7 +113,7 @@ const BookRoom: React.FC = () => {
   const [useManualEndTime, setUseManualEndTime] = useState(false);
   const [calculatedEndTime, setCalculatedEndTime] = useState<Date | null>(null);
   
-  // Room management with performance optimization
+  // Room management
   const targetBookingDate = useMemo(() => {
     if (watchStartTime) {
       return format(parseISO(watchStartTime), 'yyyy-MM-dd');
@@ -179,7 +159,7 @@ const BookRoom: React.FC = () => {
     }
   }, [watchStartTime, watchSks, watchClassType, useManualEndTime, form]);
 
-  // ✅ Smart identity search with DOM manipulation (like SessionSchedule)
+  // Smart identity search with DOM manipulation
   const showIdentityDropdown = useCallback((searchTerm: string) => {
     if (!searchTerm.trim()) {
       hideIdentityDropdown();
@@ -214,7 +194,6 @@ const BookRoom: React.FC = () => {
           return;
         }
 
-        // ✅ Create dropdown HTML like SessionSchedule
         const dropdownHTML = `
           <div class="absolute z-[9999] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
             ${filteredUsers.map(user => `
@@ -252,7 +231,7 @@ const BookRoom: React.FC = () => {
               const userPhone = target.dataset.userPhone;
               const programId = target.dataset.programId;
               
-              // ✅ Fill all form fields
+              // Fill all form fields
               if (identityInputRef.current) {
                 identityInputRef.current.value = userNim || '';
               }
@@ -293,7 +272,7 @@ const BookRoom: React.FC = () => {
     }
   }, []);
 
-  // ✅ Study Program dropdown with DOM manipulation
+  // Study Program dropdown with DOM manipulation
   const showStudyProgramDropdown = useCallback(() => {
     const dropdownHTML = `
       <div class="absolute z-[9999] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
@@ -422,7 +401,6 @@ const BookRoom: React.FC = () => {
   const handleRoomSelect = (room: any) => {
     setSelectedRoom(room);
     fetchEquipmentForRoom(room.id);
-    setCurrentStep(3);
   };
 
   // Handle file upload
@@ -556,7 +534,6 @@ const BookRoom: React.FC = () => {
       form.reset();
       setSelectedRoom(null);
       setAttachments([]);
-      setCurrentStep(1);
       
       // Clear DOM inputs
       if (identityInputRef.current) identityInputRef.current.value = '';
@@ -603,131 +580,10 @@ const BookRoom: React.FC = () => {
             <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-white/20 p-8">
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
                 
-                {/* Step 1: Personal Information */}
+                {/* STEP 1: BOOKING DETAILS */}
                 <div className="space-y-6">
                   <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
                     <div className="bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">1</div>
-                    <h3 className="text-xl font-bold text-gray-900">
-                      {getText('Personal Information', 'Informasi Pribadi')}
-                    </h3>
-                  </div>
-
-                  {/* ✅ Identity Number with DOM manipulation (like SessionSchedule) */}
-                  <div className="relative">
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      {getText('Identity Number (NIM/NIP)', 'Nomor Identitas (NIM/NIP)')} *
-                    </label>
-                    <div className="relative">
-                      <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                      <input
-                        {...form.register('identity_number')}
-                        ref={identityInputRef}
-                        type="text"
-                        placeholder={getText("Enter or search your ID", "Masukkan atau cari ID Anda")}
-                        onInput={(e) => {
-                          const target = e.target as HTMLInputElement;
-                          showIdentityDropdown(target.value);
-                        }}
-                        onFocus={(e) => {
-                          const target = e.target as HTMLInputElement;
-                          showIdentityDropdown(target.value);
-                        }}
-                        onBlur={() => {
-                          setTimeout(() => hideIdentityDropdown(), 200);
-                        }}
-                        className="w-full pl-10 pr-10 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
-                        autoComplete="off"
-                      />
-                      {identitySearchLoading && (
-                        <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 animate-spin" />
-                      )}
-                      {/* ✅ Dropdown container - NO OVERLAY BLOCKING */}
-                      <div id="identity-dropdown" style={{ display: 'none' }}></div>
-                    </div>
-                    
-                    {form.formState.errors.identity_number && (
-                      <p className="mt-1 text-sm text-red-600 font-medium">
-                        {form.formState.errors.identity_number.message}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Full Name */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      {getText('Full Name', 'Nama Lengkap')} *
-                    </label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                      <input
-                        {...form.register('full_name')}
-                        ref={fullNameInputRef}
-                        type="text"
-                        placeholder={getText("Enter your full name", "Masukkan nama lengkap Anda")}
-                        className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
-                      />
-                    </div>
-                    {form.formState.errors.full_name && (
-                      <p className="mt-1 text-sm text-red-600 font-medium">
-                        {form.formState.errors.full_name.message}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Phone Number */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      {getText('Phone Number', 'Nomor Telepon')} *
-                    </label>
-                    <div className="relative">
-                      <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                      <input
-                        {...form.register('phone_number')}
-                        ref={phoneInputRef}
-                        type="tel"
-                        placeholder="08xxxxxxxxxx"
-                        className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
-                      />
-                    </div>
-                    {form.formState.errors.phone_number && (
-                      <p className="mt-1 text-sm text-red-600 font-medium">
-                        {form.formState.errors.phone_number.message}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* ✅ Study Program with DOM manipulation (like SessionSchedule) */}
-                  <div className="relative">
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      {getText('Study Program', 'Program Studi')} *
-                    </label>
-                    <div className="relative">
-                      <GraduationCap className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                      <input
-                        ref={studyProgramDisplayRef}
-                        type="text"
-                        readOnly
-                        placeholder={getText("Click to select study program", "Klik untuk pilih program studi")}
-                        onClick={showStudyProgramDropdown}
-                        className="w-full pl-10 pr-8 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm cursor-pointer"
-                      />
-                      <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-                      {/* ✅ Dropdown container - NO OVERLAY BLOCKING */}
-                      <div id="study-program-dropdown" style={{ display: 'none' }}></div>
-                    </div>
-                    
-                    {form.formState.errors.study_program_id && (
-                      <p className="mt-1 text-sm text-red-600 font-medium">
-                        {form.formState.errors.study_program_id.message}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Step 2: Booking Details */}
-                <div className="space-y-6">
-                  <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
-                    <div className="bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">2</div>
                     <h3 className="text-xl font-bold text-gray-900">
                       {getText('Booking Details', 'Detail Pemesanan')}
                     </h3>
@@ -968,7 +824,227 @@ const BookRoom: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Submit Button */}
+                {/* STEP 2: ROOM SELECTION & EQUIPMENT */}
+                <div className="space-y-6">
+                  <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
+                    <div className="bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">2</div>
+                    <h3 className="text-xl font-bold text-gray-900">
+                      {getText('Room Selection', 'Pilih Ruangan')}
+                    </h3>
+                  </div>
+
+                  {/* Selected Room Display */}
+                  {selectedRoom ? (
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-semibold text-green-800 flex items-center">
+                            <CheckCircle className="h-5 w-5 mr-2" />
+                            {getText('Selected Room', 'Ruangan Terpilih')}
+                          </h4>
+                          <div className="mt-2">
+                            <p className="font-bold text-green-900">{selectedRoom.name}</p>
+                            <p className="text-sm text-green-700">{selectedRoom.code}</p>
+                            <div className="flex items-center space-x-4 mt-1 text-sm text-green-600">
+                              <div className="flex items-center space-x-1">
+                                <Users className="h-4 w-4" />
+                                <span>{selectedRoom.capacity} {getText('seats', 'kursi')}</span>
+                              </div>
+                              <div className="flex items-center space-x-1">
+                                <Building className="h-4 w-4" />
+                                <span>{selectedRoom.department?.name || getText('General', 'Umum')}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedRoom(null)}
+                          className="text-green-600 hover:text-green-800 transition-colors duration-200"
+                        >
+                          <X className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                      <div className="flex items-center space-x-3">
+                        <AlertTriangle className="h-5 w-5 text-amber-600" />
+                        <div className="text-sm text-amber-800">
+                          <p className="font-semibold">
+                            {getText('Room Selection Required', 'Pilih Ruangan Diperlukan')}
+                          </p>
+                          <p>
+                            {getText('Please select a room from the right panel to continue', 'Silakan pilih ruangan dari panel kanan untuk melanjutkan')}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Selected Room Equipment */}
+                  {selectedRoom && availableEquipment.length > 0 && (
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                      <h4 className="font-semibold text-blue-800 mb-3 flex items-center">
+                        <Zap className="h-5 w-5 mr-2" />
+                        {getText('Available Equipment', 'Peralatan Tersedia')}
+                      </h4>
+                      <div className="space-y-2">
+                        {availableEquipment.map((equipment) => (
+                          <label key={equipment.id} className="flex items-center space-x-3 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              value={equipment.id}
+                              defaultChecked={equipment.is_mandatory}
+                              disabled={equipment.is_mandatory}
+                              onChange={(e) => {
+                                const currentEquipment = form.getValues('equipment_requested') || [];
+                                if (e.target.checked) {
+                                  form.setValue('equipment_requested', [...currentEquipment, equipment.id]);
+                                } else {
+                                  form.setValue('equipment_requested', currentEquipment.filter(id => id !== equipment.id));
+                                }
+                              }}
+                              className="text-blue-600 focus:ring-blue-500 rounded disabled:opacity-70"
+                            />
+                            <div className="flex-1">
+                              <span className={`text-sm font-medium ${equipment.is_mandatory ? 'text-blue-900' : 'text-blue-800'}`}>
+                                {equipment.name}
+                              </span>
+                              <span className="text-xs text-blue-600 ml-2">({equipment.category})</span>
+                              {equipment.is_mandatory && (
+                                <span className="block text-xs font-bold text-green-600">
+                                  {getText('Mandatory', 'Wajib')}
+                                </span>
+                              )}
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* STEP 3: PERSONAL INFORMATION */}
+                <div className="space-y-6">
+                  <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
+                    <div className="bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">3</div>
+                    <h3 className="text-xl font-bold text-gray-900">
+                      {getText('Personal Information', 'Informasi Pribadi')}
+                    </h3>
+                  </div>
+
+                  {/* Identity Number with DOM manipulation */}
+                  <div className="relative">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      {getText('Identity Number (NIM/NIP)', 'Nomor Identitas (NIM/NIP)')} *
+                    </label>
+                    <div className="relative">
+                      <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                      <input
+                        {...form.register('identity_number')}
+                        ref={identityInputRef}
+                        type="text"
+                        placeholder={getText("Enter or search your ID", "Masukkan atau cari ID Anda")}
+                        onInput={(e) => {
+                          const target = e.target as HTMLInputElement;
+                          showIdentityDropdown(target.value);
+                        }}
+                        onFocus={(e) => {
+                          const target = e.target as HTMLInputElement;
+                          showIdentityDropdown(target.value);
+                        }}
+                        onBlur={() => {
+                          setTimeout(() => hideIdentityDropdown(), 200);
+                        }}
+                        className="w-full pl-10 pr-10 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
+                        autoComplete="off"
+                      />
+                      {identitySearchLoading && (
+                        <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 animate-spin" />
+                      )}
+                      <div id="identity-dropdown" style={{ display: 'none' }}></div>
+                    </div>
+                    
+                    {form.formState.errors.identity_number && (
+                      <p className="mt-1 text-sm text-red-600 font-medium">
+                        {form.formState.errors.identity_number.message}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Full Name */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      {getText('Full Name', 'Nama Lengkap')} *
+                    </label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                      <input
+                        {...form.register('full_name')}
+                        ref={fullNameInputRef}
+                        type="text"
+                        placeholder={getText("Enter your full name", "Masukkan nama lengkap Anda")}
+                        className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
+                      />
+                    </div>
+                    {form.formState.errors.full_name && (
+                      <p className="mt-1 text-sm text-red-600 font-medium">
+                        {form.formState.errors.full_name.message}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Phone Number */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      {getText('Phone Number', 'Nomor Telepon')} *
+                    </label>
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                      <input
+                        {...form.register('phone_number')}
+                        ref={phoneInputRef}
+                        type="tel"
+                        placeholder="08xxxxxxxxxx"
+                        className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
+                      />
+                    </div>
+                    {form.formState.errors.phone_number && (
+                      <p className="mt-1 text-sm text-red-600 font-medium">
+                        {form.formState.errors.phone_number.message}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Study Program with DOM manipulation */}
+                  <div className="relative">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      {getText('Study Program', 'Program Studi')} *
+                    </label>
+                    <div className="relative">
+                      <GraduationCap className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                      <input
+                        ref={studyProgramDisplayRef}
+                        type="text"
+                        readOnly
+                        placeholder={getText("Click to select study program", "Klik untuk pilih program studi")}
+                        onClick={showStudyProgramDropdown}
+                        className="w-full pl-10 pr-8 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm cursor-pointer"
+                      />
+                      <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                      <div id="study-program-dropdown" style={{ display: 'none' }}></div>
+                    </div>
+                    
+                    {form.formState.errors.study_program_id && (
+                      <p className="mt-1 text-sm text-red-600 font-medium">
+                        {form.formState.errors.study_program_id.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* STEP 4: SUBMIT BUTTON */}
                 <div className="pt-6 border-t border-gray-200/50">
                   <button
                     type="submit"
@@ -1229,48 +1305,6 @@ const BookRoom: React.FC = () => {
                   })
                 )}
               </div>
-
-              {/* Selected Room Equipment */}
-              {selectedRoom && availableEquipment.length > 0 && (
-                <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-xl">
-                  <h4 className="font-semibold text-green-800 mb-3 flex items-center">
-                    <Zap className="h-5 w-5 mr-2" />
-                    {getText('Available Equipment', 'Peralatan Tersedia')}
-                  </h4>
-                  <div className="space-y-2">
-                    {availableEquipment.map((equipment) => (
-                      <label key={equipment.id} className="flex items-center space-x-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          value={equipment.id}
-                          defaultChecked={equipment.is_mandatory}
-                          disabled={equipment.is_mandatory}
-                          onChange={(e) => {
-                            const currentEquipment = form.getValues('equipment_requested') || [];
-                            if (e.target.checked) {
-                              form.setValue('equipment_requested', [...currentEquipment, equipment.id]);
-                            } else {
-                              form.setValue('equipment_requested', currentEquipment.filter(id => id !== equipment.id));
-                            }
-                          }}
-                          className="text-green-600 focus:ring-green-500 rounded disabled:opacity-70"
-                        />
-                        <div className="flex-1">
-                          <span className={`text-sm font-medium ${equipment.is_mandatory ? 'text-green-900' : 'text-green-800'}`}>
-                            {equipment.name}
-                          </span>
-                          <span className="text-xs text-green-600 ml-2">({equipment.category})</span>
-                          {equipment.is_mandatory && (
-                            <span className="block text-xs font-bold text-blue-600">
-                              {getText('Mandatory', 'Wajib')}
-                            </span>
-                          )}
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -1411,14 +1445,24 @@ const BookRoom: React.FC = () => {
         </div>
       )}
 
-      {/* Success/Error Toast Container - if not using external toast library */}
-      <div className="fixed bottom-4 right-4 z-50 space-y-2" id="toast-container">
-        {/* Dynamic toasts will be inserted here */}
-      </div>
-
-      {/* ✅ NO CLICK OUTSIDE OVERLAY - Dropdowns use DOM manipulation with proper event handling */}
-
-     
+      {/* Event listeners cleanup on unmount */}
+      {React.useEffect(() => {
+        return () => {
+          // Cleanup any remaining dropdown event listeners
+          const identityDropdown = document.querySelector('#identity-dropdown');
+          const studyProgramDropdown = document.querySelector('#study-program-dropdown');
+          
+          if (identityDropdown) {
+            identityDropdown.innerHTML = '';
+            identityDropdown.style.display = 'none';
+          }
+          
+          if (studyProgramDropdown) {
+            studyProgramDropdown.innerHTML = '';
+            studyProgramDropdown.style.display = 'none';
+          }
+        };
+      }, [])}
     </div>
   );
 };
