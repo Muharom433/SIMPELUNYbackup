@@ -94,6 +94,27 @@ interface Equipment {
 const BookRoom: React.FC = () => {
   const { getText } = useLanguage();
   
+  
+  // Move useForm hook to the very top, before any other code
+  const form = useForm<BookingForm>({
+    resolver: zodResolver(bookingSchema),
+    defaultValues: {
+      date: format(new Date(), 'yyyy-MM-dd'),
+      start_time: '',
+      end_time: '',
+      duration: 90,
+      sks: 1,
+      class_type: 'theory',
+      purpose: 'Class/Study Session',
+      equipment_requested: [],
+      notes: '',
+      full_name: '',
+      identity_number: '',
+      phone_number: '',
+      study_program_id: '',
+    },
+  });
+
   // Add debug logging for date and day name
   const selectedDate = form.watch('date');
   
@@ -145,25 +166,6 @@ const BookRoom: React.FC = () => {
   const [useManualEndTime, setUseManualEndTime] = useState(false);
   const [calculatedEndTime, setCalculatedEndTime] = useState<Date | null>(null);
 
-  // Room management
-  const targetBookingDate = useMemo(() => {
-    if (watchStartTime) {
-      return format(parseISO(watchStartTime), 'yyyy-MM-dd');
-    }
-    return format(new Date(), 'yyyy-MM-dd');
-  }, [watchStartTime]);
-
-  const { rooms, loading: roomsLoading, fetchRoomData } = useRoomData(targetBookingDate);
-  useRealTimeRoomUpdates(targetBookingDate);
-
-  // Room filtering and search
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [showInUse, setShowInUse] = useState(true);
-  const [sortBy, setSortBy] = useState<'name' | 'capacity' | 'status'>('name');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [scheduleModalRoom, setScheduleModalRoom] = useState<any>(null);
 
   // Fetch initial data
