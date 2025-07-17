@@ -1480,16 +1480,6 @@ const BookRoom: React.FC = () => {
         {loading && getText('Submitting booking request', 'Mengirim permintaan pemesanan')}
       </div>
 
-      {/* Performance Metrics - Development Only */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="fixed top-4 left-4 z-50 bg-black/80 text-white text-xs p-2 rounded">
-          <div>Rooms: {rooms.length}</div>
-          <div>Filtered: {filteredAndSortedRooms.length}</div>
-          <div>Loading: {roomsLoading ? 'Yes' : 'No'}</div>
-          <div>Selected: {selectedRoom ? selectedRoom.name : 'None'}</div>
-        </div>
-      )}
-
       {/* ✅ Event listeners cleanup on unmount */}
       {React.useEffect(() => {
         return () => {
