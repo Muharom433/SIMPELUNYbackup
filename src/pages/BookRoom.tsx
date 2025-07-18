@@ -975,7 +975,7 @@ const BookRoom = () => {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
-                  {filteredAndSortedRooms.map((room) => {
+                 {filteredAndSortedRooms.map((room) => {
                         const roomStatus = getOptimizedRoomStatus(room);
                         const isSelected = selectedRoom?.id === room.id;
                         return (
@@ -1364,8 +1364,6 @@ const BookRoom = () => {
                   }
                   return null;
                 })()}
-              </div>
-            </div>
           </div>
         </form>
       </div>
