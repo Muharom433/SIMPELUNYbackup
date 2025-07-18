@@ -783,12 +783,12 @@ const BookRoom: React.FC = () => {
                             <div className="flex items-center text-sm text-orange-700">
                               <GraduationCap className="h-4 w-4 mr-2" />
                               <span className="font-medium">
-                                {booking.user?.study_program?.name || getText('Unknown Study Program', 'Program Studi Tidak Diketahui')}
+                                {booking.user?.study_program?.name || getText('No Study Program', 'Tidak Ada Program Studi')}
                               </span>
                             </div>
                             <div className="flex items-center text-sm text-orange-700">
                               <User className="h-4 w-4 mr-2" />
-                              <span>{booking.user?.full_name || getText('Unknown User', 'Pengguna Tidak Diketahui')}</span>
+                              <span>{booking.user?.full_name || getText('No User Info', 'Info Pengguna Tidak Ada')}</span>
                             </div>
                           </div>
                         </div>
@@ -819,12 +819,12 @@ const BookRoom: React.FC = () => {
                             <div className="flex items-center text-sm text-blue-700">
                               <GraduationCap className="h-4 w-4 mr-2" />
                               <span className="font-medium">
-                                {lecture.subject_study || getText('Unknown Study Program', 'Program Studi Tidak Diketahui')}
+                                {lecture.subject_study || getText('No Study Program', 'Tidak Ada Program Studi')}
                               </span>
                             </div>
                             <div className="flex items-center text-sm text-blue-700">
                               <BookOpen className="h-4 w-4 mr-2" />
-                              <span>{lecture.course_name || getText('Unknown Course', 'Mata Kuliah Tidak Diketahui')}</span>
+                              <span>{lecture.course_name || getText('No Course Name', 'Tidak Ada Nama Mata Kuliah')}</span>
                             </div>
                           </div>
                         </div>
@@ -855,12 +855,12 @@ const BookRoom: React.FC = () => {
                             <div className="flex items-center text-sm text-purple-700">
                               <GraduationCap className="h-4 w-4 mr-2" />
                               <span className="font-medium">
-                                {session.student?.study_program?.name || getText('Unknown Study Program', 'Program Studi Tidak Diketahui')}
+                                {session.student?.study_program?.name || getText('No Study Program', 'Tidak Ada Program Studi')}
                               </span>
                             </div>
                             <div className="flex items-center text-sm text-purple-700">
                               <User className="h-4 w-4 mr-2" />
-                              <span>{session.student?.full_name || getText('Unknown Student', 'Mahasiswa Tidak Diketahui')}</span>
+                              <span>{session.student?.full_name || getText('No Student Info', 'Info Mahasiswa Tidak Ada')}</span>
                             </div>
                           </div>
                         </div>
@@ -891,12 +891,12 @@ const BookRoom: React.FC = () => {
                             <div className="flex items-center text-sm text-green-700">
                               <GraduationCap className="h-4 w-4 mr-2" />
                               <span className="font-medium">
-                                {exam.subject_study || getText('Unknown Study Program', 'Program Studi Tidak Diketahui')}
+                                {exam.class || getText('No Class Info', 'Tidak Ada Info Kelas')}
                               </span>
                             </div>
                             <div className="flex items-center text-sm text-green-700">
                               <BookOpen className="h-4 w-4 mr-2" />
-                              <span>{exam.course_name || getText('Unknown Exam', 'Ujian Tidak Diketahui')}</span>
+                              <span>{exam.course_name || getText('No Exam Name', 'Tidak Ada Nama Ujian')}</span>
                             </div>
                           </div>
                         </div>
