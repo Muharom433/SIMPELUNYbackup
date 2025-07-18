@@ -976,394 +976,396 @@ const BookRoom = () => {
               ) : (
                 <div className="grid grid-cols-1 gap-4">
                   {filteredAndSortedRooms.map((room) => {
-                    const roomStatus = getOptimizedRoomStatus(room);
-                    const isSelected = selectedRoom?.id === room.id;
-                    return (
-                      <div
-                        key={room.id}
-                        onClick={() => roomStatus.status !== 'Conflict' && roomStatus.status !== 'In Use' && roomStatus.status !== 'Unavailable' && handleRoomSelect(room)}
-                        className={`p-4 rounded-xl border-2 transition-all duration-200 ${isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white/50'} ${roomStatus.status === 'Conflict' || roomStatus.status === 'In Use' || roomStatus.status === 'Unavailable' ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:shadow-md hover:border-blue-300'}`}
-                      >
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex-1">
-                            <h4 className="font-bold text-gray-900">{room.name}</h4>
-                            <p className="text-sm text-gray-600">{room.code}</p>
-                          </div>
-                          <div className="flex flex-col items-end space-y-1">
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium border ${roomStatus.color}`}>
-                              {getText(roomStatus.status, roomStatus.status)}
-                            </span>
-                            {roomStatus.scheduleCount && (
-                              <span className="text-xs text-gray-500">
-                                {roomStatus.scheduleCount} {getText('activities', 'aktivitas')}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center justify-between text-sm text-gray-600">
-                          <div className="flex items-center space-x-4">
-                            <div className="flex items-center space-x-1">
-                              <Users className="h-4 w-4" />
-                              <span>{room.capacity} {getText('seats', 'kursi')}</span>
+                        const roomStatus = getOptimizedRoomStatus(room);
+                        const isSelected = selectedRoom?.id === room.id;
+                        return (
+                          <div
+                            key={room.id}
+                            onClick={() => roomStatus.status !== 'Conflict' && roomStatus.status !== 'In Use' && roomStatus.status !== 'Unavailable' && handleRoomSelect(room)}
+                            className={`p-4 rounded-xl border-2 transition-all duration-200 ${isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white/50'} ${roomStatus.status === 'Conflict' || roomStatus.status === 'In Use' || roomStatus.status === 'Unavailable' ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:shadow-md hover:border-blue-300'}`}
+                          >
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex-1">
+                                <h4 className="font-bold text-gray-900">{room.name}</h4>
+                                <p className="text-sm text-gray-600">{room.code}</p>
+                              </div>
+                              <div className="flex flex-col items-end space-y-1">
+                                <span className={`px-3 py-1 rounded-full text-xs font-medium border ${roomStatus.color}`}>
+                                  {getText(roomStatus.status, roomStatus.status)}
+                                </span>
+                                {roomStatus.scheduleCount && (
+                                  <span className="text-xs text-gray-500">
+                                    {roomStatus.scheduleCount} {getText('activities', 'aktivitas')}
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <div className="flex items-center space-x-1">
-                              <Building className="h-4 w-4" />
-                              <span>{room.department?.name || getText('General', 'Umum')}</span>
+                            
+                            <div className="flex items-center justify-between text-sm text-gray-600">
+                              <div className="flex items-center space-x-4">
+                                <div className="flex items-center space-x-1">
+                                  <Users className="h-4 w-4" />
+                                  <span>{room.capacity} {getText('seats', 'kursi')}</span>
+                                </div>
+                                <div className="flex items-center space-x-1">
+                                  <Building className="h-4 w-4" />
+                                  <span>{room.department?.name || getText('General', 'Umum')}</span>
+                                </div>
+                              </div>
+                              {(roomStatus.status === 'Scheduled' || roomStatus.status === 'In Use' || roomStatus.status === 'Conflict') && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setScheduleModalRoom(room);
+                                    setShowScheduleModal(true);
+                                  }}
+                                  className="text-blue-600 hover:text-blue-800 transition-colors duration-200"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </button>
+                              )}
                             </div>
-                          </div>
-                          {(roomStatus.status === 'Scheduled' || roomStatus.status === 'In Use' || roomStatus.status === 'Conflict') && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setScheduleModalRoom(room);
-                                setShowScheduleModal(true);
-                              }}
-                              className="text-blue-600 hover:text-blue-800 transition-colors duration-200"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </button>
-                          )}
-                        </div>
-                        
-                        {roomStatus.status === 'In Use' && roomStatus.detail && (
-                          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                            <p className="text-sm font-medium text-red-800">
-                              {getText('Currently in use by', 'Sedang digunakan oleh')}: {roomStatus.detail.user?.full_name || 'Unknown User'}
-                            </p>
-                            <p className="text-xs text-red-600">{roomStatus.detail.purpose || 'Room Booking'}</p>
-                            <p className="text-xs text-red-500">
-                              {roomStatus.detail.start_time_local || format(convertUTCToLocal(roomStatus.detail.start_time), 'HH:mm')} - {roomStatus.detail.end_time_local || format(convertUTCToLocal(roomStatus.detail.end_time), 'HH:mm')}
-                            </p>
-                          </div>
-                        )}
-                        
-                        {roomStatus.status === 'Conflict' && (
-                          <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                            <p className="text-sm font-medium text-orange-800">⚠️ {getText('Time Conflict', 'Konflik Waktu')}</p>
-                            <p className="text-xs text-orange-700 mt-1">{roomStatus.reason}</p>
-                          </div>
-                        )}
-                        
-                        {roomStatus.status === 'Scheduled' && roomStatus.scheduleCount && (
-                          <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg space-y-2">
-                            <p className="text-xs text-yellow-800 font-semibold">
-                              📅 {getText('Jadwal di Hari Ini:', 'Jadwal di Hari Ini:')}
-                            </p>
-                            {room.targetDateBookings && room.targetDateBookings.length > 0 && (
-                              <div className="space-y-1 max-h-20 overflow-y-auto">
-                                {room.targetDateBookings.map((booking, index) => (
-                                  <div key={index} className="text-xs text-yellow-900 border-t border-yellow-200 pt-1 first:pt-0 first:border-t-0">
-                                    <p className="font-medium truncate">{booking.purpose}</p>
-                                    <p>
-                                      {booking.start_time_local || format(convertUTCToLocal(booking.start_time), 'HH:mm')} - {booking.end_time_local || format(convertUTCToLocal(booking.end_time), 'HH:mm')}
-                                    </p>
-                                  </div>
-                                ))}
+                            
+                            {roomStatus.status === 'In Use' && roomStatus.detail && (
+                              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                                <p className="text-sm font-medium text-red-800">
+                                  {getText('Currently in use by', 'Sedang digunakan oleh')}: {roomStatus.detail.user?.full_name || 'Unknown User'}
+                                </p>
+                                <p className="text-xs text-red-600">{roomStatus.detail.purpose || 'Room Booking'}</p>
+                                <p className="text-xs text-red-500">
+                                  {roomStatus.detail.start_time_local || format(convertUTCToLocal(roomStatus.detail.start_time), 'HH:mm')} - {roomStatus.detail.end_time_local || format(convertUTCToLocal(roomStatus.detail.end_time), 'HH:mm')}
+                                </p>
                               </div>
                             )}
-                            <p className="text-xs text-yellow-700 mt-1 border-t border-yellow-200 pt-1">
-                              {getText('Klik ikon mata untuk lihat semua detail', 'Klik ikon mata untuk lihat semua detail')}
-                            </p>
-                          </div>
-                        )}
+                            
+                            {roomStatus.status === 'Conflict' && (
+                              <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                                <p className="text-sm font-medium text-orange-800">⚠️ {getText('Time Conflict', 'Konflik Waktu')}</p>
+                                <p className="text-xs text-orange-700 mt-1">{roomStatus.reason}</p>
+                              </div>
+                            )}
+                            
+                            {roomStatus.status === 'Scheduled' && roomStatus.scheduleCount && (
+                              <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg space-y-2">
+                                <p className="text-xs text-yellow-800 font-semibold">
+                                  📅 {getText('Jadwal di Hari Ini:', 'Jadwal di Hari Ini:')}
+                                </p>
+                                {room.targetDateBookings && room.targetDateBookings.length > 0 && (
+                                  <div className="space-y-1 max-h-20 overflow-y-auto">
+                                    {room.targetDateBookings.map((booking, index) => (
+                                      <div key={index} className="text-xs text-yellow-900 border-t border-yellow-200 pt-1 first:pt-0 first:border-t-0">
+                                        <p className="font-medium truncate">{booking.purpose}</p>
+                                        <p>
+                                          {booking.start_time_local || format(convertUTCToLocal(booking.start_time), 'HH:mm')} - {booking.end_time_local || format(convertUTCToLocal(booking.end_time), 'HH:mm')}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <p className="text-xs text-yellow-700 mt-1 border-t border-yellow-200 pt-1">
+                                  {getText('Klik ikon mata untuk lihat semua detail', 'Klik ikon mata untuk lihat semua detail')}
+                                </p>
+                              </div>
+                            )}
 
-                        {roomStatus.status === 'Unavailable' && (
-                          <div className="mt-3 p-2 bg-gray-50 border border-gray-200 rounded-lg">
-                            <p className="text-xs text-gray-600">🚫 {getText('Room disabled for booking', 'Ruangan dinonaktifkan untuk pemesanan')}</p>
-                          </div>
-                        )}
-                        
-                        {room.futureBookings?.count > 0 && roomStatus.status === 'Available' && (
-                          <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
-                            <p className="text-xs text-blue-700">🔮 {room.futureBookings.count} {getText('future bookings', 'pemesanan mendatang')}</p>
-                            {room.futureBookings.nextBooking && (
-                              <p className="text-xs text-blue-600 mt-1">
-                                {getText('Next:', 'Selanjutnya:')} {room.futureBookings.nextBooking.date} {room.futureBookings.nextBooking.time}
-                              </p>
+                            {roomStatus.status === 'Unavailable' && (
+                              <div className="mt-3 p-2 bg-gray-50 border border-gray-200 rounded-lg">
+                                <p className="text-xs text-gray-600">🚫 {getText('Room disabled for booking', 'Ruangan dinonaktifkan untuk pemesanan')}</p>
+                              </div>
+                            )}
+                            
+                            {room.futureBookings?.count > 0 && roomStatus.status === 'Available' && (
+                              <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                                <p className="text-xs text-blue-700">🔮 {room.futureBookings.count} {getText('future bookings', 'pemesanan mendatang')}</p>
+                                {room.futureBookings.nextBooking && (
+                                  <p className="text-xs text-blue-600 mt-1">
+                                    {getText('Next:', 'Selanjutnya:')} {room.futureBookings.nextBooking.date} {room.futureBookings.nextBooking.time}
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
-                        )}
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Available Equipment */}
+                {selectedRoom && availableEquipment.length > 0 && (
+                  <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                    <h4 className="font-semibold text-blue-800 mb-3 flex items-center">
+                      <Zap className="h-5 w-5 mr-2" />
+                      {getText('Available Equipment in Selected Room', 'Peralatan Tersedia di Ruangan Terpilih')}
+                    </h4>
+                    <div className="space-y-2">
+                      {availableEquipment.map((equipment) => (
+                        <label key={equipment.id} className="flex items-center space-x-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            value={equipment.id}
+                            defaultChecked={equipment.is_mandatory}
+                            disabled={equipment.is_mandatory}
+                            onChange={(e) => {
+                              const currentEquipment = form.getValues('equipment_requested') || [];
+                              if (e.target.checked) {
+                                form.setValue('equipment_requested', [...currentEquipment, equipment.id]);
+                              } else {
+                                form.setValue('equipment_requested', currentEquipment.filter(id => id !== equipment.id));
+                              }
+                            }}
+                            className="text-blue-600 focus:ring-blue-500 rounded disabled:opacity-70"
+                          />
+                          <div className="flex-1">
+                            <span className={`text-sm font-medium ${equipment.is_mandatory ? 'text-blue-900' : 'text-blue-800'}`}>
+                              {equipment.name}
+                            </span>
+                            <span className="text-xs text-blue-600 ml-2">({equipment.category})</span>
+                            {equipment.is_mandatory && (
+                              <span className="block text-xs font-bold text-green-600">{getText('Mandatory', 'Wajib')}</span>
+                            )}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* RIGHT COLUMN / BOTTOM ROW: PERSONAL INFORMATION + SUBMIT */}
+            <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+              <div className="flex items-center space-x-3 mb-8">
+                <div className="p-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg">
+                  <User className="h-5 w-5 text-white" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-800">
+                  {getText('Personal Information', 'Informasi Pribadi')}
+                </h2>
+              </div>
+
+              <div className="space-y-6">
+                <div className="relative">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    {getText('Identity Number (NIM/NIP)', 'Nomor Identitas (NIM/NIP)')} *
+                  </label>
+                  <div className="relative">
+                    <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <input
+                      {...form.register('identity_number')}
+                      ref={identityInputRef}
+                      type="text"
+                      placeholder={getText("Enter or search your ID", "Masukkan atau cari ID Anda")}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        form.setValue('identity_number', value, { shouldValidate: true });
+                        showIdentityDropdown(value);
+                      }}
+                      onFocus={(e) => { showIdentityDropdown(e.target.value); }}
+                      onBlur={() => { setTimeout(() => hideIdentityDropdown(), 200); }}
+                      className="w-full pl-10 pr-10 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck="false"
+                    />
+                    {identitySearchLoading && (
+                      <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 animate-spin" />
+                    )}
+                    <div id="identity-dropdown" style={{ display: 'none' }}></div>
+                  </div>
+                  {form.formState.errors.identity_number && (
+                    <p className="mt-1 text-sm text-red-600 font-medium">
+                      {form.formState.errors.identity_number.message}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    {getText('Full Name', 'Nama Lengkap')} *
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <input
+                      {...form.register('full_name')}
+                      ref={fullNameInputRef}
+                      type="text"
+                      placeholder={getText("Enter your full name", "Masukkan nama lengkap Anda")}
+                      onChange={(e) => form.setValue('full_name', e.target.value, { shouldValidate: true })}
+                      className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="words"
+                      spellCheck="false"
+                    />
+                  </div>
+                  {form.formState.errors.full_name && (
+                    <p className="mt-1 text-sm text-red-600 font-medium">
+                      {form.formState.errors.full_name.message}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    {getText('Phone Number', 'Nomor Telepon')} *
+                  </label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <input
+                      {...form.register('phone_number')}
+                      ref={phoneInputRef}
+                      type="tel"
+                      placeholder="08xxxxxxxxxx"
+                      onChange={(e) => form.setValue('phone_number', e.target.value, { shouldValidate: true })}
+                      className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck="false"
+                    />
+                  </div>
+                  {form.formState.errors.phone_number && (
+                    <p className="mt-1 text-sm text-red-600 font-medium">
+                      {form.formState.errors.phone_number.message}
+                    </p>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    {getText('Study Program', 'Program Studi')} *
+                  </label>
+                  <div className="relative">
+                    <GraduationCap className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <input
+                      ref={studyProgramDisplayRef}
+                      type="text"
+                      placeholder={getText("Click or type to select study program", "Klik atau ketik untuk pilih program studi")}
+                      onClick={showStudyProgramDropdown}
+                      onFocus={showStudyProgramDropdown}
+                      onBlur={() => setTimeout(hideStudyProgramDropdown, 200)}
+                      onKeyDown={(e) => {
+                        // Prevent typing, only allow tab, enter, escape
+                        if (!['Tab', 'Enter', 'Escape'].includes(e.key)) {
+                          e.preventDefault();
+                        }
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          showStudyProgramDropdown();
+                        }
+                      }}
+                      className="w-full pl-10 pr-8 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm cursor-pointer"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck="false"
+                      readOnly
+                    />
+                    <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                    <div id="study-program-dropdown" style={{ display: 'none' }}></div>
+                  </div>
+                  {form.formState.errors.study_program_id && (
+                    <p className="mt-1 text-sm text-red-600 font-medium">
+                      {form.formState.errors.study_program_id.message}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* SUBMIT SECTION */}
+              <div className="mt-8 pt-6 border-t border-gray-200/50">
+                {!selectedRoom && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+                    <div className="flex items-center space-x-3">
+                      <AlertTriangle className="h-5 w-5 text-amber-600" />
+                      <div className="text-sm text-amber-800">
+                        <p className="font-semibold">{getText('Room Selection Required', 'Pilih Ruangan Diperlukan')}</p>
+                        <p>{getText('Please select a room to continue', 'Silakan pilih ruangan untuk melanjutkan')}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading || !selectedRoom}
+                  className="w-full flex items-center justify-center space-x-3 py-4 px-6 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-2xl hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-[1.02] disabled:hover:scale-100"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span>{getText('Submitting...', 'Mengirim...')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-5 w-5" />
+                      <span>{getText('Submit Booking Request', 'Kirim Permintaan Pemesanan')}</span>
+                      <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
+                </button>
+
+                {selectedRoom && (() => {
+                  const roomStatus = getOptimizedRoomStatus(selectedRoom);
+                  if (roomStatus.status === 'Conflict') {
+                    return (
+                      <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4">
+                        <div className="flex items-center space-x-3">
+                          <AlertTriangle className="h-5 w-5 text-orange-600" />
+                          <div className="text-sm text-orange-800">
+                            <p className="font-semibold">⚠️ {getText('Time Conflict Warning', 'Peringatan Konflik Waktu')}</p>
+                            <p>{getText('The selected time conflicts with an existing schedule.', 'Waktu yang dipilih bertabrakan dengan jadwal yang ada.')}</p>
+                          </div>
+                        </div>
                       </div>
                     );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Available Equipment */}
-            {selectedRoom && availableEquipment.length > 0 && (
-              <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                <h4 className="font-semibold text-blue-800 mb-3 flex items-center">
-                  <Zap className="h-5 w-5 mr-2" />
-                  {getText('Available Equipment in Selected Room', 'Peralatan Tersedia di Ruangan Terpilih')}
-                </h4>
-                <div className="space-y-2">
-                  {availableEquipment.map((equipment) => (
-                    <label key={equipment.id} className="flex items-center space-x-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        value={equipment.id}
-                        defaultChecked={equipment.is_mandatory}
-                        disabled={equipment.is_mandatory}
-                        onChange={(e) => {
-                          const currentEquipment = form.getValues('equipment_requested') || [];
-                          if (e.target.checked) {
-                            form.setValue('equipment_requested', [...currentEquipment, equipment.id]);
-                          } else {
-                            form.setValue('equipment_requested', currentEquipment.filter(id => id !== equipment.id));
-                          }
-                        }}
-                        className="text-blue-600 focus:ring-blue-500 rounded disabled:opacity-70"
-                      />
-                      <div className="flex-1">
-                        <span className={`text-sm font-medium ${equipment.is_mandatory ? 'text-blue-900' : 'text-blue-800'}`}>
-                          {equipment.name}
-                        </span>
-                        <span className="text-xs text-blue-600 ml-2">({equipment.category})</span>
-                        {equipment.is_mandatory && (
-                          <span className="block text-xs font-bold text-green-600">{getText('Mandatory', 'Wajib')}</span>
-                        )}
+                  }
+                  if (roomStatus.status === 'In Use') {
+                    return (
+                      <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4">
+                        <div className="flex items-center space-x-3">
+                          <AlertTriangle className="h-5 w-5 text-orange-600" />
+                          <div className="text-sm text-orange-800">
+                            <p className="font-semibold">⚠️ {getText('Late Booking Warning', 'Peringatan Pemesanan Terlambat')}</p>
+                            <p>{getText('Current booking will be marked as completed', 'Pemesanan saat ini akan ditandai sebagai selesai')}</p>
+                          </div>
+                        </div>
                       </div>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 3. PERSONAL INFORMATION SECTION */}
-          <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-            <div className="flex items-center space-x-3 mb-8">
-              <div className="p-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg">
-                <User className="h-5 w-5 text-white" />
-              </div>
-              <h2 className="text-2xl font-bold text-gray-800">
-                {getText('Personal Information', 'Informasi Pribadi')}
-              </h2>
-            </div>
-
-            <div className="space-y-6">
-              <div className="relative">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {getText('Identity Number (NIM/NIP)', 'Nomor Identitas (NIM/NIP)')} *
-                </label>
-                <div className="relative">
-                  <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <input
-                    {...form.register('identity_number')}
-                    ref={identityInputRef}
-                    type="text"
-                    placeholder={getText("Enter or search your ID", "Masukkan atau cari ID Anda")}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      form.setValue('identity_number', value, { shouldValidate: true });
-                      showIdentityDropdown(value);
-                    }}
-                    onFocus={(e) => { showIdentityDropdown(e.target.value); }}
-                    onBlur={() => { setTimeout(() => hideIdentityDropdown(), 200); }}
-                    className="w-full pl-10 pr-10 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
-                    autoComplete="off"
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    spellCheck="false"
-                  />
-                  {identitySearchLoading && (
-                    <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 animate-spin" />
-                  )}
-                  <div id="identity-dropdown" style={{ display: 'none' }}></div>
-                </div>
-                {form.formState.errors.identity_number && (
-                  <p className="mt-1 text-sm text-red-600 font-medium">
-                    {form.formState.errors.identity_number.message}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {getText('Full Name', 'Nama Lengkap')} *
-                </label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <input
-                    {...form.register('full_name')}
-                    ref={fullNameInputRef}
-                    type="text"
-                    placeholder={getText("Enter your full name", "Masukkan nama lengkap Anda")}
-                    onChange={(e) => form.setValue('full_name', e.target.value, { shouldValidate: true })}
-                    className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
-                    autoComplete="off"
-                    autoCorrect="off"
-                    autoCapitalize="words"
-                    spellCheck="false"
-                  />
-                </div>
-                {form.formState.errors.full_name && (
-                  <p className="mt-1 text-sm text-red-600 font-medium">
-                    {form.formState.errors.full_name.message}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {getText('Phone Number', 'Nomor Telepon')} *
-                </label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <input
-                    {...form.register('phone_number')}
-                    ref={phoneInputRef}
-                    type="tel"
-                    placeholder="08xxxxxxxxxx"
-                    onChange={(e) => form.setValue('phone_number', e.target.value, { shouldValidate: true })}
-                    className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
-                    autoComplete="off"
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    spellCheck="false"
-                  />
-                </div>
-                {form.formState.errors.phone_number && (
-                  <p className="mt-1 text-sm text-red-600 font-medium">
-                    {form.formState.errors.phone_number.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="relative">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {getText('Study Program', 'Program Studi')} *
-                </label>
-                <div className="relative">
-                  <GraduationCap className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <input
-                    ref={studyProgramDisplayRef}
-                    type="text"
-                    placeholder={getText("Click or type to select study program", "Klik atau ketik untuk pilih program studi")}
-                    onClick={showStudyProgramDropdown}
-                    onFocus={showStudyProgramDropdown}
-                    onBlur={() => setTimeout(hideStudyProgramDropdown, 200)}
-                    onKeyDown={(e) => {
-                      // Prevent typing, only allow tab, enter, escape
-                      if (!['Tab', 'Enter', 'Escape'].includes(e.key)) {
-                        e.preventDefault();
-                      }
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        showStudyProgramDropdown();
-                      }
-                    }}
-                    className="w-full pl-10 pr-8 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm cursor-pointer"
-                    autoComplete="off"
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    spellCheck="false"
-                    readOnly
-                  />
-                  <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-                  <div id="study-program-dropdown" style={{ display: 'none' }}></div>
-                </div>
-                {form.formState.errors.study_program_id && (
-                  <p className="mt-1 text-sm text-red-600 font-medium">
-                    {form.formState.errors.study_program_id.message}
-                  </p>
-                )}
+                    );
+                  }
+                  if (roomStatus.status === 'Scheduled' && roomStatus.scheduleCount) {
+                    return (
+                      <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                        <div className="flex items-center space-x-3">
+                          <Info className="h-5 w-5 text-yellow-600" />
+                          <div className="text-sm text-yellow-800">
+                            <p className="font-semibold">📅 {getText('Room Has Schedule', 'Ruangan Terjadwal')}</p>
+                            <p>{getText('Please check the schedule details before booking to avoid conflicts.', 'Silakan periksa detail jadwal sebelum memesan untuk menghindari konflik.')}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (roomStatus.status === 'Unavailable') {
+                    return (
+                      <div className="mt-4 bg-gray-50 border border-gray-200 rounded-xl p-4">
+                        <div className="flex items-center space-x-3">
+                          <X className="h-5 w-5 text-gray-600" />
+                          <div className="text-sm text-gray-700">
+                            <p className="font-semibold">🚫 {getText('Room Unavailable', 'Ruangan Tidak Tersedia')}</p>
+                            <p>{getText('This room is currently disabled for booking', 'Ruangan ini saat ini dinonaktifkan untuk pemesanan')}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             </div>
-          </div>
-
-          {/* SUBMIT SECTION */}
-          <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-            {!selectedRoom && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
-                <div className="flex items-center space-x-3">
-                  <AlertTriangle className="h-5 w-5 text-amber-600" />
-                  <div className="text-sm text-amber-800">
-                    <p className="font-semibold">{getText('Room Selection Required', 'Pilih Ruangan Diperlukan')}</p>
-                    <p>{getText('Please select a room to continue', 'Silakan pilih ruangan untuk melanjutkan')}</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading || !selectedRoom}
-              className="w-full flex items-center justify-center space-x-3 py-4 px-6 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-2xl hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-[1.02] disabled:hover:scale-100"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  <span>{getText('Submitting...', 'Mengirim...')}</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="h-5 w-5" />
-                  <span>{getText('Submit Booking Request', 'Kirim Permintaan Pemesanan')}</span>
-                  <ArrowRight className="h-4 w-4" />
-                </>
-              )}
-            </button>
-
-            {selectedRoom && (() => {
-              const roomStatus = getOptimizedRoomStatus(selectedRoom);
-              if (roomStatus.status === 'Conflict') {
-                return (
-                  <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4">
-                    <div className="flex items-center space-x-3">
-                      <AlertTriangle className="h-5 w-5 text-orange-600" />
-                      <div className="text-sm text-orange-800">
-                        <p className="font-semibold">⚠️ {getText('Time Conflict Warning', 'Peringatan Konflik Waktu')}</p>
-                        <p>{getText('The selected time conflicts with an existing schedule.', 'Waktu yang dipilih bertabrakan dengan jadwal yang ada.')}</p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-              if (roomStatus.status === 'In Use') {
-                return (
-                  <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4">
-                    <div className="flex items-center space-x-3">
-                      <AlertTriangle className="h-5 w-5 text-orange-600" />
-                      <div className="text-sm text-orange-800">
-                        <p className="font-semibold">⚠️ {getText('Late Booking Warning', 'Peringatan Pemesanan Terlambat')}</p>
-                        <p>{getText('Current booking will be marked as completed', 'Pemesanan saat ini akan ditandai sebagai selesai')}</p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-              if (roomStatus.status === 'Scheduled' && roomStatus.scheduleCount) {
-                return (
-                  <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-                    <div className="flex items-center space-x-3">
-                      <Info className="h-5 w-5 text-yellow-600" />
-                      <div className="text-sm text-yellow-800">
-                        <p className="font-semibold">📅 {getText('Room Has Schedule', 'Ruangan Terjadwal')}</p>
-                        <p>{getText('Please check the schedule details before booking to avoid conflicts.', 'Silakan periksa detail jadwal sebelum memesan untuk menghindari konflik.')}</p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-              if (roomStatus.status === 'Unavailable') {
-                return (
-                  <div className="mt-4 bg-gray-50 border border-gray-200 rounded-xl p-4">
-                    <div className="flex items-center space-x-3">
-                      <X className="h-5 w-5 text-gray-600" />
-                      <div className="text-sm text-gray-700">
-                        <p className="font-semibold">🚫 {getText('Room Unavailable', 'Ruangan Tidak Tersedia')}</p>
-                        <p>{getText('This room is currently disabled for booking', 'Ruangan ini saat ini dinonaktifkan untuk pemesanan')}</p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-              return null;
-            })()}
           </div>
         </form>
       </div>
