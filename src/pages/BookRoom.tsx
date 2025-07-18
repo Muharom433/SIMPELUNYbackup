@@ -491,76 +491,81 @@ const BookRoom: React.FC = () => {
   }, []);
 
   // 🎯 FIXED: Submit function dengan timezone yang benar
-  const onSubmit = async (data: BookingForm) => {
-    if (!selectedRoom) {
-      alert.error(getText('Please select a room', 'Silakan pilih ruangan'));
-      return;
+  // Ganti function onSubmit di BookRoom.tsx dengan ini:
+
+const onSubmit = async (data: BookingForm) => {
+  if (!selectedRoom) {
+    alert.error(getText('Please select a room', 'Silakan pilih ruangan'));
+    return;
+  }
+  
+  setLoading(true);
+  try {
+    const roomStatus = getOptimizedRoomStatus(selectedRoom);
+    if (roomStatus.status === 'In Use' && selectedRoom.currentBooking) {
+      await supabase.from('bookings').update({ status: 'completed' }).eq('id', selectedRoom.currentBooking.id);
     }
+
+    // ✅ FIX: Explicit timezone untuk Indonesia (WIB/UTC+7)
+    const startTimeUTC = new Date(data.start_datetime + '+07:00').toISOString();
+    const endTimeUTC = new Date(data.end_datetime + '+07:00').toISOString();
+
+    console.log('🕐 Input:', data.start_datetime);
+    console.log('🕐 UTC:', startTimeUTC);
+
+    const bookingData = {
+      start_time: startTimeUTC,
+      end_time: endTimeUTC,
+      purpose: data.purpose,
+      sks: data.sks,
+      class_type: data.class_type,
+      room_id: selectedRoom.id,
+      equipment_requested: data.equipment_requested || [],
+      notes: data.notes,
+      attachments: data.attachments || [],
+      status: 'pending',
+      user_info: {
+        full_name: data.full_name,
+        identity_number: data.identity_number,
+        phone_number: data.phone_number,
+        study_program_id: data.study_program_id,
+      },
+    };
+
+    const { error } = await supabase.from('bookings').insert(bookingData);
+    if (error) throw error;
+
+    const successMessage = roomStatus.status === 'In Use' 
+      ? getText('Late booking submitted successfully! Previous booking marked as completed.', 'Pemesanan terlambat berhasil diajukan! Pemesanan sebelumnya ditandai selesai.') 
+      : getText('Booking submitted successfully!', 'Pemesanan berhasil diajukan!');
+      
+    alert.success(successMessage);
+
+    // Reset form
+    form.reset({
+      start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+      end_datetime: format(addMinutes(new Date(), 120), "yyyy-MM-dd'T'HH:mm"),
+      sks: 2,
+      class_type: 'theory',
+      purpose: 'Class/Lecture',
+      equipment_requested: [],
+      attachments: [],
+    });
     
-    setLoading(true);
-    try {
-      const roomStatus = getOptimizedRoomStatus(selectedRoom);
-      if (roomStatus.status === 'In Use' && selectedRoom.currentBooking) {
-        await supabase.from('bookings').update({ status: 'completed' }).eq('id', selectedRoom.currentBooking.id);
-      }
-
-      // Convert local datetime ke UTC untuk database
-      const startTimeUTC = convertLocalToUTC(data.start_datetime);
-      const endTimeUTC = convertLocalToUTC(data.end_datetime);
-
-      const bookingData = {
-        start_time: startTimeUTC,
-        end_time: endTimeUTC,
-        purpose: data.purpose,
-        sks: data.sks,
-        class_type: data.class_type,
-        room_id: selectedRoom.id,
-        equipment_requested: data.equipment_requested || [],
-        notes: data.notes,
-        attachments: data.attachments || [],
-        status: 'pending',
-        user_info: {
-          full_name: data.full_name,
-          identity_number: data.identity_number,
-          phone_number: data.phone_number,
-          study_program_id: data.study_program_id,
-        },
-      };
-
-      const { error } = await supabase.from('bookings').insert(bookingData);
-      if (error) throw error;
-
-      const successMessage = roomStatus.status === 'In Use' 
-        ? getText('Late booking submitted successfully! Previous booking marked as completed.', 'Pemesanan terlambat berhasil diajukan! Pemesanan sebelumnya ditandai selesai.') 
-        : getText('Booking submitted successfully!', 'Pemesanan berhasil diajukan!');
-        
-      alert.success(successMessage);
-
-      // Reset form
-      form.reset({
-        start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
-        end_datetime: format(addMinutes(new Date(), 120), "yyyy-MM-dd'T'HH:mm"),
-        sks: 2,
-        class_type: 'theory',
-        purpose: 'Class/Lecture',
-        equipment_requested: [],
-        attachments: [],
-      });
-      
-      setSelectedRoom(null);
-      if (identityInputRef.current) identityInputRef.current.value = '';
-      if (fullNameInputRef.current) fullNameInputRef.current.value = '';
-      if (phoneInputRef.current) phoneInputRef.current.value = '';
-      if (studyProgramDisplayRef.current) studyProgramDisplayRef.current.value = '';
-      fetchRoomData(targetBookingDate, true);
-      
-    } catch (error: any) {
-      console.error('Error submitting booking:', error);
-      alert.error(error.message || getText('Failed to submit booking', 'Gagal mengajukan pemesanan'));
-    } finally {
-      setLoading(false);
-    }
-  };
+    setSelectedRoom(null);
+    if (identityInputRef.current) identityInputRef.current.value = '';
+    if (fullNameInputRef.current) fullNameInputRef.current.value = '';
+    if (phoneInputRef.current) phoneInputRef.current.value = '';
+    if (studyProgramDisplayRef.current) studyProgramDisplayRef.current.value = '';
+    fetchRoomData(targetBookingDate, true);
+    
+  } catch (error: any) {
+    console.error('Error submitting booking:', error);
+    alert.error(error.message || getText('Failed to submit booking', 'Gagal mengajukan pemesanan'));
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
