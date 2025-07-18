@@ -548,12 +548,6 @@ const BookRoom: React.FC = () => {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-sm font-semibold text-gray-700">{getText('Start Date & Time', 'Tanggal & Waktu Mulai')} *</label>
-                  <div className="hidden sm:block relative">
-                    <button type="button" onClick={handleSetToNow} className={`inline-flex items-center space-x-1 px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 transform hover:scale-105 active:scale-95 shadow-sm hover:shadow-md ${showNowFeedback ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-blue-100 text-blue-700 border border-blue-300 hover:bg-blue-200'}`}>
-                      <Zap className="h-3 w-3" />
-                      <span>{showNowFeedback ? getText('Set!', 'Berhasil!') : getText('Now', 'Sekarang')}</span>
-                    </button>
-                  </div>
                 </div>
                 <div className="relative">
                   <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
