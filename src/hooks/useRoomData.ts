@@ -53,7 +53,7 @@ export const useRoomData = (targetDate: string) => {
           purpose,
           status,
           user_info,
-          study_program_id,
+          user_id,
           user:users!user_id(
             id,
             full_name,
@@ -122,38 +122,31 @@ export const useRoomData = (targetDate: string) => {
           class,
           subject_study,
           lecturer,
-          study_program:study_programs!study_program_id(
-            id,
-            name,
-            code,
-            department:departments(name)
-          )
+          semester,
+          kurikulum,
+          academics_year,
+          type
         `)
         .eq('day', dayName);
 
       if (lecturesError) throw lecturesError;
 
-      // 5. FETCH EXAM SCHEDULES dengan relasi study program
+      // 5. FETCH EXAM SCHEDULES 
       const { data: examsData, error: examsError } = await supabase
-        .from('exam_schedules')
+        .from('exams')
         .select(`
           id,
-          room,
+          room_id,
           date,
           start_time,
           end_time,
           course_name,
           course_code,
           class,
-          subject_study,
           student_amount,
-          supervisor,
-          study_program:study_programs!study_program_id(
-            id,
-            name,
-            code,
-            department:departments(name)
-          )
+          lecturer_id,
+          department_id,
+          study_program_id
         `)
         .eq('date', date);
 
@@ -232,9 +225,9 @@ export const useRoomData = (targetDate: string) => {
           lecture.room.toLowerCase() === room.name.toLowerCase()
         );
         
-        // Group exams by room (match by room name)
+        // Group exams by room (match by room_id)
         const roomExams = (examsData || []).filter(exam => 
-          exam.room.toLowerCase() === room.name.toLowerCase()
+          exam.room_id === room.id
         );
 
         // Current booking untuk room ini
@@ -317,7 +310,7 @@ export const useRoomData = (targetDate: string) => {
             } : (booking.user_info ? {
               full_name: booking.user_info.full_name,
               identity_number: booking.user_info.identity_number,
-              study_program: null // Will be resolved separately if needed
+              study_program: null // user_info tidak punya relasi ke study_program
             } : null)
           })),
           
@@ -331,12 +324,10 @@ export const useRoomData = (targetDate: string) => {
               class: lecture.class,
               subject_study: lecture.subject_study,
               lecturer: lecture.lecturer,
-              study_program: lecture.study_program ? {
-                id: lecture.study_program.id,
-                name: lecture.study_program.name,
-                code: lecture.study_program.code,
-                department: lecture.study_program.department
-              } : null
+              semester: lecture.semester,
+              kurikulum: lecture.kurikulum,
+              academics_year: lecture.academics_year,
+              type: lecture.type
             })),
             
             exams: roomExams.map(exam => ({
@@ -346,15 +337,10 @@ export const useRoomData = (targetDate: string) => {
               course_name: exam.course_name,
               course_code: exam.course_code,
               class: exam.class,
-              subject_study: exam.subject_study,
               student_amount: exam.student_amount,
-              supervisor: exam.supervisor,
-              study_program: exam.study_program ? {
-                id: exam.study_program.id,
-                name: exam.study_program.name,
-                code: exam.study_program.code,
-                department: exam.study_program.department
-              } : null
+              lecturer_id: exam.lecturer_id,
+              department_id: exam.department_id,
+              study_program_id: exam.study_program_id
             })),
             
             sessions: roomSessions.map(session => ({
