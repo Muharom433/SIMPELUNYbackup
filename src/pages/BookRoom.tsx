@@ -210,7 +210,7 @@ const BookRoom: React.FC = () => {
     }
   }, [watchStartDateTime, watchSks, watchClassType, useManualEndTime, form]);
 
-  // 🎯 FIX: Logika status ruangan yang disempurnakan untuk mendeteksi konflik waktu
+  // 🎯 FIX: Logika status ruangan sesuai konsep baru
   const getOptimizedRoomStatus = useCallback((room: any) => {
     // 1. Cek apakah ruangan dinonaktifkan
     if (!room.is_available) {
@@ -221,23 +221,7 @@ const BookRoom: React.FC = () => {
       };
     }
 
-    // 2. Cek apakah sedang digunakan TEPAT SAAT INI (hanya jika melihat hari ini)
-    const isToday = targetBookingDate === format(new Date(), 'yyyy-MM-dd');
-    if (isToday && room.currentBooking) {
-      const now = new Date();
-      const bookingStart = parseISO(room.currentBooking.start_time);
-      const bookingEnd = parseISO(room.currentBooking.end_time);
-      if (now >= bookingStart && now <= bookingEnd) {
-        return {
-          status: 'In Use',
-          reason: `Sedang digunakan oleh ${room.currentBooking.user?.full_name || 'Tidak diketahui'}`,
-          color: 'bg-red-100 text-red-800 border-red-200',
-          detail: room.currentBooking
-        };
-      }
-    }
-
-    // 3. Cek KONFLIK antara waktu yang dipilih pengguna dengan jadwal yang ada
+    // 2. Cek apakah waktu yang dipilih pengguna TUMPANG TINDIH dengan jadwal yang ada
     const userStartTime = watchStartDateTime ? parseISO(watchStartDateTime) : null;
     const userEndTime = watchEndDateTime ? parseISO(watchEndDateTime) : null;
 
@@ -248,15 +232,16 @@ const BookRoom: React.FC = () => {
         // Kondisi tumpang tindih: (StartA < EndB) and (EndA > StartB)
         if (userStartTime < existingEnd && userEndTime > existingStart) {
           return {
-            status: 'Conflict',
-            reason: `Bertabrakan dengan jadwal pukul ${format(existingStart, 'HH:mm')} - ${format(existingEnd, 'HH:mm')}`,
-            color: 'bg-orange-100 text-orange-800 border-orange-200'
+            status: 'In Use', // Status diubah menjadi "In Use" jika ada konflik waktu
+            reason: `Sudah dipesan pukul ${format(existingStart, 'HH:mm')} - ${format(existingEnd, 'HH:mm')}`,
+            color: 'bg-red-100 text-red-800 border-red-200',
+            detail: booking
           };
         }
       }
     }
     
-    // 4. Cek apakah ada jadwal LAINNYA di hari itu (meskipun tidak konflik)
+    // 3. Cek apakah ada jadwal LAINNYA di hari itu (meskipun tidak konflik)
     const hasScheduledContent =
       (room.scheduleDetails?.lectures?.length > 0) ||
       (room.scheduleDetails?.exams?.length > 0) ||
@@ -272,7 +257,7 @@ const BookRoom: React.FC = () => {
       };
     }
 
-    // 5. Jika lolos semua, berarti tersedia
+    // 4. Jika lolos semua, berarti tersedia
     return {
       status: 'Available',
       reason: 'Ruangan bebas dan tersedia untuk dipesan',
@@ -626,7 +611,6 @@ const BookRoom: React.FC = () => {
                       <option value="all">{getText('All Status', 'Semua Status')}</option>
                       <option value="Available">{getText('Available', 'Tersedia')}</option>
                       <option value="Scheduled">{getText('Scheduled', 'Terjadwal')}</option>
-                      <option value="Conflict">{getText('Conflict', 'Konflik')}</option>
                       <option value="In Use">{getText('In Use', 'Sedang Digunakan')}</option>
                     </select>
                     <select value={sortBy} onChange={(e) => setSortBy(e.target.value as 'name' | 'capacity' | 'status')} className="px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50">
@@ -645,40 +629,17 @@ const BookRoom: React.FC = () => {
                       const roomStatus = getOptimizedRoomStatus(room);
                       const isSelected = selectedRoom?.id === room.id;
                       return (
-                        <div key={room.id} onClick={() => roomStatus.status !== 'Conflict' && roomStatus.status !== 'In Use' && roomStatus.status !== 'Unavailable' && handleRoomSelect(room)} className={`p-4 rounded-xl border-2 transition-all duration-200 ${isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white/50'} ${roomStatus.status === 'Conflict' || roomStatus.status === 'In Use' || roomStatus.status === 'Unavailable' ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:shadow-md hover:border-blue-300'}`}>
+                        <div key={room.id} onClick={() => roomStatus.status !== 'In Use' && roomStatus.status !== 'Unavailable' && handleRoomSelect(room)} className={`p-4 rounded-xl border-2 transition-all duration-200 ${isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white/50'} ${roomStatus.status === 'In Use' || roomStatus.status === 'Unavailable' ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:shadow-md hover:border-blue-300'}`}>
                           <div className="flex items-start justify-between mb-3">
                             <div><h4 className="font-bold text-gray-900">{room.name}</h4><p className="text-sm text-gray-600">{room.code}</p></div>
                             <div className="flex flex-col items-end space-y-1"><span className={`px-3 py-1 rounded-full text-xs font-medium border ${roomStatus.color}`}>{getText(roomStatus.status, roomStatus.status)}</span>{roomStatus.scheduleCount && (<span className="text-xs text-gray-500">{roomStatus.scheduleCount} {getText('activities', 'aktivitas')}</span>)}</div>
                           </div>
                           <div className="flex items-center justify-between text-sm text-gray-600">
                             <div className="flex items-center space-x-4"><div className="flex items-center space-x-1"><Users className="h-4 w-4" /><span>{room.capacity} {getText('seats', 'kursi')}</span></div><div className="flex items-center space-x-1"><Building className="h-4 w-4" /><span>{room.department?.name || getText('General', 'Umum')}</span></div></div>
-                            {(roomStatus.status === 'Scheduled' || roomStatus.status === 'In Use' || roomStatus.status === 'Conflict') && (<button type="button" onClick={(e) => { e.stopPropagation(); setScheduleModalRoom(room); setShowScheduleModal(true); }} className="text-blue-600 hover:text-blue-800 transition-colors duration-200"><Eye className="h-4 w-4" /></button>)}
+                            {(roomStatus.status === 'Scheduled' || roomStatus.status === 'In Use') && (<button type="button" onClick={(e) => { e.stopPropagation(); setScheduleModalRoom(room); setShowScheduleModal(true); }} className="text-blue-600 hover:text-blue-800 transition-colors duration-200"><Eye className="h-4 w-4" /></button>)}
                           </div>
-                          {roomStatus.status === 'In Use' && roomStatus.detail && (<div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg"><p className="text-sm font-medium text-red-800">{getText('Currently in use by', 'Sedang digunakan oleh')}: {roomStatus.detail.user?.full_name || 'Unknown User'}</p><p className="text-xs text-red-600">{roomStatus.detail.purpose || 'Room Booking'}</p><p className="text-xs text-red-500">{format(parseISO(roomStatus.detail.start_time), 'HH:mm')} - {format(parseISO(roomStatus.detail.end_time), 'HH:mm')}</p></div>)}
-                          {roomStatus.status === 'Conflict' && (<div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg"><p className="text-sm font-medium text-orange-800">⚠️ {getText('Time Conflict', 'Konflik Waktu')}</p><p className="text-xs text-orange-700 mt-1">{roomStatus.reason}</p></div>)}
-                          
-                          {/* 🎯 FIX: Tampilkan detail booking jika statusnya "Scheduled" */}
-                          {roomStatus.status === 'Scheduled' && roomStatus.scheduleCount && (
-                            <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg space-y-2">
-                              <p className="text-xs text-yellow-800 font-semibold">
-                                📅 {getText('Jadwal di Hari Ini:', 'Jadwal di Hari Ini:')}
-                              </p>
-                              {room.targetDateBookings && room.targetDateBookings.length > 0 && (
-                                <div className="space-y-1 max-h-20 overflow-y-auto">
-                                  {room.targetDateBookings.map((booking: any, index: number) => (
-                                    <div key={index} className="text-xs text-yellow-900 border-t border-yellow-200 pt-1 first:pt-0 first:border-t-0">
-                                      <p className="font-medium truncate">{booking.purpose}</p>
-                                      <p>{format(parseISO(booking.start_time), 'HH:mm')} - {format(parseISO(booking.end_time), 'HH:mm')}</p>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              <p className="text-xs text-yellow-700 mt-1 border-t border-yellow-200 pt-1">
-                                {getText('Klik ikon mata untuk lihat semua detail', 'Klik ikon mata untuk lihat semua detail')}
-                              </p>
-                            </div>
-                          )}
-
+                          {roomStatus.status === 'In Use' && roomStatus.detail && (<div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg"><p className="text-sm font-medium text-red-800">⚠️ {getText('Time Conflict', 'Konflik Waktu')}</p><p className="text-xs text-red-700 mt-1">{roomStatus.reason}</p></div>)}
+                          {roomStatus.status === 'Scheduled' && roomStatus.scheduleCount && (<div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg"><p className="text-xs text-yellow-700">📅 {roomStatus.scheduleCount} {getText('scheduled activities', 'aktivitas terjadwal')}</p><p className="text-xs text-yellow-600 mt-1">{getText('Click eye icon to view details', 'Klik ikon mata untuk lihat detail')}</p></div>)}
                           {roomStatus.status === 'Unavailable' && (<div className="mt-3 p-2 bg-gray-50 border border-gray-200 rounded-lg"><p className="text-xs text-gray-600">🚫 {getText('Room disabled for booking', 'Ruangan dinonaktifkan untuk pemesanan')}</p></div>)}
                           {room.futureBookings?.count > 0 && roomStatus.status === 'Available' && (<div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded-lg"><p className="text-xs text-blue-700">🔮 {room.futureBookings.count} {getText('future bookings', 'pemesanan mendatang')}</p>{room.futureBookings.nextBooking && (<p className="text-xs text-blue-600 mt-1">{getText('Next:', 'Selanjutnya:')} {room.futureBookings.nextBooking.date} {room.futureBookings.nextBooking.time}</p>)}</div>)}
                         </div>
@@ -724,11 +685,8 @@ const BookRoom: React.FC = () => {
               {!selectedRoom && (<p className="mt-2 text-sm text-amber-600 text-center">{getText('Please select a room to continue', 'Silakan pilih ruangan untuk melanjutkan')}</p>)}
               {selectedRoom && (() => {
                 const roomStatus = getOptimizedRoomStatus(selectedRoom);
-                if (roomStatus.status === 'Conflict') {
-                  return (<div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4"><div className="flex items-center space-x-3"><AlertTriangle className="h-5 w-5 text-orange-600" /><div className="text-sm text-orange-800"><p className="font-semibold">⚠️ {getText('Time Conflict Warning', 'Peringatan Konflik Waktu')}</p><p>{getText('The selected time conflicts with an existing schedule.', 'Waktu yang dipilih bertabrakan dengan jadwal yang ada.')}</p></div></div></div>);
-                }
                 if (roomStatus.status === 'In Use') {
-                  return (<div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4"><div className="flex items-center space-x-3"><AlertTriangle className="h-5 w-5 text-orange-600" /><div className="text-sm text-orange-800"><p className="font-semibold">⚠️ {getText('Late Booking Warning', 'Peringatan Pemesanan Terlambat')}</p><p>{getText('Current booking will be marked as completed', 'Pemesanan saat ini akan ditandai sebagai selesai')}</p></div></div></div>);
+                  return (<div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-4"><div className="flex items-center space-x-3"><AlertTriangle className="h-5 w-5 text-red-600" /><div className="text-sm text-red-800"><p className="font-semibold">⚠️ {getText('Time Conflict Warning', 'Peringatan Konflik Waktu')}</p><p>{getText('The selected time conflicts with an existing schedule.', 'Waktu yang dipilih bertabrakan dengan jadwal yang ada.')}</p></div></div></div>);
                 }
                 if (roomStatus.status === 'Scheduled' && roomStatus.scheduleCount) {
                   return (<div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-xl p-4"><div className="flex items-center space-x-3"><Info className="h-5 w-5 text-yellow-600" /><div className="text-sm text-yellow-800"><p className="font-semibold">📅 {getText('Room Has Schedule', 'Ruangan Terjadwal')}</p><p>{getText('Please check the schedule details before booking to avoid conflicts.', 'Silakan periksa detail jadwal sebelum memesan untuk menghindari konflik.')}</p></div></div></div>);
