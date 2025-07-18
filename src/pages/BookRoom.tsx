@@ -125,6 +125,7 @@ const BookRoom: React.FC = () => {
   
   const form = useForm<BookingForm>({
     resolver: zodResolver(bookingSchema),
+    mode: 'onChange', // 🎯 FIX: Menambahkan mode validasi 'onChange'
     defaultValues: {
       start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
       end_datetime: format(addMinutes(new Date(), 120), "yyyy-MM-dd'T'HH:mm"),
@@ -359,19 +360,14 @@ const BookRoom: React.FC = () => {
               const userName = target.dataset.userName;
               const userPhone = target.dataset.userPhone;
               const programId = target.dataset.programId;
-              if (identityInputRef.current) identityInputRef.current.value = userNim || '';
-              if (fullNameInputRef.current) fullNameInputRef.current.value = userName || '';
-              if (phoneInputRef.current) phoneInputRef.current.value = userPhone || '';
-              form.setValue('identity_number', userNim || '');
-              form.setValue('full_name', userName || '');
-              form.setValue('phone_number', userPhone || '');
+              
+              form.setValue('identity_number', userNim || '', { shouldValidate: true });
+              form.setValue('full_name', userName || '', { shouldValidate: true });
+              form.setValue('phone_number', userPhone || '', { shouldValidate: true });
               if (programId) {
-                form.setValue('study_program_id', programId);
-                const program = studyPrograms.find(p => p.id === programId);
-                if (program && studyProgramDisplayRef.current) {
-                  studyProgramDisplayRef.current.value = `${program.name} (${program.code})`;
-                }
+                form.setValue('study_program_id', programId, { shouldValidate: true });
               }
+              
               hideIdentityDropdown();
               identityInputRef.current?.focus();
             });
@@ -483,82 +479,75 @@ const BookRoom: React.FC = () => {
     fetchStudyPrograms();
   }, []);
 
-  // 🎯 FIXED: Submit function dengan timezone yang benar
-  // Ganti function onSubmit di BookRoom.tsx dengan ini:
-
-const onSubmit = async (data: BookingForm) => {
-  if (!selectedRoom) {
-    alert.error(getText('Please select a room', 'Silakan pilih ruangan'));
-    return;
-  }
-  
-  setLoading(true);
-  try {
-    const roomStatus = getOptimizedRoomStatus(selectedRoom);
-    if (roomStatus.status === 'In Use' && selectedRoom.currentBooking) {
-      await supabase.from('bookings').update({ status: 'completed' }).eq('id', selectedRoom.currentBooking.id);
+  const onSubmit = async (data: BookingForm) => {
+    if (!selectedRoom) {
+      alert.error(getText('Please select a room', 'Silakan pilih ruangan'));
+      return;
     }
+    
+    setLoading(true);
+    try {
+      const roomStatus = getOptimizedRoomStatus(selectedRoom);
+      if (roomStatus.status === 'In Use' && selectedRoom.currentBooking) {
+        await supabase.from('bookings').update({ status: 'completed' }).eq('id', selectedRoom.currentBooking.id);
+      }
 
-    // ✅ FIX: Explicit timezone untuk Indonesia (WIB/UTC+7)
-    const startTimeUTC = new Date(data.start_datetime + '+07:00').toISOString();
-    const endTimeUTC = new Date(data.end_datetime + '+07:00').toISOString();
+      const startTimeUTC = convertLocalToUTC(data.start_datetime);
+      const endTimeUTC = convertLocalToUTC(data.end_datetime);
 
-    console.log('🕐 Input:', data.start_datetime);
-    console.log('🕐 UTC:', startTimeUTC);
+      const bookingData = {
+        start_time: startTimeUTC,
+        end_time: endTimeUTC,
+        purpose: data.purpose,
+        sks: data.sks,
+        class_type: data.class_type,
+        room_id: selectedRoom.id,
+        equipment_requested: data.equipment_requested || [],
+        notes: data.notes,
+        attachments: data.attachments || [],
+        status: 'pending',
+        user_info: {
+          full_name: data.full_name,
+          identity_number: data.identity_number,
+          phone_number: data.phone_number,
+          study_program_id: data.study_program_id,
+        },
+      };
 
-    const bookingData = {
-      start_time: startTimeUTC,
-      end_time: endTimeUTC,
-      purpose: data.purpose,
-      sks: data.sks,
-      class_type: data.class_type,
-      room_id: selectedRoom.id,
-      equipment_requested: data.equipment_requested || [],
-      notes: data.notes,
-      attachments: data.attachments || [],
-      status: 'pending',
-      user_info: {
-        full_name: data.full_name,
-        identity_number: data.identity_number,
-        phone_number: data.phone_number,
-        study_program_id: data.study_program_id,
-      },
-    };
+      const { error } = await supabase.from('bookings').insert(bookingData);
+      if (error) throw error;
 
-    const { error } = await supabase.from('bookings').insert(bookingData);
-    if (error) throw error;
+      const successMessage = roomStatus.status === 'In Use' 
+        ? getText('Late booking submitted successfully! Previous booking marked as completed.', 'Pemesanan terlambat berhasil diajukan! Pemesanan sebelumnya ditandai selesai.') 
+        : getText('Booking submitted successfully!', 'Pemesanan berhasil diajukan!');
+        
+      alert.success(successMessage);
 
-    const successMessage = roomStatus.status === 'In Use' 
-      ? getText('Late booking submitted successfully! Previous booking marked as completed.', 'Pemesanan terlambat berhasil diajukan! Pemesanan sebelumnya ditandai selesai.') 
-      : getText('Booking submitted successfully!', 'Pemesanan berhasil diajukan!');
+      // Reset form
+      form.reset({
+        full_name: '',
+        identity_number: '',
+        phone_number: '',
+        study_program_id: '',
+        start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+        end_datetime: format(addMinutes(new Date(), 120), "yyyy-MM-dd'T'HH:mm"),
+        sks: 2,
+        class_type: 'theory',
+        purpose: 'Class/Lecture',
+        equipment_requested: [],
+        attachments: [],
+      });
       
-    alert.success(successMessage);
-
-    // Reset form
-    form.reset({
-      start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
-      end_datetime: format(addMinutes(new Date(), 120), "yyyy-MM-dd'T'HH:mm"),
-      sks: 2,
-      class_type: 'theory',
-      purpose: 'Class/Lecture',
-      equipment_requested: [],
-      attachments: [],
-    });
-    
-    setSelectedRoom(null);
-    if (identityInputRef.current) identityInputRef.current.value = '';
-    if (fullNameInputRef.current) fullNameInputRef.current.value = '';
-    if (phoneInputRef.current) phoneInputRef.current.value = '';
-    if (studyProgramDisplayRef.current) studyProgramDisplayRef.current.value = '';
-    fetchRoomData(targetBookingDate, true);
-    
-  } catch (error: any) {
-    console.error('Error submitting booking:', error);
-    alert.error(error.message || getText('Failed to submit booking', 'Gagal mengajukan pemesanan'));
-  } finally {
-    setLoading(false);
-  }
-};
+      setSelectedRoom(null);
+      fetchRoomData(targetBookingDate, true);
+      
+    } catch (error: any) {
+      console.error('Error submitting booking:', error);
+      alert.error(error.message || getText('Failed to submit booking', 'Gagal mengajukan pemesanan'));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
