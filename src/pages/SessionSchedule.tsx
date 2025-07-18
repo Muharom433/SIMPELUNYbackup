@@ -2058,37 +2058,6 @@ const handleSubmitWithValidation = async () => {
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                {getText("Examiner", "Penguji")} *
-              </label>
-              <div className="relative">
-                <input
-                  ref={examinerInputRef}
-                  type="text"
-                  placeholder={getText("Search examiner...", "Cari penguji...")}
-                  onInput={(e) => {
-                    dosenData.current.examinerSearch = e.target.value;
-                    showLecturerDropdown('examiner', e.target.value);
-                  }}
-                  onFocus={(e) => {
-                    showLecturerDropdown('examiner', e.target.value);
-                  }}
-                  onBlur={(e) => {
-                    form.setValue('examiner', e.target.value);
-                    setTimeout(() => hideLecturerDropdown('examiner'), 150);
-                  }}
-                  className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                  autoComplete="off"
-                />
-                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <div id="examiner-dropdown" style={{ display: 'none' }}></div>
-              </div>
-              {form.formState.errors.examiner && (
-                <p className="mt-1 text-xs text-red-600">{form.formState.errors.examiner.message}</p>
-              )}
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
                 {getText("Secretary", "Sekretaris")} *
               </label>
               <div className="relative">
@@ -2115,6 +2084,36 @@ const handleSubmitWithValidation = async () => {
               </div>
               {form.formState.errors.secretary && (
                 <p className="mt-1 text-xs text-red-600">{form.formState.errors.secretary.message}</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {getText("Examiner", "Penguji")} *
+              </label>
+              <div className="relative">
+                <input
+                  ref={examinerInputRef}
+                  type="text"
+                  placeholder={getText("Search examiner...", "Cari penguji...")}
+                  onInput={(e) => {
+                    dosenData.current.examinerSearch = e.target.value;
+                    showLecturerDropdown('examiner', e.target.value);
+                  }}
+                  onFocus={(e) => {
+                    showLecturerDropdown('examiner', e.target.value);
+                  }}
+                  onBlur={(e) => {
+                    form.setValue('examiner', e.target.value);
+                    setTimeout(() => hideLecturerDropdown('examiner'), 150);
+                  }}
+                  className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                  autoComplete="off"
+                />
+                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <div id="examiner-dropdown" style={{ display: 'none' }}></div>
+              </div>
+              {form.formState.errors.examiner && (
+                <p className="mt-1 text-xs text-red-600">{form.formState.errors.examiner.message}</p>
               )}
             </div>
           </div>
