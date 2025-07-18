@@ -24,9 +24,10 @@ export const useRealTimeRoomUpdates = (targetDate: string) => {
       }, (payload) => {
         console.log('📡 Real-time booking update received:', payload);
         
-        // Check if the update affects current target date
-        const bookingDate = payload.new?.start_time ? 
-          new Date(payload.new.start_time).toISOString().split('T')[0] : 
+        // 🎯 FIX: Check both new and old payload to handle DELETE events
+        const record = payload.new || payload.old;
+        const bookingDate = record?.start_time ? 
+          new Date(record.start_time).toISOString().split('T')[0] : 
           null;
         
         if (bookingDate === targetDate) {
