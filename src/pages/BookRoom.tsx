@@ -226,9 +226,7 @@ const BookRoom: React.FC = () => {
     }
   }, [watchStartDateTime, watchSks, watchClassType, useManualEndTime, form]);
 
-  // 🎯 FIXED: Logika status ruangan dengan timezone yang benar
   const getOptimizedRoomStatus = useCallback((room: any) => {
-    // 1. Cek apakah ruangan dinonaktifkan
     if (!room.is_available) {
       return {
         status: 'Unavailable',
@@ -237,7 +235,6 @@ const BookRoom: React.FC = () => {
       };
     }
 
-    // 2. Cek apakah sedang digunakan TEPAT SAAT INI (timezone aware)
     const isToday = targetBookingDate === getLocalDateString();
     if (isToday && room.currentBooking) {
       const now = new Date();
@@ -254,7 +251,6 @@ const BookRoom: React.FC = () => {
       }
     }
 
-    // 3. Cek KONFLIK dengan user input time (timezone aware)
     const userStartTime = watchStartDateTime ? new Date(watchStartDateTime) : null;
     const userEndTime = watchEndDateTime ? new Date(watchEndDateTime) : null;
 
@@ -263,7 +259,6 @@ const BookRoom: React.FC = () => {
         const existingStart = convertUTCToLocal(booking.start_time);
         const existingEnd = convertUTCToLocal(booking.end_time);
         
-        // Kondisi tumpang tindih dengan timezone yang benar
         if (userStartTime < existingEnd && userEndTime > existingStart) {
           return {
             status: 'Conflict',
@@ -274,7 +269,6 @@ const BookRoom: React.FC = () => {
       }
     }
     
-    // 4. Cek apakah ada jadwal LAINNYA di hari itu
     const hasScheduledContent =
       (room.scheduleDetails?.lectures?.length > 0) ||
       (room.scheduleDetails?.exams?.length > 0) ||
@@ -293,7 +287,6 @@ const BookRoom: React.FC = () => {
       };
     }
 
-    // 5. Jika lolos semua, berarti tersedia
     return {
       status: 'Available',
       reason: 'Ruangan bebas dan tersedia untuk dipesan',
