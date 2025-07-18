@@ -17,6 +17,22 @@ import { useRoomData } from '../hooks/useRoomData';
 import { useRealTimeRoomUpdates } from '../hooks/useRealTimeRoomUpdates';
 import { useLanguage } from '../contexts/LanguageContext';
 
+// ========================
+// TIMEZONE UTILITY FUNCTIONS
+// ========================
+const convertLocalToUTC = (localDateTimeString: string): string => {
+  const localDate = new Date(localDateTimeString);
+  return localDate.toISOString();
+};
+
+const convertUTCToLocal = (utcTimeString: string): Date => {
+  return new Date(utcTimeString);
+};
+
+const getLocalDateString = (date: Date = new Date()): string => {
+  return format(date, 'yyyy-MM-dd');
+};
+
 // Form validation schema dengan datetime yang direvisi
 const bookingSchema = z.object({
   // Personal Information
@@ -210,7 +226,7 @@ const BookRoom: React.FC = () => {
     }
   }, [watchStartDateTime, watchSks, watchClassType, useManualEndTime, form]);
 
-  // 🎯 FIX: Logika status ruangan yang disempurnakan untuk mendeteksi konflik waktu
+  // 🎯 FIXED: Logika status ruangan dengan timezone yang benar
   const getOptimizedRoomStatus = useCallback((room: any) => {
     // 1. Cek apakah ruangan dinonaktifkan
     if (!room.is_available) {
@@ -221,12 +237,13 @@ const BookRoom: React.FC = () => {
       };
     }
 
-    // 2. Cek apakah sedang digunakan TEPAT SAAT INI (hanya jika melihat hari ini)
-    const isToday = targetBookingDate === format(new Date(), 'yyyy-MM-dd');
+    // 2. Cek apakah sedang digunakan TEPAT SAAT INI (timezone aware)
+    const isToday = targetBookingDate === getLocalDateString();
     if (isToday && room.currentBooking) {
       const now = new Date();
-      const bookingStart = parseISO(room.currentBooking.start_time);
-      const bookingEnd = parseISO(room.currentBooking.end_time);
+      const bookingStart = convertUTCToLocal(room.currentBooking.start_time);
+      const bookingEnd = convertUTCToLocal(room.currentBooking.end_time);
+      
       if (now >= bookingStart && now <= bookingEnd) {
         return {
           status: 'In Use',
@@ -237,26 +254,27 @@ const BookRoom: React.FC = () => {
       }
     }
 
-    // 3. Cek KONFLIK antara waktu yang dipilih pengguna dengan jadwal yang ada
-    const userStartTime = watchStartDateTime ? parseISO(watchStartDateTime) : null;
-    const userEndTime = watchEndDateTime ? parseISO(watchEndDateTime) : null;
+    // 3. Cek KONFLIK dengan user input time (timezone aware)
+    const userStartTime = watchStartDateTime ? new Date(watchStartDateTime) : null;
+    const userEndTime = watchEndDateTime ? new Date(watchEndDateTime) : null;
 
     if (userStartTime && userEndTime && room.targetDateBookings?.length > 0) {
       for (const booking of room.targetDateBookings) {
-        const existingStart = parseISO(booking.start_time);
-        const existingEnd = parseISO(booking.end_time);
-        // Kondisi tumpang tindih: (StartA < EndB) and (EndA > StartB)
+        const existingStart = convertUTCToLocal(booking.start_time);
+        const existingEnd = convertUTCToLocal(booking.end_time);
+        
+        // Kondisi tumpang tindih dengan timezone yang benar
         if (userStartTime < existingEnd && userEndTime > existingStart) {
           return {
             status: 'Conflict',
-            reason: `Bertabrakan dengan jadwal pukul ${format(existingStart, 'HH:mm')} - ${format(existingEnd, 'HH:mm')}`,
+            reason: `Bertabrakan dengan jadwal pukul ${booking.start_time_local} - ${booking.end_time_local}`,
             color: 'bg-orange-100 text-orange-800 border-orange-200'
           };
         }
       }
     }
     
-    // 4. Cek apakah ada jadwal LAINNYA di hari itu (meskipun tidak konflik)
+    // 4. Cek apakah ada jadwal LAINNYA di hari itu
     const hasScheduledContent =
       (room.scheduleDetails?.lectures?.length > 0) ||
       (room.scheduleDetails?.exams?.length > 0) ||
@@ -268,7 +286,10 @@ const BookRoom: React.FC = () => {
         status: 'Scheduled',
         reason: 'Ruangan memiliki aktivitas terjadwal',
         color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-        scheduleCount: (room.scheduleDetails?.lectures?.length || 0) + (room.scheduleDetails?.exams?.length || 0) + (room.scheduleDetails?.sessions?.length || 0) + (room.targetDateBookings?.length || 0)
+        scheduleCount: (room.scheduleDetails?.lectures?.length || 0) + 
+                      (room.scheduleDetails?.exams?.length || 0) + 
+                      (room.scheduleDetails?.sessions?.length || 0) + 
+                      (room.targetDateBookings?.length || 0)
       };
     }
 
@@ -469,20 +490,27 @@ const BookRoom: React.FC = () => {
     fetchStudyPrograms();
   }, []);
 
+  // 🎯 FIXED: Submit function dengan timezone yang benar
   const onSubmit = async (data: BookingForm) => {
     if (!selectedRoom) {
       alert.error(getText('Please select a room', 'Silakan pilih ruangan'));
       return;
     }
+    
     setLoading(true);
     try {
       const roomStatus = getOptimizedRoomStatus(selectedRoom);
       if (roomStatus.status === 'In Use' && selectedRoom.currentBooking) {
         await supabase.from('bookings').update({ status: 'completed' }).eq('id', selectedRoom.currentBooking.id);
       }
+
+      // Convert local datetime ke UTC untuk database
+      const startTimeUTC = convertLocalToUTC(data.start_datetime);
+      const endTimeUTC = convertLocalToUTC(data.end_datetime);
+
       const bookingData = {
-        start_time: data.start_datetime,
-        end_time: data.end_datetime,
+        start_time: startTimeUTC,
+        end_time: endTimeUTC,
         purpose: data.purpose,
         sks: data.sks,
         class_type: data.class_type,
@@ -498,10 +526,17 @@ const BookRoom: React.FC = () => {
           study_program_id: data.study_program_id,
         },
       };
+
       const { error } = await supabase.from('bookings').insert(bookingData);
       if (error) throw error;
-      const successMessage = roomStatus.status === 'In Use' ? getText('Late booking submitted successfully! Previous booking marked as completed.', 'Pemesanan terlambat berhasil diajukan! Pemesanan sebelumnya ditandai selesai.') : getText('Booking submitted successfully!', 'Pemesanan berhasil diajukan!');
+
+      const successMessage = roomStatus.status === 'In Use' 
+        ? getText('Late booking submitted successfully! Previous booking marked as completed.', 'Pemesanan terlambat berhasil diajukan! Pemesanan sebelumnya ditandai selesai.') 
+        : getText('Booking submitted successfully!', 'Pemesanan berhasil diajukan!');
+        
       alert.success(successMessage);
+
+      // Reset form
       form.reset({
         start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
         end_datetime: format(addMinutes(new Date(), 120), "yyyy-MM-dd'T'HH:mm"),
@@ -511,12 +546,14 @@ const BookRoom: React.FC = () => {
         equipment_requested: [],
         attachments: [],
       });
+      
       setSelectedRoom(null);
       if (identityInputRef.current) identityInputRef.current.value = '';
       if (fullNameInputRef.current) fullNameInputRef.current.value = '';
       if (phoneInputRef.current) phoneInputRef.current.value = '';
       if (studyProgramDisplayRef.current) studyProgramDisplayRef.current.value = '';
       fetchRoomData(targetBookingDate, true);
+      
     } catch (error: any) {
       console.error('Error submitting booking:', error);
       alert.error(error.message || getText('Failed to submit booking', 'Gagal mengajukan pemesanan'));
@@ -548,6 +585,12 @@ const BookRoom: React.FC = () => {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-sm font-semibold text-gray-700">{getText('Start Date & Time', 'Tanggal & Waktu Mulai')} *</label>
+                  <div className="hidden sm:block relative">
+                    <button type="button" onClick={handleSetToNow} className={`inline-flex items-center space-x-1 px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 transform hover:scale-105 active:scale-95 shadow-sm hover:shadow-md ${showNowFeedback ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-blue-100 text-blue-700 border border-blue-300 hover:bg-blue-200'}`}>
+                      <Zap className="h-3 w-3" />
+                      <span>{showNowFeedback ? getText('Set!', 'Berhasil!') : getText('Now', 'Sekarang')}</span>
+                    </button>
+                  </div>
                 </div>
                 <div className="relative">
                   <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -648,10 +691,9 @@ const BookRoom: React.FC = () => {
                             <div className="flex items-center space-x-4"><div className="flex items-center space-x-1"><Users className="h-4 w-4" /><span>{room.capacity} {getText('seats', 'kursi')}</span></div><div className="flex items-center space-x-1"><Building className="h-4 w-4" /><span>{room.department?.name || getText('General', 'Umum')}</span></div></div>
                             {(roomStatus.status === 'Scheduled' || roomStatus.status === 'In Use' || roomStatus.status === 'Conflict') && (<button type="button" onClick={(e) => { e.stopPropagation(); setScheduleModalRoom(room); setShowScheduleModal(true); }} className="text-blue-600 hover:text-blue-800 transition-colors duration-200"><Eye className="h-4 w-4" /></button>)}
                           </div>
-                          {roomStatus.status === 'In Use' && roomStatus.detail && (<div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg"><p className="text-sm font-medium text-red-800">{getText('Currently in use by', 'Sedang digunakan oleh')}: {roomStatus.detail.user?.full_name || 'Unknown User'}</p><p className="text-xs text-red-600">{roomStatus.detail.purpose || 'Room Booking'}</p><p className="text-xs text-red-500">{format(parseISO(roomStatus.detail.start_time), 'HH:mm')} - {format(parseISO(roomStatus.detail.end_time), 'HH:mm')}</p></div>)}
+                          {roomStatus.status === 'In Use' && roomStatus.detail && (<div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg"><p className="text-sm font-medium text-red-800">{getText('Currently in use by', 'Sedang digunakan oleh')}: {roomStatus.detail.user?.full_name || 'Unknown User'}</p><p className="text-xs text-red-600">{roomStatus.detail.purpose || 'Room Booking'}</p><p className="text-xs text-red-500">{roomStatus.detail.start_time_local || format(convertUTCToLocal(roomStatus.detail.start_time), 'HH:mm')} - {roomStatus.detail.end_time_local || format(convertUTCToLocal(roomStatus.detail.end_time), 'HH:mm')}</p></div>)}
                           {roomStatus.status === 'Conflict' && (<div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg"><p className="text-sm font-medium text-orange-800">⚠️ {getText('Time Conflict', 'Konflik Waktu')}</p><p className="text-xs text-orange-700 mt-1">{roomStatus.reason}</p></div>)}
                           
-                          {/* 🎯 FIX: Tampilkan detail booking jika statusnya "Scheduled" */}
                           {roomStatus.status === 'Scheduled' && roomStatus.scheduleCount && (
                             <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg space-y-2">
                               <p className="text-xs text-yellow-800 font-semibold">
@@ -662,7 +704,9 @@ const BookRoom: React.FC = () => {
                                   {room.targetDateBookings.map((booking: any, index: number) => (
                                     <div key={index} className="text-xs text-yellow-900 border-t border-yellow-200 pt-1 first:pt-0 first:border-t-0">
                                       <p className="font-medium truncate">{booking.purpose}</p>
-                                      <p>{format(parseISO(booking.start_time), 'HH:mm')} - {format(parseISO(booking.end_time), 'HH:mm')}</p>
+                                      <p>
+                                        {booking.start_time_local || format(convertUTCToLocal(booking.start_time), 'HH:mm')} - {booking.end_time_local || format(convertUTCToLocal(booking.end_time), 'HH:mm')}
+                                      </p>
                                     </div>
                                   ))}
                                 </div>
@@ -737,7 +781,7 @@ const BookRoom: React.FC = () => {
         </form>
       </div>
 
-      {/* FIXED SCHEDULE MODAL */}
+      {/* FIXED SCHEDULE MODAL dengan timezone yang benar */}
       {showScheduleModal && scheduleModalRoom && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
@@ -755,7 +799,7 @@ const BookRoom: React.FC = () => {
               </div>
 
               <div className="space-y-6">
-                {/* Active Bookings */}
+                {/* Active Bookings dengan timezone fix */}
                 {scheduleModalRoom.targetDateBookings?.length > 0 && (
                   <div>
                     <h4 className="font-medium text-gray-900 mb-3 flex items-center">
@@ -767,7 +811,7 @@ const BookRoom: React.FC = () => {
                         <div key={index} className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
                           <div className="flex items-center justify-between mb-2">
                             <span className="font-semibold text-orange-900 text-lg">
-                              {format(parseISO(booking.start_time), 'HH:mm')} - {format(parseISO(booking.end_time), 'HH:mm')}
+                              {booking.start_time_local || format(convertUTCToLocal(booking.start_time), 'HH:mm')} - {booking.end_time_local || format(convertUTCToLocal(booking.end_time), 'HH:mm')}
                             </span>
                             <span className="bg-orange-200 text-orange-800 px-2 py-1 rounded-full text-xs font-medium">
                               {getText('Booking', 'Pemesanan')}
@@ -827,7 +871,7 @@ const BookRoom: React.FC = () => {
                   </div>
                 )}
 
-                {/* Final Sessions */}
+                {/* Final Sessions dengan timezone fix */}
                 {scheduleModalRoom.scheduleDetails?.sessions?.length > 0 && (
                   <div>
                     <h4 className="font-medium text-gray-900 mb-3 flex items-center">
@@ -839,7 +883,7 @@ const BookRoom: React.FC = () => {
                         <div key={index} className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
                           <div className="flex items-center justify-between mb-2">
                             <span className="font-semibold text-purple-900 text-lg">
-                              {session.start_time} - {session.end_time}
+                              {session.start_time_local || session.start_time} - {session.end_time_local || session.end_time}
                             </span>
                             <span className="bg-purple-200 text-purple-800 px-2 py-1 rounded-full text-xs font-medium">
                               {getText('Session', 'Sidang')}
