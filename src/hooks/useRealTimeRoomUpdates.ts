@@ -6,11 +6,10 @@ import { useDebouncedCallback } from 'use-debounce';
 export const useRealTimeRoomUpdates = (targetDate: string) => {
   const { markStale } = useRoomStore();
   
-  // Debounced refresh to prevent excessive updates
   const debouncedRefresh = useDebouncedCallback(() => {
     console.log('📡 Real-time update triggered - marking cache as stale');
     markStale();
-  }, 2000); // 2 second debounce
+  }, 2000);
   
   useEffect(() => {
     console.log(`🔔 Setting up real-time subscription for ${targetDate}`);
