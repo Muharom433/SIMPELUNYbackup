@@ -10,12 +10,11 @@ import {
   BookOpen, Award, Target, TrendingUp, Activity, BarChart3, PieChart
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { enUS, id } from 'date-fns/locale';
+import { enUS } from 'date-fns/locale';
 import { alert } from '../components/Alert/AlertHelper';
 import { format, addMinutes, parseISO, isAfter, isBefore, addDays } from 'date-fns';
 import { useRoomData } from '../hooks/useRoomData';
 import { useRealTimeRoomUpdates } from '../hooks/useRealTimeRoomUpdates';
-import { useLanguage } from '../contexts/LanguageContext';
 
 // ========================
 // TIMEZONE UTILITY FUNCTIONS
@@ -36,16 +35,16 @@ const getLocalDateString = (date: Date = new Date()): string => {
 // Form validation schema dengan datetime yang direvisi
 const bookingSchema = z.object({
   // Personal Information
-  full_name: z.string().min(2, 'Full name must be at least 2 characters'),
-  identity_number: z.string().min(5, 'Identity number must be at least 5 characters'),
-  phone_number: z.string().min(10, 'Phone number must be at least 10 characters'),
-  study_program_id: z.string().min(1, 'Please select a study program'),
+  full_name: z.string().min(2, 'Nama lengkap minimal 2 karakter'),
+  identity_number: z.string().min(5, 'Nomor identitas minimal 5 karakter'),
+  phone_number: z.string().min(10, 'Nomor telepon minimal 10 karakter'),
+  study_program_id: z.string().min(1, 'Silakan pilih program studi'),
 
   // Booking Details - REVISED: Combined datetime fields
-  start_datetime: z.string().min(1, 'Start date and time is required'),
-  end_datetime: z.string().min(1, 'End date and time is required'),
-  purpose: z.enum(['Class/Lecture', 'Other'], { required_error: 'Purpose is required' }),
-  sks: z.number().min(1, 'SKS must be at least 1').max(6, 'SKS cannot exceed 6'),
+  start_datetime: z.string().min(1, 'Tanggal dan waktu mulai harus diisi'),
+  end_datetime: z.string().min(1, 'Tanggal dan waktu selesai harus diisi'),
+  purpose: z.enum(['Class/Lecture', 'Other'], { required_error: 'Tujuan harus diisi' }),
+  sks: z.number().min(1, 'SKS minimal 1').max(6, 'SKS tidak boleh lebih dari 6'),
   class_type: z.enum(['theory', 'practical']),
 
   // Equipment & Notes
@@ -61,7 +60,7 @@ const bookingSchema = z.object({
     if (endDate <= startDate) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "End date and time must be after start date and time",
+        message: "Waktu selesai harus setelah waktu mulai",
         path: ["end_datetime"],
       });
     }
@@ -71,7 +70,7 @@ const bookingSchema = z.object({
     if (daysDifference > 7) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Booking duration cannot exceed 7 days",
+        message: "Durasi pemesanan tidak boleh lebih dari 7 hari",
         path: ["end_datetime"],
       });
     }
@@ -81,7 +80,7 @@ const bookingSchema = z.object({
   if (data.purpose === 'Other' && (!data.attachments || data.attachments.length === 0)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Attachments are required when purpose is 'Other'",
+      message: "Lampiran wajib diisi jika tujuan adalah 'Lainnya'",
       path: ['attachments'],
     });
   }
@@ -121,12 +120,13 @@ interface Equipment {
 }
 
 const BookRoom: React.FC = () => {
-  const { getText } = useLanguage();
-  
   const form = useForm<BookingForm>({
     resolver: zodResolver(bookingSchema),
-    mode: 'onChange', // 🎯 FIX: Menambahkan mode validasi 'onChange'
     defaultValues: {
+      full_name: '',
+      identity_number: '',
+      phone_number: '',
+      study_program_id: '',
       start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
       end_datetime: format(addMinutes(new Date(), 120), "yyyy-MM-dd'T'HH:mm"),
       sks: 2,
@@ -169,9 +169,6 @@ const BookRoom: React.FC = () => {
   }, []);
 
   const identityInputRef = useRef<HTMLInputElement>(null);
-  const fullNameInputRef = useRef<HTMLInputElement>(null);
-  const phoneInputRef = useRef<HTMLInputElement>(null);
-  const studyProgramDisplayRef = useRef<HTMLInputElement>(null);
   const [identitySearchResults, setIdentitySearchResults] = useState<User[]>([]);
   const [identitySearchLoading, setIdentitySearchLoading] = useState(false);
 
@@ -378,52 +375,6 @@ const BookRoom: React.FC = () => {
 
   const hideIdentityDropdown = useCallback(() => {
     const dropdownContainer = document.querySelector('#identity-dropdown');
-    if (dropdownContainer) {
-      (dropdownContainer as HTMLElement).style.display = 'none';
-    }
-  }, []);
-
-  const showStudyProgramDropdown = useCallback(() => {
-    const dropdownHTML = `<div class="absolute z-[9999] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden"><div class="p-3 border-b border-gray-100"><input type="text" placeholder="${getText("Search programs...", "Cari program studi...")}" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" id="program-search-input" autocomplete="off"/></div><div class="max-h-60 overflow-y-auto" id="program-list">${studyPrograms.map(program => `<div class="program-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150" data-program-id="${program.id}" data-program-name="${program.name}" data-program-code="${program.code || ''}"><div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div></div>`).join('')}</div></div>`;
-    const dropdownContainer = document.querySelector('#study-program-dropdown');
-    if (dropdownContainer) {
-      dropdownContainer.innerHTML = dropdownHTML;
-      (dropdownContainer as HTMLElement).style.display = 'block';
-      const searchInput = dropdownContainer.querySelector('#program-search-input') as HTMLInputElement;
-      const programList = dropdownContainer.querySelector('#program-list');
-      if (searchInput) {
-        searchInput.focus();
-        searchInput.addEventListener('input', (e) => {
-          const searchTerm = (e.target as HTMLInputElement).value.toLowerCase();
-          const filteredPrograms = studyPrograms.filter(p => p.name.toLowerCase().includes(searchTerm) || (p.code && p.code.toLowerCase().includes(searchTerm)));
-          if (programList) {
-            programList.innerHTML = filteredPrograms.map(program => `<div class="program-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150" data-program-id="${program.id}" data-program-name="${program.name}" data-program-code="${program.code || ''}"><div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div></div>`).join('');
-            addStudyProgramListeners();
-          }
-        });
-      }
-      addStudyProgramListeners();
-    }
-  }, [getText, studyPrograms]);
-
-  const addStudyProgramListeners = useCallback(() => {
-    document.querySelectorAll('.program-dropdown-item').forEach(item => {
-      item.addEventListener('click', (e) => {
-        const target = e.currentTarget as HTMLElement;
-        const programId = target.dataset.programId;
-        const programName = target.dataset.programName;
-        const programCode = target.dataset.programCode;
-        if (studyProgramDisplayRef.current) {
-          studyProgramDisplayRef.current.value = `${programName} (${programCode})`;
-        }
-        form.setValue('study_program_id', programId || '');
-        hideStudyProgramDropdown();
-      });
-    });
-  }, [form]);
-
-  const hideStudyProgramDropdown = useCallback(() => {
-    const dropdownContainer = document.querySelector('#study-program-dropdown');
     if (dropdownContainer) {
       (dropdownContainer as HTMLElement).style.display = 'none';
     }
