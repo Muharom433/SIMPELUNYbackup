@@ -1,8 +1,8 @@
-// src/stores/roomStore.ts - Updated dengan relasi lengkap
+// src/stores/roomStore.ts
 import { create } from 'zustand';
 import { format } from 'date-fns';
 
-// 🎯 Enhanced Types dengan relasi lengkap
+// Enhanced Types dengan relasi lengkap dan timezone support
 interface StudyProgramInfo {
   id: string;
   name: string;
@@ -23,6 +23,8 @@ interface BookingInfo {
   id: string;
   start_time: string;
   end_time: string;
+  start_time_local: string;  // ✅ Added for display
+  end_time_local: string;    // ✅ Added for display
   purpose: string;
   status: string;
   user?: UserInfo;
@@ -60,6 +62,8 @@ interface SessionInfo {
   id: string;
   start_time: string;
   end_time: string;
+  start_time_local: string;  // ✅ Added for display
+  end_time_local: string;    // ✅ Added for display
   title: string;
   supervisor: string;
   examiner: string;
@@ -85,13 +89,15 @@ export interface EnhancedRoomStatus {
     purpose: string;
     start_time: string;
     end_time: string;
+    start_time_local: string;  // ✅ Added for display
+    end_time_local: string;    // ✅ Added for display
     user?: {
       full_name: string;
       identity_number: string;
     };
   };
   
-  // 🎯 Enhanced dengan relasi lengkap
+  // Enhanced dengan relasi lengkap dan timezone support
   targetDateBookings: BookingInfo[];
   scheduleDetails: {
     lectures: LectureInfo[];
