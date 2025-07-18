@@ -17,6 +17,21 @@ import { useRoomData } from '../hooks/useRoomData';
 import { useRealTimeRoomUpdates } from '../hooks/useRealTimeRoomUpdates';
 import { useLanguage } from '../contexts/LanguageContext';
 
+// Helper function to display time in UTC, ignoring local timezone
+const formatAsUTC = (dateString: string, formatString: string) => {
+  if (!dateString) return '';
+  try {
+    const date = parseISO(dateString);
+    // Get timezone offset in milliseconds and add it to the date to counteract the local conversion
+    const userTimezoneOffset = date.getTimezoneOffset() * 60000;
+    const utcDate = new Date(date.getTime() + userTimezoneOffset);
+    return format(utcDate, formatString);
+  } catch (e) {
+    console.error("Error formatting UTC date:", e);
+    return "Invalid Time";
+  }
+};
+
 // Form validation schema dengan datetime yang direvisi
 const bookingSchema = z.object({
   // Personal Information
@@ -210,9 +225,8 @@ const BookRoom: React.FC = () => {
     }
   }, [watchStartDateTime, watchSks, watchClassType, useManualEndTime, form]);
 
-  // 🎯 FIX: Logika status ruangan sesuai konsep baru
+  // 🎯 FIX: Logika perbandingan waktu sekarang menggunakan UTC
   const getOptimizedRoomStatus = useCallback((room: any) => {
-    // 1. Cek apakah ruangan dinonaktifkan
     if (!room.is_available) {
       return {
         status: 'Unavailable',
@@ -221,19 +235,22 @@ const BookRoom: React.FC = () => {
       };
     }
 
-    // 2. Cek apakah waktu yang dipilih pengguna TUMPANG TINDIH dengan jadwal yang ada
-    const userStartTime = watchStartDateTime ? parseISO(watchStartDateTime) : null;
-    const userEndTime = watchEndDateTime ? parseISO(watchEndDateTime) : null;
+    // Perlakukan input pengguna sebagai UTC dengan menambahkan 'Z'.
+    // Ini membuat perbandingan menjadi adil dengan waktu UTC dari database.
+    const userStartTime = watchStartDateTime ? parseISO(watchStartDateTime + 'Z') : null;
+    const userEndTime = watchEndDateTime ? parseISO(watchEndDateTime + 'Z') : null;
 
     if (userStartTime && userEndTime && room.targetDateBookings?.length > 0) {
       for (const booking of room.targetDateBookings) {
+        // Waktu database sudah dalam format UTC, jadi parseISO menanganinya dengan benar.
         const existingStart = parseISO(booking.start_time);
         const existingEnd = parseISO(booking.end_time);
-        // Kondisi tumpang tindih: (StartA < EndB) and (EndA > StartB)
+
+        // Sekarang kita membandingkan dua objek Date yang keduanya ditafsirkan sebagai UTC.
         if (userStartTime < existingEnd && userEndTime > existingStart) {
           return {
-            status: 'In Use', // Status diubah menjadi "In Use" jika ada konflik waktu
-            reason: `Sudah dipesan pukul ${format(existingStart, 'HH:mm')} - ${format(existingEnd, 'HH:mm')}`,
+            status: 'In Use',
+            reason: `Sudah dipesan pukul ${formatAsUTC(booking.start_time, 'HH:mm')} - ${formatAsUTC(booking.end_time, 'HH:mm')}`,
             color: 'bg-red-100 text-red-800 border-red-200',
             detail: booking
           };
@@ -241,7 +258,6 @@ const BookRoom: React.FC = () => {
       }
     }
     
-    // 3. Cek apakah ada jadwal LAINNYA di hari itu (meskipun tidak konflik)
     const hasScheduledContent =
       (room.scheduleDetails?.lectures?.length > 0) ||
       (room.scheduleDetails?.exams?.length > 0) ||
@@ -257,13 +273,12 @@ const BookRoom: React.FC = () => {
       };
     }
 
-    // 4. Jika lolos semua, berarti tersedia
     return {
       status: 'Available',
       reason: 'Ruangan bebas dan tersedia untuk dipesan',
       color: 'bg-green-100 text-green-800 border-green-200'
     };
-  }, [targetBookingDate, watchStartDateTime, watchEndDateTime]);
+  }, [watchStartDateTime, watchEndDateTime]);
 
   const filteredAndSortedRooms = useMemo(() => {
     return rooms.filter(room => {
@@ -701,7 +716,7 @@ const BookRoom: React.FC = () => {
         </form>
       </div>
 
-      {showScheduleModal && scheduleModalRoom && (<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"><div className="p-6"><div className="flex items-center justify-between mb-6"><h3 className="text-lg font-semibold text-gray-900">{getText('Schedule Details', 'Detail Jadwal')} - {scheduleModalRoom.name}</h3><button onClick={() => setShowScheduleModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors duration-200"><X className="h-6 w-6" /></button></div><div className="space-y-6">{scheduleModalRoom.targetDateBookings?.length > 0 && (<div><h4 className="font-medium text-gray-900 mb-3 flex items-center"><Calendar className="h-5 w-5 mr-2 text-orange-600" />{getText('Active Bookings', 'Pemesanan Aktif')}</h4><div className="space-y-2">{scheduleModalRoom.targetDateBookings.map((booking: any, index: number) => (<div key={index} className="p-3 bg-orange-50 border border-orange-200 rounded-lg"><p className="font-medium text-orange-900">{booking.purpose}</p><p className="text-sm text-orange-700">{booking.user?.full_name} • {booking.user?.identity_number}</p><p className="text-xs text-orange-600">{format(parseISO(booking.start_time), 'HH:mm')} - {format(parseISO(booking.end_time), 'HH:mm')}</p></div>))}</div></div>)}{scheduleModalRoom.scheduleDetails?.lectures?.length > 0 && (<div><h4 className="font-medium text-gray-900 mb-3 flex items-center"><BookOpen className="h-5 w-5 mr-2 text-blue-600" />{getText('Lecture Schedules', 'Jadwal Kuliah')}</h4><div className="space-y-2">{scheduleModalRoom.scheduleDetails.lectures.map((lecture: any, index: number) => (<div key={index} className="p-3 bg-blue-50 border border-blue-200 rounded-lg"><p className="font-medium text-blue-900">{lecture.course_name}</p><p className="text-sm text-blue-700">{lecture.class} • {lecture.subject_study}</p><p className="text-xs text-blue-600">{lecture.start_time} - {lecture.end_time}</p></div>))}</div></div>)}{scheduleModalRoom.scheduleDetails?.exams?.length > 0 && (<div><h4 className="font-medium text-gray-900 mb-3 flex items-center"><GraduationCap className="h-5 w-5 mr-2 text-green-600" />{getText('Exam Schedules', 'Jadwal Ujian')}</h4><div className="space-y-2">{scheduleModalRoom.scheduleDetails.exams.map((exam: any, index: number) => (<div key={index} className="p-3 bg-green-50 border border-green-200 rounded-lg"><p className="font-medium text-green-900">{exam.course_name}</p><p className="text-sm text-green-700">{exam.course_code} • {getText('Class:', 'Kelas:')} {exam.class}</p><p className="text-xs text-green-600">{exam.start_time} - {exam.end_time} • {exam.student_amount} {getText('students', 'mahasiswa')}</p></div>))}</div></div>)}{scheduleModalRoom.scheduleDetails?.sessions?.length > 0 && (<div><h4 className="font-medium text-gray-900 mb-3 flex items-center"><Users className="h-5 w-5 mr-2 text-purple-600" />{getText('Final Sessions', 'Sidang Akhir')}</h4><div className="space-y-2">{scheduleModalRoom.scheduleDetails.sessions.map((session: any, index: number) => (<div key={index} className="p-3 bg-purple-50 border border-purple-200 rounded-lg"><p className="font-medium text-purple-900">{session.title}</p><p className="text-sm text-purple-700">{session.supervisor} • {session.examiner}</p><p className="text-xs text-purple-600">{session.start_time} - {session.end_time}</p></div>))}</div></div>)}{(!scheduleModalRoom.targetDateBookings?.length && !scheduleModalRoom.scheduleDetails?.lectures?.length && !scheduleModalRoom.scheduleDetails?.exams?.length && !scheduleModalRoom.scheduleDetails?.sessions?.length) && (<div className="text-center py-8"><div className="p-4 bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center"><Calendar className="h-8 w-8 text-gray-400" /></div><h3 className="text-lg font-semibold text-gray-800 mb-2">{getText('No Schedule for This Date', 'Tidak Ada Jadwal untuk Tanggal Ini')}</h3><p className="text-gray-500">{getText('This room is available for booking on the selected date.', 'Ruangan ini tersedia untuk dipesan pada tanggal yang dipilih.')}</p></div>)}</div></div></div></div>)}
+      {showScheduleModal && scheduleModalRoom && (<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"><div className="p-6"><div className="flex items-center justify-between mb-6"><h3 className="text-lg font-semibold text-gray-900">{getText('Schedule Details', 'Detail Jadwal')} - {scheduleModalRoom.name}</h3><button onClick={() => setShowScheduleModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors duration-200"><X className="h-6 w-6" /></button></div><div className="space-y-6">{scheduleModalRoom.targetDateBookings?.length > 0 && (<div><h4 className="font-medium text-gray-900 mb-3 flex items-center"><Calendar className="h-5 w-5 mr-2 text-orange-600" />{getText('Active Bookings', 'Pemesanan Aktif')}</h4><div className="space-y-2">{scheduleModalRoom.targetDateBookings.map((booking: any, index: number) => (<div key={index} className="p-3 bg-orange-50 border border-orange-200 rounded-lg"><p className="font-medium text-orange-900">{booking.purpose}</p><p className="text-sm text-orange-700">{booking.user?.full_name} • {booking.user?.identity_number}</p><p className="text-xs text-orange-600">{formatAsUTC(booking.start_time, 'HH:mm')} - {formatAsUTC(booking.end_time, 'HH:mm')}</p></div>))}</div></div>)}{scheduleModalRoom.scheduleDetails?.lectures?.length > 0 && (<div><h4 className="font-medium text-gray-900 mb-3 flex items-center"><BookOpen className="h-5 w-5 mr-2 text-blue-600" />{getText('Lecture Schedules', 'Jadwal Kuliah')}</h4><div className="space-y-2">{scheduleModalRoom.scheduleDetails.lectures.map((lecture: any, index: number) => (<div key={index} className="p-3 bg-blue-50 border border-blue-200 rounded-lg"><p className="font-medium text-blue-900">{lecture.course_name}</p><p className="text-sm text-blue-700">{lecture.class} • {lecture.subject_study}</p><p className="text-xs text-blue-600">{lecture.start_time} - {lecture.end_time}</p></div>))}</div></div>)}{scheduleModalRoom.scheduleDetails?.exams?.length > 0 && (<div><h4 className="font-medium text-gray-900 mb-3 flex items-center"><GraduationCap className="h-5 w-5 mr-2 text-green-600" />{getText('Exam Schedules', 'Jadwal Ujian')}</h4><div className="space-y-2">{scheduleModalRoom.scheduleDetails.exams.map((exam: any, index: number) => (<div key={index} className="p-3 bg-green-50 border border-green-200 rounded-lg"><p className="font-medium text-green-900">{exam.course_name}</p><p className="text-sm text-green-700">{exam.course_code} • {getText('Class:', 'Kelas:')} {exam.class}</p><p className="text-xs text-green-600">{exam.start_time} - {exam.end_time} • {exam.student_amount} {getText('students', 'mahasiswa')}</p></div>))}</div></div>)}{scheduleModalRoom.scheduleDetails?.sessions?.length > 0 && (<div><h4 className="font-medium text-gray-900 mb-3 flex items-center"><Users className="h-5 w-5 mr-2 text-purple-600" />{getText('Final Sessions', 'Sidang Akhir')}</h4><div className="space-y-2">{scheduleModalRoom.scheduleDetails.sessions.map((session: any, index: number) => (<div key={index} className="p-3 bg-purple-50 border border-purple-200 rounded-lg"><p className="font-medium text-purple-900">{session.title}</p><p className="text-sm text-purple-700">{session.supervisor} • {session.examiner}</p><p className="text-xs text-purple-600">{session.start_time} - {session.end_time}</p></div>))}</div></div>)}{(!scheduleModalRoom.targetDateBookings?.length && !scheduleModalRoom.scheduleDetails?.lectures?.length && !scheduleModalRoom.scheduleDetails?.exams?.length && !scheduleModalRoom.scheduleDetails?.sessions?.length) && (<div className="text-center py-8"><div className="p-4 bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center"><Calendar className="h-8 w-8 text-gray-400" /></div><h3 className="text-lg font-semibold text-gray-800 mb-2">{getText('No Schedule for This Date', 'Tidak Ada Jadwal untuk Tanggal Ini')}</h3><p className="text-gray-500">{getText('This room is available for booking on the selected date.', 'Ruangan ini tersedia untuk dipesan pada tanggal yang dipilih.')}</p></div>)}</div></div></div></div>)}
 
       {roomsLoading && (<div className="fixed top-4 right-4 z-50"><div className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center space-x-2"><Loader2 className="h-4 w-4 animate-spin" /><span className="text-sm">{getText('Loading rooms...', 'Memuat ruangan...')}</span></div></div>)}
 
