@@ -604,7 +604,7 @@ const BookRoom: React.FC = () => {
                 <label className="block text-sm font-semibold text-gray-700 mb-2">{getText('Purpose', 'Tujuan')} *</label>
                 <div className="relative">
                   <Target className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <select {...form.register('purpose')} className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm appearance-none"><option value="Class/Lecture">{getText('Class/Lecture', 'Kuliah')}</option><option value="Other">{getText('Other', 'Lainnya')}</option></select>
+                  <select {...form.register('purpose')} className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm appearance-none"><option value="Class/Lecture">{getText('Lecture/Session', 'Kuliah/Sidang TA')}</option><option value="Other">{getText('Other', 'Lainnya')}</option></select>
                   <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
                 </div>
                 {form.formState.errors.purpose && (<p className="mt-1 text-sm text-red-600 font-medium">{form.formState.errors.purpose.message}</p>)}
