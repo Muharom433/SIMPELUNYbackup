@@ -1,4 +1,4 @@
-// src/hooks/useRoomData.ts
+// src/hooks/useRoomData.ts - COMPLETE FILE dengan APPROVED only logic
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRoomStore, EnhancedRoomStatus } from '../stores/roomStore';
@@ -63,7 +63,7 @@ export const useRoomData = (targetDate: string) => {
 
       if (roomsError) throw roomsError;
 
-      // 2. FETCH BOOKINGS dengan filter timezone yang benar
+      // 2. FETCH BOOKINGS - HANYA yang APPROVED untuk conflict detection
       const { startUTC, endUTC } = getDateRangeForBookings(date);
       
       const { data: bookingsData, error: bookingsError } = await supabase
@@ -92,7 +92,7 @@ export const useRoomData = (targetDate: string) => {
         `)
         .gte('start_time', startUTC)
         .lt('start_time', endUTC)
-        .in('status', ['confirmed', 'pending', 'active']);
+        .eq('status', 'approved');
 
       if (bookingsError) throw bookingsError;
 
@@ -175,7 +175,7 @@ export const useRoomData = (targetDate: string) => {
 
       if (examsError) throw examsError;
 
-      // 6. FETCH CURRENT BOOKINGS (untuk status "In Use") - dengan timezone fix
+      // 6. FETCH CURRENT BOOKINGS - HANYA yang APPROVED untuk "In Use"
       const now = new Date();
       const currentTimeUTC = now.toISOString();
       
@@ -204,14 +204,14 @@ export const useRoomData = (targetDate: string) => {
           `)
           .lte('start_time', currentTimeUTC)
           .gte('end_time', currentTimeUTC)
-          .eq('status', 'active');
+          .eq('status', 'approved');
 
         if (!currentError) {
           currentBookingsData = currentData || [];
         }
       }
 
-      // 7. FETCH FUTURE BOOKINGS untuk statistik
+      // 7. FETCH FUTURE BOOKINGS - HANYA yang APPROVED
       const nextDay = new Date(date);
       nextDay.setDate(nextDay.getDate() + 1);
       const nextDayRange = getDateRangeForBookings(getLocalDateString(nextDay));
@@ -230,7 +230,7 @@ export const useRoomData = (targetDate: string) => {
           )
         `)
         .gte('start_time', nextDayRange.startUTC)
-        .in('status', ['confirmed', 'pending'])
+        .eq('status', 'approved')
         .order('start_time', { ascending: true });
 
       if (futureError) console.warn('Future bookings fetch error:', futureError);
