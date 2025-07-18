@@ -1537,66 +1537,7 @@ const BookRoom = () => {
         </div>
       )}
 
-      {/* Additional Information Section */}
-      <div className="max-w-7xl mx-auto px-4 pb-8">
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-2xl p-6">
-          <div className="flex items-start space-x-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Info className="h-5 w-5 text-blue-600" />
-            </div>
-            <div className="flex-1">
-              <h3 className="text-lg font-semibold text-blue-900 mb-2">
-                {getText('How to Book a Room', 'Cara Memesan Ruangan')}
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-blue-800">
-                <div className="flex items-start space-x-2">
-                  <div className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">1</div>
-                  <div>
-                    <div className="font-semibold">{getText('Set Schedule', 'Atur Jadwal')}</div>
-                    <div className="text-blue-700">{getText('Choose your date, time, and duration', 'Pilih tanggal, waktu, dan durasi')}</div>
-                  </div>
-                </div>
-                <div className="flex items-start space-x-2">
-                  <div className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">2</div>
-                  <div>
-                    <div className="font-semibold">{getText('Select Room', 'Pilih Ruangan')}</div>
-                    <div className="text-blue-700">{getText('Choose from available rooms', 'Pilih dari ruangan yang tersedia')}</div>
-                  </div>
-                </div>
-                <div className="flex items-start space-x-2">
-                  <div className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">3</div>
-                  <div>
-                    <div className="font-semibold">{getText('Fill Details', 'Isi Detail')}</div>
-                    <div className="text-blue-700">{getText('Complete your personal information', 'Lengkapi informasi pribadi Anda')}</div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="mt-4 pt-4 border-t border-blue-200">
-                <h4 className="font-semibold text-blue-900 mb-2">{getText('Important Notes:', 'Catatan Penting:')}</h4>
-                <ul className="space-y-1 text-sm text-blue-800">
-                  <li className="flex items-center space-x-2">
-                    <CheckCircle className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                    <span>{getText('Bookings are subject to approval by admin', 'Pemesanan memerlukan persetujuan admin')}</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <CheckCircle className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                    <span>{getText('Maximum booking duration is 7 days', 'Durasi pemesanan maksimal 7 hari')}</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <CheckCircle className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                    <span>{getText('Check room schedules to avoid conflicts', 'Periksa jadwal ruangan untuk menghindari konflik')}</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <CheckCircle className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                    <span>{getText('Supporting documents required for "Other" purposes', 'Dokumen pendukung diperlukan untuk tujuan "Lainnya"')}</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+    
 
       {React.useEffect(() => {
         return () => {
