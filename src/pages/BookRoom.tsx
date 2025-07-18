@@ -1246,6 +1246,16 @@ const BookRoom = () => {
                     onClick={showStudyProgramDropdown}
                     onFocus={showStudyProgramDropdown}
                     onBlur={() => setTimeout(hideStudyProgramDropdown, 200)}
+                    onKeyDown={(e) => {
+                      // Prevent typing, only allow tab, enter, escape
+                      if (!['Tab', 'Enter', 'Escape'].includes(e.key)) {
+                        e.preventDefault();
+                      }
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        showStudyProgramDropdown();
+                      }
+                    }}
                     className="w-full pl-10 pr-8 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm cursor-pointer"
                     autoComplete="off"
                     autoCorrect="off"
