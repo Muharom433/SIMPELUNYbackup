@@ -11,13 +11,13 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { enUS, id } from 'date-fns/locale';
-import { useLanguage } from '../contexts/LanguageContext';
 import { alert } from '../components/Alert/AlertHelper';
 import { format, addMinutes, parseISO, isAfter, isBefore, addDays } from 'date-fns';
 import { useRoomData } from '../hooks/useRoomData';
 import { useRealTimeRoomUpdates } from '../hooks/useRealTimeRoomUpdates';
+import { useLanguage } from '../contexts/LanguageContext';
 
-// Form validation schema
+// Form validation schema dengan datetime yang direvisi
 const bookingSchema = z.object({
   // Personal Information
   full_name: z.string().min(2, 'Full name must be at least 2 characters'),
@@ -25,9 +25,9 @@ const bookingSchema = z.object({
   phone_number: z.string().min(10, 'Phone number must be at least 10 characters'),
   study_program_id: z.string().min(1, 'Please select a study program'),
 
-  // Booking Details
-  start_time: z.string().min(1, 'Start time is required'),
-  end_time: z.string().min(1, 'End time is required'),
+  // Booking Details - REVISED: Combined datetime fields
+  start_datetime: z.string().min(1, 'Start date and time is required'),
+  end_datetime: z.string().min(1, 'End date and time is required'),
   purpose: z.enum(['Class/Lecture', 'Other'], { required_error: 'Purpose is required' }),
   sks: z.number().min(1, 'SKS must be at least 1').max(6, 'SKS cannot exceed 6'),
   class_type: z.enum(['theory', 'practical']),
@@ -37,16 +37,30 @@ const bookingSchema = z.object({
   notes: z.string().optional(),
   attachments: z.array(z.string()).optional(),
 }).superRefine((data, ctx) => {
-  // Validate end_time is after start_time
-  if (data.start_time && data.end_time) {
-    if (new Date(data.end_time) <= new Date(data.start_time)) {
+  // Validate end_datetime is after start_datetime
+  if (data.start_datetime && data.end_datetime) {
+    const startDate = new Date(data.start_datetime);
+    const endDate = new Date(data.end_datetime);
+    
+    if (endDate <= startDate) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "End time must be after start time",
-        path: ["end_time"],
+        message: "End date and time must be after start date and time",
+        path: ["end_datetime"],
+      });
+    }
+
+    // Validate maksimal 7 hari
+    const daysDifference = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysDifference > 7) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Booking duration cannot exceed 7 days",
+        path: ["end_datetime"],
       });
     }
   }
+
   // Validate attachments are required if purpose is 'Other'
   if (data.purpose === 'Other' && (!data.attachments || data.attachments.length === 0)) {
     ctx.addIssue({
@@ -56,7 +70,6 @@ const bookingSchema = z.object({
     });
   }
 });
-
 
 type BookingForm = z.infer<typeof bookingSchema>;
 
@@ -94,46 +107,11 @@ interface Equipment {
 const BookRoom: React.FC = () => {
   const { getText } = useLanguage();
   
-  
-  // Move useForm hook to the very top, before any other code
   const form = useForm<BookingForm>({
     resolver: zodResolver(bookingSchema),
     defaultValues: {
-      date: format(new Date(), 'yyyy-MM-dd'),
-      start_time: '',
-      end_time: '',
-      duration: 90,
-      sks: 1,
-      class_type: 'theory',
-      purpose: 'Class/Study Session',
-      equipment_requested: [],
-      notes: '',
-      full_name: '',
-      identity_number: '',
-      phone_number: '',
-      study_program_id: '',
-    },
-  });
-
-  // Add debug logging for date and day name
-  const selectedDate = form.watch('date');
-  
-  useEffect(() => {
-    if (selectedDate) {
-      const date = new Date(selectedDate);
-      const englishDay = format(date, 'EEEE', { locale: enUS });
-      const indonesianDay = format(date, 'EEEE', { locale: id });
-      console.log('🗓️ Selected Date:', selectedDate);
-      console.log('📅 English Day:', englishDay);
-      console.log('📅 Indonesian Day:', indonesianDay);
-      console.log('📅 Date Object:', date);
-    }
-  }, [selectedDate]);
-
-  // Form management
-  const form = useForm<BookingForm>({
-    resolver: zodResolver(bookingSchema),
-    defaultValues: {
+      start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+      end_datetime: format(addMinutes(new Date(), 120), "yyyy-MM-dd'T'HH:mm"),
       sks: 2,
       class_type: 'theory',
       purpose: 'Class/Lecture',
@@ -142,20 +120,37 @@ const BookRoom: React.FC = () => {
     },
   });
 
-  // Watch form values for dynamic UI changes
-  const watchStartTime = form.watch('start_time');
+  const watchStartDateTime = form.watch('start_datetime');
+  const watchEndDateTime = form.watch('end_datetime');
   const watchSks = form.watch('sks');
   const watchClassType = form.watch('class_type');
   const watchPurpose = form.watch('purpose');
   const watchAttachments = form.watch('attachments');
 
-  // Core state management
   const [selectedRoom, setSelectedRoom] = useState<any>(null);
   const [studyPrograms, setStudyPrograms] = useState<StudyProgram[]>([]);
   const [availableEquipment, setAvailableEquipment] = useState<Equipment[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showNowFeedback, setShowNowFeedback] = useState(false);
 
-  // Identity search states
+  const [targetBookingDate, setTargetBookingDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [showInUse, setShowInUse] = useState(false);
+  const [sortBy, setSortBy] = useState<'name' | 'capacity' | 'status'>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleModalRoom, setScheduleModalRoom] = useState<any>(null);
+
+  const { rooms, loading: roomsLoading, error: roomsError, fetchRoomData } = useRoomData(targetBookingDate);
+  
+  useRealTimeRoomUpdates(targetBookingDate);
+
+  useEffect(() => {
+    fetchRoomData(targetBookingDate, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const identityInputRef = useRef<HTMLInputElement>(null);
   const fullNameInputRef = useRef<HTMLInputElement>(null);
   const phoneInputRef = useRef<HTMLInputElement>(null);
@@ -164,133 +159,205 @@ const BookRoom: React.FC = () => {
   const [identitySearchLoading, setIdentitySearchLoading] = useState(false);
 
   const [useManualEndTime, setUseManualEndTime] = useState(false);
-  const [calculatedEndTime, setCalculatedEndTime] = useState<Date | null>(null);
 
-  const [scheduleModalRoom, setScheduleModalRoom] = useState<any>(null);
+  const handleSetToNow = () => {
+    const now = new Date();
+    const formattedNow = format(now, "yyyy-MM-dd'T'HH:mm");
+    form.setValue('start_datetime', formattedNow, { shouldValidate: true });
 
-  // Fetch initial data
+    setShowNowFeedback(true);
+    setTimeout(() => setShowNowFeedback(false), 2000);
+  };
+
+  const bookingDuration = useMemo(() => {
+    if (!watchStartDateTime || !watchEndDateTime) return null;
+    const start = new Date(watchStartDateTime);
+    const end = new Date(watchEndDateTime);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return null;
+    const diffMs = end.getTime() - start.getTime();
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    const totalHours = Math.round((diffMs / (1000 * 60 * 60)) * 10) / 10;
+    return { days, hours, minutes, totalHours };
+  }, [watchStartDateTime, watchEndDateTime]);
+
   useEffect(() => {
-    fetchStudyPrograms();
-  }, []);
-
-  // Fetch rooms when date changes
-  useEffect(() => {
-    if (targetBookingDate) {
-      fetchRoomData(targetBookingDate);
+    if (watchStartDateTime) {
+      const newDate = format(parseISO(watchStartDateTime), 'yyyy-MM-dd');
+      if (newDate !== targetBookingDate) {
+        setTargetBookingDate(newDate);
+        if (selectedRoom) {
+          setSelectedRoom(null);
+          setAvailableEquipment([]);
+        }
+        fetchRoomData(newDate);
+      }
     }
-  }, [targetBookingDate, fetchRoomData]);
+  }, [watchStartDateTime, targetBookingDate, selectedRoom, fetchRoomData]);
 
-  // Auto-calculate end time based on SKS
   useEffect(() => {
-    if (!useManualEndTime && watchStartTime && watchSks > 0 && watchClassType) {
-      const duration = watchClassType === 'theory' ? watchSks * 50 : watchSks * 170; // minutes
-      const startDate = new Date(watchStartTime);
-      const endDate = addMinutes(startDate, duration);
-      setCalculatedEndTime(endDate);
-
-      const formattedEndTime = format(endDate, "yyyy-MM-dd'T'HH:mm");
-      form.setValue('end_time', formattedEndTime);
+    if (!useManualEndTime && watchStartDateTime && watchSks > 0 && watchClassType) {
+      const duration = watchClassType === 'theory' ? watchSks * 50 : watchSks * 170;
+      const startDateTime = new Date(watchStartDateTime);
+      if (!isNaN(startDateTime.getTime())) {
+        const endDateTime = addMinutes(startDateTime, duration);
+        const formattedEndDateTime = format(endDateTime, "yyyy-MM-dd'T'HH:mm");
+        if (form.getValues('end_datetime') !== formattedEndDateTime) {
+          form.setValue('end_datetime', formattedEndDateTime);
+        }
+      }
     }
-  }, [watchStartTime, watchSks, watchClassType, useManualEndTime, form]);
+  }, [watchStartDateTime, watchSks, watchClassType, useManualEndTime, form]);
 
-  // Smart identity search with DOM manipulation
+  // 🎯 FIX: Logika status ruangan yang disempurnakan untuk mendeteksi konflik waktu
+  const getOptimizedRoomStatus = useCallback((room: any) => {
+    // 1. Cek apakah ruangan dinonaktifkan
+    if (!room.is_available) {
+      return {
+        status: 'Unavailable',
+        reason: 'Ruangan dinonaktifkan untuk pemesanan',
+        color: 'bg-gray-100 text-gray-800 border-gray-200'
+      };
+    }
+
+    // 2. Cek apakah sedang digunakan TEPAT SAAT INI (hanya jika melihat hari ini)
+    const isToday = targetBookingDate === format(new Date(), 'yyyy-MM-dd');
+    if (isToday && room.currentBooking) {
+      const now = new Date();
+      const bookingStart = parseISO(room.currentBooking.start_time);
+      const bookingEnd = parseISO(room.currentBooking.end_time);
+      if (now >= bookingStart && now <= bookingEnd) {
+        return {
+          status: 'In Use',
+          reason: `Sedang digunakan oleh ${room.currentBooking.user?.full_name || 'Tidak diketahui'}`,
+          color: 'bg-red-100 text-red-800 border-red-200',
+          detail: room.currentBooking
+        };
+      }
+    }
+
+    // 3. Cek KONFLIK antara waktu yang dipilih pengguna dengan jadwal yang ada
+    const userStartTime = watchStartDateTime ? parseISO(watchStartDateTime) : null;
+    const userEndTime = watchEndDateTime ? parseISO(watchEndDateTime) : null;
+
+    if (userStartTime && userEndTime && room.targetDateBookings?.length > 0) {
+      for (const booking of room.targetDateBookings) {
+        const existingStart = parseISO(booking.start_time);
+        const existingEnd = parseISO(booking.end_time);
+        // Kondisi tumpang tindih: (StartA < EndB) and (EndA > StartB)
+        if (userStartTime < existingEnd && userEndTime > existingStart) {
+          return {
+            status: 'Conflict',
+            reason: `Bertabrakan dengan jadwal pukul ${format(existingStart, 'HH:mm')} - ${format(existingEnd, 'HH:mm')}`,
+            color: 'bg-orange-100 text-orange-800 border-orange-200'
+          };
+        }
+      }
+    }
+    
+    // 4. Cek apakah ada jadwal LAINNYA di hari itu (meskipun tidak konflik)
+    const hasScheduledContent =
+      (room.scheduleDetails?.lectures?.length > 0) ||
+      (room.scheduleDetails?.exams?.length > 0) ||
+      (room.scheduleDetails?.sessions?.length > 0) ||
+      (room.targetDateBookings?.length > 0);
+
+    if (hasScheduledContent) {
+      return {
+        status: 'Scheduled',
+        reason: 'Ruangan memiliki aktivitas terjadwal',
+        color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+        scheduleCount: (room.scheduleDetails?.lectures?.length || 0) + (room.scheduleDetails?.exams?.length || 0) + (room.scheduleDetails?.sessions?.length || 0) + (room.targetDateBookings?.length || 0)
+      };
+    }
+
+    // 5. Jika lolos semua, berarti tersedia
+    return {
+      status: 'Available',
+      reason: 'Ruangan bebas dan tersedia untuk dipesan',
+      color: 'bg-green-100 text-green-800 border-green-200'
+    };
+  }, [targetBookingDate, watchStartDateTime, watchEndDateTime]);
+
+  const filteredAndSortedRooms = useMemo(() => {
+    return rooms.filter(room => {
+      const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        room.code.toLowerCase().includes(searchTerm.toLowerCase());
+
+      const roomStatus = getOptimizedRoomStatus(room);
+      const matchesStatus = filterStatus === 'all' || roomStatus.status === filterStatus;
+      const matchesVisibility = roomStatus.status !== 'In Use' || showInUse;
+
+      return matchesSearch && matchesStatus && matchesVisibility;
+    }).sort((a, b) => {
+      let comparison = 0;
+      switch (sortBy) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case 'capacity':
+          comparison = a.capacity - b.capacity;
+          break;
+        case 'status':
+          const statusA = getOptimizedRoomStatus(a).status;
+          const statusB = getOptimizedRoomStatus(b).status;
+          comparison = statusA.localeCompare(statusB);
+          break;
+      }
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+  }, [rooms, searchTerm, filterStatus, showInUse, sortBy, sortOrder, getOptimizedRoomStatus]);
+
   const showIdentityDropdown = useCallback((searchTerm: string) => {
     if (!searchTerm.trim()) {
       hideIdentityDropdown();
       return;
     }
-
     setIdentitySearchLoading(true);
-
-    // Filter users based on search term
     supabase
       .from('users')
-      .select(`
-        id, full_name, identity_number, email, phone_number, study_program_id,
-        study_program:study_programs(id, name, code)
-      `)
+      .select(`id, full_name, identity_number, email, phone_number, study_program_id, study_program:study_programs(id, name, code)`)
       .or(`full_name.ilike.%${searchTerm}%,identity_number.ilike.%${searchTerm}%`)
       .limit(10)
       .then(({ data, error }) => {
         setIdentitySearchLoading(false);
-
         if (error) {
           console.error('Error searching users:', error);
           hideIdentityDropdown();
           return;
         }
-
         const filteredUsers = data || [];
-        setIdentitySearchResults(filteredUsers);
-
         if (filteredUsers.length === 0) {
           hideIdentityDropdown();
           return;
         }
-
-        const dropdownHTML = `
-          <div class="absolute z-[9999] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-            ${filteredUsers.map(user => `
-              <div 
-                class="identity-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                data-user-id="${user.id}"
-                data-user-nim="${user.identity_number}"
-                data-user-name="${user.full_name}"
-                data-user-email="${user.email || ''}"
-                data-user-phone="${user.phone_number || ''}"
-                data-program-id="${user.study_program_id || ''}"
-              >
-                <div class="font-semibold text-gray-800">${user.identity_number}</div>
-                <div class="text-sm text-gray-600">${user.full_name}</div>
-                ${user.study_program ? `<div class="text-xs text-gray-500">${user.study_program.name}</div>` : ''}
-              </div>
-            `).join('')}
-          </div>
-        `;
-
+        const dropdownHTML = `<div class="absolute z-[9999] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">${filteredUsers.map(user => `<div class="identity-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150" data-user-id="${user.id}" data-user-nim="${user.identity_number}" data-user-name="${user.full_name}" data-user-email="${user.email || ''}" data-user-phone="${user.phone_number || ''}" data-program-id="${user.study_program_id || ''}"><div class="font-semibold text-gray-800">${user.identity_number}</div><div class="text-sm text-gray-600">${user.full_name}</div>${user.study_program ? `<div class="text-xs text-gray-500">${user.study_program.name}</div>` : ''}</div>`).join('')}</div>`;
         const dropdownContainer = document.querySelector('#identity-dropdown');
         if (dropdownContainer) {
           dropdownContainer.innerHTML = dropdownHTML;
-          dropdownContainer.style.display = 'block';
-
-          // Add event listeners
+          (dropdownContainer as HTMLElement).style.display = 'block';
           dropdownContainer.querySelectorAll('.identity-dropdown-item').forEach(item => {
             item.addEventListener('mousedown', (e) => e.preventDefault());
             item.addEventListener('click', (e) => {
               const target = e.currentTarget as HTMLElement;
-              const userId = target.dataset.userId;
               const userNim = target.dataset.userNim;
               const userName = target.dataset.userName;
-              const userEmail = target.dataset.userEmail;
               const userPhone = target.dataset.userPhone;
               const programId = target.dataset.programId;
-
-              // Fill all form fields
-              if (identityInputRef.current) {
-                identityInputRef.current.value = userNim || '';
-              }
-              if (fullNameInputRef.current) {
-                fullNameInputRef.current.value = userName || '';
-              }
-              if (phoneInputRef.current) {
-                phoneInputRef.current.value = userPhone || '';
-              }
-
-              // Set form values
+              if (identityInputRef.current) identityInputRef.current.value = userNim || '';
+              if (fullNameInputRef.current) fullNameInputRef.current.value = userName || '';
+              if (phoneInputRef.current) phoneInputRef.current.value = userPhone || '';
               form.setValue('identity_number', userNim || '');
               form.setValue('full_name', userName || '');
               form.setValue('phone_number', userPhone || '');
-
-              // Handle study program selection
               if (programId) {
                 form.setValue('study_program_id', programId);
                 const program = studyPrograms.find(p => p.id === programId);
                 if (program && studyProgramDisplayRef.current) {
-                  const display = `${program.name} (${program.code})`;
-                  studyProgramDisplayRef.current.value = display;
+                  studyProgramDisplayRef.current.value = `${program.name} (${program.code})`;
                 }
               }
-
               hideIdentityDropdown();
               identityInputRef.current?.focus();
             });
@@ -302,73 +369,29 @@ const BookRoom: React.FC = () => {
   const hideIdentityDropdown = useCallback(() => {
     const dropdownContainer = document.querySelector('#identity-dropdown');
     if (dropdownContainer) {
-      dropdownContainer.style.display = 'none';
+      (dropdownContainer as HTMLElement).style.display = 'none';
     }
   }, []);
 
-  // Study Program dropdown with DOM manipulation
   const showStudyProgramDropdown = useCallback(() => {
-    const dropdownHTML = `
-      <div class="absolute z-[9999] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
-        <div class="p-3 border-b border-gray-100">
-          <input
-            type="text"
-            placeholder="${getText("Search programs...", "Cari program studi...")}"
-            class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-            id="program-search-input"
-            autocomplete="off"
-          />
-        </div>
-        <div class="max-h-60 overflow-y-auto" id="program-list">
-          ${studyPrograms.map(program => `
-            <div 
-              class="program-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-              data-program-id="${program.id}"
-              data-program-name="${program.name}"
-              data-program-code="${program.code || ''}"
-            >
-              <div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
-
+    const dropdownHTML = `<div class="absolute z-[9999] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden"><div class="p-3 border-b border-gray-100"><input type="text" placeholder="${getText("Search programs...", "Cari program studi...")}" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" id="program-search-input" autocomplete="off"/></div><div class="max-h-60 overflow-y-auto" id="program-list">${studyPrograms.map(program => `<div class="program-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150" data-program-id="${program.id}" data-program-name="${program.name}" data-program-code="${program.code || ''}"><div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div></div>`).join('')}</div></div>`;
     const dropdownContainer = document.querySelector('#study-program-dropdown');
     if (dropdownContainer) {
       dropdownContainer.innerHTML = dropdownHTML;
-      dropdownContainer.style.display = 'block';
-
+      (dropdownContainer as HTMLElement).style.display = 'block';
       const searchInput = dropdownContainer.querySelector('#program-search-input') as HTMLInputElement;
       const programList = dropdownContainer.querySelector('#program-list');
-
       if (searchInput) {
         searchInput.focus();
         searchInput.addEventListener('input', (e) => {
-          const target = e.target as HTMLInputElement;
-          const searchTerm = target.value.toLowerCase();
-          const filteredPrograms = studyPrograms.filter(program =>
-            program.name.toLowerCase().includes(searchTerm) ||
-            (program.code && program.code.toLowerCase().includes(searchTerm))
-          );
-
+          const searchTerm = (e.target as HTMLInputElement).value.toLowerCase();
+          const filteredPrograms = studyPrograms.filter(p => p.name.toLowerCase().includes(searchTerm) || (p.code && p.code.toLowerCase().includes(searchTerm)));
           if (programList) {
-            programList.innerHTML = filteredPrograms.map(program => `
-              <div 
-                class="program-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                data-program-id="${program.id}"
-                data-program-name="${program.name}"
-                data-program-code="${program.code || ''}"
-              >
-                <div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div>
-              </div>
-            `).join('');
-
+            programList.innerHTML = filteredPrograms.map(program => `<div class="program-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150" data-program-id="${program.id}" data-program-name="${program.name}" data-program-code="${program.code || ''}"><div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div></div>`).join('');
             addStudyProgramListeners();
           }
         });
       }
-
       addStudyProgramListeners();
     }
   }, [getText, studyPrograms]);
@@ -380,13 +403,9 @@ const BookRoom: React.FC = () => {
         const programId = target.dataset.programId;
         const programName = target.dataset.programName;
         const programCode = target.dataset.programCode;
-
-        const display = `${programName} (${programCode})`;
-
         if (studyProgramDisplayRef.current) {
-          studyProgramDisplayRef.current.value = display;
+          studyProgramDisplayRef.current.value = `${programName} (${programCode})`;
         }
-
         form.setValue('study_program_id', programId || '');
         hideStudyProgramDropdown();
       });
@@ -396,17 +415,13 @@ const BookRoom: React.FC = () => {
   const hideStudyProgramDropdown = useCallback(() => {
     const dropdownContainer = document.querySelector('#study-program-dropdown');
     if (dropdownContainer) {
-      dropdownContainer.style.display = 'none';
+      (dropdownContainer as HTMLElement).style.display = 'none';
     }
   }, []);
 
   const fetchStudyPrograms = async () => {
     try {
-      const { data, error } = await supabase
-        .from('study_programs')
-        .select('*')
-        .order('name');
-
+      const { data, error } = await supabase.from('study_programs').select('*').order('name');
       if (error) throw error;
       setStudyPrograms(data || []);
     } catch (error) {
@@ -416,15 +431,7 @@ const BookRoom: React.FC = () => {
 
   const fetchEquipmentForRoom = async (roomId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('equipment')
-        .select('*')
-        // Fetch equipment for this room OR general equipment (rooms_id is null)
-        .or(`rooms_id.eq.${roomId},rooms_id.is.null`)
-        // Also, fetch if it's mandatory (regardless of quantity) OR if quantity > 1
-        .or('is_mandatory.eq.true,quantity.gt.1')
-        .order('name');
-
+      const { data, error } = await supabase.from('equipment').select('*').or(`rooms_id.eq.${roomId},rooms_id.is.null`).or('is_mandatory.eq.true,quantity.gt.1').order('name');
       if (error) throw error;
       setAvailableEquipment(data || []);
     } catch (error) {
@@ -433,115 +440,49 @@ const BookRoom: React.FC = () => {
     }
   };
 
-  // Handle room selection
   const handleRoomSelect = (room: any) => {
     setSelectedRoom(room);
     fetchEquipmentForRoom(room.id);
   };
 
-  // Handle file upload
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files) return;
-
     const currentAttachments = form.getValues('attachments') || [];
-    
     Array.from(files).forEach((file) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const result = e.target?.result as string;
-        // We create a new array to ensure React re-renders
         form.setValue('attachments', [...currentAttachments, result], { shouldValidate: true });
       };
       reader.readAsDataURL(file);
     });
   };
 
-  // Remove attachment
   const removeAttachment = (index: number) => {
     const currentAttachments = form.getValues('attachments') || [];
     const updatedAttachments = currentAttachments.filter((_, i) => i !== index);
     form.setValue('attachments', updatedAttachments, { shouldValidate: true });
   };
 
-  // Filter and sort rooms
-  const filteredAndSortedRooms = useMemo(() => {
-    return rooms.filter(room => {
-      const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        room.code.toLowerCase().includes(searchTerm.toLowerCase());
+  useEffect(() => {
+    fetchStudyPrograms();
+  }, []);
 
-      const status = targetBookingDate === format(new Date(), 'yyyy-MM-dd')
-        ? room.todayStatus
-        : room.targetDateStatus;
-
-      const matchesStatus = filterStatus === 'all' || status === filterStatus;
-      const matchesVisibility = status !== 'In Use' || showInUse;
-
-      return matchesSearch && matchesStatus && matchesVisibility;
-    }).sort((a, b) => {
-      let comparison = 0;
-
-      switch (sortBy) {
-        case 'name':
-          comparison = a.name.localeCompare(b.name);
-          break;
-        case 'capacity':
-          comparison = a.capacity - b.capacity;
-          break;
-        case 'status':
-          const statusA = targetBookingDate === format(new Date(), 'yyyy-MM-dd')
-            ? a.todayStatus
-            : a.targetDateStatus;
-          const statusB = targetBookingDate === format(new Date(), 'yyyy-MM-dd')
-            ? b.todayStatus
-            : b.targetDateStatus;
-          comparison = statusA.localeCompare(statusB);
-          break;
-      }
-
-      return sortOrder === 'asc' ? comparison : -comparison;
-    });
-  }, [rooms, searchTerm, filterStatus, showInUse, sortBy, sortOrder, targetBookingDate]);
-
-  // Get room status for display
-  const getRoomStatus = (room: any) => {
-    const isToday = targetBookingDate === format(new Date(), 'yyyy-MM-dd');
-    return isToday ? room.todayStatus : room.targetDateStatus;
-  };
-
-  // Get status color
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'In Use': return 'bg-red-100 text-red-800 border-red-200';
-      case 'Scheduled': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'Available': return 'bg-green-100 text-green-800 border-green-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  // Handle form submission
   const onSubmit = async (data: BookingForm) => {
     if (!selectedRoom) {
       alert.error(getText('Please select a room', 'Silakan pilih ruangan'));
       return;
     }
-
     setLoading(true);
     try {
-      // Check if room is currently in use and handle late booking
-      const roomStatus = getRoomStatus(selectedRoom);
-      if (roomStatus === 'In Use' && selectedRoom.currentBooking) {
-        // Mark existing booking as completed
-        await supabase
-          .from('bookings')
-          .update({ status: 'completed' })
-          .eq('id', selectedRoom.currentBooking.id);
+      const roomStatus = getOptimizedRoomStatus(selectedRoom);
+      if (roomStatus.status === 'In Use' && selectedRoom.currentBooking) {
+        await supabase.from('bookings').update({ status: 'completed' }).eq('id', selectedRoom.currentBooking.id);
       }
-
-      // Create new booking
       const bookingData = {
-        start_time: data.start_time,
-        end_time: data.end_time,
+        start_time: data.start_datetime,
+        end_time: data.end_datetime,
         purpose: data.purpose,
         sks: data.sks,
         class_type: data.class_type,
@@ -557,33 +498,25 @@ const BookRoom: React.FC = () => {
           study_program_id: data.study_program_id,
         },
       };
-
-      const { error } = await supabase
-        .from('bookings')
-        .insert(bookingData);
-
+      const { error } = await supabase.from('bookings').insert(bookingData);
       if (error) throw error;
-
-      // Show success message
-      const successMessage = roomStatus === 'In Use'
-        ? getText('Late booking submitted successfully! Previous booking marked as completed.', 'Pemesanan terlambat berhasil diajukan! Pemesanan sebelumnya ditandai selesai.')
-        : getText('Booking submitted successfully!', 'Pemesanan berhasil diajukan!');
-
+      const successMessage = roomStatus.status === 'In Use' ? getText('Late booking submitted successfully! Previous booking marked as completed.', 'Pemesanan terlambat berhasil diajukan! Pemesanan sebelumnya ditandai selesai.') : getText('Booking submitted successfully!', 'Pemesanan berhasil diajukan!');
       alert.success(successMessage);
-
-      // Reset form
-      form.reset();
+      form.reset({
+        start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+        end_datetime: format(addMinutes(new Date(), 120), "yyyy-MM-dd'T'HH:mm"),
+        sks: 2,
+        class_type: 'theory',
+        purpose: 'Class/Lecture',
+        equipment_requested: [],
+        attachments: [],
+      });
       setSelectedRoom(null);
-
-      // Clear DOM inputs
       if (identityInputRef.current) identityInputRef.current.value = '';
       if (fullNameInputRef.current) fullNameInputRef.current.value = '';
       if (phoneInputRef.current) phoneInputRef.current.value = '';
       if (studyProgramDisplayRef.current) studyProgramDisplayRef.current.value = '';
-
-      // Refresh room data
       fetchRoomData(targetBookingDate, true);
-
     } catch (error: any) {
       console.error('Error submitting booking:', error);
       alert.error(error.message || getText('Failed to submit booking', 'Gagal mengajukan pemesanan'));
@@ -594,867 +527,237 @@ const BookRoom: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-      {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center">
-            <div className="flex justify-center mb-4">
-              <div className="bg-white/20 p-4 rounded-2xl backdrop-blur-sm">
-                <Calendar className="h-12 w-12 text-white" />
-              </div>
-            </div>
-            <h1 className="text-3xl sm:text-4xl font-bold mb-4">
-              {getText('Smart Room Booking', 'Pemesanan Ruangan Cerdas')}
-            </h1>
-            <p className="text-xl text-blue-100 max-w-2xl mx-auto">
-              {getText('Reserve your perfect study space', 'Pesan ruang belajar yang sempurna')}
-            </p>
+            <div className="flex justify-center mb-4"><div className="bg-white/20 p-4 rounded-2xl backdrop-blur-sm"><Calendar className="h-12 w-12 text-white" /></div></div>
+            <h1 className="text-3xl sm:text-4xl font-bold mb-4">{getText('Smart Room Booking', 'Pemesanan Ruangan Cerdas')}</h1>
+            <p className="text-xl text-blue-100 max-w-2xl mx-auto">{getText('Reserve your perfect study space', 'Pesan ruang belajar yang sempurna')}</p>
           </div>
         </div>
       </div>
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-          {/* Main Card Wrapper */}
           <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-white/20 p-8 space-y-8">
-
-            {/* STEP 1: BOOKING DETAILS */}
             <div className="space-y-6">
               <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
                 <div className="bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">1</div>
-                <h3 className="text-xl font-bold text-gray-900">
-                  {getText('Booking Details', 'Detail Pemesanan')}
-                </h3>
+                <h3 className="text-xl font-bold text-gray-900">{getText('Booking Details', 'Detail Pemesanan')}</h3>
               </div>
-
-              {/* Start Date & Time */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {getText('Start Date & Time', 'Tanggal & Waktu Mulai')} *
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Start Date & Time', 'Tanggal & Waktu Mulai')} *</label>
+                  <div className="hidden sm:block relative">
+                    <button type="button" onClick={handleSetToNow} className={`inline-flex items-center space-x-1 px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 transform hover:scale-105 active:scale-95 shadow-sm hover:shadow-md ${showNowFeedback ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-blue-100 text-blue-700 border border-blue-300 hover:bg-blue-200'}`}>
+                      <Zap className="h-3 w-3" />
+                      <span>{showNowFeedback ? getText('Set!', 'Berhasil!') : getText('Now', 'Sekarang')}</span>
+                    </button>
+                  </div>
+                </div>
                 <div className="relative">
                   <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <input
-                    {...form.register('start_time')}
-                    type="datetime-local"
-                    min={format(new Date(), "yyyy-MM-dd'T'HH:mm")}
-                    max={format(addDays(new Date(), 30), "yyyy-MM-dd'T'HH:mm")}
-                    className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
-                  />
+                  <input {...form.register('start_datetime')} type="datetime-local" min={new Date().toISOString().slice(0, 16)} max={format(addDays(new Date(), 30), "yyyy-MM-dd'T'HH:mm")} className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm" />
                 </div>
-                {form.formState.errors.start_time && (
-                  <p className="mt-1 text-sm text-red-600 font-medium">
-                    {form.formState.errors.start_time.message}
-                  </p>
-                )}
+                <div className="sm:hidden mt-2">
+                  <button type="button" onClick={handleSetToNow} className="w-full flex items-center justify-center space-x-2 py-2 px-4 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-all duration-200 text-sm font-medium">
+                    <Zap className="h-4 w-4" />
+                    <span>{getText('Set to current time', 'Atur ke waktu sekarang')}</span>
+                  </button>
+                </div>
+                {form.formState.errors.start_datetime && (<p className="mt-1 text-sm text-red-600 font-medium">{form.formState.errors.start_datetime.message}</p>)}
+                {watchStartDateTime && (<div className="mt-2 text-sm text-gray-600">{format(parseISO(watchStartDateTime), 'EEEE, MMMM d, yyyy \'at\' HH:mm', { locale: enUS })}</div>)}
               </div>
-
-              {/* SKS and Class Type */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    {getText('SKS (Credits)', 'SKS (Kredit)')} *
-                  </label>
-                  <select
-                    {...form.register('sks', { valueAsNumber: true })}
-                    className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
-                  >
-                    <option value={1}>1 SKS</option>
-                    <option value={2}>2 SKS</option>
-                    <option value={3}>3 SKS</option>
-                    <option value={4}>4 SKS</option>
-                    <option value={5}>5 SKS</option>
-                    <option value={6}>6 SKS</option>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">{getText('SKS (Credits)', 'SKS (Kredit)')} *</label>
+                  <select {...form.register('sks', { valueAsNumber: true })} className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm">
+                    <option value={1}>1 SKS</option><option value={2}>2 SKS</option><option value={3}>3 SKS</option><option value={4}>4 SKS</option><option value={5}>5 SKS</option><option value={6}>6 SKS</option>
                   </select>
-                  {form.formState.errors.sks && (
-                    <p className="mt-1 text-sm text-red-600 font-medium">
-                      {form.formState.errors.sks.message}
-                    </p>
-                  )}
+                  {form.formState.errors.sks && (<p className="mt-1 text-sm text-red-600 font-medium">{form.formState.errors.sks.message}</p>)}
                 </div>
-
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    {getText('Class Type', 'Tipe Kelas')} *
-                  </label>
-                  <select
-                    {...form.register('class_type')}
-                    className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
-                  >
-                    <option value="theory">{getText('Theory (50 min/SKS)', 'Teori (50 menit/SKS)')}</option>
-                    <option value="practical">{getText('Practical (170 min/SKS)', 'Praktik (170 menit/SKS)')}</option>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">{getText('Class Type', 'Tipe Kelas')} *</label>
+                  <select {...form.register('class_type')} className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm">
+                    <option value="theory">{getText('Theory (50 min/SKS)', 'Teori (50 menit/SKS)')}</option><option value="practical">{getText('Practical (170 min/SKS)', 'Praktik (170 menit/SKS)')}</option>
                   </select>
-                  {form.formState.errors.class_type && (
-                    <p className="mt-1 text-sm text-red-600 font-medium">
-                      {form.formState.errors.class_type.message}
-                    </p>
-                  )}
+                  {form.formState.errors.class_type && (<p className="mt-1 text-sm text-red-600 font-medium">{form.formState.errors.class_type.message}</p>)}
                 </div>
               </div>
-
-              {/* Duration Calculation Display */}
-              {watchStartTime && watchSks > 0 && (
-                <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                  <div className="flex items-center space-x-3">
-                    <Clock className="h-5 w-5 text-green-600" />
-                    <div className="text-sm text-green-800">
-                      <p className="font-semibold">
-                        {getText('Duration', 'Durasi')}: {watchClassType === 'theory' ? watchSks * 50 : watchSks * 170} {getText('minutes', 'menit')}
-                      </p>
-                      {calculatedEndTime && (
-                        <p>
-                          {getText('End Time', 'Waktu Selesai')}: {format(calculatedEndTime, "MMM d, yyyy 'at' HH:mm")}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Manual vs Auto End Time Toggle */}
               <div className="flex items-center justify-between mb-4">
-                <label className="block text-sm font-semibold text-gray-700">
-                  {getText('End Time', 'Waktu Selesai')}
-                </label>
+                <label className="block text-sm font-semibold text-gray-700">{getText('End Date & Time', 'Tanggal & Waktu Selesai')}</label>
                 <div className="flex items-center space-x-3">
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      checked={!useManualEndTime}
-                      onChange={() => setUseManualEndTime(false)}
-                      className="text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-700">{getText('Auto Calculate', 'Otomatis')}</span>
-                  </label>
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      checked={useManualEndTime}
-                      onChange={() => setUseManualEndTime(true)}
-                      className="text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-700">{getText('Manual', 'Manual')}</span>
-                  </label>
+                  <label className="flex items-center space-x-2 cursor-pointer"><input type="radio" checked={!useManualEndTime} onChange={() => setUseManualEndTime(false)} className="text-blue-600 focus:ring-blue-500" /><span className="text-sm text-gray-700">{getText('Auto Calculate', 'Otomatis')}</span></label>
+                  <label className="flex items-center space-x-2 cursor-pointer"><input type="radio" checked={useManualEndTime} onChange={() => setUseManualEndTime(true)} className="text-blue-600 focus:ring-blue-500" /><span className="text-sm text-gray-700">{getText('Manual', 'Manual')}</span></label>
                 </div>
               </div>
-
-              {/* End Date & Time */}
-              {useManualEndTime ? (
-                <div>
-                  <div className="relative">
-                    <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                    <input
-                      {...form.register('end_time')}
-                      type="datetime-local"
-                      min={watchStartTime || format(new Date(), "yyyy-MM-dd'T'HH:mm")}
-                      className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
-                    />
-                  </div>
-                  {form.formState.errors.end_time && (
-                    <p className="mt-1 text-sm text-red-600 font-medium">
-                      {form.formState.errors.end_time.message}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                  <div className="flex items-center space-x-3">
-                    <Info className="h-5 w-5 text-blue-600" />
-                    <div className="text-sm text-blue-800">
-                      {calculatedEndTime ? (
-                        <span>
-                          {getText('Auto-calculated', 'Dihitung otomatis')}: {format(calculatedEndTime, "MMM d, yyyy 'at' HH:mm")}
-                        </span>
-                      ) : (
-                        <span>{getText('End time will be calculated automatically based on SKS', 'Waktu selesai akan dihitung otomatis berdasarkan SKS')}</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Purpose Dropdown */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {getText('Purpose', 'Tujuan')} *
-                </label>
+                <div className="relative">
+                  <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input {...form.register('end_datetime')} type="datetime-local" min={watchStartDateTime} disabled={!useManualEndTime} className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm disabled:opacity-60" />
+                </div>
+                {form.formState.errors.end_datetime && (<p className="mt-1 text-sm text-red-600 font-medium">{form.formState.errors.end_datetime.message}</p>)}
+                {watchEndDateTime && (<div className="mt-2 text-sm text-gray-600">{format(parseISO(watchEndDateTime), 'EEEE, MMMM d, yyyy \'at\' HH:mm', { locale: enUS })}</div>)}
+              </div>
+              {bookingDuration && (<div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-xl p-4"><div className="flex items-center space-x-3"><Clock className="h-5 w-5 text-green-600" /><div className="text-sm"><p className="font-semibold text-green-800">{getText('Booking Duration', 'Durasi Pemesanan')}:</p><div className="flex items-center space-x-4 mt-1">{bookingDuration.days > 0 && (<span className="text-green-700">{bookingDuration.days} {getText('days', 'hari')}</span>)}{bookingDuration.hours > 0 && (<span className="text-green-700">{bookingDuration.hours} {getText('hours', 'jam')}</span>)}{bookingDuration.minutes > 0 && (<span className="text-green-700">{bookingDuration.minutes} {getText('minutes', 'menit')}</span>)}</div><p className="text-xs text-green-600 mt-1">{getText('Total', 'Total')}: {bookingDuration.totalHours} {getText('hours', 'jam')}{bookingDuration.days > 0 && ` (${bookingDuration.days} ${getText('days', 'hari')})`}</p></div></div></div>)}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">{getText('Purpose', 'Tujuan')} *</label>
                 <div className="relative">
                   <Target className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <select
-                    {...form.register('purpose')}
-                    className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm appearance-none"
-                  >
-                    <option value="Class/Lecture">{getText('Class/Lecture', 'Kuliah')}</option>
-                    <option value="Other">{getText('Other', 'Lainnya')}</option>
-                  </select>
-                   <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                  <select {...form.register('purpose')} className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm appearance-none"><option value="Class/Lecture">{getText('Class/Lecture', 'Kuliah')}</option><option value="Other">{getText('Other', 'Lainnya')}</option></select>
+                  <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
                 </div>
-                {form.formState.errors.purpose && (
-                  <p className="mt-1 text-sm text-red-600 font-medium">
-                    {form.formState.errors.purpose.message}
-                  </p>
-                )}
+                {form.formState.errors.purpose && (<p className="mt-1 text-sm text-red-600 font-medium">{form.formState.errors.purpose.message}</p>)}
               </div>
-              
-              {/* Conditional Fields for 'Other' Purpose */}
-              {watchPurpose === 'Other' && (
-                <>
-                  {/* Notes */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      {getText('Additional Notes', 'Catatan Tambahan')}
-                    </label>
-                    <div className="relative">
-                      <FileText className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
-                      <textarea
-                        {...form.register('notes')}
-                        rows={2}
-                        placeholder={getText("Any additional information or special requests", "Informasi tambahan atau permintaan khusus")}
-                        className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm resize-none"
-                      />
-                    </div>
-                  </div>
-
-                  {/* File Attachments */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      {getText('Attachments', 'Lampiran')} *
-                    </label>
-                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors duration-200">
-                      <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                      <p className="text-sm text-gray-600 mb-2">
-                        {getText('Upload supporting documents', 'Unggah dokumen pendukung')}
-                      </p>
-                      <input
-                        type="file"
-                        multiple
-                        accept="image/*,.pdf,.doc,.docx"
-                        onChange={handleFileUpload}
-                        className="hidden"
-                        id="file-upload"
-                      />
-                      <label
-                        htmlFor="file-upload"
-                        className="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 cursor-pointer transition-colors duration-200"
-                      >
-                        <Plus className="h-4 w-4 mr-2" />
-                        {getText('Choose Files', 'Pilih File')}
-                      </label>
-                    </div>
-
-                    {/* Attachment Preview */}
-                    {watchAttachments && watchAttachments.length > 0 && (
-                      <div className="mt-4 space-y-2">
-                        {watchAttachments.map((attachment, index) => (
-                          <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                            <div className="flex items-center space-x-3 overflow-hidden">
-                              <FileText className="h-5 w-5 text-gray-400 flex-shrink-0" />
-                              <span className="text-sm text-gray-700 truncate">
-                                {getText('Attachment', 'Lampiran')} {index + 1}
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => removeAttachment(index)}
-                              className="text-red-600 hover:text-red-800 transition-colors duration-200 flex-shrink-0 ml-2"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                     {form.formState.errors.attachments && (
-                      <p className="mt-1 text-sm text-red-600 font-medium">
-                        {form.formState.errors.attachments.message}
-                      </p>
-                    )}
-                  </div>
-                </>
-              )}
+              {watchPurpose === 'Other' && (<><div><label className="block text-sm font-semibold text-gray-700 mb-2">{getText('Additional Notes', 'Catatan Tambahan')}</label><div className="relative"><FileText className="absolute left-3 top-3 h-5 w-5 text-gray-400" /><textarea {...form.register('notes')} rows={2} placeholder={getText("Any additional information or special requests", "Informasi tambahan atau permintaan khusus")} className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm resize-none" /></div></div><div><label className="block text-sm font-semibold text-gray-700 mb-2">{getText('Attachments', 'Lampiran')} *</label><div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors duration-200"><Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" /><p className="text-sm text-gray-600 mb-2">{getText('Upload supporting documents', 'Unggah dokumen pendukung')}</p><input type="file" multiple accept="image/*,.pdf,.doc,.docx" onChange={handleFileUpload} className="hidden" id="file-upload" /><label htmlFor="file-upload" className="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 cursor-pointer transition-colors duration-200"><Plus className="h-4 w-4 mr-2" />{getText('Choose Files', 'Pilih File')}</label></div>{watchAttachments && watchAttachments.length > 0 && (<div className="mt-4 space-y-2">{watchAttachments.map((attachment, index) => (<div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"><div className="flex items-center space-x-3 overflow-hidden"><FileText className="h-5 w-5 text-gray-400 flex-shrink-0" /><span className="text-sm text-gray-700 truncate">{getText('Attachment', 'Lampiran')} {index + 1}</span></div><button type="button" onClick={() => removeAttachment(index)} className="text-red-600 hover:text-red-800 transition-colors duration-200 flex-shrink-0 ml-2"><X className="h-4 w-4" /></button></div>))}</div>)}{form.formState.errors.attachments && (<p className="mt-1 text-sm text-red-600 font-medium">{form.formState.errors.attachments.message}</p>)}</div></>)}
             </div>
 
-            {/* STEP 2: ROOM SELECTION */}
             <div className="space-y-6">
               <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
                 <div className="bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">2</div>
-                <h3 className="text-xl font-bold text-gray-900">
-                  {getText('Room Selection', 'Pilih Ruangan')}
-                </h3>
+                <h3 className="text-xl font-bold text-gray-900">{getText('Room Selection', 'Pilih Ruangan')}</h3>
               </div>
-              
-              {/* Selected Room Display */}
-              {selectedRoom ? (
-                <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-semibold text-green-800 flex items-center">
-                        <CheckCircle className="h-5 w-5 mr-2" />
-                        {getText('Selected Room', 'Ruangan Terpilih')}
-                      </h4>
-                      <div className="mt-2">
-                        <p className="font-bold text-green-900">{selectedRoom.name}</p>
-                        <p className="text-sm text-green-700">{selectedRoom.code}</p>
-                        <div className="flex items-center space-x-4 mt-1 text-sm text-green-600">
-                          <div className="flex items-center space-x-1">
-                            <Users className="h-4 w-4" />
-                            <span>{selectedRoom.capacity} {getText('seats', 'kursi')}</span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <Building className="h-4 w-4" />
-                            <span>{selectedRoom.department?.name || getText('General', 'Umum')}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedRoom(null)}
-                      className="text-green-600 hover:text-green-800 transition-colors duration-200"
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                  <div className="flex items-center space-x-3">
-                    <AlertTriangle className="h-5 w-5 text-amber-600" />
-                    <div className="text-sm text-amber-800">
-                      <p className="font-semibold">
-                        {getText('Room Selection Required', 'Pilih Ruangan Diperlukan')}
-                      </p>
-                      <p>
-                        {getText('Please select a room from the list below to continue', 'Silakan pilih ruangan dari daftar di bawah untuk melanjutkan')}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Room Search and Filters */}
+              {selectedRoom ? (<div className="bg-green-50 border border-green-200 rounded-xl p-4"><div className="flex items-center justify-between"><div><h4 className="font-semibold text-green-800 flex items-center"><CheckCircle className="h-5 w-5 mr-2" />{getText('Selected Room', 'Ruangan Terpilih')}</h4><div className="mt-2"><p className="font-bold text-green-900">{selectedRoom.name}</p><p className="text-sm text-green-700">{selectedRoom.code}</p><div className="flex items-center space-x-4 mt-1 text-sm text-green-600"><div className="flex items-center space-x-1"><Users className="h-4 w-4" /><span>{selectedRoom.capacity} {getText('seats', 'kursi')}</span></div><div className="flex items-center space-x-1"><Building className="h-4 w-4" /><span>{selectedRoom.department?.name || getText('General', 'Umum')}</span></div></div></div></div><button type="button" onClick={() => setSelectedRoom(null)} className="text-green-600 hover:text-green-800 transition-colors duration-200"><X className="h-5 w-5" /></button></div></div>) : (<div className="bg-amber-50 border border-amber-200 rounded-xl p-4"><div className="flex items-center space-x-3"><AlertTriangle className="h-5 w-5 text-amber-600" /><div className="text-sm text-amber-800"><p className="font-semibold">{getText('Room Selection Required', 'Pilih Ruangan Diperlukan')}</p><p>{getText('Please select a room from the list below to continue', 'Silakan pilih ruangan dari daftar di bawah untuk melanjutkan')}</p></div></div></div>)}
               <div className="space-y-4">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder={getText("Search rooms...", "Cari ruangan...")}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
-                  />
-                </div>
-
+                <div className="relative"><Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" /><input type="text" placeholder={getText("Search rooms...", "Cari ruangan...")} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm" /></div>
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div className="flex items-center space-x-2">
-                    <select
-                      value={filterStatus}
-                      onChange={(e) => setFilterStatus(e.target.value)}
-                      className="px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                    >
+                    <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50">
                       <option value="all">{getText('All Status', 'Semua Status')}</option>
                       <option value="Available">{getText('Available', 'Tersedia')}</option>
                       <option value="Scheduled">{getText('Scheduled', 'Terjadwal')}</option>
+                      <option value="Conflict">{getText('Conflict', 'Konflik')}</option>
                       <option value="In Use">{getText('In Use', 'Sedang Digunakan')}</option>
                     </select>
-                    <select
-                      value={sortBy}
-                      onChange={(e) => setSortBy(e.target.value as 'name' | 'capacity' | 'status')}
-                      className="px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                    >
-                      <option value="name">{getText('Sort by Name', 'Urutkan berdasarkan Nama')}</option>
-                      <option value="capacity">{getText('Sort by Capacity', 'Urutkan berdasarkan Kapasitas')}</option>
-                      <option value="status">{getText('Sort by Status', 'Urutkan berdasarkan Status')}</option>
+                    <select value={sortBy} onChange={(e) => setSortBy(e.target.value as 'name' | 'capacity' | 'status')} className="px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50">
+                      <option value="name">{getText('Sort by Name', 'Urutkan berdasarkan Nama')}</option><option value="capacity">{getText('Sort by Capacity', 'Urutkan berdasarkan Kapasitas')}</option><option value="status">{getText('Sort by Status', 'Urutkan berdasarkan Status')}</option>
                     </select>
-                    <button
-                      type="button"
-                      onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-                      className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors duration-200"
-                    >
-                      {sortOrder === 'asc' ? <SortAsc className="h-4 w-4" /> : <SortDesc className="h-4 w-4" />}
-                    </button>
+                    <button type="button" onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')} className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors duration-200">{sortOrder === 'asc' ? <SortAsc className="h-4 w-4" /> : <SortDesc className="h-4 w-4" />}</button>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      onClick={() => fetchRoomData(targetBookingDate, true)}
-                      disabled={roomsLoading}
-                      className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors duration-200 disabled:opacity-50"
-                    >
-                      <RefreshCw className={`h-4 w-4 ${roomsLoading ? 'animate-spin' : ''}`} />
-                    </button>
-                  </div>
+                  <div className="flex items-center space-x-2">{roomsLoading && (<div className="flex items-center space-x-1 text-xs text-gray-500"><Loader2 className="h-3 w-3 animate-spin" /><span>{getText('Updating...', 'Memperbarui...')}</span></div>)}</div>
                 </div>
-
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="showInUse"
-                    checked={showInUse}
-                    onChange={(e) => setShowInUse(e.target.checked)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <label htmlFor="showInUse" className="text-sm text-gray-700">
-                    {getText('Show rooms currently in use', 'Tampilkan ruangan yang sedang digunakan')}
-                  </label>
-                </div>
+                <div className="flex items-center space-x-2"><input type="checkbox" id="showInUse" checked={showInUse} onChange={(e) => setShowInUse(e.target.checked)} className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" /><label htmlFor="showInUse" className="text-sm text-gray-700">{getText('Show rooms currently in use', 'Tampilkan ruangan yang sedang digunakan')}</label></div>
               </div>
-
-              {/* Room List */}
-              <div className="space-y-4 max-h-[300px] overflow-y-auto p-2 -m-2">
-                {roomsLoading && filteredAndSortedRooms.length === 0 ? (
-                  <div className="flex items-center justify-center h-32">
-                    <div className="flex items-center space-x-2">
-                      <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
-                      <span className="text-gray-600">{getText('Loading rooms...', 'Memuat ruangan...')}</span>
-                    </div>
-                  </div>
-                ) : filteredAndSortedRooms.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Building className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-600">{getText('No rooms found', 'Tidak ada ruangan ditemukan')}</p>
-                    <p className="text-sm text-gray-500 mt-2">
-                      {getText('Try adjusting your search or filters', 'Coba sesuaikan pencarian atau filter')}
-                    </p>
-                  </div>
-                ) : (
+              <div className="space-y-4 max-h-[400px] overflow-y-auto p-2 -m-2">
+                {roomsLoading && filteredAndSortedRooms.length === 0 ? (<div className="flex items-center justify-center h-32"><div className="flex items-center space-x-2"><Loader2 className="h-5 w-5 animate-spin text-blue-600" /><span className="text-gray-600">{getText('Loading rooms...', 'Memuat ruangan...')}</span></div></div>) : filteredAndSortedRooms.length === 0 ? (<div className="text-center py-8"><Building className="h-12 w-12 text-gray-400 mx-auto mb-4" /><p className="text-gray-600">{getText('No rooms found', 'Tidak ada ruangan ditemukan')}</p><p className="text-sm text-gray-500 mt-2">{getText('Try adjusting your search or filters', 'Coba sesuaikan pencarian atau filter')}</p></div>) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {filteredAndSortedRooms.map((room) => {
-                      const status = getRoomStatus(room);
+                      const roomStatus = getOptimizedRoomStatus(room);
                       const isSelected = selectedRoom?.id === room.id;
-
                       return (
-                        <div
-                          key={room.id}
-                          onClick={() => handleRoomSelect(room)}
-                          className={`p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 hover:shadow-md ${
-                            isSelected
-                              ? 'border-blue-500 bg-blue-50'
-                              : 'border-gray-200 bg-white/50 hover:border-blue-300'
-                          }`}
-                        >
+                        <div key={room.id} onClick={() => roomStatus.status !== 'Conflict' && roomStatus.status !== 'In Use' && roomStatus.status !== 'Unavailable' && handleRoomSelect(room)} className={`p-4 rounded-xl border-2 transition-all duration-200 ${isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white/50'} ${roomStatus.status === 'Conflict' || roomStatus.status === 'In Use' || roomStatus.status === 'Unavailable' ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:shadow-md hover:border-blue-300'}`}>
                           <div className="flex items-start justify-between mb-3">
-                            <div>
-                              <h4 className="font-bold text-gray-900">{room.name}</h4>
-                              <p className="text-sm text-gray-600">{room.code}</p>
-                            </div>
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(status)}`}>
-                              {getText(status, status)}
-                            </span>
+                            <div><h4 className="font-bold text-gray-900">{room.name}</h4><p className="text-sm text-gray-600">{room.code}</p></div>
+                            <div className="flex flex-col items-end space-y-1"><span className={`px-3 py-1 rounded-full text-xs font-medium border ${roomStatus.color}`}>{getText(roomStatus.status, roomStatus.status)}</span>{roomStatus.scheduleCount && (<span className="text-xs text-gray-500">{roomStatus.scheduleCount} {getText('activities', 'aktivitas')}</span>)}</div>
                           </div>
-
                           <div className="flex items-center justify-between text-sm text-gray-600">
-                            <div className="flex items-center space-x-4">
-                              <div className="flex items-center space-x-1">
-                                <Users className="h-4 w-4" />
-                                <span>{room.capacity} {getText('seats', 'kursi')}</span>
-                              </div>
-                              <div className="flex items-center space-x-1">
-                                <Building className="h-4 w-4" />
-                                <span>{room.department?.name || getText('General', 'Umum')}</span>
-                              </div>
-                            </div>
-
-                            {status === 'Scheduled' && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setScheduleModalRoom(room);
-                                  setShowScheduleModal(true);
-                                }}
-                                className="text-blue-600 hover:text-blue-800 transition-colors duration-200"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </button>
-                            )}
+                            <div className="flex items-center space-x-4"><div className="flex items-center space-x-1"><Users className="h-4 w-4" /><span>{room.capacity} {getText('seats', 'kursi')}</span></div><div className="flex items-center space-x-1"><Building className="h-4 w-4" /><span>{room.department?.name || getText('General', 'Umum')}</span></div></div>
+                            {(roomStatus.status === 'Scheduled' || roomStatus.status === 'In Use' || roomStatus.status === 'Conflict') && (<button type="button" onClick={(e) => { e.stopPropagation(); setScheduleModalRoom(room); setShowScheduleModal(true); }} className="text-blue-600 hover:text-blue-800 transition-colors duration-200"><Eye className="h-4 w-4" /></button>)}
                           </div>
-
-                          {status === 'In Use' && room.currentBooking && (
-                            <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                              <p className="text-sm font-medium text-red-800">
-                                {getText('Currently in use by', 'Sedang digunakan oleh')}: {room.currentBooking.user?.full_name || 'Unknown User'}
+                          {roomStatus.status === 'In Use' && roomStatus.detail && (<div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg"><p className="text-sm font-medium text-red-800">{getText('Currently in use by', 'Sedang digunakan oleh')}: {roomStatus.detail.user?.full_name || 'Unknown User'}</p><p className="text-xs text-red-600">{roomStatus.detail.purpose || 'Room Booking'}</p><p className="text-xs text-red-500">{format(parseISO(roomStatus.detail.start_time), 'HH:mm')} - {format(parseISO(roomStatus.detail.end_time), 'HH:mm')}</p></div>)}
+                          {roomStatus.status === 'Conflict' && (<div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg"><p className="text-sm font-medium text-orange-800">⚠️ {getText('Time Conflict', 'Konflik Waktu')}</p><p className="text-xs text-orange-700 mt-1">{roomStatus.reason}</p></div>)}
+                          
+                          {/* 🎯 FIX: Tampilkan detail booking jika statusnya "Scheduled" */}
+                          {roomStatus.status === 'Scheduled' && roomStatus.scheduleCount && (
+                            <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg space-y-2">
+                              <p className="text-xs text-yellow-800 font-semibold">
+                                📅 {getText('Jadwal di Hari Ini:', 'Jadwal di Hari Ini:')}
                               </p>
-                              <p className="text-xs text-red-600">
-                                {room.currentBooking.purpose || 'Room Booking'}
-                              </p>
-                              <p className="text-xs text-red-500">
-                                {format(parseISO(room.currentBooking.start_time), 'HH:mm')} - {format(parseISO(room.currentBooking.end_time), 'HH:mm')}
-                              </p>
-                            </div>
-                          )}
-
-                          {room.futureBookings?.count > 0 && (
-                            <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
-                              <p className="text-xs text-blue-700">
-                                🔮 {room.futureBookings.count} {getText('future bookings', 'pemesanan mendatang')}
-                              </p>
-                              {room.futureBookings.nextBooking && (
-                                <p className="text-xs text-blue-600 mt-1">
-                                  {getText('Next:', 'Selanjutnya:')} {room.futureBookings.nextBooking.date} {room.futureBookings.nextBooking.time}
-                                </p>
+                              {room.targetDateBookings && room.targetDateBookings.length > 0 && (
+                                <div className="space-y-1 max-h-20 overflow-y-auto">
+                                  {room.targetDateBookings.map((booking: any, index: number) => (
+                                    <div key={index} className="text-xs text-yellow-900 border-t border-yellow-200 pt-1 first:pt-0 first:border-t-0">
+                                      <p className="font-medium truncate">{booking.purpose}</p>
+                                      <p>{format(parseISO(booking.start_time), 'HH:mm')} - {format(parseISO(booking.end_time), 'HH:mm')}</p>
+                                    </div>
+                                  ))}
+                                </div>
                               )}
+                              <p className="text-xs text-yellow-700 mt-1 border-t border-yellow-200 pt-1">
+                                {getText('Klik ikon mata untuk lihat semua detail', 'Klik ikon mata untuk lihat semua detail')}
+                              </p>
                             </div>
                           )}
+
+                          {roomStatus.status === 'Unavailable' && (<div className="mt-3 p-2 bg-gray-50 border border-gray-200 rounded-lg"><p className="text-xs text-gray-600">🚫 {getText('Room disabled for booking', 'Ruangan dinonaktifkan untuk pemesanan')}</p></div>)}
+                          {room.futureBookings?.count > 0 && roomStatus.status === 'Available' && (<div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded-lg"><p className="text-xs text-blue-700">🔮 {room.futureBookings.count} {getText('future bookings', 'pemesanan mendatang')}</p>{room.futureBookings.nextBooking && (<p className="text-xs text-blue-600 mt-1">{getText('Next:', 'Selanjutnya:')} {room.futureBookings.nextBooking.date} {room.futureBookings.nextBooking.time}</p>)}</div>)}
                         </div>
                       );
                     })}
                   </div>
                 )}
               </div>
-              
-               {/* Selected Room Equipment */}
-               {selectedRoom && availableEquipment.length > 0 && (
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl mt-6">
-                  <h4 className="font-semibold text-blue-800 mb-3 flex items-center">
-                    <Zap className="h-5 w-5 mr-2" />
-                    {getText('Available Equipment in Selected Room', 'Peralatan Tersedia di Ruangan Terpilih')}
-                  </h4>
-                  <div className="space-y-2">
-                    {availableEquipment.map((equipment) => (
-                      <label key={equipment.id} className="flex items-center space-x-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          value={equipment.id}
-                          defaultChecked={equipment.is_mandatory}
-                          disabled={equipment.is_mandatory}
-                          onChange={(e) => {
-                            const currentEquipment = form.getValues('equipment_requested') || [];
-                            if (e.target.checked) {
-                              form.setValue('equipment_requested', [...currentEquipment, equipment.id]);
-                            } else {
-                              form.setValue('equipment_requested', currentEquipment.filter(id => id !== equipment.id));
-                            }
-                          }}
-                          className="text-blue-600 focus:ring-blue-500 rounded disabled:opacity-70"
-                        />
-                        <div className="flex-1">
-                          <span className={`text-sm font-medium ${equipment.is_mandatory ? 'text-blue-900' : 'text-blue-800'}`}>
-                            {equipment.name}
-                          </span>
-                          <span className="text-xs text-blue-600 ml-2">({equipment.category})</span>
-                          {equipment.is_mandatory && (
-                            <span className="block text-xs font-bold text-green-600">
-                              {getText('Mandatory', 'Wajib')}
-                            </span>
-                          )}
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {selectedRoom && availableEquipment.length > 0 && (<div className="p-4 bg-blue-50 border border-blue-200 rounded-xl mt-6"><h4 className="font-semibold text-blue-800 mb-3 flex items-center"><Zap className="h-5 w-5 mr-2" />{getText('Available Equipment in Selected Room', 'Peralatan Tersedia di Ruangan Terpilih')}</h4><div className="space-y-2">{availableEquipment.map((equipment) => (<label key={equipment.id} className="flex items-center space-x-3 cursor-pointer"><input type="checkbox" value={equipment.id} defaultChecked={equipment.is_mandatory} disabled={equipment.is_mandatory} onChange={(e) => { const currentEquipment = form.getValues('equipment_requested') || []; if (e.target.checked) { form.setValue('equipment_requested', [...currentEquipment, equipment.id]); } else { form.setValue('equipment_requested', currentEquipment.filter(id => id !== equipment.id)); } }} className="text-blue-600 focus:ring-blue-500 rounded disabled:opacity-70" /><div className="flex-1"><span className={`text-sm font-medium ${equipment.is_mandatory ? 'text-blue-900' : 'text-blue-800'}`}>{equipment.name}</span><span className="text-xs text-blue-600 ml-2">({equipment.category})</span>{equipment.is_mandatory && (<span className="block text-xs font-bold text-green-600">{getText('Mandatory', 'Wajib')}</span>)}</div></label>))}</div></div>)}
             </div>
 
-            {/* STEP 3: PERSONAL INFORMATION */}
             <div className="space-y-6">
               <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
                 <div className="bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">3</div>
-                <h3 className="text-xl font-bold text-gray-900">
-                  {getText('Personal Information', 'Informasi Pribadi')}
-                </h3>
+                <h3 className="text-xl font-bold text-gray-900">{getText('Personal Information', 'Informasi Pribadi')}</h3>
               </div>
-
-              {/* Identity Number with DOM manipulation */}
               <div className="relative">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {getText('Identity Number (NIM/NIP)', 'Nomor Identitas (NIM/NIP)')} *
-                </label>
-                <div className="relative">
-                  <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <input
-                    {...form.register('identity_number')}
-                    ref={identityInputRef}
-                    type="text"
-                    placeholder={getText("Enter or search your ID", "Masukkan atau cari ID Anda")}
-                    onInput={(e) => {
-                      const target = e.target as HTMLInputElement;
-                      showIdentityDropdown(target.value);
-                    }}
-                    onFocus={(e) => {
-                      const target = e.target as HTMLInputElement;
-                      showIdentityDropdown(target.value);
-                    }}
-                    onBlur={() => {
-                      setTimeout(() => hideIdentityDropdown(), 200);
-                    }}
-                    className="w-full pl-10 pr-10 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
-                    autoComplete="off"
-                  />
-                  {identitySearchLoading && (
-                    <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 animate-spin" />
-                  )}
-                  <div id="identity-dropdown" style={{ display: 'none' }}></div>
-                </div>
-
-                {form.formState.errors.identity_number && (
-                  <p className="mt-1 text-sm text-red-600 font-medium">
-                    {form.formState.errors.identity_number.message}
-                  </p>
-                )}
+                <label className="block text-sm font-semibold text-gray-700 mb-2">{getText('Identity Number (NIM/NIP)', 'Nomor Identitas (NIM/NIP)')} *</label>
+                <div className="relative"><Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" /><input {...form.register('identity_number')} ref={identityInputRef} type="text" placeholder={getText("Enter or search your ID", "Masukkan atau cari ID Anda")} onInput={(e) => { const target = e.target as HTMLInputElement; showIdentityDropdown(target.value); }} onFocus={(e) => { const target = e.target as HTMLInputElement; showIdentityDropdown(target.value); }} onBlur={() => { setTimeout(() => hideIdentityDropdown(), 200); }} className="w-full pl-10 pr-10 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm" autoComplete="off" />{identitySearchLoading && (<Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 animate-spin" />)}<div id="identity-dropdown" style={{ display: 'none' }}></div></div>
+                {form.formState.errors.identity_number && (<p className="mt-1 text-sm text-red-600 font-medium">{form.formState.errors.identity_number.message}</p>)}
               </div>
-
-              {/* Full Name */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {getText('Full Name', 'Nama Lengkap')} *
-                </label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <input
-                    {...form.register('full_name')}
-                    ref={fullNameInputRef}
-                    type="text"
-                    placeholder={getText("Enter your full name", "Masukkan nama lengkap Anda")}
-                    className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
-                  />
-                </div>
-                {form.formState.errors.full_name && (
-                  <p className="mt-1 text-sm text-red-600 font-medium">
-                    {form.formState.errors.full_name.message}
-                  </p>
-                )}
+                <label className="block text-sm font-semibold text-gray-700 mb-2">{getText('Full Name', 'Nama Lengkap')} *</label>
+                <div className="relative"><User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" /><input {...form.register('full_name')} ref={fullNameInputRef} type="text" placeholder={getText("Enter your full name", "Masukkan nama lengkap Anda")} className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm" /></div>
+                {form.formState.errors.full_name && (<p className="mt-1 text-sm text-red-600 font-medium">{form.formState.errors.full_name.message}</p>)}
               </div>
-
-              {/* Phone Number */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {getText('Phone Number', 'Nomor Telepon')} *
-                </label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <input
-                    {...form.register('phone_number')}
-                    ref={phoneInputRef}
-                    type="tel"
-                    placeholder="08xxxxxxxxxx"
-                    className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
-                  />
-                </div>
-                {form.formState.errors.phone_number && (
-                  <p className="mt-1 text-sm text-red-600 font-medium">
-                    {form.formState.errors.phone_number.message}
-                  </p>
-                )}
+                <label className="block text-sm font-semibold text-gray-700 mb-2">{getText('Phone Number', 'Nomor Telepon')} *</label>
+                <div className="relative"><Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" /><input {...form.register('phone_number')} ref={phoneInputRef} type="tel" placeholder="08xxxxxxxxxx" className="w-full pl-10 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm" /></div>
+                {form.formState.errors.phone_number && (<p className="mt-1 text-sm text-red-600 font-medium">{form.formState.errors.phone_number.message}</p>)}
               </div>
-
-              {/* Study Program with DOM manipulation */}
               <div className="relative">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {getText('Study Program', 'Program Studi')} *
-                </label>
-                <div className="relative">
-                  <GraduationCap className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <input
-                    ref={studyProgramDisplayRef}
-                    type="text"
-                    readOnly
-                    placeholder={getText("Click to select study program", "Klik untuk pilih program studi")}
-                    onClick={showStudyProgramDropdown}
-                    className="w-full pl-10 pr-8 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm cursor-pointer"
-                  />
-                  <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-                  <div id="study-program-dropdown" style={{ display: 'none' }}></div>
-                </div>
-
-                {form.formState.errors.study_program_id && (
-                  <p className="mt-1 text-sm text-red-600 font-medium">
-                    {form.formState.errors.study_program_id.message}
-                  </p>
-                )}
+                <label className="block text-sm font-semibold text-gray-700 mb-2">{getText('Study Program', 'Program Studi')} *</label>
+                <div className="relative"><GraduationCap className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" /><input ref={studyProgramDisplayRef} type="text" readOnly placeholder={getText("Click to select study program", "Klik untuk pilih program studi")} onClick={showStudyProgramDropdown} className="w-full pl-10 pr-8 py-3 bg-white/50 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm cursor-pointer" /><ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" /><div id="study-program-dropdown" style={{ display: 'none' }}></div></div>
+                {form.formState.errors.study_program_id && (<p className="mt-1 text-sm text-red-600 font-medium">{form.formState.errors.study_program_id.message}</p>)}
               </div>
             </div>
 
-            {/* SUBMIT BUTTON */}
             <div className="pt-6 border-t border-gray-200/50">
-              <button
-                type="submit"
-                disabled={loading || !selectedRoom}
-                className="w-full flex items-center justify-center space-x-3 py-4 px-6 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-2xl hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-[1.02] disabled:hover:scale-100"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    <span>{getText('Submitting...', 'Mengirim...')}</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="h-5 w-5" />
-                    <span>{getText('Submit Booking Request', 'Kirim Permintaan Pemesanan')}</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </>
-                )}
+              <button type="submit" disabled={loading || !selectedRoom} className="w-full flex items-center justify-center space-x-3 py-4 px-6 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-2xl hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-[1.02] disabled:hover:scale-100">
+                {loading ? (<><Loader2 className="h-5 w-5 animate-spin" /><span>{getText('Submitting...', 'Mengirim...')}</span></>) : (<><CheckCircle className="h-5 w-5" /><span>{getText('Submit Booking Request', 'Kirim Permintaan Pemesanan')}</span><ArrowRight className="h-4 w-4" /></>)}
               </button>
-
-              {!selectedRoom && (
-                <p className="mt-2 text-sm text-amber-600 text-center">
-                  {getText('Please select a room to continue', 'Silakan pilih ruangan untuk melanjutkan')}
-                </p>
-              )}
-
-              {/* Late Booking Warning */}
-              {selectedRoom && getRoomStatus(selectedRoom) === 'In Use' && (
-                <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4">
-                  <div className="flex items-center space-x-3">
-                    <AlertTriangle className="h-5 w-5 text-orange-600" />
-                    <div className="text-sm text-orange-800">
-                      <p className="font-semibold">
-                        ⚠️ {getText('Late Booking Warning', 'Peringatan Pemesanan Terlambat')}
-                      </p>
-                      <p>
-                        {getText('Current booking will be marked as completed', 'Pemesanan saat ini akan ditandai sebagai selesai')}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {!selectedRoom && (<p className="mt-2 text-sm text-amber-600 text-center">{getText('Please select a room to continue', 'Silakan pilih ruangan untuk melanjutkan')}</p>)}
+              {selectedRoom && (() => {
+                const roomStatus = getOptimizedRoomStatus(selectedRoom);
+                if (roomStatus.status === 'Conflict') {
+                  return (<div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4"><div className="flex items-center space-x-3"><AlertTriangle className="h-5 w-5 text-orange-600" /><div className="text-sm text-orange-800"><p className="font-semibold">⚠️ {getText('Time Conflict Warning', 'Peringatan Konflik Waktu')}</p><p>{getText('The selected time conflicts with an existing schedule.', 'Waktu yang dipilih bertabrakan dengan jadwal yang ada.')}</p></div></div></div>);
+                }
+                if (roomStatus.status === 'In Use') {
+                  return (<div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4"><div className="flex items-center space-x-3"><AlertTriangle className="h-5 w-5 text-orange-600" /><div className="text-sm text-orange-800"><p className="font-semibold">⚠️ {getText('Late Booking Warning', 'Peringatan Pemesanan Terlambat')}</p><p>{getText('Current booking will be marked as completed', 'Pemesanan saat ini akan ditandai sebagai selesai')}</p></div></div></div>);
+                }
+                if (roomStatus.status === 'Scheduled' && roomStatus.scheduleCount) {
+                  return (<div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-xl p-4"><div className="flex items-center space-x-3"><Info className="h-5 w-5 text-yellow-600" /><div className="text-sm text-yellow-800"><p className="font-semibold">📅 {getText('Room Has Schedule', 'Ruangan Terjadwal')}</p><p>{getText('Please check the schedule details before booking to avoid conflicts.', 'Silakan periksa detail jadwal sebelum memesan untuk menghindari konflik.')}</p></div></div></div>);
+                }
+                if (roomStatus.status === 'Unavailable') {
+                  return (<div className="mt-4 bg-gray-50 border border-gray-200 rounded-xl p-4"><div className="flex items-center space-x-3"><X className="h-5 w-5 text-gray-600" /><div className="text-sm text-gray-700"><p className="font-semibold">🚫 {getText('Room Unavailable', 'Ruangan Tidak Tersedia')}</p><p>{getText('This room is currently disabled for booking', 'Ruangan ini saat ini dinonaktifkan untuk pemesanan')}</p></div></div></div>);
+                }
+                return null;
+              })()}
             </div>
           </div>
         </form>
       </div>
 
+      {showScheduleModal && scheduleModalRoom && (<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"><div className="p-6"><div className="flex items-center justify-between mb-6"><h3 className="text-lg font-semibold text-gray-900">{getText('Schedule Details', 'Detail Jadwal')} - {scheduleModalRoom.name}</h3><button onClick={() => setShowScheduleModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors duration-200"><X className="h-6 w-6" /></button></div><div className="space-y-6">{scheduleModalRoom.targetDateBookings?.length > 0 && (<div><h4 className="font-medium text-gray-900 mb-3 flex items-center"><Calendar className="h-5 w-5 mr-2 text-orange-600" />{getText('Active Bookings', 'Pemesanan Aktif')}</h4><div className="space-y-2">{scheduleModalRoom.targetDateBookings.map((booking: any, index: number) => (<div key={index} className="p-3 bg-orange-50 border border-orange-200 rounded-lg"><p className="font-medium text-orange-900">{booking.purpose}</p><p className="text-sm text-orange-700">{booking.user?.full_name} • {booking.user?.identity_number}</p><p className="text-xs text-orange-600">{format(parseISO(booking.start_time), 'HH:mm')} - {format(parseISO(booking.end_time), 'HH:mm')}</p></div>))}</div></div>)}{scheduleModalRoom.scheduleDetails?.lectures?.length > 0 && (<div><h4 className="font-medium text-gray-900 mb-3 flex items-center"><BookOpen className="h-5 w-5 mr-2 text-blue-600" />{getText('Lecture Schedules', 'Jadwal Kuliah')}</h4><div className="space-y-2">{scheduleModalRoom.scheduleDetails.lectures.map((lecture: any, index: number) => (<div key={index} className="p-3 bg-blue-50 border border-blue-200 rounded-lg"><p className="font-medium text-blue-900">{lecture.course_name}</p><p className="text-sm text-blue-700">{lecture.class} • {lecture.subject_study}</p><p className="text-xs text-blue-600">{lecture.start_time} - {lecture.end_time}</p></div>))}</div></div>)}{scheduleModalRoom.scheduleDetails?.exams?.length > 0 && (<div><h4 className="font-medium text-gray-900 mb-3 flex items-center"><GraduationCap className="h-5 w-5 mr-2 text-green-600" />{getText('Exam Schedules', 'Jadwal Ujian')}</h4><div className="space-y-2">{scheduleModalRoom.scheduleDetails.exams.map((exam: any, index: number) => (<div key={index} className="p-3 bg-green-50 border border-green-200 rounded-lg"><p className="font-medium text-green-900">{exam.course_name}</p><p className="text-sm text-green-700">{exam.course_code} • {getText('Class:', 'Kelas:')} {exam.class}</p><p className="text-xs text-green-600">{exam.start_time} - {exam.end_time} • {exam.student_amount} {getText('students', 'mahasiswa')}</p></div>))}</div></div>)}{scheduleModalRoom.scheduleDetails?.sessions?.length > 0 && (<div><h4 className="font-medium text-gray-900 mb-3 flex items-center"><Users className="h-5 w-5 mr-2 text-purple-600" />{getText('Final Sessions', 'Sidang Akhir')}</h4><div className="space-y-2">{scheduleModalRoom.scheduleDetails.sessions.map((session: any, index: number) => (<div key={index} className="p-3 bg-purple-50 border border-purple-200 rounded-lg"><p className="font-medium text-purple-900">{session.title}</p><p className="text-sm text-purple-700">{session.supervisor} • {session.examiner}</p><p className="text-xs text-purple-600">{session.start_time} - {session.end_time}</p></div>))}</div></div>)}{(!scheduleModalRoom.targetDateBookings?.length && !scheduleModalRoom.scheduleDetails?.lectures?.length && !scheduleModalRoom.scheduleDetails?.exams?.length && !scheduleModalRoom.scheduleDetails?.sessions?.length) && (<div className="text-center py-8"><div className="p-4 bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center"><Calendar className="h-8 w-8 text-gray-400" /></div><h3 className="text-lg font-semibold text-gray-800 mb-2">{getText('No Schedule for This Date', 'Tidak Ada Jadwal untuk Tanggal Ini')}</h3><p className="text-gray-500">{getText('This room is available for booking on the selected date.', 'Ruangan ini tersedia untuk dipesan pada tanggal yang dipilih.')}</p></div>)}</div></div></div></div>)}
 
-      {/* Schedule Details Modal */}
-      {showScheduleModal && scheduleModalRoom && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {getText('Schedule Details', 'Detail Jadwal')} - {scheduleModalRoom.name}
-                </h3>
-                <button
-                  onClick={() => setShowScheduleModal(false)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
+      {roomsLoading && (<div className="fixed top-4 right-4 z-50"><div className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center space-x-2"><Loader2 className="h-4 w-4 animate-spin" /><span className="text-sm">{getText('Loading rooms...', 'Memuat ruangan...')}</span></div></div>)}
 
-              <div className="space-y-6">
-                {scheduleModalRoom.scheduleDetails?.bookings?.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                      <Calendar className="h-5 w-5 mr-2 text-orange-600" />
-                      {getText('Active Bookings', 'Pemesanan Aktif')}
-                    </h4>
-                    <div className="space-y-2">
-                      {scheduleModalRoom.scheduleDetails.bookings.map((booking: any, index: number) => (
-                        <div key={index} className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                          <p className="font-medium text-orange-900">{booking.purpose}</p>
-                          <p className="text-sm text-orange-700">{booking.user?.full_name} • {booking.user?.identity_number}</p>
-                          <p className="text-xs text-orange-600">
-                            {booking.start_time} - {booking.end_time}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {scheduleModalRoom.scheduleDetails?.lectures?.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                      <BookOpen className="h-5 w-5 mr-2 text-blue-600" />
-                      {getText('Lecture Schedules', 'Jadwal Kuliah')}
-                    </h4>
-                    <div className="space-y-2">
-                      {scheduleModalRoom.scheduleDetails.lectures.map((lecture: any, index: number) => (
-                        <div key={index} className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                          <p className="font-medium text-blue-900">{lecture.course_name}</p>
-                          <p className="text-sm text-blue-700">{lecture.class} • {lecture.subject_study}</p>
-                          <p className="text-xs text-blue-600">
-                            {lecture.start_time} - {lecture.end_time}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {scheduleModalRoom.scheduleDetails?.exams?.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                      <GraduationCap className="h-5 w-5 mr-2 text-green-600" />
-                      {getText('Exam Schedules', 'Jadwal Ujian')}
-                    </h4>
-                    <div className="space-y-2">
-                      {scheduleModalRoom.scheduleDetails.exams.map((exam: any, index: number) => (
-                        <div key={index} className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                          <p className="font-medium text-green-900">{exam.course_name}</p>
-                          <p className="text-sm text-green-700">{exam.course_code} • {getText('Class:', 'Kelas:')} {exam.class}</p>
-                          <p className="text-xs text-green-600">
-                            {exam.start_time} - {exam.end_time} • {exam.student_amount} {getText('students', 'mahasiswa')}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {scheduleModalRoom.scheduleDetails?.sessions?.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                      <Users className="h-5 w-5 mr-2 text-purple-600" />
-                      {getText('Final Sessions', 'Sidang Akhir')}
-                    </h4>
-                    <div className="space-y-2">
-                      {scheduleModalRoom.scheduleDetails.sessions.map((session: any, index: number) => (
-                        <div key={index} className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                          <p className="font-medium text-purple-900">{session.title}</p>
-                          <p className="text-sm text-purple-700">{session.supervisor} • {session.examiner}</p>
-                          <p className="text-xs text-purple-600">
-                            {session.start_time} - {session.end_time}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {(!scheduleModalRoom.scheduleDetails?.bookings?.length &&
-                  !scheduleModalRoom.scheduleDetails?.lectures?.length &&
-                  !scheduleModalRoom.scheduleDetails?.exams?.length &&
-                  !scheduleModalRoom.scheduleDetails?.sessions?.length) && (
-                  <div className="text-center py-8">
-                    <div className="p-4 bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                      <Calendar className="h-8 w-8 text-gray-400" />
-                    </div>
-                    <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                      {getText('No Schedule Today', 'Tidak Ada Jadwal Hari Ini')}
-                    </h3>
-                    <p className="text-gray-500">
-                      {getText('This room is available for booking today.', 'Ruangan ini tersedia untuk dipesan hari ini.')}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Room Loading Refresh Indicator */}
-      {roomsLoading && filteredAndSortedRooms.length > 0 && (
-        <div className="fixed top-4 right-4 z-50">
-          <div className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center space-x-2">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span className="text-sm">{getText('Updating rooms...', 'Memperbarui ruangan...')}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Event listeners cleanup on unmount */}
       {React.useEffect(() => {
         return () => {
-          // Cleanup any remaining dropdown event listeners
           const identityDropdown = document.querySelector('#identity-dropdown');
           const studyProgramDropdown = document.querySelector('#study-program-dropdown');
-
           if (identityDropdown) {
             identityDropdown.innerHTML = '';
-            identityDropdown.style.display = 'none';
+            (identityDropdown as HTMLElement).style.display = 'none';
           }
-
           if (studyProgramDropdown) {
             studyProgramDropdown.innerHTML = '';
-            studyProgramDropdown.style.display = 'none';
+            (studyProgramDropdown as HTMLElement).style.display = 'none';
           }
         };
       }, [])}
