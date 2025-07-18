@@ -187,7 +187,7 @@ const BookingManagement: React.FC = () => {
         throw new Error('Booking not found');
       }
 
-      // Update booking status - REMOVED ROOM AVAILABILITY UPDATE
+      // Update booking status ONLY - NO ROOM AVAILABILITY UPDATE
       const { error: bookingError } = await supabase
         .from('bookings')
         .update({ 
@@ -301,6 +301,7 @@ const BookingManagement: React.FC = () => {
         }
       }
 
+      // Delete booking ONLY - NO ROOM AVAILABILITY UPDATE
       const { error } = await supabase
         .from('bookings')
         .delete()
