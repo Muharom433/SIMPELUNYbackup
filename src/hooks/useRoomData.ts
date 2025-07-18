@@ -2,7 +2,28 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRoomStore, EnhancedRoomStatus } from '../stores/roomStore';
-import { format, parseISO, isToday, isSameDay } from 'date-fns';
+import { format, parseISO } from 'date-fns';
+
+// Timezone utility functions
+const convertUTCToLocal = (utcTimeString: string): Date => {
+  return new Date(utcTimeString);
+};
+
+const getLocalDateString = (date: Date = new Date()): string => {
+  return format(date, 'yyyy-MM-dd');
+};
+
+const getDateRangeForBookings = (localDate: string) => {
+  // Start: 00:00:00 local time
+  const startOfDay = new Date(`${localDate}T00:00:00`);
+  const startUTC = startOfDay.toISOString();
+  
+  // End: 23:59:59 local time  
+  const endOfDay = new Date(`${localDate}T23:59:59`);
+  const endUTC = endOfDay.toISOString();
+  
+  return { startUTC, endUTC };
+};
 
 export const useRoomData = (targetDate: string) => {
   const { 
@@ -24,7 +45,7 @@ export const useRoomData = (targetDate: string) => {
     setError(null);
 
     try {
-      console.log(`🏢 Fetching room data for ${date}...`);
+      console.log(`🏢 Fetching room data for ${date} (local timezone)...`);
       
       // 1. FETCH ROOMS dengan relasi department
       const { data: roomsData, error: roomsError } = await supabase
@@ -42,7 +63,9 @@ export const useRoomData = (targetDate: string) => {
 
       if (roomsError) throw roomsError;
 
-      // 2. FETCH BOOKINGS dengan relasi user dan study program LENGKAP
+      // 2. FETCH BOOKINGS dengan filter timezone yang benar
+      const { startUTC, endUTC } = getDateRangeForBookings(date);
+      
       const { data: bookingsData, error: bookingsError } = await supabase
         .from('bookings')
         .select(`
@@ -67,13 +90,13 @@ export const useRoomData = (targetDate: string) => {
             )
           )
         `)
-        .gte('start_time', `${date}T00:00:00`)
-        .lte('start_time', `${date}T23:59:59`)
+        .gte('start_time', startUTC)
+        .lt('start_time', endUTC)
         .in('status', ['confirmed', 'pending', 'active']);
 
       if (bookingsError) throw bookingsError;
 
-      // 3. FETCH FINAL SESSIONS dengan relasi student dan study program LENGKAP
+      // 3. FETCH FINAL SESSIONS dengan filter tanggal yang benar
       const { data: sessionsData, error: sessionsError } = await supabase
         .from('final_sessions')
         .select(`
@@ -104,7 +127,7 @@ export const useRoomData = (targetDate: string) => {
 
       if (sessionsError) throw sessionsError;
 
-      // 4. FETCH LECTURE SCHEDULES dengan proper mapping
+      // 4. FETCH LECTURE SCHEDULES
       const dateObj = new Date(date);
       const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
       const dayName = dayNames[dateObj.getDay()];
@@ -131,7 +154,7 @@ export const useRoomData = (targetDate: string) => {
 
       if (lecturesError) throw lecturesError;
 
-      // 5. FETCH EXAM SCHEDULES 
+      // 5. FETCH EXAM SCHEDULES
       const { data: examsData, error: examsError } = await supabase
         .from('exams')
         .select(`
@@ -152,12 +175,12 @@ export const useRoomData = (targetDate: string) => {
 
       if (examsError) throw examsError;
 
-      // 6. FETCH CURRENT BOOKINGS (untuk status "In Use")
+      // 6. FETCH CURRENT BOOKINGS (untuk status "In Use") - dengan timezone fix
       const now = new Date();
-      const currentTimeISO = now.toISOString();
+      const currentTimeUTC = now.toISOString();
       
       let currentBookingsData = [];
-      if (date === format(now, 'yyyy-MM-dd')) {
+      if (date === getLocalDateString(now)) {
         const { data: currentData, error: currentError } = await supabase
           .from('bookings')
           .select(`
@@ -179,8 +202,8 @@ export const useRoomData = (targetDate: string) => {
               )
             )
           `)
-          .lte('start_time', currentTimeISO)
-          .gte('end_time', currentTimeISO)
+          .lte('start_time', currentTimeUTC)
+          .gte('end_time', currentTimeUTC)
           .eq('status', 'active');
 
         if (!currentError) {
@@ -191,7 +214,7 @@ export const useRoomData = (targetDate: string) => {
       // 7. FETCH FUTURE BOOKINGS untuk statistik
       const nextDay = new Date(date);
       nextDay.setDate(nextDay.getDate() + 1);
-      const nextDayISO = nextDay.toISOString().split('T')[0];
+      const nextDayRange = getDateRangeForBookings(getLocalDateString(nextDay));
 
       const { data: futureBookingsData, error: futureError } = await supabase
         .from('bookings')
@@ -206,13 +229,13 @@ export const useRoomData = (targetDate: string) => {
             study_program:study_programs(name)
           )
         `)
-        .gte('start_time', `${nextDayISO}T00:00:00`)
+        .gte('start_time', nextDayRange.startUTC)
         .in('status', ['confirmed', 'pending'])
         .order('start_time', { ascending: true });
 
       if (futureError) console.warn('Future bookings fetch error:', futureError);
 
-      // 8. PROCESS DATA menjadi EnhancedRoomStatus
+      // 8. PROCESS DATA dengan timezone handling yang benar
       const enhancedRooms: EnhancedRoomStatus[] = (roomsData || []).map(room => {
         // Group bookings by room
         const roomBookings = (bookingsData || []).filter(booking => booking.room_id === room.id);
@@ -220,12 +243,12 @@ export const useRoomData = (targetDate: string) => {
         // Group sessions by room
         const roomSessions = (sessionsData || []).filter(session => session.room_id === room.id);
         
-        // Group lectures by room (match by room name)
+        // Group lectures by room
         const roomLectures = (lecturesData || []).filter(lecture => 
           lecture.room.toLowerCase() === room.name.toLowerCase()
         );
         
-        // Group exams by room (match by room_id)
+        // Group exams by room
         const roomExams = (examsData || []).filter(exam => 
           exam.room_id === room.id
         );
@@ -236,7 +259,7 @@ export const useRoomData = (targetDate: string) => {
         // Future bookings untuk room ini
         const roomFutureBookings = (futureBookingsData || []).filter(booking => booking.room_id === room.id);
 
-        // Calculate future booking stats
+        // Calculate future booking stats dengan timezone handling
         const thisWeekEnd = new Date();
         thisWeekEnd.setDate(thisWeekEnd.getDate() + 7);
         const thisMonthEnd = new Date();
@@ -245,14 +268,14 @@ export const useRoomData = (targetDate: string) => {
         const futureStats = {
           count: roomFutureBookings.length,
           nextBooking: roomFutureBookings.length > 0 ? {
-            date: format(new Date(roomFutureBookings[0].start_time), 'yyyy-MM-dd'),
-            time: `${format(new Date(roomFutureBookings[0].start_time), 'HH:mm')} - ${format(new Date(roomFutureBookings[0].end_time), 'HH:mm')}`,
+            date: format(convertUTCToLocal(roomFutureBookings[0].start_time), 'yyyy-MM-dd'),
+            time: `${format(convertUTCToLocal(roomFutureBookings[0].start_time), 'HH:mm')} - ${format(convertUTCToLocal(roomFutureBookings[0].end_time), 'HH:mm')}`,
             purpose: roomFutureBookings[0].purpose,
             user: roomFutureBookings[0].user?.full_name
           } : undefined,
-          thisWeek: roomFutureBookings.filter(b => new Date(b.start_time) <= thisWeekEnd).length,
-          thisMonth: roomFutureBookings.filter(b => new Date(b.start_time) <= thisMonthEnd).length,
-          upcoming: roomFutureBookings.slice(0, 5) // Next 5 bookings
+          thisWeek: roomFutureBookings.filter(b => convertUTCToLocal(b.start_time) <= thisWeekEnd).length,
+          thisMonth: roomFutureBookings.filter(b => convertUTCToLocal(b.start_time) <= thisMonthEnd).length,
+          upcoming: roomFutureBookings.slice(0, 5)
         };
 
         // Determine status
@@ -285,6 +308,8 @@ export const useRoomData = (targetDate: string) => {
             purpose: currentBooking.purpose,
             start_time: currentBooking.start_time,
             end_time: currentBooking.end_time,
+            start_time_local: format(convertUTCToLocal(currentBooking.start_time), 'HH:mm'),
+            end_time_local: format(convertUTCToLocal(currentBooking.end_time), 'HH:mm'),
             user: currentBooking.user ? {
               full_name: currentBooking.user.full_name,
               identity_number: currentBooking.user.identity_number
@@ -295,6 +320,8 @@ export const useRoomData = (targetDate: string) => {
             id: booking.id,
             start_time: booking.start_time,
             end_time: booking.end_time,
+            start_time_local: format(convertUTCToLocal(booking.start_time), 'HH:mm'),
+            end_time_local: format(convertUTCToLocal(booking.end_time), 'HH:mm'),
             purpose: booking.purpose,
             status: booking.status,
             user: booking.user ? {
@@ -310,7 +337,7 @@ export const useRoomData = (targetDate: string) => {
             } : (booking.user_info ? {
               full_name: booking.user_info.full_name,
               identity_number: booking.user_info.identity_number,
-              study_program: null // user_info tidak punya relasi ke study_program
+              study_program: null
             } : null)
           })),
           
@@ -347,6 +374,8 @@ export const useRoomData = (targetDate: string) => {
               id: session.id,
               start_time: session.start_time,
               end_time: session.end_time,
+              start_time_local: format(new Date(`${session.date}T${session.start_time}`), 'HH:mm'),
+              end_time_local: format(new Date(`${session.date}T${session.end_time}`), 'HH:mm'),
               title: session.title,
               supervisor: session.supervisor,
               examiner: session.examiner,
@@ -372,7 +401,7 @@ export const useRoomData = (targetDate: string) => {
       setRooms(enhancedRooms, date);
       
       const stats = getCacheStats();
-      console.log(`✅ Room data fetched successfully for ${date}. Cache hit rate: ${stats.hitRate.toFixed(1)}%`);
+      console.log(`✅ Room data fetched successfully for ${date} (local). Cache hit rate: ${stats.hitRate.toFixed(1)}%`);
       
       return enhancedRooms;
 
