@@ -1,5 +1,71 @@
+// src/stores/roomStore.ts - Updated dengan relasi lengkap
 import { create } from 'zustand';
 import { format } from 'date-fns';
+
+// 🎯 Enhanced Types dengan relasi lengkap
+interface StudyProgramInfo {
+  id: string;
+  name: string;
+  code: string;
+  department?: {
+    name: string;
+  };
+}
+
+interface UserInfo {
+  id: string;
+  full_name: string;
+  identity_number: string;
+  study_program?: StudyProgramInfo;
+}
+
+interface BookingInfo {
+  id: string;
+  start_time: string;
+  end_time: string;
+  purpose: string;
+  status: string;
+  user?: UserInfo;
+}
+
+interface LectureInfo {
+  id: string;
+  start_time: string;
+  end_time: string;
+  course_name: string;
+  course_code?: string;
+  class?: string;
+  subject_study: string;
+  lecturer?: string;
+  semester?: number;
+  kurikulum?: string;
+  academics_year?: number;
+  type?: string;
+}
+
+interface ExamInfo {
+  id: string;
+  start_time: string;
+  end_time: string;
+  course_name: string;
+  course_code?: string;
+  class?: string;
+  student_amount?: number;
+  lecturer_id?: string;
+  department_id?: string;
+  study_program_id?: string;
+}
+
+interface SessionInfo {
+  id: string;
+  start_time: string;
+  end_time: string;
+  title: string;
+  supervisor: string;
+  examiner: string;
+  secretary: string;
+  student?: UserInfo;
+}
 
 export interface EnhancedRoomStatus {
   id: string;
@@ -24,12 +90,15 @@ export interface EnhancedRoomStatus {
       identity_number: string;
     };
   };
-  targetDateBookings: any[];
+  
+  // 🎯 Enhanced dengan relasi lengkap
+  targetDateBookings: BookingInfo[];
   scheduleDetails: {
-    lectures: any[];
-    exams: any[];
-    sessions: any[];
+    lectures: LectureInfo[];
+    exams: ExamInfo[];
+    sessions: SessionInfo[];
   };
+  
   futureBookings: {
     count: number;
     nextBooking?: {
