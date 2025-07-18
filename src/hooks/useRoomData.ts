@@ -67,7 +67,7 @@ export const useRoomData = (targetDate: string) => {
             )
           )
         `)
-        .gte('end_time', `${date}T00:00:00`)
+        .gte('start_time', `${date}T00:00:00`)
         .lte('start_time', `${date}T23:59:59`)
         .in('status', ['confirmed', 'pending', 'active']);
 
@@ -154,11 +154,10 @@ export const useRoomData = (targetDate: string) => {
 
       // 6. FETCH CURRENT BOOKINGS (untuk status "In Use")
       const now = new Date();
-      const currentTime = format(now, 'HH:mm:ss');
-      const today = format(now, 'yyyy-MM-dd');
+      const currentTimeISO = now.toISOString();
       
       let currentBookingsData = [];
-      if (date === today) {
+      if (date === format(now, 'yyyy-MM-dd')) {
         const { data: currentData, error: currentError } = await supabase
           .from('bookings')
           .select(`
@@ -180,9 +179,8 @@ export const useRoomData = (targetDate: string) => {
               )
             )
           `)
-          .eq('date', today)
-          .lte('start_time', currentTime)
-          .gte('end_time', currentTime)
+          .lte('start_time', currentTimeISO)
+          .gte('end_time', currentTimeISO)
           .eq('status', 'active');
 
         if (!currentError) {
@@ -191,6 +189,10 @@ export const useRoomData = (targetDate: string) => {
       }
 
       // 7. FETCH FUTURE BOOKINGS untuk statistik
+      const nextDay = new Date(date);
+      nextDay.setDate(nextDay.getDate() + 1);
+      const nextDayISO = nextDay.toISOString().split('T')[0];
+
       const { data: futureBookingsData, error: futureError } = await supabase
         .from('bookings')
         .select(`
@@ -199,15 +201,13 @@ export const useRoomData = (targetDate: string) => {
           start_time,
           end_time,
           purpose,
-          date,
           user:users!user_id(
             full_name,
             study_program:study_programs(name)
           )
         `)
-        .gt('date', date)
+        .gte('start_time', `${nextDayISO}T00:00:00`)
         .in('status', ['confirmed', 'pending'])
-        .order('date', { ascending: true })
         .order('start_time', { ascending: true });
 
       if (futureError) console.warn('Future bookings fetch error:', futureError);
@@ -245,13 +245,13 @@ export const useRoomData = (targetDate: string) => {
         const futureStats = {
           count: roomFutureBookings.length,
           nextBooking: roomFutureBookings.length > 0 ? {
-            date: roomFutureBookings[0].date,
-            time: `${roomFutureBookings[0].start_time} - ${roomFutureBookings[0].end_time}`,
+            date: format(new Date(roomFutureBookings[0].start_time), 'yyyy-MM-dd'),
+            time: `${format(new Date(roomFutureBookings[0].start_time), 'HH:mm')} - ${format(new Date(roomFutureBookings[0].end_time), 'HH:mm')}`,
             purpose: roomFutureBookings[0].purpose,
             user: roomFutureBookings[0].user?.full_name
           } : undefined,
-          thisWeek: roomFutureBookings.filter(b => new Date(b.date) <= thisWeekEnd).length,
-          thisMonth: roomFutureBookings.filter(b => new Date(b.date) <= thisMonthEnd).length,
+          thisWeek: roomFutureBookings.filter(b => new Date(b.start_time) <= thisWeekEnd).length,
+          thisMonth: roomFutureBookings.filter(b => new Date(b.start_time) <= thisMonthEnd).length,
           upcoming: roomFutureBookings.slice(0, 5) // Next 5 bookings
         };
 
