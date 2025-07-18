@@ -301,7 +301,6 @@ const BookingManagement: React.FC = () => {
         }
       }
 
-      // Delete booking - REMOVED ROOM AVAILABILITY UPDATE
       const { error } = await supabase
         .from('bookings')
         .delete()
