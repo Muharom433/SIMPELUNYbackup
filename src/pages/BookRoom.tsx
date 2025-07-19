@@ -41,15 +41,16 @@ const bookingSchema = z.object({
   phone_number: z.string().min(10, 'Phone number must be at least 10 characters'),
   study_program_id: z.string().min(1, 'Please select a study program'),
 
-  // Booking Details - REVISED: Combined datetime fields
+  // Booking Details
   start_datetime: z.string().min(1, 'Start date and time is required'),
   end_datetime: z.string().min(1, 'End date and time is required'),
   purpose: z.enum(['Class/Lecture', 'Other'], { required_error: 'Purpose is required' }),
   sks: z.number().min(1, 'SKS must be at least 1').max(6, 'SKS cannot exceed 6'),
   class_type: z.enum(['theory', 'practical']),
 
-  // Equipment & Notes
+  // ✅ ENHANCED: Equipment with quantities
   equipment_requested: z.array(z.string()).optional(),
+  equipment_quantities: z.record(z.string(), z.number().min(1)).optional(), // equipment_id -> quantity
   notes: z.string().optional(),
   attachments: z.array(z.string()).optional(),
 }).superRefine((data, ctx) => {
