@@ -628,7 +628,6 @@ const BookRoom = () => {
                         {...form.register('end_datetime')}
                         type="datetime-local"
                         min={watchStartDateTime}
-                        disabled={!useManualEndTime}
                         className="w-full px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 disabled:opacity-60"
                       />
                       {form.formState.errors.end_datetime && (
