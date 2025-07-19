@@ -385,13 +385,11 @@ const BookingManagement: React.FC = () => {
   };
 
   const getEquipmentDetails = (equipmentIds: string[]) => {
-    if (!equipmentIds || equipmentIds.length === 0) return [];
-    
-    return equipmentIds.map(id => {
-      const equipment = allEquipment.find(eq => eq.id === id);
-      return equipment || { id, name: `Equipment ${id}`, code: 'Unknown', category: 'Unknown' };
-    });
-  };
+  return equipmentIds.map(id => {
+    const equipment = allEquipment.find(eq => eq.id === id);
+    return equipment || { id, name: `Equipment ${id}`, code: 'Unknown', category: 'Unknown' };
+  });
+};
 
   const getStatusIcon = (status: string) => {
     switch (status) {
