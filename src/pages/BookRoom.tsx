@@ -33,7 +33,7 @@ const getLocalDateString = (date = new Date()) => {
   return format(date, 'yyyy-MM-dd');
 };
 
-// ✅ ENHANCED: Form validation schema dengan equipment quantity validation
+// ✅ ENHANCED: Form validation schema with equipment quantity validation
 const bookingSchema = z.object({
   // Personal Information
   full_name: z.string().min(2, 'Full name must be at least 2 characters'),
@@ -41,18 +41,18 @@ const bookingSchema = z.object({
   phone_number: z.string().min(10, 'Phone number must be at least 10 characters'),
   study_program_id: z.string().min(1, 'Please select a study program'),
 
-  // Booking Details - REVISED: Combined datetime fields
+  // Booking Details
   start_datetime: z.string().min(1, 'Start date and time is required'),
   end_datetime: z.string().min(1, 'End date and time is required'),
   purpose: z.enum(['Class/Lecture', 'Other'], { required_error: 'Purpose is required' }),
   sks: z.number().min(1, 'SKS must be at least 1').max(6, 'SKS cannot exceed 6'),
   class_type: z.enum(['theory', 'practical']),
 
-  // ✅ ENHANCED: Equipment & Notes with proper quantity validation
-  equipment_requested: z.array(z.string()).optional(),
-  equipment_quantities: z.record(z.string(), z.number().min(1, 'Quantity must be at least 1')).optional(),
-  notes: z.string().optional(),
-  attachments: z.array(z.string()).optional(),
+  // Equipment & Notes with proper validation
+  equipment_requested: z.array(z.string()).optional().default([]),
+  equipment_quantities: z.record(z.string(), z.number().min(1, 'Quantity must be at least 1')).optional().default({}),
+  notes: z.string().optional().default(''),
+  attachments: z.array(z.string()).optional().default([]),
 }).superRefine((data, ctx) => {
   // Validate end_datetime is after start_datetime
   if (data.start_datetime && data.end_datetime) {
@@ -67,7 +67,7 @@ const bookingSchema = z.object({
       });
     }
 
-    // Validate maksimal 7 hari
+    // Validate max 7 days
     const daysDifference = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
     if (daysDifference > 7) {
       ctx.addIssue({
@@ -87,7 +87,7 @@ const bookingSchema = z.object({
     });
   }
 
-  // ✅ ENHANCED: Validate equipment quantities for each selected equipment
+  // Validate equipment quantities for each selected equipment
   if (data.equipment_requested && data.equipment_requested.length > 0) {
     for (const equipmentId of data.equipment_requested) {
       const quantity = data.equipment_quantities?.[equipmentId];
@@ -133,13 +133,13 @@ interface Equipment {
   is_mandatory: boolean;
   is_available: boolean;
   quantity: number;
-  unit?: string; // ✅ ADD: Unit field for better display
+  unit?: string;
 }
 
 const BookRoom = () => {
   const { getText } = useLanguage();
   
-  const form = useForm({
+  const form = useForm<BookingForm>({
     resolver: zodResolver(bookingSchema),
     defaultValues: {
       start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
@@ -148,8 +148,9 @@ const BookRoom = () => {
       class_type: 'theory',
       purpose: 'Class/Lecture',
       equipment_requested: [],
-      equipment_quantities: {}, // ✅ ADD: Initialize equipment quantities
+      equipment_quantities: {},
       attachments: [],
+      notes: '',
     },
   });
 
@@ -159,8 +160,8 @@ const BookRoom = () => {
   const watchClassType = form.watch('class_type');
   const watchPurpose = form.watch('purpose');
   const watchAttachments = form.watch('attachments');
-  const watchEquipmentRequested = form.watch('equipment_requested'); // ✅ ADD: Watch equipment selection
-  const watchEquipmentQuantities = form.watch('equipment_quantities'); // ✅ ADD: Watch quantities
+  const watchEquipmentRequested = form.watch('equipment_requested');
+  const watchEquipmentQuantities = form.watch('equipment_quantities');
 
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [studyPrograms, setStudyPrograms] = useState([]);
@@ -182,7 +183,6 @@ const BookRoom = () => {
 
   useEffect(() => {
     fetchRoomData(targetBookingDate, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const identityInputRef = useRef(null);
@@ -235,9 +235,9 @@ const BookRoom = () => {
     }
   }, [watchStartDateTime, watchSks, watchClassType, useManualEndTime, form]);
 
-  // 🎯 FIXED: Logika status ruangan dengan timezone yang benar
+  // Room status logic with timezone handling
   const getOptimizedRoomStatus = useCallback((room) => {
-    // 1. Cek apakah ruangan dinonaktifkan
+    // 1. Check if room is disabled
     if (!room.is_available) {
       return {
         status: 'Unavailable',
@@ -246,7 +246,7 @@ const BookRoom = () => {
       };
     }
 
-    // 2. Cek apakah sedang digunakan TEPAT SAAT INI (timezone aware)
+    // 2. Check if currently in use (timezone aware)
     const isToday = targetBookingDate === getLocalDateString();
     if (isToday && room.currentBooking) {
       const now = new Date();
@@ -263,16 +263,16 @@ const BookRoom = () => {
       }
     }
 
-    // 3. Cek KONFLIK dengan user input time (timezone aware)
+    // 3. Check conflicts with user input time (timezone aware)
     const userStartTime = watchStartDateTime ? new Date(watchStartDateTime) : null;
     const userEndTime = watchEndDateTime ? new Date(watchEndDateTime) : null;
 
-    if (userStartTime && userEndTime && room.targetDateBookings?.length > 0) {
+    if (userStartTime && userEndTime && Array.isArray(room.targetDateBookings) && room.targetDateBookings.length > 0) {
       for (const booking of room.targetDateBookings) {
         const existingStart = convertUTCToLocal(booking.start_time);
         const existingEnd = convertUTCToLocal(booking.end_time);
         
-        // Kondisi tumpang tindih dengan timezone yang benar
+        // Overlap condition with correct timezone
         if (userStartTime < existingEnd && userEndTime > existingStart) {
           return {
             status: 'Conflict',
@@ -283,12 +283,12 @@ const BookRoom = () => {
       }
     }
     
-    // 4. Cek apakah ada jadwal LAINNYA di hari itu
+    // 4. Check if has other scheduled content for the day
     const hasScheduledContent =
-      (room.scheduleDetails?.lectures?.length > 0) ||
-      (room.scheduleDetails?.exams?.length > 0) ||
-      (room.scheduleDetails?.sessions?.length > 0) ||
-      (room.targetDateBookings?.length > 0);
+      (Array.isArray(room.scheduleDetails?.lectures) && room.scheduleDetails.lectures.length > 0) ||
+      (Array.isArray(room.scheduleDetails?.exams) && room.scheduleDetails.exams.length > 0) ||
+      (Array.isArray(room.scheduleDetails?.sessions) && room.scheduleDetails.sessions.length > 0) ||
+      (Array.isArray(room.targetDateBookings) && room.targetDateBookings.length > 0);
 
     if (hasScheduledContent) {
       return {
@@ -302,7 +302,7 @@ const BookRoom = () => {
       };
     }
 
-    // 5. Jika lolos semua, berarti tersedia
+    // 5. If passes all checks, it's available
     return {
       status: 'Available',
       reason: 'Ruangan bebas dan tersedia untuk dipesan',
@@ -311,6 +311,8 @@ const BookRoom = () => {
   }, [targetBookingDate, watchStartDateTime, watchEndDateTime]);
 
   const filteredAndSortedRooms = useMemo(() => {
+    if (!Array.isArray(rooms)) return [];
+    
     return rooms.filter(room => {
       const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         room.code.toLowerCase().includes(searchTerm.toLowerCase());
@@ -357,7 +359,7 @@ const BookRoom = () => {
           hideIdentityDropdown();
           return;
         }
-        const filteredUsers = data || [];
+        const filteredUsers = Array.isArray(data) ? data : [];
         if (filteredUsers.length === 0) {
           hideIdentityDropdown();
           return;
@@ -453,13 +455,14 @@ const BookRoom = () => {
     try {
       const { data, error } = await supabase.from('study_programs').select('*').order('name');
       if (error) throw error;
-      setStudyPrograms(data || []);
+      setStudyPrograms(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching study programs:', error);
+      setStudyPrograms([]);
     }
   };
 
-  // ✅ ENHANCED: Equipment fetching with proper quantity handling
+  // Equipment fetching with proper quantity handling
   const fetchEquipmentForRoom = async (roomId) => {
     try {
       const { data, error } = await supabase
@@ -471,18 +474,23 @@ const BookRoom = () => {
         .order('name');
 
       if (error) throw error;
-      setAvailableEquipment(data || []);
       
-      // ✅ ENHANCED: Handle mandatory equipment dengan quantity 1
-      const mandatoryEquipment = (data || []).filter(eq => eq.is_mandatory);
+      const equipmentData = Array.isArray(data) ? data : [];
+      setAvailableEquipment(equipmentData);
+      
+      // Handle mandatory equipment with quantity 1
+      const mandatoryEquipment = equipmentData.filter(eq => eq.is_mandatory);
       const mandatoryIds = mandatoryEquipment.map(eq => eq.id);
       
-      // Get current selections
+      // Get current selections and ensure they're arrays
       const currentEquipment = form.getValues('equipment_requested') || [];
       const currentQuantities = form.getValues('equipment_quantities') || {};
       
+      // Ensure currentEquipment is an array
+      const safeCurrentEquipment = Array.isArray(currentEquipment) ? currentEquipment : [];
+      
       // Add mandatory equipment (avoid duplicates)
-      const updatedEquipment = [...new Set([...currentEquipment, ...mandatoryIds])];
+      const updatedEquipment = [...new Set([...safeCurrentEquipment, ...mandatoryIds])];
       
       // Set quantities for mandatory equipment (always 1)
       const updatedQuantities = { ...currentQuantities };
@@ -490,24 +498,30 @@ const BookRoom = () => {
         updatedQuantities[eq.id] = 1; // Mandatory equipment always quantity 1
       });
       
-      // Update form
+      // Update form with validated arrays
       form.setValue('equipment_requested', updatedEquipment);
       form.setValue('equipment_quantities', updatedQuantities);
       
     } catch (error) {
       console.error('Error fetching equipment:', error);
       setAvailableEquipment([]);
+      // Reset to empty arrays on error
+      form.setValue('equipment_requested', []);
+      form.setValue('equipment_quantities', {});
     }
   };
 
-  // ✅ NEW: Equipment quantity management functions
+  // Equipment quantity management functions
   const handleEquipmentToggle = (equipmentId: string, isChecked: boolean) => {
     const currentEquipment = form.getValues('equipment_requested') || [];
     const currentQuantities = form.getValues('equipment_quantities') || {};
     
+    // Ensure currentEquipment is an array
+    const safeCurrentEquipment = Array.isArray(currentEquipment) ? currentEquipment : [];
+    
     if (isChecked) {
       // Add equipment
-      const updatedEquipment = [...currentEquipment, equipmentId];
+      const updatedEquipment = [...safeCurrentEquipment, equipmentId];
       const updatedQuantities = { 
         ...currentQuantities, 
         [equipmentId]: 1 // Default quantity 1
@@ -517,7 +531,7 @@ const BookRoom = () => {
       form.setValue('equipment_quantities', updatedQuantities);
     } else {
       // Remove equipment
-      const updatedEquipment = currentEquipment.filter(id => id !== equipmentId);
+      const updatedEquipment = safeCurrentEquipment.filter(id => id !== equipmentId);
       const updatedQuantities = { ...currentQuantities };
       delete updatedQuantities[equipmentId];
       
@@ -563,11 +577,15 @@ const BookRoom = () => {
     const files = event.target.files;
     if (!files) return;
     const currentAttachments = form.getValues('attachments') || [];
+    const safeCurrentAttachments = Array.isArray(currentAttachments) ? currentAttachments : [];
+    
     Array.from(files).forEach((file) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const result = e.target?.result;
-        form.setValue('attachments', [...currentAttachments, result], { shouldValidate: true });
+        if (result) {
+          form.setValue('attachments', [...safeCurrentAttachments, result], { shouldValidate: true });
+        }
       };
       reader.readAsDataURL(file);
     });
@@ -575,7 +593,8 @@ const BookRoom = () => {
 
   const removeAttachment = (index) => {
     const currentAttachments = form.getValues('attachments') || [];
-    const updatedAttachments = currentAttachments.filter((_, i) => i !== index);
+    const safeCurrentAttachments = Array.isArray(currentAttachments) ? currentAttachments : [];
+    const updatedAttachments = safeCurrentAttachments.filter((_, i) => i !== index);
     form.setValue('attachments', updatedAttachments, { shouldValidate: true });
   };
 
@@ -583,8 +602,8 @@ const BookRoom = () => {
     fetchStudyPrograms();
   }, []);
 
-  // ✅ ENHANCED: Submit function dengan proper equipment handling
-  const onSubmit = async (data) => {
+  // Enhanced submit function with proper equipment handling
+  const onSubmit = async (data: BookingForm) => {
     if (!selectedRoom) {
       alert.error(getText('Please select a room', 'Silakan pilih ruangan'));
       return;
@@ -597,16 +616,26 @@ const BookRoom = () => {
         await supabase.from('bookings').update({ status: 'completed' }).eq('id', selectedRoom.currentBooking.id);
       }
 
-      // ✅ FIX: Explicit timezone untuk Indonesia (WIB/UTC+7)
+      // Fix timezone for Indonesia (WIB/UTC+7)
       const startTimeUTC = new Date(data.start_datetime + '+07:00').toISOString();
       const endTimeUTC = new Date(data.end_datetime + '+07:00').toISOString();
 
       console.log('🕐 Input:', data.start_datetime);
       console.log('🕐 UTC:', startTimeUTC);
+// Prepare equipment data with quantities - ensure proper data types
+      const equipmentRequested = Array.isArray(data.equipment_requested) ? data.equipment_requested : [];
+      const equipmentQuantities = (data.equipment_quantities && typeof data.equipment_quantities === 'object') 
+        ? data.equipment_quantities 
+        : {};
+      
+      // Ensure attachments is an array
+      const attachments = Array.isArray(data.attachments) ? data.attachments : [];
 
-      // ✅ ENHANCED: Prepare equipment data with quantities
-      const equipmentRequested = data.equipment_requested || [];
-      const equipmentQuantities = data.equipment_quantities || {};
+      // Create equipment list with quantities for storage
+      const equipmentWithQuantities = equipmentRequested.map(equipmentId => ({
+        equipment_id: equipmentId,
+        quantity: equipmentQuantities[equipmentId] || 1
+      }));
 
       const bookingData = {
         start_time: startTimeUTC,
@@ -615,11 +644,12 @@ const BookRoom = () => {
         sks: data.sks,
         class_type: data.class_type,
         room_id: selectedRoom.id,
-        equipment_requested: equipmentRequested, // ✅ ENHANCED: Just IDs for backward compatibility
-        equipment_quantities: equipmentQuantities, // ✅ NEW: Store quantities separately
-        notes: data.notes,
-        attachments: data.attachments || [],
-        status: 'pending', // ✅ IMPORTANT: Always pending, quantity TIDAK dikurangi
+        equipment_requested: equipmentRequested, // Array of equipment IDs
+        equipment_quantities: equipmentQuantities, // Object with quantities
+        equipment_details: equipmentWithQuantities, // Detailed equipment data
+        notes: data.notes || '',
+        attachments: attachments,
+        status: 'pending', // Always pending, quantities NOT reduced
         user_info: {
           full_name: data.full_name,
           identity_number: data.identity_number,
@@ -628,8 +658,20 @@ const BookRoom = () => {
         },
       };
 
+      // Debug log to check data structure before sending
+      console.log('Booking data structure:', {
+        equipment_requested: typeof bookingData.equipment_requested,
+        equipment_requested_isArray: Array.isArray(bookingData.equipment_requested),
+        equipment_quantities: typeof bookingData.equipment_quantities,
+        attachments: typeof bookingData.attachments,
+        attachments_isArray: Array.isArray(bookingData.attachments)
+      });
+
       const { error } = await supabase.from('bookings').insert(bookingData);
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
 
       const successMessage = roomStatus.status === 'In Use' 
         ? getText('Late booking submitted successfully! Previous booking marked as completed.', 'Pemesanan terlambat berhasil diajukan! Pemesanan sebelumnya ditandai selesai.') 
@@ -637,7 +679,7 @@ const BookRoom = () => {
         
       alert.success(successMessage);
 
-      // Reset form
+      // Reset form with proper array/object defaults
       form.reset({
         start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
         end_datetime: format(addMinutes(new Date(), 120), "yyyy-MM-dd'T'HH:mm"),
@@ -647,6 +689,7 @@ const BookRoom = () => {
         equipment_requested: [],
         equipment_quantities: {},
         attachments: [],
+        notes: '',
       });
       
       setSelectedRoom(null);
@@ -665,11 +708,15 @@ const BookRoom = () => {
     }
   };
 
-  // ✅ NEW: Calculate total equipment items for display
+  // Calculate total equipment items for display
   const getTotalEquipmentItems = () => {
     const quantities = watchEquipmentQuantities || {};
     const requested = watchEquipmentRequested || [];
-    return requested.reduce((total, equipmentId) => {
+    
+    // Ensure requested is an array
+    const safeRequested = Array.isArray(requested) ? requested : [];
+    
+    return safeRequested.reduce((total, equipmentId) => {
       return total + (quantities[equipmentId] || 1);
     }, 0);
   };
@@ -725,7 +772,8 @@ const BookRoom = () => {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">{getText('Start Date & Time', 'Tanggal & Waktu Mulai')} *
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        {getText('Start Date & Time', 'Tanggal & Waktu Mulai')} *
                       </label>
                       <input
                         {...form.register('start_datetime')}
@@ -1001,7 +1049,7 @@ const BookRoom = () => {
                     )}
                   </div>
 
-                  {/* ✅ ENHANCED: Available Equipment with Quantity Management */}
+                  {/* Available Equipment with Quantity Management */}
                   {selectedRoom && availableEquipment.length > 0 && (
                     <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                       <div className="flex items-center justify-between mb-4">
@@ -1051,7 +1099,7 @@ const BookRoom = () => {
                                   </div>
                                 </div>
 
-                                {/* ✅ ENHANCED: Quantity Controls */}
+                                {/* Quantity Controls */}
                                 {isSelected && (
                                   <div className="flex items-center space-x-2 ml-4">
                                     {!isMandatory && (
@@ -1087,7 +1135,7 @@ const BookRoom = () => {
                                 )}
                               </div>
 
-                              {/* ✅ ENHANCED: Quantity Validation Error */}
+                              {/* Quantity Validation Error */}
                               {form.formState.errors.equipment_quantities?.[equipment.id] && (
                                 <p className="mt-2 text-xs text-red-600 flex items-center">
                                   <AlertTriangle className="h-3 w-3 mr-1" />
@@ -1099,7 +1147,7 @@ const BookRoom = () => {
                         })}
                       </div>
 
-                      {/* ✅ ENHANCED: Equipment Summary */}
+                      {/* Equipment Summary */}
                       {watchEquipmentRequested && watchEquipmentRequested.length > 0 && (
                         <div className="mt-4 p-3 bg-blue-100 border border-blue-300 rounded-lg">
                           <div className="text-sm text-blue-800">
@@ -1132,7 +1180,7 @@ const BookRoom = () => {
               </div>
             </div>
 
-            {/* CARD 2: PERSONAL INFORMATION & SUBMIT - Continue with rest of original code... */}
+            {/* CARD 2: PERSONAL INFORMATION & SUBMIT */}
             <div className="lg:col-span-1 relative z-10">
               <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 space-y-6">
                 
@@ -1154,7 +1202,7 @@ const BookRoom = () => {
                         {...form.register('identity_number')}
                         ref={identityInputRef}
                         type="text"
-                        placeholder={getText("Enter your ID", "Masukkan ID Anda")}
+                       placeholder={getText("Enter your ID", "Masukkan ID Anda")}
                         onChange={(e) => {
                           const value = e.target.value;
                           form.setValue('identity_number', value, { shouldValidate: true });
@@ -1231,7 +1279,7 @@ const BookRoom = () => {
                   </div>
                 </div>
 
-                {/* ✅ ENHANCED: Equipment Summary in Sidebar */}
+                {/* Equipment Summary in Sidebar */}
                 {selectedRoom && watchEquipmentRequested && watchEquipmentRequested.length > 0 && (
                   <div className="border-t border-gray-200/50 pt-6">
                     <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200/50 rounded-lg p-4">
@@ -1281,7 +1329,7 @@ const BookRoom = () => {
                     </div>
                   )}
 
-                  {/* ✅ ENHANCED: Equipment Quantity Validation Errors */}
+                  {/* Equipment Quantity Validation Errors */}
                   {watchEquipmentRequested && watchEquipmentRequested.length > 0 && (
                     <div className="mb-4">
                       {watchEquipmentRequested.map(equipmentId => {
@@ -1320,7 +1368,7 @@ const BookRoom = () => {
                     )}
                   </button>
 
-                  {/* ✅ ENHANCED: Status Messages */}
+                  {/* Status Messages */}
                   {selectedRoom && (() => {
                     const roomStatus = getOptimizedRoomStatus(selectedRoom);
                     if (roomStatus.status === 'Conflict') {
@@ -1340,7 +1388,7 @@ const BookRoom = () => {
                     return null;
                   })()}
 
-                  {/* ✅ NEW: Booking Process Information */}
+                  {/* Booking Process Information */}
                   <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                     <div className="flex items-start space-x-3">
                       <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
@@ -1364,7 +1412,7 @@ const BookRoom = () => {
         </form>
       </div>
 
-      {/* SCHEDULE MODAL - RESTORE DETAILED INFO */}
+      {/* SCHEDULE MODAL */}
       {showScheduleModal && scheduleModalRoom && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
@@ -1383,7 +1431,7 @@ const BookRoom = () => {
 
               <div className="space-y-6">
                 {/* Active Bookings */}
-                {scheduleModalRoom.targetDateBookings?.length > 0 && (
+                {Array.isArray(scheduleModalRoom.targetDateBookings) && scheduleModalRoom.targetDateBookings.length > 0 && (
                   <div>
                     <h4 className="font-medium text-gray-900 mb-3 flex items-center">
                       <Calendar className="h-5 w-5 mr-2 text-orange-600" />
@@ -1423,7 +1471,7 @@ const BookRoom = () => {
                 )}
 
                 {/* Lecture Schedules */}
-                {scheduleModalRoom.scheduleDetails?.lectures?.length > 0 && (
+                {Array.isArray(scheduleModalRoom.scheduleDetails?.lectures) && scheduleModalRoom.scheduleDetails.lectures.length > 0 && (
                   <div>
                     <h4 className="font-medium text-gray-900 mb-3 flex items-center">
                       <BookOpen className="h-5 w-5 mr-2 text-blue-600" />
@@ -1465,7 +1513,7 @@ const BookRoom = () => {
                 )}
 
                 {/* Final Sessions */}
-                {scheduleModalRoom.scheduleDetails?.sessions?.length > 0 && (
+                {Array.isArray(scheduleModalRoom.scheduleDetails?.sessions) && scheduleModalRoom.scheduleDetails.sessions.length > 0 && (
                   <div>
                     <h4 className="font-medium text-gray-900 mb-3 flex items-center">
                       <Users className="h-5 w-5 mr-2 text-purple-600" />
@@ -1507,7 +1555,7 @@ const BookRoom = () => {
                 )}
 
                 {/* Exam Schedules */}
-                {scheduleModalRoom.scheduleDetails?.exams?.length > 0 && (
+                {Array.isArray(scheduleModalRoom.scheduleDetails?.exams) && scheduleModalRoom.scheduleDetails.exams.length > 0 && (
                   <div>
                     <h4 className="font-medium text-gray-900 mb-3 flex items-center">
                       <GraduationCap className="h-5 w-5 mr-2 text-green-600" />
