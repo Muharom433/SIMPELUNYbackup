@@ -837,23 +837,37 @@ const BookingManagement: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Equipment Requested */}
-                {selectedBooking.equipment_requested && selectedBooking.equipment_requested.length > 0 && (
-                  <div>
-                    <h5 className="font-medium text-gray-900 mb-3">{getText('Equipment Requested', 'Peralatan yang Diminta')}</h5>
-                    <div className="bg-purple-50 rounded-lg p-4">
-                      <div className="flex flex-wrap gap-2">
-                        {selectedBooking.equipment_requested.map((equipmentId, index) => (
-                          <span key={index} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                            <Package className="h-3 w-3 mr-1" />
-                            Equipment ID: {equipmentId}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
+              {/* Equipment Requested */}
+{selectedBooking.equipment_requested && selectedBooking.equipment_requested.length > 0 && (
+  <div>
+    <h5 className="font-medium text-gray-900 mb-3">{getText('Equipment Requested', 'Peralatan yang Diminta')}</h5>
+    <div className="bg-purple-50 rounded-lg p-4">
+      <div className="space-y-2">  {/* ✅ Layout berubah dari flex-wrap ke space-y-2 */}
+        {getEquipmentDetails(selectedBooking.equipment_requested).map((equipment, index) => (
+          <div key={equipment.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-purple-200">
+            <div className="flex items-center space-x-3">
+              <div className="h-10 w-10 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full flex items-center justify-center">
+                <Package className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <div className="font-medium text-gray-900">{equipment.name}</div>  {/* ✅ Nama Equipment */}
+                <div className="text-sm text-gray-500">{equipment.code}</div>     {/* ✅ Kode Equipment */}
+                <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-purple-100 text-purple-800 mt-1">
+                  {equipment.category}  {/* ✅ Kategori Equipment */}
+                </span>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-sm text-gray-500">
+                {getText('Requested', 'Diminta')}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+)}
                 {/* Notes */}
                 {selectedBooking.notes && (
                   <div>
