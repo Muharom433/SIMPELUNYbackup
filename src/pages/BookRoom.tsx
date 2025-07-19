@@ -604,109 +604,113 @@ const BookRoom = () => {
 
   // Enhanced submit function with proper equipment handling
   const onSubmit = async (data: BookingForm) => {
-    if (!selectedRoom) {
-      alert.error(getText('Please select a room', 'Silakan pilih ruangan'));
-      return;
+  if (!selectedRoom) {
+    alert.error(getText('Please select a room', 'Silakan pilih ruangan'));
+    return;
+  }
+  
+  setLoading(true);
+  try {
+    const roomStatus = getOptimizedRoomStatus(selectedRoom);
+    if (roomStatus.status === 'In Use' && selectedRoom.currentBooking) {
+      await supabase.from('bookings').update({ status: 'completed' }).eq('id', selectedRoom.currentBooking.id);
     }
+
+    // Fix timezone for Indonesia (WIB/UTC+7)
+    const startTimeUTC = new Date(data.start_datetime + '+07:00').toISOString();
+    const endTimeUTC = new Date(data.end_datetime + '+07:00').toISOString();
+
+    console.log('🕐 Input:', data.start_datetime);
+    console.log('🕐 UTC:', startTimeUTC);
+
+    // ✅ CRITICAL FIX: Convert equipment data to proper array format for database
+    const equipmentRequested = Array.isArray(data.equipment_requested) ? data.equipment_requested : [];
+    const equipmentQuantitiesObj = (data.equipment_quantities && typeof data.equipment_quantities === 'object') 
+      ? data.equipment_quantities 
+      : {};
     
-    setLoading(true);
-    try {
-      const roomStatus = getOptimizedRoomStatus(selectedRoom);
-      if (roomStatus.status === 'In Use' && selectedRoom.currentBooking) {
-        await supabase.from('bookings').update({ status: 'completed' }).eq('id', selectedRoom.currentBooking.id);
-      }
+    // ✅ CONVERT OBJECT TO ARRAY FORMAT for database compatibility
+    // Your database expects equipment_quantities as JSON array, not object
+    const equipmentQuantitiesArray = equipmentRequested.map(equipmentId => ({
+      equipment_id: equipmentId,
+      quantity: equipmentQuantitiesObj[equipmentId] || 1
+    }));
 
-      // Fix timezone for Indonesia (WIB/UTC+7)
-      const startTimeUTC = new Date(data.start_datetime + '+07:00').toISOString();
-      const endTimeUTC = new Date(data.end_datetime + '+07:00').toISOString();
+    // Ensure attachments is an array
+    const attachments = Array.isArray(data.attachments) ? data.attachments : [];
 
-      console.log('🕐 Input:', data.start_datetime);
-      console.log('🕐 UTC:', startTimeUTC);
-// Prepare equipment data with quantities - ensure proper data types
-      const equipmentRequested = Array.isArray(data.equipment_requested) ? data.equipment_requested : [];
-      const equipmentQuantities = (data.equipment_quantities && typeof data.equipment_quantities === 'object') 
-        ? data.equipment_quantities 
-        : {};
-      
-      // Ensure attachments is an array
-      const attachments = Array.isArray(data.attachments) ? data.attachments : [];
+    // ✅ UPDATED: Prepare data in format database expects
+    const bookingData = {
+      start_time: startTimeUTC,
+      end_time: endTimeUTC,
+      purpose: data.purpose,
+      sks: data.sks,
+      class_type: data.class_type,
+      room_id: selectedRoom.id,
+      equipment_requested: equipmentRequested, // Array of equipment IDs
+      equipment_quantities: equipmentQuantitiesArray, // ✅ FIXED: Array format instead of object
+      notes: data.notes || '',
+      attachments: attachments,
+      status: 'pending',
+      user_info: {
+        full_name: data.full_name,
+        identity_number: data.identity_number,
+        phone_number: data.phone_number,
+        study_program_id: data.study_program_id,
+      },
+    };
 
-      // Create equipment list with quantities for storage
-      const equipmentWithQuantities = equipmentRequested.map(equipmentId => ({
-        equipment_id: equipmentId,
-        quantity: equipmentQuantities[equipmentId] || 1
-      }));
+    // Debug log to check data structure before sending
+    console.log('✅ Fixed booking data structure:', {
+      equipment_requested: typeof bookingData.equipment_requested,
+      equipment_requested_isArray: Array.isArray(bookingData.equipment_requested),
+      equipment_quantities: typeof bookingData.equipment_quantities,
+      equipment_quantities_isArray: Array.isArray(bookingData.equipment_quantities),
+      equipment_quantities_content: bookingData.equipment_quantities,
+      attachments: typeof bookingData.attachments,
+      attachments_isArray: Array.isArray(bookingData.attachments)
+    });
 
-      const bookingData = {
-        start_time: startTimeUTC,
-        end_time: endTimeUTC,
-        purpose: data.purpose,
-        sks: data.sks,
-        class_type: data.class_type,
-        room_id: selectedRoom.id,
-        equipment_requested: equipmentRequested, // Array of equipment IDs
-        equipment_quantities: equipmentQuantities, // Object with quantities
-        equipment_details: equipmentWithQuantities, // Detailed equipment data
-        notes: data.notes || '',
-        attachments: attachments,
-        status: 'pending', // Always pending, quantities NOT reduced
-        user_info: {
-          full_name: data.full_name,
-          identity_number: data.identity_number,
-          phone_number: data.phone_number,
-          study_program_id: data.study_program_id,
-        },
-      };
-
-      // Debug log to check data structure before sending
-      console.log('Booking data structure:', {
-        equipment_requested: typeof bookingData.equipment_requested,
-        equipment_requested_isArray: Array.isArray(bookingData.equipment_requested),
-        equipment_quantities: typeof bookingData.equipment_quantities,
-        attachments: typeof bookingData.attachments,
-        attachments_isArray: Array.isArray(bookingData.attachments)
-      });
-
-      const { error } = await supabase.from('bookings').insert(bookingData);
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      const successMessage = roomStatus.status === 'In Use' 
-        ? getText('Late booking submitted successfully! Previous booking marked as completed.', 'Pemesanan terlambat berhasil diajukan! Pemesanan sebelumnya ditandai selesai.') 
-        : getText('Booking submitted successfully!', 'Pemesanan berhasil diajukan!');
-        
-      alert.success(successMessage);
-
-      // Reset form with proper array/object defaults
-      form.reset({
-        start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
-        end_datetime: format(addMinutes(new Date(), 120), "yyyy-MM-dd'T'HH:mm"),
-        sks: 2,
-        class_type: 'theory',
-        purpose: 'Class/Lecture',
-        equipment_requested: [],
-        equipment_quantities: {},
-        attachments: [],
-        notes: '',
-      });
-      
-      setSelectedRoom(null);
-      setAvailableEquipment([]);
-      if (identityInputRef.current) identityInputRef.current.value = '';
-      if (fullNameInputRef.current) fullNameInputRef.current.value = '';
-      if (phoneInputRef.current) phoneInputRef.current.value = '';
-      if (studyProgramDisplayRef.current) studyProgramDisplayRef.current.value = '';
-      fetchRoomData(targetBookingDate, true);
-      
-    } catch (error) {
-      console.error('Error submitting booking:', error);
-      alert.error(error.message || getText('Failed to submit booking', 'Gagal mengajukan pemesanan'));
-    } finally {
-      setLoading(false);
+    const { error } = await supabase.from('bookings').insert(bookingData);
+    if (error) {
+      console.error('Supabase error:', error);
+      throw error;
     }
-  };
+
+    const successMessage = roomStatus.status === 'In Use' 
+      ? getText('Late booking submitted successfully! Previous booking marked as completed.', 'Pemesanan terlambat berhasil diajukan! Pemesanan sebelumnya ditandai selesai.') 
+      : getText('Booking submitted successfully!', 'Pemesanan berhasil diajukan!');
+      
+    alert.success(successMessage);
+
+    // Reset form with proper array/object defaults
+    form.reset({
+      start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+      end_datetime: format(addMinutes(new Date(), 120), "yyyy-MM-dd'T'HH:mm"),
+      sks: 2,
+      class_type: 'theory',
+      purpose: 'Class/Lecture',
+      equipment_requested: [],
+      equipment_quantities: {},
+      attachments: [],
+      notes: '',
+    });
+    
+    setSelectedRoom(null);
+    setAvailableEquipment([]);
+    if (identityInputRef.current) identityInputRef.current.value = '';
+    if (fullNameInputRef.current) fullNameInputRef.current.value = '';
+    if (phoneInputRef.current) phoneInputRef.current.value = '';
+    if (studyProgramDisplayRef.current) studyProgramDisplayRef.current.value = '';
+    fetchRoomData(targetBookingDate, true);
+    
+  } catch (error) {
+    console.error('Error submitting booking:', error);
+    alert.error(error.message || getText('Failed to submit booking', 'Gagal mengajukan pemesanan'));
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Calculate total equipment items for display
   const getTotalEquipmentItems = () => {
