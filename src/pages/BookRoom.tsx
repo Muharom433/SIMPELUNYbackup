@@ -89,8 +89,6 @@ const bookingSchema = z.object({
         });
       }
     }
-  
-
   // Validate attachments are required if purpose is 'Other'
   if (data.purpose === 'Other' && (!data.attachments || data.attachments.length === 0)) {
     ctx.addIssue({
