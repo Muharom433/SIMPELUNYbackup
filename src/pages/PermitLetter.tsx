@@ -146,30 +146,32 @@ const PermitLetter: React.FC = () => {
     }
   }, [selectedRecords, form]);
 
+  // ✅ PERBAIKAN: fetchAllRecords untuk pending status saja
   const fetchAllRecords = async () => {
     try {
       setLoading(true);
       
-      console.log('Fetching approved bookings and borrowing tools...');
+      console.log('Fetching pending bookings and pending tool lending requests...');
       
-      // Fetch approved bookings
+      // ✅ PERBAIKAN: Fetch pending bookings (belum ada permit)
       const { data: bookingsData, error: bookingsError } = await supabase
         .from('bookings')
         .select('*')
         .eq('status', 'pending')
+        .or('attachments.is.null,attachments.eq.{}') // ✅ TAMBAH: belum ada attachment
         .order('created_at', { ascending: false });
 
       if (bookingsError) {
-        console.error('Error fetching approved bookings:', bookingsError);
+        console.error('Error fetching pending bookings:', bookingsError);
         throw bookingsError;
       }
 
-      // Fetch lending tools with status 'borrow'
+      // ✅ PERBAIKAN: Fetch lending tools dengan status 'pending' (belum disetujui)
       const { data: lendingToolsData, error: lendingToolsError } = await supabase
         .from('lending_tool')
         .select('*')
-        .eq('status', 'borrow')
-        .or('attachments.is.null,attachments.eq.{}') // 🔥 NULL atau empty array
+        .eq('status', 'pending')
+        .or('attachments.is.null,attachments.eq.{}') // ✅ TAMBAH: belum ada attachment
         .order('created_at', { ascending: false });
 
       if (lendingToolsError) {
@@ -177,8 +179,8 @@ const PermitLetter: React.FC = () => {
         throw lendingToolsError;
       }
 
-      console.log('Approved bookings found:', bookingsData?.length || 0);
-      console.log('Borrowing tools found:', lendingToolsData?.length || 0);
+      console.log('Pending bookings found:', bookingsData?.length || 0);
+      console.log('Pending tool lending found:', lendingToolsData?.length || 0);
 
       // Process bookings
       const bookingsWithDetails = await Promise.all(
@@ -560,7 +562,7 @@ const PermitLetter: React.FC = () => {
                   {getText('Permit Letter', 'Surat Izin')}
                 </h1>
                 <p className="text-gray-600 mt-1">
-                  {getText('Submit permit documents for your bookings and tool lending', 'Kirim dokumen izin untuk pemesanan dan peminjaman alat Anda')}
+                  {getText('Submit permit documents for your pending requests', 'Kirim dokumen izin untuk permintaan yang masih menunggu')}
                 </p>
               </div>
             </div>
@@ -568,7 +570,7 @@ const PermitLetter: React.FC = () => {
               <div className="text-right">
                 <div className="text-2xl font-bold text-gray-800">{allRecords.length}</div>
                 <div className="text-sm text-gray-500">
-                  {getText('Available Records', 'Data Tersedia')}
+                  {getText('Pending Records', 'Data Menunggu')}
                 </div>
               </div>
             </div>
@@ -584,7 +586,7 @@ const PermitLetter: React.FC = () => {
               <div className="flex items-center space-x-3 mb-6">
                 <Search className="h-5 w-5 text-amber-500" />
                 <h2 className="text-xl font-bold text-gray-800">
-                  {getText('Select Records', 'Pilih Data')}
+                  {getText('Select Pending Records', 'Pilih Data Menunggu')}
                 </h2>
               </div>
               
@@ -642,13 +644,13 @@ const PermitLetter: React.FC = () => {
                         <Package className="h-12 w-12 text-gray-300 mb-3" />
                         <p className="text-gray-500 font-medium">
                           {allRecords.length === 0 
-                            ? getText('No records available', 'Tidak ada data tersedia')
+                            ? getText('No pending records available', 'Tidak ada data menunggu tersedia')
                             : getText('No records match your search', 'Tidak ada data yang cocok dengan pencarian')
                           }
                         </p>
                         <p className="text-sm text-gray-400">
                           {allRecords.length === 0 
-                            ? getText('Please check if there are approved bookings or borrowed tools', 'Silakan periksa apakah ada pemesanan yang disetujui atau alat yang dipinjam')
+                            ? getText('All your requests may already have permit documents or are approved', 'Semua permintaan Anda mungkin sudah memiliki dokumen izin atau sudah disetujui')
                             : getText('Try a different search term', 'Coba kata kunci pencarian lain')
                           }
                         </p>
@@ -711,6 +713,9 @@ const PermitLetter: React.FC = () => {
                                           : 'bg-purple-100 text-purple-800'
                                       }`}>
                                         {record.record_type === 'booking' ? getText('Room Booking', 'Pemesanan Ruangan') : getText('Tool Lending', 'Peminjaman Alat')}
+                                      </span>
+                                      <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                        {getText('Pending', 'Menunggu')}
                                       </span>
                                     </div>
                                     
@@ -804,7 +809,7 @@ const PermitLetter: React.FC = () => {
                     <div className="flex items-center space-x-3 mb-6">
                       <Check className="h-6 w-6 text-amber-600" />
                       <h3 className="text-xl font-bold text-amber-900">
-                        {getText('Selected Records for Permit', 'Data Terpilih untuk Izin')}
+                        {getText('Selected Pending Records', 'Data Menunggu Terpilih')}
                       </h3>
                     </div>
                     
@@ -840,6 +845,18 @@ const PermitLetter: React.FC = () => {
                                    getText('No ID', 'Tidak Ada ID')}
                                 </div>
                                 <div className="mt-2 space-y-1">
+                                  <div className="flex items-center space-x-2">
+                                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                      record.record_type === 'booking' 
+                                        ? 'bg-amber-200 text-amber-800' 
+                                        : 'bg-purple-200 text-purple-800'
+                                    }`}>
+                                      {record.record_type === 'booking' ? getText('Room Booking', 'Pemesanan Ruangan') : getText('Tool Lending', 'Peminjaman Alat')}
+                                    </span>
+                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-200 text-yellow-800">
+                                      {getText('Pending Approval', 'Menunggu Persetujuan')}
+                                    </span>
+                                  </div>
                                   {record.record_type === 'booking' ? (
                                     <>
                                       <div className="text-sm text-gray-700">
@@ -1048,7 +1065,7 @@ const PermitLetter: React.FC = () => {
                     <div className="flex items-center space-x-2">
                       <Search className="h-5 w-5 text-blue-600" />
                       <p className="text-sm text-blue-800 font-medium">
-                        {getText('Please select at least one record and upload a permit document', 'Silakan pilih setidaknya satu data dan unggah dokumen izin')}
+                        {getText('Please select at least one pending record and upload a permit document', 'Silakan pilih setidaknya satu data menunggu dan unggah dokumen izin')}
                       </p>
                     </div>
                   </div>
@@ -1086,11 +1103,11 @@ const PermitLetter: React.FC = () => {
                         </li>
                         <li className="flex items-center space-x-2">
                           <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                          <span>{getText('Documents will be attached to your selected records', 'Dokumen akan dilampirkan ke data yang Anda pilih')}</span>
+                          <span>{getText('Documents will be attached to your pending requests', 'Dokumen akan dilampirkan ke permintaan yang menunggu')}</span>
                         </li>
                         <li className="flex items-center space-x-2">
                           <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                          <span>{getText('Admin will review your permit submission', 'Admin akan meninjau pengajuan izin Anda')}</span>
+                          <span>{getText('Admin will review your permit and approve/reject your request', 'Admin akan meninjau izin Anda dan menyetujui/menolak permintaan')}</span>
                         </li>
                       </ul>
                     </div>
