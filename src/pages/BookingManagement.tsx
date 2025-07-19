@@ -714,7 +714,7 @@ const BookingManagement: React.FC = () => {
                 {/* Status Badge */}
                 <div className="flex items-center space-x-2">
                   <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(selectedBooking.status)}`}>
-                    {getStatusIcon(selectedBooking.status)({ className: "h-4 w-4 mr-1" })}
+                    {React.createElement(getStatusIcon(selectedBooking.status), { className: "h-4 w-4 mr-1" })}
                     {getText(selectedBooking.status.charAt(0).toUpperCase() + selectedBooking.status.slice(1), selectedBooking.status.toUpperCase())}
                   </span>
                 </div>
