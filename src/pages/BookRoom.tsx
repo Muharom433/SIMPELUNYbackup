@@ -86,7 +86,7 @@ const bookingSchema = z.object({
       path: ['attachments'],
     });
   }
-  if (data.equipment_requested && data.equipment_requested.length > 0) {
+   if (data.equipment_requested && data.equipment_requested.length > 0) {
     for (const equipmentId of data.equipment_requested) {
       const quantity = data.equipment_quantities?.[equipmentId];
       if (!quantity || quantity < 1) {
