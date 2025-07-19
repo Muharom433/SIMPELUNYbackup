@@ -1087,8 +1087,9 @@ const BookRoom = () => {
                                 <p className="text-xs text-blue-700">🔮 {room.futureBookings.count} {getText('future bookings', 'pemesanan mendatang')}</p>
                                 {room.futureBookings.nextBooking && (
                                   <p className="text-xs text-blue-600 mt-1">
-                                  {getText('Next:', 'Selanjutnya:')} {room.futureBookings.nextBooking.date} {room.futureBookings.nextBooking.time}
-                                </p>
+                                    {getText('Next:', 'Selanjutnya:')} {room.futureBookings.nextBooking.date} {room.futureBookings.nextBooking.time}
+                                  </p>
+                                )}
                               </div>
                             )}
                           </div>
@@ -1608,7 +1609,7 @@ const BookRoom = () => {
                     <div className="text-blue-700">{getText('Complete your personal information', 'Lengkapi informasi pribadi Anda')}</div>
                   </div>
                 </div>
-                </div>
+              </div>
               
               <div className="mt-4 pt-4 border-t border-blue-200">
                 <h4 className="font-semibold text-blue-900 mb-2">{getText('Important Notes:', 'Catatan Penting:')}</h4>
