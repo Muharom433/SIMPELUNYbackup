@@ -50,6 +50,7 @@ const bookingSchema = z.object({
 
   // Equipment & Notes
   equipment_requested: z.array(z.string()).optional(),
+  equipment_quantities: z.record(z.string(), z.number().min(1)).optional(),
   notes: z.string().optional(),
   attachments: z.array(z.string()).optional(),
 }).superRefine((data, ctx) => {
