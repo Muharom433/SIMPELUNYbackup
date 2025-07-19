@@ -33,7 +33,7 @@ const getLocalDateString = (date = new Date()) => {
   return format(date, 'yyyy-MM-dd');
 };
 
-// Form validation schema dengan datetime yang direvisi
+// ✅ ENHANCED: Form validation schema dengan equipment quantity validation
 const bookingSchema = z.object({
   // Personal Information
   full_name: z.string().min(2, 'Full name must be at least 2 characters'),
@@ -48,9 +48,9 @@ const bookingSchema = z.object({
   sks: z.number().min(1, 'SKS must be at least 1').max(6, 'SKS cannot exceed 6'),
   class_type: z.enum(['theory', 'practical']),
 
-  // Equipment & Notes
+  // ✅ ENHANCED: Equipment & Notes with proper quantity validation
   equipment_requested: z.array(z.string()).optional(),
-  equipment_quantities: z.record(z.string(), z.number().min(1)).optional(),
+  equipment_quantities: z.record(z.string(), z.number().min(1, 'Quantity must be at least 1')).optional(),
   notes: z.string().optional(),
   attachments: z.array(z.string()).optional(),
 }).superRefine((data, ctx) => {
@@ -86,6 +86,8 @@ const bookingSchema = z.object({
       path: ['attachments'],
     });
   }
+
+  // ✅ ENHANCED: Validate equipment quantities for each selected equipment
   if (data.equipment_requested && data.equipment_requested.length > 0) {
     for (const equipmentId of data.equipment_requested) {
       const quantity = data.equipment_quantities?.[equipmentId];
@@ -131,6 +133,7 @@ interface Equipment {
   is_mandatory: boolean;
   is_available: boolean;
   quantity: number;
+  unit?: string; // ✅ ADD: Unit field for better display
 }
 
 const BookRoom = () => {
@@ -145,6 +148,7 @@ const BookRoom = () => {
       class_type: 'theory',
       purpose: 'Class/Lecture',
       equipment_requested: [],
+      equipment_quantities: {}, // ✅ ADD: Initialize equipment quantities
       attachments: [],
     },
   });
@@ -155,6 +159,8 @@ const BookRoom = () => {
   const watchClassType = form.watch('class_type');
   const watchPurpose = form.watch('purpose');
   const watchAttachments = form.watch('attachments');
+  const watchEquipmentRequested = form.watch('equipment_requested'); // ✅ ADD: Watch equipment selection
+  const watchEquipmentQuantities = form.watch('equipment_quantities'); // ✅ ADD: Watch quantities
 
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [studyPrograms, setStudyPrograms] = useState([]);
@@ -453,29 +459,99 @@ const BookRoom = () => {
     }
   };
 
-const fetchEquipmentForRoom = async (roomId) => {
+  // ✅ ENHANCED: Equipment fetching with proper quantity handling
+  const fetchEquipmentForRoom = async (roomId) => {
     try {
-      const { data, error } = await supabase.from('equipment').select('*').or(`rooms_id.eq.${roomId},rooms_id.is.null`).or('is_mandatory.eq.true,quantity.gt.1').order('name');
+      const { data, error } = await supabase
+        .from('equipment')
+        .select('*')
+        .or(`rooms_id.eq.${roomId},rooms_id.is.null`)
+        .eq('is_available', true)
+        .gt('quantity', 0)
+        .order('name');
+
       if (error) throw error;
       setAvailableEquipment(data || []);
       
-      // 🔥 FIX: Otomatis tambahkan mandatory equipment ke form
+      // ✅ ENHANCED: Handle mandatory equipment dengan quantity 1
       const mandatoryEquipment = (data || []).filter(eq => eq.is_mandatory);
       const mandatoryIds = mandatoryEquipment.map(eq => eq.id);
       
-      // Get current equipment_requested array
+      // Get current selections
       const currentEquipment = form.getValues('equipment_requested') || [];
+      const currentQuantities = form.getValues('equipment_quantities') || {};
       
-      // Merge dengan mandatory equipment (hindari duplikasi)
+      // Add mandatory equipment (avoid duplicates)
       const updatedEquipment = [...new Set([...currentEquipment, ...mandatoryIds])];
       
-      // Update form dengan mandatory equipment
+      // Set quantities for mandatory equipment (always 1)
+      const updatedQuantities = { ...currentQuantities };
+      mandatoryEquipment.forEach(eq => {
+        updatedQuantities[eq.id] = 1; // Mandatory equipment always quantity 1
+      });
+      
+      // Update form
       form.setValue('equipment_requested', updatedEquipment);
+      form.setValue('equipment_quantities', updatedQuantities);
       
     } catch (error) {
       console.error('Error fetching equipment:', error);
       setAvailableEquipment([]);
     }
+  };
+
+  // ✅ NEW: Equipment quantity management functions
+  const handleEquipmentToggle = (equipmentId: string, isChecked: boolean) => {
+    const currentEquipment = form.getValues('equipment_requested') || [];
+    const currentQuantities = form.getValues('equipment_quantities') || {};
+    
+    if (isChecked) {
+      // Add equipment
+      const updatedEquipment = [...currentEquipment, equipmentId];
+      const updatedQuantities = { 
+        ...currentQuantities, 
+        [equipmentId]: 1 // Default quantity 1
+      };
+      
+      form.setValue('equipment_requested', updatedEquipment);
+      form.setValue('equipment_quantities', updatedQuantities);
+    } else {
+      // Remove equipment
+      const updatedEquipment = currentEquipment.filter(id => id !== equipmentId);
+      const updatedQuantities = { ...currentQuantities };
+      delete updatedQuantities[equipmentId];
+      
+      form.setValue('equipment_requested', updatedEquipment);
+      form.setValue('equipment_quantities', updatedQuantities);
+    }
+  };
+
+  const handleQuantityChange = (equipmentId: string, newQuantity: number) => {
+    const equipment = availableEquipment.find(eq => eq.id === equipmentId);
+    if (!equipment) return;
+
+    // Validate quantity bounds
+    const quantity = Math.max(1, Math.min(newQuantity, equipment.quantity));
+    
+    const currentQuantities = form.getValues('equipment_quantities') || {};
+    const updatedQuantities = {
+      ...currentQuantities,
+      [equipmentId]: quantity
+    };
+    
+    form.setValue('equipment_quantities', updatedQuantities);
+  };
+
+  const incrementQuantity = (equipmentId: string) => {
+    const currentQuantities = form.getValues('equipment_quantities') || {};
+    const currentQty = currentQuantities[equipmentId] || 1;
+    handleQuantityChange(equipmentId, currentQty + 1);
+  };
+
+  const decrementQuantity = (equipmentId: string) => {
+    const currentQuantities = form.getValues('equipment_quantities') || {};
+    const currentQty = currentQuantities[equipmentId] || 1;
+    handleQuantityChange(equipmentId, currentQty - 1);
   };
 
   const handleRoomSelect = (room) => {
@@ -507,7 +583,7 @@ const fetchEquipmentForRoom = async (roomId) => {
     fetchStudyPrograms();
   }, []);
 
-  // 🎯 FIXED: Submit function dengan timezone yang benar
+  // ✅ ENHANCED: Submit function dengan proper equipment handling
   const onSubmit = async (data) => {
     if (!selectedRoom) {
       alert.error(getText('Please select a room', 'Silakan pilih ruangan'));
@@ -528,6 +604,16 @@ const fetchEquipmentForRoom = async (roomId) => {
       console.log('🕐 Input:', data.start_datetime);
       console.log('🕐 UTC:', startTimeUTC);
 
+      // ✅ ENHANCED: Prepare equipment data with quantities
+      const equipmentRequested = data.equipment_requested || [];
+      const equipmentQuantities = data.equipment_quantities || {};
+
+      // Create equipment list with quantities for storage
+      const equipmentWithQuantities = equipmentRequested.map(equipmentId => ({
+        equipment_id: equipmentId,
+        quantity: equipmentQuantities[equipmentId] || 1
+      }));
+
       const bookingData = {
         start_time: startTimeUTC,
         end_time: endTimeUTC,
@@ -535,10 +621,12 @@ const fetchEquipmentForRoom = async (roomId) => {
         sks: data.sks,
         class_type: data.class_type,
         room_id: selectedRoom.id,
-        equipment_requested: data.equipment_requested || [],
+        equipment_requested: equipmentRequested, // ✅ ENHANCED: Just IDs for backward compatibility
+        equipment_quantities: equipmentQuantities, // ✅ NEW: Store quantities separately
+        equipment_details: equipmentWithQuantities, // ✅ NEW: Detailed equipment data
         notes: data.notes,
         attachments: data.attachments || [],
-        status: 'pending',
+        status: 'pending', // ✅ IMPORTANT: Always pending, quantity TIDAK dikurangi
         user_info: {
           full_name: data.full_name,
           identity_number: data.identity_number,
@@ -564,10 +652,12 @@ const fetchEquipmentForRoom = async (roomId) => {
         class_type: 'theory',
         purpose: 'Class/Lecture',
         equipment_requested: [],
+        equipment_quantities: {},
         attachments: [],
       });
       
       setSelectedRoom(null);
+      setAvailableEquipment([]);
       if (identityInputRef.current) identityInputRef.current.value = '';
       if (fullNameInputRef.current) fullNameInputRef.current.value = '';
       if (phoneInputRef.current) phoneInputRef.current.value = '';
@@ -580,6 +670,15 @@ const fetchEquipmentForRoom = async (roomId) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // ✅ NEW: Calculate total equipment items for display
+  const getTotalEquipmentItems = () => {
+    const quantities = watchEquipmentQuantities || {};
+    const requested = watchEquipmentRequested || [];
+    return requested.reduce((total, equipmentId) => {
+      return total + (quantities[equipmentId] || 1);
+    }, 0);
   };
 
   return (
@@ -788,7 +887,13 @@ const fetchEquipmentForRoom = async (roomId) => {
                         </div>
                         <button
                           type="button"
-                          onClick={() => setSelectedRoom(null)}
+                          onClick={() => {
+                            setSelectedRoom(null);
+                            setAvailableEquipment([]);
+                            // Clear equipment selections when room is deselected
+                            form.setValue('equipment_requested', []);
+                            form.setValue('equipment_quantities', {});
+                          }}
                           className="text-green-600 hover:text-green-800"
                         >
                           <X className="h-5 w-5" />
@@ -818,19 +923,19 @@ const fetchEquipmentForRoom = async (roomId) => {
                     />
                   </div>
                   <div className="mb-4">
-  <label className="flex items-center space-x-2 cursor-pointer">
-    <input
-      type="checkbox"
-      id="showInUse"
-      checked={showInUse}
-      onChange={(e) => setShowInUse(e.target.checked)}
-      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-    />
-    <span className="text-sm text-gray-700">
-      {getText('Show rooms currently in use', 'Tampilkan ruangan yang sedang digunakan')}
-    </span>
-  </label>
-</div>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        id="showInUse"
+                        checked={showInUse}
+                        onChange={(e) => setShowInUse(e.target.checked)}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <span className="text-sm text-gray-700">
+                        {getText('Show rooms currently in use', 'Tampilkan ruangan yang sedang digunakan')}
+                      </span>
+                    </label>
+                  </div>
 
                   {/* Room List */}
                   <div className="space-y-3 max-h-80 overflow-y-auto">
@@ -903,45 +1008,138 @@ const fetchEquipmentForRoom = async (roomId) => {
                     )}
                   </div>
 
-                  {/* Available Equipment */}
+                  {/* ✅ ENHANCED: Available Equipment with Quantity Management */}
                   {selectedRoom && availableEquipment.length > 0 && (
                     <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                      <h4 className="font-medium text-blue-800 mb-3 flex items-center">
-                        <Zap className="h-4 w-4 mr-2" />
-                        {getText('Available Equipment', 'Peralatan Tersedia')}
-                      </h4>
-                      <div className="space-y-2">
-                        {availableEquipment.map((equipment) => (
-                          <label key={equipment.id} className="flex items-center space-x-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              value={equipment.id}
-                              defaultChecked={equipment.is_mandatory}
-                              disabled={equipment.is_mandatory}
-                              onChange={(e) => {
-                                const currentEquipment = form.getValues('equipment_requested') || [];
-                                if (e.target.checked) {
-                                  form.setValue('equipment_requested', [...currentEquipment, equipment.id]);
-                                } else {
-                                  form.setValue('equipment_requested', currentEquipment.filter(id => id !== equipment.id));
-                                }
-                              }}
-                              className="text-blue-600 focus:ring-blue-500 rounded"
-                            />
-                            <span className="text-sm text-blue-800">{equipment.name}</span>
-                            {equipment.is_mandatory && (
-                              <span className="text-xs text-green-600 font-medium">{getText('Required', 'Wajib')}</span>
-                            )}
-                          </label>
-                        ))}
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-medium text-blue-800 flex items-center">
+                          <Zap className="h-4 w-4 mr-2" />
+                          {getText('Available Equipment', 'Peralatan Tersedia')}
+                        </h4>
+                        {(watchEquipmentRequested?.length > 0) && (
+                          <div className="text-sm text-blue-700 font-medium">
+                            {getText('Selected', 'Dipilih')}: {watchEquipmentRequested.length} {getText('types', 'jenis')} 
+                            ({getTotalEquipmentItems()} {getText('items', 'item')})
+                          </div>
+                        )}
                       </div>
+                      
+                      <div className="space-y-3">
+                        {availableEquipment.map((equipment) => {
+                          const isSelected = watchEquipmentRequested?.includes(equipment.id);
+                          const currentQuantity = watchEquipmentQuantities?.[equipment.id] || 1;
+                          const isMandatory = equipment.is_mandatory;
+                          
+                          return (
+                            <div key={equipment.id} className={`p-3 rounded-lg border transition-all duration-200 ${
+                              isSelected ? 'bg-blue-100 border-blue-300' : 'bg-white border-gray-200'
+                            }`}>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-3 flex-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    disabled={isMandatory}
+                                    onChange={(e) => handleEquipmentToggle(equipment.id, e.target.checked)}
+                                    className="text-blue-600 focus:ring-blue-500 rounded disabled:opacity-50"
+                                  />
+                                  <div className="flex-1">
+                                    <div className="flex items-center space-x-2">
+                                      <span className="text-sm font-medium text-blue-800">{equipment.name}</span>
+                                      {isMandatory && (
+                                        <span className="text-xs text-green-600 font-bold bg-green-100 px-2 py-0.5 rounded">
+                                          {getText('Required', 'Wajib')}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-xs text-blue-600 mt-1">
+                                      {equipment.code} • {getText('Available', 'Tersedia')}: {equipment.quantity} {equipment.unit || 'pcs'}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* ✅ ENHANCED: Quantity Controls */}
+                                {isSelected && (
+                                  <div className="flex items-center space-x-2 ml-4">
+                                    {!isMandatory && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => decrementQuantity(equipment.id)}
+                                          disabled={currentQuantity <= 1}
+                                          className="p-1 bg-blue-200 hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors duration-200"
+                                        >
+                                          <Minus className="h-3 w-3 text-blue-800" />
+                                        </button>
+                                        <span className="font-bold text-blue-900 min-w-[2rem] text-center bg-white px-2 py-1 rounded">
+                                          {currentQuantity}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => incrementQuantity(equipment.id)}
+                                          disabled={currentQuantity >= equipment.quantity}
+                                          className="p-1 bg-blue-200 hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors duration-200"
+                                        >
+                                          <Plus className="h-3 w-3 text-blue-800" />
+                                        </button>
+                                      </>
+                                    )}
+                                    
+                                    {isMandatory && (
+                                      <span className="font-bold text-green-700 bg-green-100 px-3 py-1 rounded text-sm">
+                                        1 {equipment.unit || 'pcs'}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* ✅ ENHANCED: Quantity Validation Error */}
+                              {form.formState.errors.equipment_quantities?.[equipment.id] && (
+                                <p className="mt-2 text-xs text-red-600 flex items-center">
+                                  <AlertTriangle className="h-3 w-3 mr-1" />
+                                  {form.formState.errors.equipment_quantities[equipment.id]?.message}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* ✅ ENHANCED: Equipment Summary */}
+                      {watchEquipmentRequested && watchEquipmentRequested.length > 0 && (
+                        <div className="mt-4 p-3 bg-blue-100 border border-blue-300 rounded-lg">
+                          <div className="text-sm text-blue-800">
+                            <div className="font-medium flex items-center">
+                              <Package className="h-4 w-4 mr-2" />
+                              {getText('Equipment Summary', 'Ringkasan Peralatan')}
+                            </div>
+                            <div className="mt-2 space-y-1">
+                              {watchEquipmentRequested.map(equipmentId => {
+                                const equipment = availableEquipment.find(eq => eq.id === equipmentId);
+                                const quantity = watchEquipmentQuantities?.[equipmentId] || 1;
+                                return (
+                                  <div key={equipmentId} className="flex justify-between items-center text-xs">
+                                    <span>{equipment?.name || 'Unknown'}</span>
+                                    <span className="font-medium">{quantity} {equipment?.unit || 'pcs'}</span>
+                                  </div>
+                                );
+                              })}
+                              <div className="border-t border-blue-200 pt-2 mt-2 flex justify-between items-center font-semibold">
+                                <span>{getText('Total Items', 'Total Item')}</span>
+                                <span>{getTotalEquipmentItems()} {getText('items', 'item')}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* CARD 2: PERSONAL INFORMATION & SUBMIT */}
+            {/* CARD 2: PERSONAL INFORMATION & SUBMIT - Continue with rest of original code... */}
             <div className="lg:col-span-1 relative z-10">
               <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 space-y-6">
                 
@@ -1040,6 +1238,45 @@ const fetchEquipmentForRoom = async (roomId) => {
                   </div>
                 </div>
 
+                {/* ✅ ENHANCED: Equipment Summary in Sidebar */}
+                {selectedRoom && watchEquipmentRequested && watchEquipmentRequested.length > 0 && (
+                  <div className="border-t border-gray-200/50 pt-6">
+                    <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200/50 rounded-lg p-4">
+                      <h3 className="font-medium text-purple-800 mb-3 flex items-center">
+                        <Package className="h-4 w-4 mr-2" />
+                        {getText('Selected Equipment', 'Peralatan Dipilih')}
+                      </h3>
+                      <div className="space-y-2">
+                        {watchEquipmentRequested.map(equipmentId => {
+                          const equipment = availableEquipment.find(eq => eq.id === equipmentId);
+                          const quantity = watchEquipmentQuantities?.[equipmentId] || 1;
+                          const isMandatory = equipment?.is_mandatory;
+                          
+                          return (
+                            <div key={equipmentId} className="flex items-center justify-between p-2 bg-white/80 rounded border border-purple-200/30">
+                              <div className="flex items-center space-x-2">
+                                <span className="text-sm font-medium text-purple-900">{equipment?.name || 'Unknown'}</span>
+                                {isMandatory && (
+                                  <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">
+                                    {getText('Required', 'Wajib')}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-sm font-bold text-purple-800">
+                                {quantity} {equipment?.unit || 'pcs'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        <div className="border-t border-purple-200 pt-2 mt-2 flex justify-between items-center font-semibold text-purple-800">
+                          <span>{getText('Total Items', 'Total Item')}</span>
+                          <span>{getTotalEquipmentItems()} {getText('items', 'item')}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* SUBMIT SECTION */}
                 <div className="border-t border-gray-200/50 pt-6">
                   {!selectedRoom && (
@@ -1048,6 +1285,27 @@ const fetchEquipmentForRoom = async (roomId) => {
                         <AlertTriangle className="h-4 w-4 text-amber-600" />
                         <p className="text-sm text-amber-800">{getText('Select a room first', 'Pilih ruangan terlebih dahulu')}</p>
                       </div>
+                    </div>
+                  )}
+
+                  {/* ✅ ENHANCED: Equipment Quantity Validation Errors */}
+                  {watchEquipmentRequested && watchEquipmentRequested.length > 0 && (
+                    <div className="mb-4">
+                      {watchEquipmentRequested.map(equipmentId => {
+                        const error = form.formState.errors.equipment_quantities?.[equipmentId];
+                        if (!error) return null;
+                        const equipment = availableEquipment.find(eq => eq.id === equipmentId);
+                        return (
+                          <div key={equipmentId} className="bg-red-50 border border-red-200 rounded-lg p-3 mb-2">
+                            <div className="flex items-center space-x-2">
+                              <AlertTriangle className="h-4 w-4 text-red-600" />
+                              <p className="text-sm text-red-800">
+                                <span className="font-medium">{equipment?.name}</span>: {error.message}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 
@@ -1069,6 +1327,7 @@ const fetchEquipmentForRoom = async (roomId) => {
                     )}
                   </button>
 
+                  {/* ✅ ENHANCED: Status Messages */}
                   {selectedRoom && (() => {
                     const roomStatus = getOptimizedRoomStatus(selectedRoom);
                     if (roomStatus.status === 'Conflict') {
@@ -1087,6 +1346,24 @@ const fetchEquipmentForRoom = async (roomId) => {
                     }
                     return null;
                   })()}
+
+                  {/* ✅ NEW: Booking Process Information */}
+                  <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-start space-x-3">
+                      <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-sm text-blue-800">
+                        <p className="font-semibold mb-2">
+                          {getText('Booking Process', 'Proses Pemesanan')}
+                        </p>
+                        <ul className="space-y-1 text-xs">
+                          <li>• {getText('Your booking will be submitted as PENDING', 'Pemesanan Anda akan dikirim sebagai MENUNGGU')}</li>
+                          <li>• {getText('Equipment quantities will NOT be reduced until approved', 'Jumlah peralatan TIDAK akan dikurangi sampai disetujui')}</li>
+                          <li>• {getText('You will be notified when admin reviews your request', 'Anda akan diberitahu saat admin meninjau permintaan Anda')}</li>
+                          <li>• {getText('Equipment will be reserved only after approval', 'Peralatan akan dipesan hanya setelah persetujuan')}</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1094,213 +1371,212 @@ const fetchEquipmentForRoom = async (roomId) => {
         </form>
       </div>
 
-      {/* SCHEDULE MODAL - SIMPLIFIED */}
       {/* SCHEDULE MODAL - RESTORE DETAILED INFO */}
-{showScheduleModal && scheduleModalRoom && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-gray-900">
-            {getText('Schedule Details', 'Detail Jadwal')} - {scheduleModalRoom.name}
-          </h3>
-          <button
-            onClick={() => setShowScheduleModal(false)}
-            className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
-          >
-            <X className="h-6 w-6" />
-          </button>
+      {showScheduleModal && scheduleModalRoom && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {getText('Schedule Details', 'Detail Jadwal')} - {scheduleModalRoom.name}
+                </h3>
+                <button
+                  onClick={() => setShowScheduleModal(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {/* Active Bookings */}
+                {scheduleModalRoom.targetDateBookings?.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                      <Calendar className="h-5 w-5 mr-2 text-orange-600" />
+                      {getText('Active Bookings', 'Pemesanan Aktif')}
+                    </h4>
+                    <div className="space-y-3">
+                      {scheduleModalRoom.targetDateBookings.map((booking, index) => (
+                        <div key={index} className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-semibold text-orange-900 text-lg">
+                              {booking.start_time_local || format(convertUTCToLocal(booking.start_time), 'HH:mm')} - {booking.end_time_local || format(convertUTCToLocal(booking.end_time), 'HH:mm')}
+                            </span>
+                            <span className="bg-orange-200 text-orange-800 px-2 py-1 rounded-full text-xs font-medium">
+                              {getText('Booking', 'Pemesanan')}
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center text-sm text-orange-700">
+                              <GraduationCap className="h-4 w-4 mr-2" />
+                              <span className="font-medium">
+                                {booking.user?.study_program?.name || getText('No Study Program', 'Tidak Ada Program Studi')}
+                              </span>
+                            </div>
+                            <div className="flex items-center text-sm text-orange-700">
+                              <User className="h-4 w-4 mr-2" />
+                              <span>{booking.user?.full_name || getText('No User Info', 'Info Pengguna Tidak Ada')}</span>
+                            </div>
+                            <div className="flex items-center text-sm text-orange-700">
+                              <Target className="h-4 w-4 mr-2" />
+                              <span>{booking.purpose || getText('No Purpose', 'Tidak Ada Tujuan')}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Lecture Schedules */}
+                {scheduleModalRoom.scheduleDetails?.lectures?.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                      <BookOpen className="h-5 w-5 mr-2 text-blue-600" />
+                      {getText('Lecture Schedules', 'Jadwal Kuliah')}
+                    </h4>
+                    <div className="space-y-3">
+                      {scheduleModalRoom.scheduleDetails.lectures.map((lecture, index) => (
+                        <div key={index} className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-semibold text-blue-900 text-lg">
+                              {lecture.start_time} - {lecture.end_time}
+                            </span>
+                            <span className="bg-blue-200 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
+                              {getText('Lecture', 'Kuliah')}
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center text-sm text-blue-700">
+                              <GraduationCap className="h-4 w-4 mr-2" />
+                              <span className="font-medium">
+                                {lecture.subject_study || getText('No Study Program', 'Tidak Ada Program Studi')}
+                              </span>
+                            </div>
+                            <div className="flex items-center text-sm text-blue-700">
+                              <BookOpen className="h-4 w-4 mr-2" />
+                              <span>{lecture.course_name || getText('No Course Name', 'Tidak Ada Nama Mata Kuliah')}</span>
+                            </div>
+                            {lecture.lecturer_name && (
+                              <div className="flex items-center text-sm text-blue-700">
+                                <User className="h-4 w-4 mr-2" />
+                                <span>{lecture.lecturer_name}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Final Sessions */}
+                {scheduleModalRoom.scheduleDetails?.sessions?.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                      <Users className="h-5 w-5 mr-2 text-purple-600" />
+                      {getText('Final Sessions', 'Sidang Akhir')}
+                    </h4>
+                    <div className="space-y-3">
+                      {scheduleModalRoom.scheduleDetails.sessions.map((session, index) => (
+                        <div key={index} className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-semibold text-purple-900 text-lg">
+                              {session.start_time_local || session.start_time} - {session.end_time_local || session.end_time}
+                            </span>
+                            <span className="bg-purple-200 text-purple-800 px-2 py-1 rounded-full text-xs font-medium">
+                              {getText('Session', 'Sidang')}
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center text-sm text-purple-700">
+                              <GraduationCap className="h-4 w-4 mr-2" />
+                              <span className="font-medium">
+                                {session.student?.study_program?.name || getText('No Study Program', 'Tidak Ada Program Studi')}
+                              </span>
+                            </div>
+                            <div className="flex items-center text-sm text-purple-700">
+                              <User className="h-4 w-4 mr-2" />
+                              <span>{session.student?.full_name || getText('No Student Info', 'Info Mahasiswa Tidak Ada')}</span>
+                            </div>
+                            {session.title && (
+                              <div className="flex items-center text-sm text-purple-700">
+                                <FileText className="h-4 w-4 mr-2" />
+                                <span>{session.title}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Exam Schedules */}
+                {scheduleModalRoom.scheduleDetails?.exams?.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                      <GraduationCap className="h-5 w-5 mr-2 text-green-600" />
+                      {getText('Exam Schedules', 'Jadwal Ujian')}
+                    </h4>
+                    <div className="space-y-3">
+                      {scheduleModalRoom.scheduleDetails.exams.map((exam, index) => (
+                        <div key={index} className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-semibold text-green-900 text-lg">
+                              {exam.start_time} - {exam.end_time}
+                            </span>
+                            <span className="bg-green-200 text-green-800 px-2 py-1 rounded-full text-xs font-medium">
+                              {getText('Exam', 'Ujian')}
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center text-sm text-green-700">
+                              <GraduationCap className="h-4 w-4 mr-2" />
+                              <span className="font-medium">
+                                {exam.class || getText('No Class Info', 'Tidak Ada Info Kelas')}
+                              </span>
+                            </div>
+                            <div className="flex items-center text-sm text-green-700">
+                              <BookOpen className="h-4 w-4 mr-2" />
+                              <span>{exam.course_name || getText('No Exam Name', 'Tidak Ada Nama Ujian')}</span>
+                            </div>
+                            {exam.exam_type && (
+                              <div className="flex items-center text-sm text-green-700">
+                                <FileText className="h-4 w-4 mr-2" />
+                                <span>{exam.exam_type}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* No Schedule Message */}
+                {(!scheduleModalRoom.targetDateBookings?.length && 
+                  !scheduleModalRoom.scheduleDetails?.lectures?.length && 
+                  !scheduleModalRoom.scheduleDetails?.exams?.length && 
+                  !scheduleModalRoom.scheduleDetails?.sessions?.length) && (
+                  <div className="text-center py-8">
+                    <div className="p-4 bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                      <Calendar className="h-8 w-8 text-gray-400" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                      {getText('No Schedule for This Date', 'Tidak Ada Jadwal untuk Tanggal Ini')}
+                    </h3>
+                    <p className="text-gray-500">
+                      {getText('This room is available for booking on the selected date.', 'Ruangan ini tersedia untuk dipesan pada tanggal yang dipilih.')}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
-
-        <div className="space-y-6">
-          {/* Active Bookings */}
-          {scheduleModalRoom.targetDateBookings?.length > 0 && (
-            <div>
-              <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                <Calendar className="h-5 w-5 mr-2 text-orange-600" />
-                {getText('Active Bookings', 'Pemesanan Aktif')}
-              </h4>
-              <div className="space-y-3">
-                {scheduleModalRoom.targetDateBookings.map((booking, index) => (
-                  <div key={index} className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-semibold text-orange-900 text-lg">
-                        {booking.start_time_local || format(convertUTCToLocal(booking.start_time), 'HH:mm')} - {booking.end_time_local || format(convertUTCToLocal(booking.end_time), 'HH:mm')}
-                      </span>
-                      <span className="bg-orange-200 text-orange-800 px-2 py-1 rounded-full text-xs font-medium">
-                        {getText('Booking', 'Pemesanan')}
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center text-sm text-orange-700">
-                        <GraduationCap className="h-4 w-4 mr-2" />
-                        <span className="font-medium">
-                          {booking.user?.study_program?.name || getText('No Study Program', 'Tidak Ada Program Studi')}
-                        </span>
-                      </div>
-                      <div className="flex items-center text-sm text-orange-700">
-                        <User className="h-4 w-4 mr-2" />
-                        <span>{booking.user?.full_name || getText('No User Info', 'Info Pengguna Tidak Ada')}</span>
-                      </div>
-                      <div className="flex items-center text-sm text-orange-700">
-                        <Target className="h-4 w-4 mr-2" />
-                        <span>{booking.purpose || getText('No Purpose', 'Tidak Ada Tujuan')}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Lecture Schedules */}
-          {scheduleModalRoom.scheduleDetails?.lectures?.length > 0 && (
-            <div>
-              <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                <BookOpen className="h-5 w-5 mr-2 text-blue-600" />
-                {getText('Lecture Schedules', 'Jadwal Kuliah')}
-              </h4>
-              <div className="space-y-3">
-                {scheduleModalRoom.scheduleDetails.lectures.map((lecture, index) => (
-                  <div key={index} className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-semibold text-blue-900 text-lg">
-                        {lecture.start_time} - {lecture.end_time}
-                      </span>
-                      <span className="bg-blue-200 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
-                        {getText('Lecture', 'Kuliah')}
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center text-sm text-blue-700">
-                        <GraduationCap className="h-4 w-4 mr-2" />
-                        <span className="font-medium">
-                          {lecture.subject_study || getText('No Study Program', 'Tidak Ada Program Studi')}
-                        </span>
-                      </div>
-                      <div className="flex items-center text-sm text-blue-700">
-                        <BookOpen className="h-4 w-4 mr-2" />
-                        <span>{lecture.course_name || getText('No Course Name', 'Tidak Ada Nama Mata Kuliah')}</span>
-                      </div>
-                      {lecture.lecturer_name && (
-                        <div className="flex items-center text-sm text-blue-700">
-                          <User className="h-4 w-4 mr-2" />
-                          <span>{lecture.lecturer_name}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Final Sessions */}
-          {scheduleModalRoom.scheduleDetails?.sessions?.length > 0 && (
-            <div>
-              <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                <Users className="h-5 w-5 mr-2 text-purple-600" />
-                {getText('Final Sessions', 'Sidang Akhir')}
-              </h4>
-              <div className="space-y-3">
-                {scheduleModalRoom.scheduleDetails.sessions.map((session, index) => (
-                  <div key={index} className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-semibold text-purple-900 text-lg">
-                        {session.start_time_local || session.start_time} - {session.end_time_local || session.end_time}
-                      </span>
-                      <span className="bg-purple-200 text-purple-800 px-2 py-1 rounded-full text-xs font-medium">
-                        {getText('Session', 'Sidang')}
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center text-sm text-purple-700">
-                        <GraduationCap className="h-4 w-4 mr-2" />
-                        <span className="font-medium">
-                          {session.student?.study_program?.name || getText('No Study Program', 'Tidak Ada Program Studi')}
-                        </span>
-                      </div>
-                      <div className="flex items-center text-sm text-purple-700">
-                        <User className="h-4 w-4 mr-2" />
-                        <span>{session.student?.full_name || getText('No Student Info', 'Info Mahasiswa Tidak Ada')}</span>
-                      </div>
-                      {session.title && (
-                        <div className="flex items-center text-sm text-purple-700">
-                          <FileText className="h-4 w-4 mr-2" />
-                          <span>{session.title}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Exam Schedules */}
-          {scheduleModalRoom.scheduleDetails?.exams?.length > 0 && (
-            <div>
-              <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                <GraduationCap className="h-5 w-5 mr-2 text-green-600" />
-                {getText('Exam Schedules', 'Jadwal Ujian')}
-              </h4>
-              <div className="space-y-3">
-                {scheduleModalRoom.scheduleDetails.exams.map((exam, index) => (
-                  <div key={index} className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-semibold text-green-900 text-lg">
-                        {exam.start_time} - {exam.end_time}
-                      </span>
-                      <span className="bg-green-200 text-green-800 px-2 py-1 rounded-full text-xs font-medium">
-                        {getText('Exam', 'Ujian')}
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center text-sm text-green-700">
-                        <GraduationCap className="h-4 w-4 mr-2" />
-                        <span className="font-medium">
-                          {exam.class || getText('No Class Info', 'Tidak Ada Info Kelas')}
-                        </span>
-                      </div>
-                      <div className="flex items-center text-sm text-green-700">
-                        <BookOpen className="h-4 w-4 mr-2" />
-                        <span>{exam.course_name || getText('No Exam Name', 'Tidak Ada Nama Ujian')}</span>
-                      </div>
-                      {exam.exam_type && (
-                        <div className="flex items-center text-sm text-green-700">
-                          <FileText className="h-4 w-4 mr-2" />
-                          <span>{exam.exam_type}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* No Schedule Message */}
-          {(!scheduleModalRoom.targetDateBookings?.length && 
-            !scheduleModalRoom.scheduleDetails?.lectures?.length && 
-            !scheduleModalRoom.scheduleDetails?.exams?.length && 
-            !scheduleModalRoom.scheduleDetails?.sessions?.length) && (
-            <div className="text-center py-8">
-              <div className="p-4 bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <Calendar className="h-8 w-8 text-gray-400" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                {getText('No Schedule for This Date', 'Tidak Ada Jadwal untuk Tanggal Ini')}
-              </h3>
-              <p className="text-gray-500">
-                {getText('This room is available for booking on the selected date.', 'Ruangan ini tersedia untuk dipesan pada tanggal yang dipilih.')}
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  </div>
-)}
+      )}
 
       {/* Cleanup effect */}
       {React.useEffect(() => {
