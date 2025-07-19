@@ -35,12 +35,13 @@ import {
   AlertCircle as AlertIcon,
   Info,
   MessageSquare,
+  Loader2,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { BookingWithDetails } from '../types';
-import toast from 'react-hot-toast';
+import { alert } from '../components/Alert/AlertHelper';
 import { format, isAfter, isBefore, parseISO } from 'date-fns';
 
 interface Booking {
@@ -55,6 +56,7 @@ interface Booking {
   status: 'pending' | 'approved' | 'rejected' | 'completed';
   equipment_requested: string[];
   notes: string | null;
+  attachments: string[];
   user_info: any;
   created_at: string;
   updated_at: string;
@@ -172,7 +174,7 @@ const BookingManagement: React.FC = () => {
       setBookings(data || []);
     } catch (error) {
       console.error('Error fetching bookings:', error);
-      toast.error(getText('Failed to load bookings', 'Gagal memuat pemesanan'));
+      alert.error(getText('Failed to load bookings', 'Gagal memuat pemesanan'));
     } finally {
       setLoading(false);
     }
@@ -242,7 +244,7 @@ const BookingManagement: React.FC = () => {
         ? getText('approved', 'disetujui') 
         : getText('rejected', 'ditolak');
       
-      toast.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
+      alert.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
       fetchBookings();
       
       if (selectedBooking?.id === bookingId) {
@@ -250,7 +252,7 @@ const BookingManagement: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Error updating booking status:', error);
-      toast.error(error.message || getText('Failed to update booking status', 'Gagal memperbarui status pemesanan'));
+      alert.error(error.message || getText('Failed to update booking status', 'Gagal memperbarui status pemesanan'));
     } finally {
       setProcessingIds(prev => {
         const newSet = new Set(prev);
@@ -309,7 +311,7 @@ const BookingManagement: React.FC = () => {
 
       if (error) throw error;
       
-      toast.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
+      alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
       setShowDeleteConfirm(null);
       fetchBookings();
       
@@ -318,7 +320,7 @@ const BookingManagement: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Error deleting booking:', error);
-      toast.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
+      alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
     } finally {
       setProcessingIds(prev => {
         const newSet = new Set(prev);
@@ -335,7 +337,9 @@ const BookingManagement: React.FC = () => {
       (booking.user?.identity_number && booking.user.identity_number.toLowerCase().includes(searchLower)) ||
       (booking.purpose && booking.purpose.toLowerCase().includes(searchLower)) ||
       (booking.room?.name && booking.room.name.toLowerCase().includes(searchLower)) ||
-      (booking.room?.code && booking.room.code.toLowerCase().includes(searchLower));
+      (booking.room?.code && booking.room.code.toLowerCase().includes(searchLower)) ||
+      (booking.user_info?.full_name && booking.user_info.full_name.toLowerCase().includes(searchLower)) ||
+      (booking.user_info?.identity_number && booking.user_info.identity_number.toLowerCase().includes(searchLower));
     
     const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
     
@@ -515,172 +519,187 @@ const BookingManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Bookings List */}
-      <div className="space-y-4">
-        {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="flex items-center">
-              <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mr-2" />
-              <span className="text-gray-600">{getText('Loading bookings...', 'Memuat pemesanan...')}</span>
-            </div>
-          </div>
-        ) : filteredBookings.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
-            <Calendar className="h-16 w-16 text-blue-500 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              {getText('No bookings found', 'Tidak ada pemesanan ditemukan')}
-            </h3>
-            <p className="text-gray-600">
-              {getText('Try adjusting your search filters', 'Coba sesuaikan filter pencarian Anda')}
-            </p>
-          </div>
-        ) : (
-          filteredBookings.map((booking) => {
-            const StatusIcon = getStatusIcon(booking.status);
-            const isProcessing = processingIds.has(booking.id);
-            
-            return (
-              <div
-                key={booking.id}
-                className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow duration-200"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-4">
-                      <div className="p-2 bg-blue-500 rounded-lg">
-                        <StatusIcon className="h-5 w-5 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">{booking.purpose}</h3>
+      {/* Bookings Table */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {getText('User & Purpose', 'Pengguna & Tujuan')}
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {getText('Room & Time', 'Ruangan & Waktu')}
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {getText('Details', 'Detail')}
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {getText('Status', 'Status')}
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {getText('Actions', 'Aksi')}
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center">
+                    <div className="flex items-center justify-center">
+                      <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mr-2" />
+                      <span className="text-gray-600">{getText('Loading bookings...', 'Memuat pemesanan...')}</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredBookings.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center">
+                    <Calendar className="h-16 w-16 text-blue-500 mx-auto mb-4" />
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                      {getText('No bookings found', 'Tidak ada pemesanan ditemukan')}
+                    </h3>
+                    <p className="text-gray-600">
+                      {getText('Try adjusting your search filters', 'Coba sesuaikan filter pencarian Anda')}
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                filteredBookings.map((booking) => {
+                  const StatusIcon = getStatusIcon(booking.status);
+                  const isProcessing = processingIds.has(booking.id);
+                  
+                  return (
+                    <tr key={booking.id} className="hover:bg-gray-50 transition-colors duration-200">
+                      {/* User & Purpose */}
+                      <td className="px-6 py-4">
+                        <div className="flex items-center space-x-3">
+                          <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
+                            <User className="h-5 w-5 text-white" />
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">
+                              {booking.user?.full_name || booking.user_info?.full_name || 'Unknown User'}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {booking.user?.identity_number || booking.user_info?.identity_number || 'No ID'}
+                            </div>
+                            <div className="text-xs font-medium text-gray-700 mt-1">
+                              {booking.purpose}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Room & Time */}
+                      <td className="px-6 py-4">
+                        <div className="flex items-center space-x-3">
+                          <div className="h-10 w-10 bg-gradient-to-r from-green-500 to-teal-500 rounded-full flex items-center justify-center">
+                            <Building className="h-5 w-5 text-white" />
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">
+                              {booking.room?.name || 'Unknown Room'}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {booking.room?.code || 'No Code'}
+                            </div>
+                            <div className="text-xs text-gray-600 mt-1">
+                              {format(new Date(booking.start_time), 'MMM d, HH:mm')} - {format(new Date(booking.end_time), 'HH:mm')}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Details */}
+                      <td className="px-6 py-4">
+                        <div className="space-y-1">
+                          <div className="text-sm text-gray-900">
+                            <span className="font-medium">{booking.sks} SKS</span> • 
+                            <span className="capitalize ml-1">{booking.class_type}</span>
+                          </div>
+                          {booking.equipment_requested && booking.equipment_requested.length > 0 && (
+                            <div className="flex items-center text-xs text-gray-500">
+                              <Package className="h-3 w-3 mr-1" />
+                              <span>{booking.equipment_requested.length} {getText('equipment', 'peralatan')}</span>
+                            </div>
+                          )}
+                          <div className="text-xs text-gray-500">
+                            {getText('Created', 'Dibuat')} {format(new Date(booking.created_at), 'MMM d')}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-6 py-4">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(booking.status)}`}>
                           <StatusIcon className="h-3 w-3 mr-1" />
-                          {booking.status.toUpperCase()}
+                          {getText(booking.status.charAt(0).toUpperCase() + booking.status.slice(1), booking.status.toUpperCase())}
                         </span>
-                      </div>
-                    </div>
+                      </td>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                      {/* User Info */}
-                      <div className="flex items-center space-x-3">
-                        <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
-                          <User className="h-5 w-5 text-white" />
+                      {/* Actions */}
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end space-x-2">
+                          <button
+                            onClick={() => {
+                              setSelectedBooking(booking);
+                              setShowDetailModal(true);
+                            }}
+                            className="text-gray-600 hover:text-gray-900 p-1 rounded transition-colors"
+                            title={getText('View Details', 'Lihat Detail')}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          
+                          {booking.status === 'pending' && (
+                            <>
+                              <button
+                                onClick={() => handleStatusUpdate(booking.id, 'approved')}
+                                disabled={isProcessing}
+                                className="text-green-600 hover:text-green-800 p-1 rounded transition-colors disabled:opacity-50"
+                                title={getText('Approve', 'Setujui')}
+                              >
+                                <Check className="h-4 w-4" />
+                              </button>
+                              
+                              <button
+                                onClick={() => handleStatusUpdate(booking.id, 'rejected')}
+                                disabled={isProcessing}
+                                className="text-red-600 hover:text-red-800 p-1 rounded transition-colors disabled:opacity-50"
+                                title={getText('Reject', 'Tolak')}
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
+                          
+                          <button
+                            onClick={() => setShowDeleteConfirm(booking.id)}
+                            disabled={isProcessing}
+                            className="text-red-600 hover:text-red-800 p-1 rounded transition-colors disabled:opacity-50"
+                            title={getText('Delete', 'Hapus')}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {booking.user?.full_name || booking.user_info?.full_name || 'Unknown User'}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {booking.user?.identity_number || booking.user_info?.identity_number || 'No ID'}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Room Info */}
-                      <div className="flex items-center space-x-3">
-                        <div className="h-10 w-10 bg-gradient-to-r from-green-500 to-teal-500 rounded-full flex items-center justify-center">
-                          <Building className="h-5 w-5 text-white" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {booking.room?.name || 'Unknown Room'}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {booking.room?.code || 'No Code'} • {booking.room?.department?.name || 'No Department'}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Date Info */}
-                      <div className="flex items-center space-x-3">
-                        <div className="h-10 w-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
-                          <Clock className="h-5 w-5 text-white" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {format(new Date(booking.start_time), 'MMM d, yyyy')}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {format(new Date(booking.start_time), 'HH:mm')} - {format(new Date(booking.end_time), 'HH:mm')}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Additional Info */}
-                    <div className="flex items-center space-x-6 text-sm text-gray-600">
-                      <div className="flex items-center">
-                        <BookOpen className="h-4 w-4 mr-1" />
-                        <span>{booking.sks} SKS • {booking.class_type}</span>
-                      </div>
-                      {booking.equipment_requested && booking.equipment_requested.length > 0 && (
-                        <div className="flex items-center">
-                          <Package className="h-4 w-4 mr-1" />
-                          <span>{booking.equipment_requested.length} {getText('equipment requested', 'peralatan diminta')}</span>
-                        </div>
-                      )}
-                      <div className="flex items-center">
-                        <Calendar className="h-4 w-4 mr-1" />
-                        <span>{getText('Created', 'Dibuat')} {format(new Date(booking.created_at), 'MMM d')}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center space-x-2 ml-4">
-                    <button
-                      onClick={() => {
-                        setSelectedBooking(booking);
-                        setShowDetailModal(true);
-                      }}
-                      className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors duration-200"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </button>
-                    
-                    {booking.status === 'pending' && (
-                      <>
-                        <button
-                          onClick={() => handleStatusUpdate(booking.id, 'approved')}
-                          disabled={isProcessing}
-                          className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-                        >
-                          <Check className="h-4 w-4" />
-                          <span>{getText('Approve', 'Setujui')}</span>
-                        </button>
-                        
-                        <button
-                          onClick={() => handleStatusUpdate(booking.id, 'rejected')}
-                          disabled={isProcessing}
-                          className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-                        >
-                          <X className="h-4 w-4" />
-                          <span>{getText('Reject', 'Tolak')}</span>
-                        </button>
-                      </>
-                    )}
-                    
-                    <button
-                      onClick={() => setShowDeleteConfirm(booking.id)}
-                      disabled={isProcessing}
-                      className="p-2 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-md transition-colors duration-200 disabled:opacity-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Booking Detail Modal */}
       {showDetailModal && selectedBooking && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">
+                <h3 className="text-xl font-semibold text-gray-900">
                   {getText('Booking Details', 'Detail Pemesanan')}
                 </h3>
                 <button
@@ -696,7 +715,7 @@ const BookingManagement: React.FC = () => {
                 <div className="flex items-center space-x-2">
                   <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(selectedBooking.status)}`}>
                     {getStatusIcon(selectedBooking.status)({ className: "h-4 w-4 mr-1" })}
-                    {selectedBooking.status.toUpperCase()}
+                    {getText(selectedBooking.status.charAt(0).toUpperCase() + selectedBooking.status.slice(1), selectedBooking.status.toUpperCase())}
                   </span>
                 </div>
 
@@ -732,22 +751,42 @@ const BookingManagement: React.FC = () => {
                   <h5 className="font-medium text-gray-900 mb-3">{getText('User Information', 'Informasi Pengguna')}</h5>
                   <div className="bg-blue-50 rounded-lg p-4">
                     <div className="flex items-center space-x-3">
-                      <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
-                        <User className="h-5 w-5 text-white" />
+                      <div className="h-12 w-12 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
+                        <User className="h-6 w-6 text-white" />
                       </div>
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {selectedBooking.user?.full_name || selectedBooking.user_info?.full_name || 'Unknown User'}
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          {selectedBooking.user?.identity_number || selectedBooking.user_info?.identity_number || 'No ID'}
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          {selectedBooking.user?.email || selectedBooking.user_info?.email || 'No Email'}
+                      <div className="flex-1">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-sm font-medium text-gray-600">{getText('Full Name', 'Nama Lengkap')}</label>
+                            <div className="font-medium text-gray-900">
+                              {selectedBooking.user?.full_name || selectedBooking.user_info?.full_name || 'Unknown User'}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium text-gray-600">{getText('Identity Number', 'Nomor Identitas')}</label>
+                            <div className="font-medium text-gray-900">
+                              {selectedBooking.user?.identity_number || selectedBooking.user_info?.identity_number || 'No ID'}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium text-gray-600">{getText('Email', 'Email')}</label>
+                            <div className="font-medium text-gray-900">
+                              {selectedBooking.user?.email || selectedBooking.user_info?.email || 'No Email'}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium text-gray-600">{getText('Phone', 'Telepon')}</label>
+                            <div className="font-medium text-gray-900">
+                              {selectedBooking.user_info?.phone_number || 'No Phone'}
+                            </div>
+                          </div>
                         </div>
                         {selectedBooking.user?.study_program && (
-                          <div className="text-sm text-gray-600">
-                            {selectedBooking.user.study_program.name} ({selectedBooking.user.study_program.code})
+                          <div className="mt-3">
+                            <label className="text-sm font-medium text-gray-600">{getText('Study Program', 'Program Studi')}</label>
+                            <div className="font-medium text-gray-900">
+                              {selectedBooking.user.study_program.name} ({selectedBooking.user.study_program.code})
+                            </div>
                           </div>
                         )}
                       </div>
@@ -760,11 +799,11 @@ const BookingManagement: React.FC = () => {
                   <h5 className="font-medium text-gray-900 mb-3">{getText('Room Information', 'Informasi Ruangan')}</h5>
                   <div className="bg-green-50 rounded-lg p-4">
                     <div className="flex items-center space-x-3">
-                      <div className="h-10 w-10 bg-gradient-to-r from-green-500 to-teal-500 rounded-full flex items-center justify-center">
-                        <Building className="h-5 w-5 text-white" />
+                      <div className="h-12 w-12 bg-gradient-to-r from-green-500 to-teal-500 rounded-full flex items-center justify-center">
+                        <Building className="h-6 w-6 text-white" />
                       </div>
                       <div>
-                        <div className="font-medium text-gray-900">{selectedBooking.room?.name || 'Unknown Room'}</div>
+                        <div className="font-medium text-gray-900 text-lg">{selectedBooking.room?.name || 'Unknown Room'}</div>
                         <div className="text-sm text-gray-600">{selectedBooking.room?.code || 'No Code'}</div>
                         <div className="text-sm text-gray-600">
                           {getText('Capacity', 'Kapasitas')}: {selectedBooking.room?.capacity || 0} {getText('seats', 'kursi')}
@@ -802,6 +841,122 @@ const BookingManagement: React.FC = () => {
                   </div>
                 )}
 
+                {/* Attachments */}
+                {selectedBooking.attachments && selectedBooking.attachments.length > 0 && (
+                  <div>
+                    <h5 className="font-medium text-gray-900 mb-3 flex items-center">
+                      <FileText className="h-5 w-5 mr-2 text-blue-600" />
+                      {getText('Attachments', 'Lampiran')}
+                      <span className="ml-2 text-sm text-gray-500">({selectedBooking.attachments.length} files)</span>
+                    </h5>
+                    
+                    <div className="bg-blue-50 rounded-lg p-4">
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {selectedBooking.attachments.map((attachment, index) => {
+                          const isPDF = attachment.startsWith('data:application/pdf') || attachment.toLowerCase().includes('.pdf');
+                          
+                          return (
+                            <div key={index} className="relative group">
+                              <div 
+                                onClick={() => window.open(attachment, '_blank')}
+                                className="cursor-pointer bg-white rounded-lg border border-blue-200 p-3 hover:shadow-md transition-all duration-200 hover:scale-105"
+                              >
+                                {isPDF ? (
+                                  <div className="flex flex-col items-center">
+                                    <div className="h-16 w-16 bg-red-100 rounded-lg flex items-center justify-center mb-2">
+                                      <FileText className="h-8 w-8 text-red-600" />
+                                    </div>
+                                    <span className="text-xs text-center text-gray-700 font-medium">
+                                      PDF Document
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div className="relative">
+                                    <img
+                                      src={attachment}
+                                      alt={`Attachment ${index + 1}`}
+                                      className="w-full h-16 object-cover rounded-lg mb-2"
+                                    />
+                                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg transition-all duration-200 flex items-center justify-center">
+                                      <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                                    </div>
+                                    <span className="text-xs text-center text-gray-700 font-medium block">
+                                      Image File
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {/* Quick View Button */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  // Open in modal for better viewing
+                                  const modal = document.createElement('div');
+                                  modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4';
+                                  modal.onclick = () => document.body.removeChild(modal);
+                                  
+                                  if (isPDF) {
+                                    modal.innerHTML = `
+                                      <div class="bg-white rounded-lg p-4 max-w-4xl w-full h-full max-h-[90vh] overflow-auto">
+                                        <div class="flex justify-between items-center mb-4">
+                                          <h3 class="text-lg font-semibold">PDF Document</h3>
+                                          <button onclick="document.body.removeChild(this.closest('.fixed'))" class="text-gray-500 hover:text-gray-700">
+                                            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                          </button>
+                                        </div>
+                                        <iframe src="${attachment}" class="w-full h-full" frameborder="0"></iframe>
+                                      </div>
+                                    `;
+                                  } else {
+                                    modal.innerHTML = `
+                                      <div class="relative max-w-4xl max-h-[90vh]">
+                                        <img src="${attachment}" alt="Attachment" class="max-w-full max-h-full object-contain rounded-lg" />
+                                        <button onclick="document.body.removeChild(this.closest('.fixed'))" class="absolute top-4 right-4 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-75">
+                                          <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                          </svg>
+                                        </button>
+                                      </div>
+                                    `;
+                                  }
+                                  
+                                  document.body.appendChild(modal);
+                                }}
+                                className="absolute top-1 right-1 bg-blue-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-blue-700"
+                                title={getText('Quick View', 'Lihat Cepat')}
+                              >
+                                <Eye className="h-3 w-3" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      
+                      {/* Download All Button */}
+                      <div className="mt-4 pt-4 border-t border-blue-200">
+                        <button
+                          onClick={() => {
+                            selectedBooking.attachments?.forEach((attachment, index) => {
+                              const link = document.createElement('a');
+                              link.href = attachment;
+                              link.download = `attachment_${index + 1}${attachment.startsWith('data:application/pdf') ? '.pdf' : '.jpg'}`;
+                              link.click();
+                            });
+                            alert.success(getText('Attachments downloaded', 'Lampiran berhasil diunduh'));
+                          }}
+                          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
+                        >
+                          <Download className="h-4 w-4" />
+                          <span>{getText('Download All Attachments', 'Unduh Semua Lampiran')}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Actions */}
                 {selectedBooking.status === 'pending' && (
                   <div className="flex space-x-3 pt-4 border-t">
@@ -810,10 +965,14 @@ const BookingManagement: React.FC = () => {
                         handleStatusUpdate(selectedBooking.id, 'approved');
                         setShowDetailModal(false);
                       }}
-                      disabled={isProcessing}
+                      disabled={processingIds.has(selectedBooking.id)}
                       className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
                     >
-                      <Check className="h-4 w-4" />
+                      {processingIds.has(selectedBooking.id) ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Check className="h-4 w-4" />
+                      )}
                       <span>{getText('Approve Booking', 'Setujui Pemesanan')}</span>
                     </button>
                     <button
@@ -821,10 +980,14 @@ const BookingManagement: React.FC = () => {
                         handleStatusUpdate(selectedBooking.id, 'rejected');
                         setShowDetailModal(false);
                       }}
-                      disabled={isProcessing}
+                      disabled={processingIds.has(selectedBooking.id)}
                       className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
                     >
-                      <X className="h-4 w-4" />
+                      {processingIds.has(selectedBooking.id) ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <X className="h-4 w-4" />
+                      )}
                       <span>{getText('Reject Booking', 'Tolak Pemesanan')}</span>
                     </button>
                   </div>
@@ -867,10 +1030,14 @@ const BookingManagement: React.FC = () => {
                 disabled={processingIds.has(showDeleteConfirm)}
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
               >
-                {processingIds.has(showDeleteConfirm) 
-                  ? getText('Deleting...', 'Menghapus...') 
-                  : getText('Delete', 'Hapus')
-                }
+                {processingIds.has(showDeleteConfirm) ? (
+                  <div className="flex items-center justify-center">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    {getText('Deleting...', 'Menghapus...')}
+                  </div>
+                ) : (
+                  getText('Delete', 'Hapus')
+                )}
               </button>
             </div>
           </div>
