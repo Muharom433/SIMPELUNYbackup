@@ -155,11 +155,12 @@ const CheckOut: React.FC = () => {
     }
   }, [watchHasIssues, form]);
 
+  // ✅ PERBAIKAN: fetchAllRecords untuk approved dan borrow status
   const fetchAllRecords = async () => {
     try {
       setLoading(true);
       
-      console.log('Fetching approved bookings and borrowing tools...');
+      console.log('Fetching approved bookings and borrowed tools...');
       
       // Fetch approved bookings
       const { data: bookingsData, error: bookingsError } = await supabase
@@ -173,7 +174,7 @@ const CheckOut: React.FC = () => {
         throw bookingsError;
       }
 
-      // Fetch lending tools with status 'borrow'
+      // ✅ PERBAIKAN: Fetch lending tools dengan status 'borrow' (sudah disetujui dan sedang dipinjam)
       const { data: lendingToolsData, error: lendingToolsError } = await supabase
         .from('lending_tool')
         .select('*')
@@ -186,7 +187,7 @@ const CheckOut: React.FC = () => {
       }
 
       console.log('Approved bookings found:', bookingsData?.length || 0);
-      console.log('Borrowing tools found:', lendingToolsData?.length || 0);
+      console.log('Borrowed tools found:', lendingToolsData?.length || 0);
 
       // Process bookings
       const bookingsWithDetails = await Promise.all(
@@ -386,6 +387,7 @@ const CheckOut: React.FC = () => {
     form.setValue('attachments', newAttachments);
   };
 
+  // ✅ PERBAIKAN: handleSubmit dengan restore equipment quantities
   const handleSubmit = async (data: CheckoutForm) => {
     try {
       setLoading(true);
@@ -404,7 +406,7 @@ const CheckOut: React.FC = () => {
         // Create checkout record for lending tool
         const checkoutData = {
           user_id: lendingTool.id_user,
-          lendingTool_id: lendingTool.id, // Foreign key to lending_tool
+          lendingTool_id: lendingTool.id,
           checkout_date: new Date().toISOString(),
           expected_return_date: lendingTool.date,
           status: 'returned',
@@ -412,7 +414,7 @@ const CheckOut: React.FC = () => {
           condition_on_checkout: 'good',
           condition_on_return: 'good',
           total_items: lendingTool.equipment_details?.length || 0,
-          type: 'things' // Set type to 'things' for lending tools
+          type: 'things'
         };
 
         const { error: checkoutError } = await supabase
@@ -426,7 +428,7 @@ const CheckOut: React.FC = () => {
 
         console.log('Checkout record created successfully for lending tool');
 
-        // Update lending tool status to 'completed'
+        // ✅ PERBAIKAN: Update status menjadi 'completed' dan restore equipment quantities
         const { error: lendingUpdateError } = await supabase
           .from('lending_tool')
           .update({ 
@@ -437,11 +439,46 @@ const CheckOut: React.FC = () => {
 
         if (lendingUpdateError) {
           console.error('Error updating lending tool status:', lendingUpdateError);
-          alert.error(getText('Checkout completed but failed to update lending tool status', 'Checkout selesai tapi gagal memperbarui status peminjaman alat'));
-        } else {
-          console.log('Lending tool status updated to completed');
+          throw lendingUpdateError;
         }
 
+        console.log('Lending tool status updated to completed');
+
+        // ✅ TAMBAH: Restore equipment quantities
+        for (let i = 0; i < lendingTool.id_equipment.length; i++) {
+          const equipmentId = lendingTool.id_equipment[i];
+          const quantity = lendingTool.qty[i];
+          
+          // Get current equipment data
+          const { data: equipment, error: equipmentFetchError } = await supabase
+            .from('equipment')
+            .select('quantity')
+            .eq('id', equipmentId)
+            .single();
+
+          if (equipmentFetchError) {
+            console.error('Error fetching equipment:', equipmentFetchError);
+            continue;
+          }
+
+          if (equipment) {
+            const newQuantity = equipment.quantity + quantity;
+
+            const { error: equipmentUpdateError } = await supabase
+              .from('equipment')
+              .update({ 
+                quantity: newQuantity,
+                is_available: newQuantity > 0
+              })
+              .eq('id', equipmentId);
+
+            if (equipmentUpdateError) {
+              console.error('Error updating equipment:', equipmentUpdateError);
+            } else {
+              console.log(`Equipment ${equipmentId} quantity restored: +${quantity} = ${newQuantity}`);
+            }
+          }
+        }
 
       } else {
         // Handle booking checkout (existing logic)
@@ -485,6 +522,38 @@ const CheckOut: React.FC = () => {
           alert.error(getText('Checkout completed but failed to update booking status', 'Checkout selesai tapi gagal memperbarui status pemesanan'));
         } else {
           console.log('Booking status updated to completed');
+        }
+
+        // ✅ TAMBAH: Restore equipment quantities for booking if any
+        if (booking.equipment_requested && booking.equipment_requested.length > 0) {
+          for (const equipmentId of booking.equipment_requested) {
+            const { data: equipment, error: equipmentFetchError } = await supabase
+              .from('equipment')
+              .select('quantity')
+              .eq('id', equipmentId)
+              .single();
+
+            if (equipmentFetchError) {
+              console.error('Error fetching equipment:', equipmentFetchError);
+              continue;
+            }
+
+            if (equipment) {
+              const newQuantity = equipment.quantity + 1; // Assuming 1 item per equipment for bookings
+
+              const { error: equipmentUpdateError } = await supabase
+                .from('equipment')
+                .update({ 
+                  quantity: newQuantity,
+                  is_available: newQuantity > 0
+                })
+                .eq('id', equipmentId);
+
+              if (equipmentUpdateError) {
+                console.error('Error updating equipment:', equipmentUpdateError);
+              }
+            }
+          }
         }
       }
 
@@ -624,7 +693,7 @@ const CheckOut: React.FC = () => {
                   {getText('Return & Check Out', 'Pengembalian & Check Out')}
                 </h1>
                 <p className="text-gray-600 mt-1">
-                  {getText('Complete your return and report any issues', 'Selesaikan pengembalian dan laporkan masalah')}
+                  {getText('Complete your return for approved bookings and borrowed equipment', 'Selesaikan pengembalian untuk pemesanan yang disetujui dan peralatan yang dipinjam')}
                 </p>
               </div>
             </div>
@@ -837,8 +906,8 @@ const CheckOut: React.FC = () => {
                         selectedRecord.record_type === 'booking' ? 'text-emerald-900' : 'text-purple-900'
                       }`}>
                         {selectedRecord.record_type === 'booking' 
-                          ? getText('Room Booking Details', 'Detail Pemesanan Ruangan')
-                          : getText('Tool Lending Details', 'Detail Peminjaman Alat')
+                          ? getText('Approved Room Booking', 'Pemesanan Ruangan Disetujui')
+                          : getText('Borrowed Equipment', 'Peralatan Dipinjam')
                         }
                       </h3>
                     </div>
@@ -924,7 +993,7 @@ const CheckOut: React.FC = () => {
                               {getText('Status', 'Status')}
                             </span>
                             <div className="mt-1">
-                              <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
                                 {getText('Currently Borrowed', 'Sedang Dipinjam')}
                               </span>
                             </div>
