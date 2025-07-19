@@ -3,7 +3,7 @@ import {
     Wrench, Search, Eye, Edit, Trash2, RefreshCw, Download, User, Package, 
     AlertCircle, Calendar, Clock, X, Phone, Mail, Hash, Building, Users, 
     CheckCircle, XCircle, Plus, Minus, Settings, Loader2,
-    FileText // 🔥 TAMBAHKAN INI JUGA
+    FileText, Check, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -20,6 +20,8 @@ interface LendingRecord {
     date: string;
     id_equipment: string[];
     qty: number[];
+    status: 'pending' | 'approved' | 'rejected' | 'borrow' | 'completed'; // ✅ TAMBAH STATUS
+    attachments?: string[]; // ✅ TAMBAH ATTACHMENTS
     user_info?: {
         full_name: string;
         identity_number: string;
@@ -36,6 +38,7 @@ const ToolLendingManagement: React.FC = () => {
     const [lendingRecords, setLendingRecords] = useState<LendingRecord[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState<string>('all'); // ✅ FILTER STATUS
     const [dateFilter, setDateFilter] = useState<string>('all');
     const [selectedRecord, setSelectedRecord] = useState<LendingRecord | null>(null);
     const [showDetailModal, setShowDetailModal] = useState(false);
@@ -136,6 +139,83 @@ const ToolLendingManagement: React.FC = () => {
         }
     };
 
+    // ✅ TAMBAH FUNGSI APPROVAL/REJECTION
+    const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rejected') => {
+        try {
+            setProcessingIds(prev => new Set(prev).add(recordId));
+            
+            const record = lendingRecords.find(r => r.id === recordId);
+            if (!record) throw new Error("Record not found");
+
+            // Update lending record status
+            const { error: recordError } = await supabase
+                .from('lending_tool')
+                .update({ 
+                    status: newStatus,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', recordId);
+
+            if (recordError) throw recordError;
+
+            // Handle equipment quantities
+            for (let i = 0; i < record.id_equipment.length; i++) {
+                const equipmentId = record.id_equipment[i];
+                const quantity = record.qty[i];
+                
+                const equipment = allEquipment.find(eq => eq.id === equipmentId);
+                if (equipment) {
+                    let newQuantity = equipment.quantity;
+                    
+                    if (newStatus === 'approved') {
+                        // Decrease quantity when approved
+                        newQuantity = Math.max(0, equipment.quantity - quantity);
+                        
+                        // Update status to 'borrow' for approved items
+                        await supabase
+                            .from('lending_tool')
+                            .update({ status: 'borrow' })
+                            .eq('id', recordId);
+                            
+                    } else if (newStatus === 'rejected') {
+                        // Restore quantity when rejected
+                        newQuantity = equipment.quantity + quantity;
+                    }
+                    
+                    await supabase
+                        .from('equipment')
+                        .update({ 
+                            quantity: newQuantity,
+                            is_available: newQuantity > 0
+                        })
+                        .eq('id', equipmentId);
+                }
+            }
+            
+            const statusText = newStatus === 'approved' 
+                ? getText('approved', 'disetujui') 
+                : getText('rejected', 'ditolak');
+            
+            toast.success(getText(`Tool lending ${statusText} successfully`, `Peminjaman alat berhasil ${statusText}`));
+            await fetchLendingRecords();
+            await fetchAllEquipment();
+            
+            if (selectedRecord?.id === recordId) {
+                setShowDetailModal(false);
+            }
+            
+        } catch (error: any) {
+            console.error('Error updating lending status:', error);
+            toast.error(error.message || getText('Failed to update lending status', 'Gagal memperbarui status peminjaman'));
+        } finally {
+            setProcessingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(recordId);
+                return newSet;
+            });
+        }
+    };
+
     const handleDelete = async (recordId: string) => {
         try {
             setProcessingIds(prev => new Set(prev).add(recordId));
@@ -144,22 +224,24 @@ const ToolLendingManagement: React.FC = () => {
             const recordToDelete = lendingRecords.find(r => r.id === recordId);
             if (!recordToDelete) throw new Error("Record not found");
 
-            // Restore equipment quantities
-            for (let i = 0; i < recordToDelete.id_equipment.length; i++) {
-                const equipmentId = recordToDelete.id_equipment[i];
-                const quantity = recordToDelete.qty[i];
-                
-                const equipment = allEquipment.find(eq => eq.id === equipmentId);
-                if (equipment) {
-                    const newQuantity = equipment.quantity + quantity;
+            // Restore equipment quantities if the record was approved/borrow
+            if (recordToDelete.status === 'approved' || recordToDelete.status === 'borrow') {
+                for (let i = 0; i < recordToDelete.id_equipment.length; i++) {
+                    const equipmentId = recordToDelete.id_equipment[i];
+                    const quantity = recordToDelete.qty[i];
                     
-                    await supabase
-                        .from('equipment')
-                        .update({ 
-                            quantity: newQuantity,
-                            is_available: true // Always set to available when quantity > 0
-                        })
-                        .eq('id', equipmentId);
+                    const equipment = allEquipment.find(eq => eq.id === equipmentId);
+                    if (equipment) {
+                        const newQuantity = equipment.quantity + quantity;
+                        
+                        await supabase
+                            .from('equipment')
+                            .update({ 
+                                quantity: newQuantity,
+                                is_available: true
+                            })
+                            .eq('id', equipmentId);
+                    }
                 }
             }
             
@@ -174,7 +256,7 @@ const ToolLendingManagement: React.FC = () => {
             toast.success(getText('Lending record deleted successfully', 'Data peminjaman berhasil dihapus'));
             setShowDeleteConfirm(null);
             await fetchLendingRecords();
-            await fetchAllEquipment(); // Refresh equipment list
+            await fetchAllEquipment();
             
         } catch (error: any) {
             console.error('Error deleting lending record:', error);
@@ -198,6 +280,9 @@ const ToolLendingManagement: React.FC = () => {
             userIdentity.toLowerCase().includes(searchTerm.toLowerCase()) ||
             equipmentNames.toLowerCase().includes(searchTerm.toLowerCase());
         
+        // ✅ FILTER STATUS
+        const matchesStatus = statusFilter === 'all' || record.status === statusFilter;
+        
         let matchesDate = true;
         if (dateFilter !== 'all') {
             const recordDate = new Date(record.date);
@@ -216,7 +301,7 @@ const ToolLendingManagement: React.FC = () => {
             }
         }
         
-        return matchesSearch && matchesDate;
+        return matchesSearch && matchesStatus && matchesDate;
     });
 
     const getTotalItemsInRecord = (record: LendingRecord) => {
@@ -230,6 +315,29 @@ const ToolLendingManagement: React.FC = () => {
     const getUserContact = (record: LendingRecord) => {
         return record.user?.phone_number || record.user_info?.phone_number || 
                record.user?.identity_number || record.user_info?.identity_number || 'No contact';
+    };
+
+    // ✅ FUNGSI STATUS COLOR
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'pending': return 'bg-yellow-100 text-yellow-800';
+            case 'approved': return 'bg-green-100 text-green-800';
+            case 'rejected': return 'bg-red-100 text-red-800';
+            case 'borrow': return 'bg-blue-100 text-blue-800';
+            case 'completed': return 'bg-gray-100 text-gray-800';
+            default: return 'bg-gray-100 text-gray-800';
+        }
+    };
+
+    const getStatusIcon = (status: string) => {
+        switch (status) {
+            case 'pending': return Clock;
+            case 'approved': return CheckCircle;
+            case 'rejected': return XCircle;
+            case 'borrow': return Package;
+            case 'completed': return Check;
+            default: return AlertCircle;
+        }
     };
 
     if (profile?.role !== 'super_admin') {
@@ -252,10 +360,10 @@ const ToolLendingManagement: React.FC = () => {
                     <div>
                         <h1 className="text-3xl font-bold flex items-center space-x-3">
                             <Wrench className="h-8 w-8" />
-                            <span>{getText('Tool Administration', 'Administrasi Alat')}</span>
+                            <span>{getText('Tool Lending Management', 'Manajemen Peminjaman Alat')}</span>
                         </h1>
                         <p className="mt-2 opacity-90">
-                            {getText('Manage equipment lending records and monitor usage', 'Kelola data peminjaman peralatan dan pantau penggunaan')}
+                            {getText('Manage equipment lending requests and monitor usage', 'Kelola permintaan peminjaman peralatan dan pantau penggunaan')}
                         </p>
                     </div>
                     <div className="hidden md:block text-right">
@@ -265,42 +373,38 @@ const ToolLendingManagement: React.FC = () => {
                 </div>
             </div>
 
-            {/* Statistics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {/* ✅ STATISTICS CARDS - DENGAN STATUS BARU */}
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
                 {[
                     { 
-                        label: getText('Total Lendings', 'Total Peminjaman'), 
-                        count: lendingRecords.length, 
+                        label: getText('Pending', 'Menunggu'), 
+                        count: lendingRecords.filter(r => r.status === 'pending').length, 
+                        color: 'bg-yellow-500', 
+                        icon: Clock 
+                    },
+                    { 
+                        label: getText('Approved', 'Disetujui'), 
+                        count: lendingRecords.filter(r => r.status === 'approved').length, 
+                        color: 'bg-green-500', 
+                        icon: CheckCircle 
+                    },
+                    { 
+                        label: getText('Rejected', 'Ditolak'), 
+                        count: lendingRecords.filter(r => r.status === 'rejected').length, 
+                        color: 'bg-red-500', 
+                        icon: XCircle 
+                    },
+                    { 
+                        label: getText('Borrowed', 'Dipinjam'), 
+                        count: lendingRecords.filter(r => r.status === 'borrow').length, 
                         color: 'bg-blue-500', 
                         icon: Package 
                     },
                     { 
-                        label: getText('Today', 'Hari Ini'), 
-                        count: lendingRecords.filter(r => {
-                            const recordDate = new Date(r.date);
-                            const today = new Date();
-                            return recordDate.toDateString() === today.toDateString();
-                        }).length, 
-                        color: 'bg-green-500', 
-                        icon: Calendar 
-                    },
-                    { 
-                        label: getText('This Week', 'Minggu Ini'), 
-                        count: lendingRecords.filter(r => {
-                            const recordDate = new Date(r.date);
-                            const today = new Date();
-                            const weekAgo = new Date(today);
-                            weekAgo.setDate(weekAgo.getDate() - 7);
-                            return recordDate >= weekAgo && recordDate <= today;
-                        }).length, 
-                        color: 'bg-purple-500', 
-                        icon: Clock 
-                    },
-                    { 
-                        label: getText('Unique Users', 'Pengguna Unik'), 
-                        count: new Set(lendingRecords.map(r => r.id_user || r.user_info?.identity_number)).size, 
-                        color: 'bg-orange-500', 
-                        icon: Users 
+                        label: getText('Completed', 'Selesai'), 
+                        count: lendingRecords.filter(r => r.status === 'completed').length, 
+                        color: 'bg-gray-500', 
+                        icon: Check 
                     }
                 ].map((stat, index) => (
                     <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -317,7 +421,7 @@ const ToolLendingManagement: React.FC = () => {
                 ))}
             </div>
 
-            {/* Filters */}
+            {/* ✅ FILTERS - DENGAN STATUS FILTER */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
                     <div className="flex flex-col sm:flex-row gap-4 flex-1">
@@ -331,6 +435,21 @@ const ToolLendingManagement: React.FC = () => {
                                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
                             />
                         </div>
+
+                        {/* ✅ STATUS FILTER */}
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        >
+                            <option value="all">{getText('All Status', 'Semua Status')}</option>
+                            <option value="pending">{getText('Pending', 'Menunggu')}</option>
+                            <option value="approved">{getText('Approved', 'Disetujui')}</option>
+                            <option value="rejected">{getText('Rejected', 'Ditolak')}</option>
+                            <option value="borrow">{getText('Borrowed', 'Dipinjam')}</option>
+                            <option value="completed">{getText('Completed', 'Selesai')}</option>
+                        </select>
+
                         <select
                             value={dateFilter}
                             onChange={(e) => setDateFilter(e.target.value)}
@@ -359,7 +478,7 @@ const ToolLendingManagement: React.FC = () => {
                 </div>
             </div>
 
-            {/* Records Table */}
+            {/* ✅ RECORDS TABLE - DENGAN STATUS DAN ACTIONS */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full">
@@ -372,10 +491,10 @@ const ToolLendingManagement: React.FC = () => {
                                     {getText('Equipment', 'Peralatan')}
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {getText('Lending Date', 'Tanggal Pinjam')}
+                                    {getText('Date & Total', 'Tanggal & Total')}
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {getText('Total Items', 'Total Item')}
+                                    {getText('Status', 'Status')}
                                 </th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     {getText('Actions', 'Aksi')}
@@ -401,17 +520,14 @@ const ToolLendingManagement: React.FC = () => {
                                                 {getText('No lending records found', 'Tidak ada data peminjaman')}
                                             </p>
                                             <p>{getText('Try adjusting your search or filters', 'Coba sesuaikan pencarian atau filter')}</p>
-                                            {lendingRecords.length > 0 && (
-                                                <p className="text-sm mt-2">
-                                                    {getText('Total records in database:', 'Total data dalam database:')} {lendingRecords.length}
-                                                </p>
-                                            )}
                                         </div>
                                     </td>
                                 </tr>
                             ) : (
                                 filteredRecords.map((record) => {
                                     const isProcessing = processingIds.has(record.id);
+                                    const StatusIcon = getStatusIcon(record.status);
+                                    
                                     return (
                                         <tr key={record.id} className="hover:bg-gray-50 transition-colors duration-200">
                                             <td className="px-6 py-4 whitespace-nowrap">
@@ -459,11 +575,17 @@ const ToolLendingManagement: React.FC = () => {
                                                     <div className="text-sm text-gray-500">
                                                         {format(new Date(record.date), 'h:mm a')}
                                                     </div>
+                                                    <div className="mt-1">
+                                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                            {getTotalItemsInRecord(record)} {getText('items', 'item')}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                                                    {getTotalItemsInRecord(record)} {getText('items', 'item')}
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(record.status)}`}>
+                                                    <StatusIcon className="h-3 w-3 mr-1" />
+                                                    {getText(record.status.charAt(0).toUpperCase() + record.status.slice(1), record.status.toUpperCase())}
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -478,6 +600,30 @@ const ToolLendingManagement: React.FC = () => {
                                                     >
                                                         <Eye className="h-4 w-4" />
                                                     </button>
+                                                    
+                                                    {/* ✅ APPROVE/REJECT BUTTONS */}
+                                                    {record.status === 'pending' && (
+                                                        <>
+                                                            <button
+                                                                onClick={() => handleStatusUpdate(record.id, 'approved')}
+                                                                disabled={isProcessing}
+                                                                className="text-green-600 hover:text-green-800 p-1 rounded transition-colors duration-200 disabled:opacity-50"
+                                                                title={getText('Approve', 'Setujui')}
+                                                            >
+                                                                <Check className="h-4 w-4" />
+                                                            </button>
+                                                            
+                                                            <button
+                                                                onClick={() => handleStatusUpdate(record.id, 'rejected')}
+                                                                disabled={isProcessing}
+                                                                className="text-red-600 hover:text-red-800 p-1 rounded transition-colors duration-200 disabled:opacity-50"
+                                                                title={getText('Reject', 'Tolak')}
+                                                            >
+                                                                <X className="h-4 w-4" />
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    
                                                     <button
                                                         onClick={() => setShowDeleteConfirm(record.id)}
                                                         disabled={isProcessing}
@@ -497,14 +643,14 @@ const ToolLendingManagement: React.FC = () => {
                 </div>
             </div>
 
-            {/* Detail Modal */}
+            {/* ✅ DETAIL MODAL - DENGAN ATTACHMENTS DAN ACTIONS */}
             {showDetailModal && selectedRecord && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
                         <div className="p-6">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-xl font-semibold text-gray-900">
-                                    {getText('Lending Record Details', 'Detail Data Peminjaman')}
+                                    {getText('Tool Lending Details', 'Detail Peminjaman Alat')}
                                 </h3>
                                 <button
                                     onClick={() => setShowDetailModal(false)}
@@ -515,6 +661,14 @@ const ToolLendingManagement: React.FC = () => {
                             </div>
 
                             <div className="space-y-6">
+                                {/* Status Badge */}
+                                <div className="flex items-center space-x-2">
+                                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(selectedRecord.status)}`}>
+                                        {React.createElement(getStatusIcon(selectedRecord.status), { className: "h-4 w-4 mr-1" })}
+                                        {getText(selectedRecord.status.charAt(0).toUpperCase() + selectedRecord.status.slice(1), selectedRecord.status.toUpperCase())}
+                                    </span>
+                                </div>
+
                                 {/* User Information */}
                                 <div>
                                     <h4 className="text-lg font-medium text-gray-900 mb-4">
@@ -637,120 +791,155 @@ const ToolLendingManagement: React.FC = () => {
                                         ))}
                                     </div>
                                 </div>
-                              {selectedRecord.attachments && selectedRecord.attachments.length > 0 && (
-  <div>
-    <h4 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-      <FileText className="h-5 w-5 mr-2 text-green-600" />
-      {getText('Permit Documents', 'Dokumen Izin')}
-      <span className="ml-2 text-sm text-gray-500">({selectedRecord.attachments.length} files)</span>
-    </h4>
-    
-    <div className="bg-green-50 rounded-lg p-4">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {selectedRecord.attachments.map((attachment, index) => {
-          const isPDF = attachment.startsWith('data:application/pdf') || attachment.toLowerCase().includes('.pdf');
-          
-          return (
-            <div key={index} className="relative group">
-              <div 
-                onClick={() => window.open(attachment, '_blank')}
-                className="cursor-pointer bg-white rounded-lg border border-green-200 p-3 hover:shadow-md transition-all duration-200 hover:scale-105"
-              >
-                {isPDF ? (
-                  <div className="flex flex-col items-center">
-                    <div className="h-16 w-16 bg-red-100 rounded-lg flex items-center justify-center mb-2">
-                      <FileText className="h-8 w-8 text-red-600" />
-                    </div>
-                    <span className="text-xs text-center text-gray-700 font-medium">
-                      PDF Document
-                    </span>
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <img
-                      src={attachment}
-                      alt={`Permit Document ${index + 1}`}
-                      className="w-full h-16 object-cover rounded-lg mb-2"
-                    />
-                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg transition-all duration-200 flex items-center justify-center">
-                      <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-                    </div>
-                    <span className="text-xs text-center text-gray-700 font-medium block">
-                      Image File
-                    </span>
-                  </div>
-                )}
-              </div>
-              
-              {/* Quick View Button */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  // Open in modal for better viewing
-                  const modal = document.createElement('div');
-                  modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4';
-                  modal.onclick = () => document.body.removeChild(modal);
-                  
-                  if (isPDF) {
-                    modal.innerHTML = `
-                      <div class="bg-white rounded-lg p-4 max-w-4xl w-full h-full max-h-[90vh] overflow-auto">
-                        <div class="flex justify-between items-center mb-4">
-                          <h3 class="text-lg font-semibold">PDF Document</h3>
-                          <button onclick="document.body.removeChild(this.closest('.fixed'))" class="text-gray-500 hover:text-gray-700">
-                            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </div>
-                        <iframe src="${attachment}" class="w-full h-full" frameborder="0"></iframe>
-                      </div>
-                    `;
-                  } else {
-                    modal.innerHTML = `
-                      <div class="relative max-w-4xl max-h-[90vh]">
-                        <img src="${attachment}" alt="Document" class="max-w-full max-h-full object-contain rounded-lg" />
-                        <button onclick="document.body.removeChild(this.closest('.fixed'))" class="absolute top-4 right-4 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-75">
-                          <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                    `;
-                  }
-                  
-                  document.body.appendChild(modal);
-                }}
-                className="absolute top-1 right-1 bg-green-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-green-700"
-                title={getText('Quick View', 'Lihat Cepat')}
-              >
-                <Eye className="h-3 w-3" />
-              </button>
-            </div>
-          );
-        })}
-      </div>
-      
-      {/* Download All Button */}
-      <div className="mt-4 pt-4 border-t border-green-200">
-        <button
-          onClick={() => {
-            selectedRecord.attachments?.forEach((attachment, index) => {
-              const link = document.createElement('a');
-              link.href = attachment;
-              link.download = `permit_document_${index + 1}${attachment.startsWith('data:application/pdf') ? '.pdf' : '.jpg'}`;
-              link.click();
-            });
-            toast.success(getText('Documents downloaded', 'Dokumen berhasil diunduh'));
-          }}
-          className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200"
-        >
-          <Download className="h-4 w-4" />
-          <span>{getText('Download All Documents', 'Unduh Semua Dokumen')}</span>
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+
+                                {/* ✅ ATTACHMENTS SECTION */}
+                                {selectedRecord.attachments && selectedRecord.attachments.length > 0 && (
+                                    <div>
+                                        <h4 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                                            <FileText className="h-5 w-5 mr-2 text-green-600" />
+                                            {getText('Permit Documents', 'Dokumen Izin')}
+                                            <span className="ml-2 text-sm text-gray-500">({selectedRecord.attachments.length} files)</span>
+                                        </h4>
+                                        
+                                        <div className="bg-green-50 rounded-lg p-4">
+                                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                                {selectedRecord.attachments.map((attachment, index) => {
+                                                    const isPDF = attachment.startsWith('data:application/pdf') || attachment.toLowerCase().includes('.pdf');
+                                                    
+                                                    return (
+                                                        <div key={index} className="relative group">
+                                                            <div 
+                                                                onClick={() => window.open(attachment, '_blank')}
+                                                                className="cursor-pointer bg-white rounded-lg border border-green-200 p-3 hover:shadow-md transition-all duration-200 hover:scale-105"
+                                                            >
+                                                                {isPDF ? (
+                                                                    <div className="flex flex-col items-center">
+                                                                        <div className="h-16 w-16 bg-red-100 rounded-lg flex items-center justify-center mb-2">
+                                                                            <FileText className="h-8 w-8 text-red-600" />
+                                                                        </div>
+                                                                        <span className="text-xs text-center text-gray-700 font-medium">
+                                                                            PDF Document
+                                                                        </span>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="relative">
+                                                                        <img
+                                                                            src={attachment}
+                                                                            alt={`Permit Document ${index + 1}`}
+                                                                            className="w-full h-16 object-cover rounded-lg mb-2"
+                                                                        />
+                                                                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg transition-all duration-200 flex items-center justify-center">
+                                                                            <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                                                                        </div>
+                                                                        <span className="text-xs text-center text-gray-700 font-medium block">
+                                                                            Image File
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    const modal = document.createElement('div');
+                                                                    modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4';
+                                                                    modal.onclick = () => document.body.removeChild(modal);
+                                                                    
+                                                                    if (isPDF) {
+                                                                        modal.innerHTML = `
+                                                                            <div class="bg-white rounded-lg p-4 max-w-4xl w-full h-full max-h-[90vh] overflow-auto">
+                                                                                <div class="flex justify-between items-center mb-4">
+                                                                                    <h3 class="text-lg font-semibold">PDF Document</h3>
+                                                                                    <button onclick="document.body.removeChild(this.closest('.fixed'))" class="text-gray-500 hover:text-gray-700">
+                                                                                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                                                                        </svg>
+                                                                                    </button>
+                                                                                </div>
+                                                                                <iframe src="${attachment}" class="w-full h-full" frameborder="0"></iframe>
+                                                                            </div>
+                                                                        `;
+                                                                    } else {
+                                                                        modal.innerHTML = `
+                                                                            <div class="relative max-w-4xl max-h-[90vh]">
+                                                                                <img src="${attachment}" alt="Document" class="max-w-full max-h-full object-contain rounded-lg" />
+                                                                                <button onclick="document.body.removeChild(this.closest('.fixed'))" class="absolute top-4 right-4 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-75">
+                                                                                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                                                                    </svg>
+                                                                                </button>
+                                                                            </div>
+                                                                        `;
+                                                                    }
+                                                                    
+                                                                    document.body.appendChild(modal);
+                                                                }}
+                                                                className="absolute top-1 right-1 bg-green-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-green-700"
+                                                                title={getText('Quick View', 'Lihat Cepat')}
+                                                            >
+                                                                <Eye className="h-3 w-3" />
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                            
+                                            <div className="mt-4 pt-4 border-t border-green-200">
+                                                <button
+                                                    onClick={() => {
+                                                        selectedRecord.attachments?.forEach((attachment, index) => {
+                                                            const link = document.createElement('a');
+                                                            link.href = attachment;
+                                                            link.download = `permit_document_${index + 1}${attachment.startsWith('data:application/pdf') ? '.pdf' : '.jpg'}`;
+                                                            link.click();
+                                                        });
+                                                        toast.success(getText('Documents downloaded', 'Dokumen berhasil diunduh'));
+                                                    }}
+                                                    className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200"
+                                                >
+                                                    <Download className="h-4 w-4" />
+                                                    <span>{getText('Download All Documents', 'Unduh Semua Dokumen')}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* ✅ ACTIONS UNTUK PENDING STATUS */}
+                                {selectedRecord.status === 'pending' && (
+                                    <div className="flex space-x-3 pt-4 border-t">
+                                        <button
+                                            onClick={() => {
+                                                handleStatusUpdate(selectedRecord.id, 'approved');
+                                                setShowDetailModal(false);
+                                            }}
+                                            disabled={processingIds.has(selectedRecord.id)}
+                                            className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                                        >
+                                            {processingIds.has(selectedRecord.id) ? (
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                            ) : (
+                                                <Check className="h-4 w-4" />
+                                            )}
+                                            <span>{getText('Approve Lending', 'Setujui Peminjaman')}</span>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                handleStatusUpdate(selectedRecord.id, 'rejected');
+                                                setShowDetailModal(false);
+                                            }}
+                                            disabled={processingIds.has(selectedRecord.id)}
+                                            className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                                        >
+                                            {processingIds.has(selectedRecord.id) ? (
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                            ) : (
+                                                <X className="h-4 w-4" />
+                                            )}
+                                            <span>{getText('Reject Lending', 'Tolak Peminjaman')}</span>
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -763,7 +952,7 @@ const ToolLendingManagement: React.FC = () => {
                     <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
                         <div className="flex items-center mb-4">
                             <div className="flex-shrink-0">
-                                <AlertCircle className="h-6 w-6 text-red-600" />
+                                <AlertTriangle className="h-6 w-6 text-red-600" />
                             </div>
                             <div className="ml-3">
                                 <h3 className="text-lg font-medium text-gray-900">
