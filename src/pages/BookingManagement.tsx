@@ -94,9 +94,11 @@ const BookingManagement: React.FC = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+  const [allEquipment, setAllEquipment] = useState<any[]>([]);
 
   useEffect(() => {
     fetchBookings();
+    fetchAllEquipment();
     
     // Set up real-time subscription
     const subscription = supabase
@@ -117,6 +119,20 @@ const BookingManagement: React.FC = () => {
       subscription.unsubscribe();
     };
   }, []);
+
+  const fetchAllEquipment = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('equipment')
+        .select('id, name, code, category')
+        .order('name');
+
+      if (error) throw error;
+      setAllEquipment(data || []);
+    } catch (error) {
+      console.error('Error fetching equipment:', error);
+    }
+  };
 
   const fetchBookings = async () => {
     try {
@@ -374,6 +390,15 @@ const BookingManagement: React.FC = () => {
     }
   };
 
+  const getEquipmentDetails = (equipmentIds: string[]) => {
+    if (!equipmentIds || equipmentIds.length === 0) return [];
+    
+    return equipmentIds.map(id => {
+      const equipment = allEquipment.find(eq => eq.id === id);
+      return equipment || { id, name: `Equipment ${id}`, code: 'Unknown', category: 'Unknown' };
+    });
+  };
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'pending': return Clock;
@@ -622,6 +647,12 @@ const BookingManagement: React.FC = () => {
                             <div className="flex items-center text-xs text-gray-500">
                               <Package className="h-3 w-3 mr-1" />
                               <span>{booking.equipment_requested.length} {getText('equipment', 'peralatan')}</span>
+                              {/* Show first equipment name as preview */}
+                              {allEquipment.length > 0 && (
+                                <span className="ml-1 text-gray-400">
+                                  ({allEquipment.find(eq => eq.id === booking.equipment_requested[0])?.name || 'Equipment'})
+                                </span>
+                              )}
                             </div>
                           )}
                           <div className="text-xs text-gray-500">
