@@ -5,7 +5,8 @@ import { z } from 'zod';
 import {
     Package, Plus, Minus, Search, User, Phone, Mail, Hash, Calendar, Clock, 
     CheckCircle, AlertCircle, Trash2, Loader2, Send, Eye, Building, 
-    ChevronDown, Settings, Wrench, Zap, ShoppingCart, GraduationCap, BookOpen
+    ChevronDown, Settings, Wrench, Zap, ShoppingCart, GraduationCap, BookOpen,
+    Upload, FileText, X
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -17,18 +18,33 @@ import { format } from 'date-fns';
 
 // Constants for lending status
 const LENDING_STATUS = {
-    BORROW: 'borrow',
+    PENDING: 'pending',    // New: Waiting for approval
+    APPROVED: 'approved',  // New: Approved and can be borrowed
+    BORROW: 'borrow',      // Active borrowing
     RETURNED: 'returned',
-    OVERDUE: 'overdue'
+    OVERDUE: 'overdue',
+    REJECTED: 'rejected'   // New: Rejected by admin
 };
 
-// Updated schema with mandatory study_program_id and removed optional email
+// Updated schema with purpose field and attachments for "Other" purpose
 const lendingSchema = z.object({
     full_name: z.string().min(3, 'Full name must be at least 3 characters'),
     identity_number: z.string().min(5, 'Identity number must be at least 5 characters'),
     phone_number: z.string().min(10, 'Please enter a valid phone number'),
     study_program_id: z.string().min(1, 'Please select a study program'),
     date: z.string().min(1, 'Please select lending date'),
+    purpose: z.enum(['Class/Lecture', 'Other'], { required_error: 'Purpose is required' }),
+    notes: z.string().optional(),
+    attachments: z.array(z.string()).optional(),
+}).superRefine((data, ctx) => {
+    // Validate attachments are required if purpose is 'Other'
+    if (data.purpose === 'Other' && (!data.attachments || data.attachments.length === 0)) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Attachments are required when purpose is 'Other'",
+            path: ['attachments'],
+        });
+    }
 });
 
 type LendingForm = z.infer<typeof lendingSchema>;
@@ -74,12 +90,16 @@ const ToolLending: React.FC = () => {
     const form = useForm<LendingForm>({
         resolver: zodResolver(lendingSchema),
         defaultValues: {
-            date: format(new Date(), "yyyy-MM-dd'T'HH:mm")
+            date: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+            purpose: 'Class/Lecture',
+            attachments: [],
         }
     });
 
     const watchIdentityNumber = form.watch('identity_number');
     const watchStudyProgramId = form.watch('study_program_id');
+    const watchPurpose = form.watch('purpose');
+    const watchAttachments = form.watch('attachments');
 
     useEffect(() => {
         fetchAvailableEquipment();
@@ -232,6 +252,29 @@ const ToolLending: React.FC = () => {
         setSelectedEquipment(prev => prev.filter(item => item.equipment.id !== equipmentId));
     };
 
+    const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = event.target.files;
+        if (!files) return;
+        
+        const currentAttachments = form.getValues('attachments') || [];
+        Array.from(files).forEach((file) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const result = e.target?.result as string;
+                if (result) {
+                    form.setValue('attachments', [...currentAttachments, result], { shouldValidate: true });
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+    };
+
+    const removeAttachment = (index: number) => {
+        const currentAttachments = form.getValues('attachments') || [];
+        const updatedAttachments = currentAttachments.filter((_, i) => i !== index);
+        form.setValue('attachments', updatedAttachments, { shouldValidate: true });
+    };
+
     const onSubmit = async (data: LendingForm) => {
         if (selectedEquipment.length === 0) {
             alert.error(getText('Please select at least one equipment', 'Silakan pilih minimal satu peralatan'));
@@ -321,13 +364,16 @@ const ToolLending: React.FC = () => {
                 throw new Error('Unable to create or find user');
             }
 
-            // Create lending record with userId and auto status
+            // Create lending record with userId and PENDING status
             const lendingData = {
                 date: new Date(data.date).toISOString(),
                 id_equipment: equipmentIds,
                 qty: quantities,
                 id_user: userId, // ALWAYS use id_user, never user_info
-                status: LENDING_STATUS.BORROW, // Automatically set status to 'borrow'
+                status: LENDING_STATUS.PENDING, // Set status to 'pending' for approval
+                purpose: data.purpose, // Add purpose field
+                notes: data.notes || null,
+                attachments: data.attachments || [],
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
             };
@@ -343,27 +389,21 @@ const ToolLending: React.FC = () => {
                 throw lendingError;
             }
 
-            // Update equipment quantities
-            for (const item of selectedEquipment) {
-                const newQuantity = item.equipment.quantity - item.quantity;
-                const { error: updateError } = await supabase
-                    .from('equipment')
-                    .update({ 
-                        quantity: newQuantity,
-                        is_available: newQuantity > 0
-                    })
-                    .eq('id', item.equipment.id);
+            // NOTE: Don't update equipment quantities yet since it's pending approval
+            // Equipment quantities will be updated when admin approves the request
 
-                if (updateError) {
-                    console.error('Error updating equipment quantity:', updateError);
-                }
-            }
-
-            alert.success(getText('Equipment lending request submitted successfully!', 'Permintaan peminjaman peralatan berhasil dikirim!'));
+            alert.success(
+                getText(
+                    'Equipment lending request submitted successfully! Please wait for approval.',
+                    'Permintaan peminjaman peralatan berhasil dikirim! Silakan tunggu persetujuan.'
+                )
+            );
             
             // Reset form and selections
             form.reset({
-                date: format(new Date(), "yyyy-MM-dd'T'HH:mm")
+                date: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+                purpose: 'Class/Lecture',
+                attachments: [],
             });
             setSelectedEquipment([]);
             setIdentitySearchTerm('');
@@ -427,7 +467,7 @@ const ToolLending: React.FC = () => {
                                     {getText('Tool Lending', 'Peminjaman Alat')}
                                 </h1>
                                 <p className="text-gray-600 mt-1">
-                                    {getText('Borrow equipment for your activities', 'Pinjam peralatan untuk kegiatan Anda')}
+                                    {getText('Request equipment for your activities', 'Ajukan peralatan untuk kegiatan Anda')}
                                 </p>
                             </div>
                         </div>
@@ -856,6 +896,93 @@ const ToolLending: React.FC = () => {
                                         )}
                                     </div>
 
+                                    {/* NEW: Purpose Field */}
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                            {getText('Purpose', 'Tujuan')} *
+                                        </label>
+                                        <select
+                                            {...form.register('purpose')}
+                                            className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all duration-200"
+                                        >
+                                            <option value="Class/Lecture">{getText('Class/Lecture', 'Kuliah')}</option>
+                                            <option value="Other">{getText('Other', 'Lainnya')}</option>
+                                        </select>
+                                        {form.formState.errors.purpose && (
+                                            <p className="mt-2 text-sm text-red-600 font-medium">
+                                                {form.formState.errors.purpose.message}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {/* Additional fields for "Other" purpose */}
+                                    {watchPurpose === 'Other' && (
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                                    {getText('Notes', 'Catatan')}
+                                                </label>
+                                                <textarea
+                                                    {...form.register('notes')}
+                                                    rows={3}
+                                                    className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all duration-200"
+                                                    placeholder={getText("Additional information about your request", "Informasi tambahan tentang permintaan Anda")}
+                                                />
+                                            </div>
+                                            
+                                            <div>
+                                                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                                    {getText('Attachments', 'Lampiran')} *
+                                                </label>
+                                                <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-green-400 transition-colors duration-200">
+                                                    <Upload className="h-8 w-8 text-gray-400 mx-auto mb-3" />
+                                                    <input
+                                                        type="file"
+                                                        multiple
+                                                        accept="image/*,.pdf,.doc,.docx"
+                                                        onChange={handleFileUpload}
+                                                        className="hidden"
+                                                        id="file-upload"
+                                                    />
+                                                    <label htmlFor="file-upload" className="cursor-pointer">
+                                                        <span className="text-sm font-medium text-green-600 hover:text-green-700">
+                                                            {getText('Upload Files', 'Unggah File')}
+                                                        </span>
+                                                        <p className="text-xs text-gray-500 mt-1">
+                                                            {getText('Support: Images, PDF, DOC, DOCX', 'Mendukung: Gambar, PDF, DOC, DOCX')}
+                                                        </p>
+                                                    </label>
+                                                </div>
+                                                {watchAttachments && watchAttachments.length > 0 && (
+                                                    <div className="mt-3 space-y-2">
+                                                        {watchAttachments.map((_, index) => (
+                                                            <div key={index} className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
+                                                                <div className="flex items-center space-x-2">
+                                                                    <FileText className="h-4 w-4 text-green-600" />
+                                                                    <span className="text-sm text-green-800 font-medium">
+                                                                        {getText('Attachment', 'Lampiran')} {index + 1}
+                                                                    </span>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => removeAttachment(index)}
+                                                                    className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 transition-colors duration-200"
+                                                                >
+                                                                    <X className="h-4 w-4" />
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {form.formState.errors.attachments && (
+                                                    <p className="mt-2 text-sm text-red-600 font-medium">
+                                                        {form.formState.errors.attachments.message}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {selectedEquipment.length === 0 && (
                                         <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200/50 rounded-xl p-4">
                                             <div className="flex items-start space-x-3">
@@ -873,6 +1000,21 @@ const ToolLending: React.FC = () => {
                                     )}
                                 </div>
 
+                                {/* Approval Notice */}
+                                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-xl p-4">
+                                    <div className="flex items-start space-x-3">
+                                        <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                                        <div className="text-sm text-blue-800">
+                                            <p className="font-semibold">
+                                                {getText('Approval Required', 'Perlu Persetujuan')}
+                                            </p>
+                                            <p className="mt-1">
+                                                {getText('Your lending request will be reviewed by admin. You will be notified once approved.', 'Permintaan peminjaman Anda akan ditinjau oleh admin. Anda akan diberitahu setelah disetujui.')}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div className="pt-6 border-t border-gray-200/50">
                                     <button
                                         type="submit"
@@ -887,7 +1029,7 @@ const ToolLending: React.FC = () => {
                                         ) : (
                                             <>
                                                 <Send className="h-5 w-5" />
-                                                <span>{getText('Submit Lending Request', 'Kirim Permintaan Peminjaman')}</span>
+                                                <span>{getText('Submit Request for Approval', 'Kirim Permintaan untuk Persetujuan')}</span>
                                             </>
                                         )}
                                     </button>
