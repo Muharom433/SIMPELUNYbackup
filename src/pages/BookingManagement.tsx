@@ -121,18 +121,12 @@ const BookingManagement: React.FC = () => {
   }, []);
 
   const fetchAllEquipment = async () => {
-    try {
       const { data, error } = await supabase
         .from('equipment')
         .select('id, name, code, category')
         .order('name');
-
-      if (error) throw error;
       setAllEquipment(data || []);
-    } catch (error) {
-      console.error('Error fetching equipment:', error);
-    }
-  };
+};
 
   const fetchBookings = async () => {
     try {
