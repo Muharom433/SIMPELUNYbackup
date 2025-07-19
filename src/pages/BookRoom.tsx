@@ -1068,107 +1068,212 @@ const BookRoom = () => {
       </div>
 
       {/* SCHEDULE MODAL - SIMPLIFIED */}
-      {showScheduleModal && scheduleModalRoom && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[80vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {getText('Schedule Details', 'Detail Jadwal')}
-                </h3>
-                <button
-                  onClick={() => setShowScheduleModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
+      {/* SCHEDULE MODAL - RESTORE DETAILED INFO */}
+{showScheduleModal && scheduleModalRoom && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+      <div className="p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold text-gray-900">
+            {getText('Schedule Details', 'Detail Jadwal')} - {scheduleModalRoom.name}
+          </h3>
+          <button
+            onClick={() => setShowScheduleModal(false)}
+            className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
+          >
+            <X className="h-6 w-6" />
+          </button>
+        </div>
 
-              <div className="space-y-4">
-                <div className="text-center">
-                  <h4 className="font-medium text-gray-900">{scheduleModalRoom.name}</h4>
-                  <p className="text-sm text-gray-600">{scheduleModalRoom.code}</p>
-                </div>
-
-                {/* Active Bookings */}
-                {scheduleModalRoom.targetDateBookings?.length > 0 && (
-                  <div>
-                    <h5 className="font-medium text-gray-900 mb-2">
-                      {getText('Active Bookings', 'Pemesanan Aktif')}
-                    </h5>
-                    <div className="space-y-2">
-                      {scheduleModalRoom.targetDateBookings.map((booking, index) => (
-                        <div key={index} className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                          <div className="font-medium text-orange-900">
-                            {booking.start_time_local || format(convertUTCToLocal(booking.start_time), 'HH:mm')} - 
-                            {booking.end_time_local || format(convertUTCToLocal(booking.end_time), 'HH:mm')}
-                          </div>
-                          <div className="text-sm text-orange-700">
-                            {booking.user?.full_name || getText('Unknown User', 'Pengguna Tidak Dikenal')}
-                          </div>
-                        </div>
-                      ))}
+        <div className="space-y-6">
+          {/* Active Bookings */}
+          {scheduleModalRoom.targetDateBookings?.length > 0 && (
+            <div>
+              <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                <Calendar className="h-5 w-5 mr-2 text-orange-600" />
+                {getText('Active Bookings', 'Pemesanan Aktif')}
+              </h4>
+              <div className="space-y-3">
+                {scheduleModalRoom.targetDateBookings.map((booking, index) => (
+                  <div key={index} className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold text-orange-900 text-lg">
+                        {booking.start_time_local || format(convertUTCToLocal(booking.start_time), 'HH:mm')} - {booking.end_time_local || format(convertUTCToLocal(booking.end_time), 'HH:mm')}
+                      </span>
+                      <span className="bg-orange-200 text-orange-800 px-2 py-1 rounded-full text-xs font-medium">
+                        {getText('Booking', 'Pemesanan')}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center text-sm text-orange-700">
+                        <GraduationCap className="h-4 w-4 mr-2" />
+                        <span className="font-medium">
+                          {booking.user?.study_program?.name || getText('No Study Program', 'Tidak Ada Program Studi')}
+                        </span>
+                      </div>
+                      <div className="flex items-center text-sm text-orange-700">
+                        <User className="h-4 w-4 mr-2" />
+                        <span>{booking.user?.full_name || getText('No User Info', 'Info Pengguna Tidak Ada')}</span>
+                      </div>
+                      <div className="flex items-center text-sm text-orange-700">
+                        <Target className="h-4 w-4 mr-2" />
+                        <span>{booking.purpose || getText('No Purpose', 'Tidak Ada Tujuan')}</span>
+                      </div>
                     </div>
                   </div>
-                )}
-
-                {/* Other Schedules */}
-                {(scheduleModalRoom.scheduleDetails?.lectures?.length > 0 ||
-                  scheduleModalRoom.scheduleDetails?.exams?.length > 0 ||
-                  scheduleModalRoom.scheduleDetails?.sessions?.length > 0) && (
-                  <div>
-                    <h5 className="font-medium text-gray-900 mb-2">
-                      {getText('Other Schedules', 'Jadwal Lainnya')}
-                    </h5>
-                    <div className="space-y-2">
-                      {/* Lectures */}
-                      {scheduleModalRoom.scheduleDetails?.lectures?.map((lecture, index) => (
-                        <div key={`lecture-${index}`} className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                          <div className="font-medium text-blue-900">
-                            {lecture.start_time} - {lecture.end_time}
-                          </div>
-                          <div className="text-sm text-blue-700">{lecture.course_name}</div>
-                        </div>
-                      ))}
-                      
-                      {/* Exams */}
-                      {scheduleModalRoom.scheduleDetails?.exams?.map((exam, index) => (
-                        <div key={`exam-${index}`} className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                          <div className="font-medium text-green-900">
-                            {exam.start_time} - {exam.end_time}
-                          </div>
-                          <div className="text-sm text-green-700">{exam.course_name}</div>
-                        </div>
-                      ))}
-                      
-                      {/* Sessions */}
-                      {scheduleModalRoom.scheduleDetails?.sessions?.map((session, index) => (
-                        <div key={`session-${index}`} className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                          <div className="font-medium text-purple-900">
-                            {session.start_time_local || session.start_time} - {session.end_time_local || session.end_time}
-                          </div>
-                          <div className="text-sm text-purple-700">{session.student?.full_name}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* No Schedule */}
-                {(!scheduleModalRoom.targetDateBookings?.length && 
-                  !scheduleModalRoom.scheduleDetails?.lectures?.length && 
-                  !scheduleModalRoom.scheduleDetails?.exams?.length && 
-                  !scheduleModalRoom.scheduleDetails?.sessions?.length) && (
-                  <div className="text-center py-6">
-                    <Calendar className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-gray-500">{getText('No schedules found', 'Tidak ada jadwal ditemukan')}</p>
-                  </div>
-                )}
+                ))}
               </div>
             </div>
-          </div>
+          )}
+
+          {/* Lecture Schedules */}
+          {scheduleModalRoom.scheduleDetails?.lectures?.length > 0 && (
+            <div>
+              <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                <BookOpen className="h-5 w-5 mr-2 text-blue-600" />
+                {getText('Lecture Schedules', 'Jadwal Kuliah')}
+              </h4>
+              <div className="space-y-3">
+                {scheduleModalRoom.scheduleDetails.lectures.map((lecture, index) => (
+                  <div key={index} className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold text-blue-900 text-lg">
+                        {lecture.start_time} - {lecture.end_time}
+                      </span>
+                      <span className="bg-blue-200 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
+                        {getText('Lecture', 'Kuliah')}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center text-sm text-blue-700">
+                        <GraduationCap className="h-4 w-4 mr-2" />
+                        <span className="font-medium">
+                          {lecture.subject_study || getText('No Study Program', 'Tidak Ada Program Studi')}
+                        </span>
+                      </div>
+                      <div className="flex items-center text-sm text-blue-700">
+                        <BookOpen className="h-4 w-4 mr-2" />
+                        <span>{lecture.course_name || getText('No Course Name', 'Tidak Ada Nama Mata Kuliah')}</span>
+                      </div>
+                      {lecture.lecturer_name && (
+                        <div className="flex items-center text-sm text-blue-700">
+                          <User className="h-4 w-4 mr-2" />
+                          <span>{lecture.lecturer_name}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Final Sessions */}
+          {scheduleModalRoom.scheduleDetails?.sessions?.length > 0 && (
+            <div>
+              <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                <Users className="h-5 w-5 mr-2 text-purple-600" />
+                {getText('Final Sessions', 'Sidang Akhir')}
+              </h4>
+              <div className="space-y-3">
+                {scheduleModalRoom.scheduleDetails.sessions.map((session, index) => (
+                  <div key={index} className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold text-purple-900 text-lg">
+                        {session.start_time_local || session.start_time} - {session.end_time_local || session.end_time}
+                      </span>
+                      <span className="bg-purple-200 text-purple-800 px-2 py-1 rounded-full text-xs font-medium">
+                        {getText('Session', 'Sidang')}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center text-sm text-purple-700">
+                        <GraduationCap className="h-4 w-4 mr-2" />
+                        <span className="font-medium">
+                          {session.student?.study_program?.name || getText('No Study Program', 'Tidak Ada Program Studi')}
+                        </span>
+                      </div>
+                      <div className="flex items-center text-sm text-purple-700">
+                        <User className="h-4 w-4 mr-2" />
+                        <span>{session.student?.full_name || getText('No Student Info', 'Info Mahasiswa Tidak Ada')}</span>
+                      </div>
+                      {session.title && (
+                        <div className="flex items-center text-sm text-purple-700">
+                          <FileText className="h-4 w-4 mr-2" />
+                          <span>{session.title}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Exam Schedules */}
+          {scheduleModalRoom.scheduleDetails?.exams?.length > 0 && (
+            <div>
+              <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                <GraduationCap className="h-5 w-5 mr-2 text-green-600" />
+                {getText('Exam Schedules', 'Jadwal Ujian')}
+              </h4>
+              <div className="space-y-3">
+                {scheduleModalRoom.scheduleDetails.exams.map((exam, index) => (
+                  <div key={index} className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold text-green-900 text-lg">
+                        {exam.start_time} - {exam.end_time}
+                      </span>
+                      <span className="bg-green-200 text-green-800 px-2 py-1 rounded-full text-xs font-medium">
+                        {getText('Exam', 'Ujian')}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center text-sm text-green-700">
+                        <GraduationCap className="h-4 w-4 mr-2" />
+                        <span className="font-medium">
+                          {exam.class || getText('No Class Info', 'Tidak Ada Info Kelas')}
+                        </span>
+                      </div>
+                      <div className="flex items-center text-sm text-green-700">
+                        <BookOpen className="h-4 w-4 mr-2" />
+                        <span>{exam.course_name || getText('No Exam Name', 'Tidak Ada Nama Ujian')}</span>
+                      </div>
+                      {exam.exam_type && (
+                        <div className="flex items-center text-sm text-green-700">
+                          <FileText className="h-4 w-4 mr-2" />
+                          <span>{exam.exam_type}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* No Schedule Message */}
+          {(!scheduleModalRoom.targetDateBookings?.length && 
+            !scheduleModalRoom.scheduleDetails?.lectures?.length && 
+            !scheduleModalRoom.scheduleDetails?.exams?.length && 
+            !scheduleModalRoom.scheduleDetails?.sessions?.length) && (
+            <div className="text-center py-8">
+              <div className="p-4 bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <Calendar className="h-8 w-8 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                {getText('No Schedule for This Date', 'Tidak Ada Jadwal untuk Tanggal Ini')}
+              </h3>
+              <p className="text-gray-500">
+                {getText('This room is available for booking on the selected date.', 'Ruangan ini tersedia untuk dipesan pada tanggal yang dipilih.')}
+              </p>
+            </div>
+          )}
         </div>
-      )}
+      </div>
+    </div>
+  </div>
+)}
 
       {/* Cleanup effect */}
       {React.useEffect(() => {
