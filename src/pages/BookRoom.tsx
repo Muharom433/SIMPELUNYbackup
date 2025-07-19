@@ -86,6 +86,18 @@ const bookingSchema = z.object({
       path: ['attachments'],
     });
   }
+  if (data.equipment_requested && data.equipment_requested.length > 0) {
+    for (const equipmentId of data.equipment_requested) {
+      const quantity = data.equipment_quantities?.[equipmentId];
+      if (!quantity || quantity < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Please specify quantity for selected equipment`,
+          path: ["equipment_quantities", equipmentId],
+        });
+      }
+    }
+  }
 });
 
 type BookingForm = z.infer<typeof bookingSchema>;
