@@ -608,12 +608,6 @@ const BookRoom = () => {
       const equipmentRequested = data.equipment_requested || [];
       const equipmentQuantities = data.equipment_quantities || {};
 
-      // Create equipment list with quantities for storage
-      const equipmentWithQuantities = equipmentRequested.map(equipmentId => ({
-        equipment_id: equipmentId,
-        quantity: equipmentQuantities[equipmentId] || 1
-      }));
-
       const bookingData = {
         start_time: startTimeUTC,
         end_time: endTimeUTC,
@@ -623,7 +617,6 @@ const BookRoom = () => {
         room_id: selectedRoom.id,
         equipment_requested: equipmentRequested, // ✅ ENHANCED: Just IDs for backward compatibility
         equipment_quantities: equipmentQuantities, // ✅ NEW: Store quantities separately
-        equipment_details: equipmentWithQuantities, // ✅ NEW: Detailed equipment data
         notes: data.notes,
         attachments: data.attachments || [],
         status: 'pending', // ✅ IMPORTANT: Always pending, quantity TIDAK dikurangi
