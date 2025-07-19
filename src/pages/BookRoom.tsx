@@ -77,15 +77,6 @@ const bookingSchema = z.object({
       });
     }
   }
-
-  // Validate attachments are required if purpose is 'Other'
-  if (data.purpose === 'Other' && (!data.attachments || data.attachments.length === 0)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Attachments are required when purpose is 'Other'",
-      path: ['attachments'],
-    });
-  }
    if (data.equipment_requested && data.equipment_requested.length > 0) {
     for (const equipmentId of data.equipment_requested) {
       const quantity = data.equipment_quantities?.[equipmentId];
@@ -97,6 +88,16 @@ const bookingSchema = z.object({
         });
       }
     }
+
+  // Validate attachments are required if purpose is 'Other'
+  if (data.purpose === 'Other' && (!data.attachments || data.attachments.length === 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Attachments are required when purpose is 'Other'",
+      path: ['attachments'],
+    });
+  }
+  
 });
 
 type BookingForm = z.infer<typeof bookingSchema>;
