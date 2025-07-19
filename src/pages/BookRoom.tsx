@@ -440,11 +440,25 @@ const BookRoom = () => {
     }
   };
 
-  const fetchEquipmentForRoom = async (roomId) => {
+const fetchEquipmentForRoom = async (roomId) => {
     try {
       const { data, error } = await supabase.from('equipment').select('*').or(`rooms_id.eq.${roomId},rooms_id.is.null`).or('is_mandatory.eq.true,quantity.gt.1').order('name');
       if (error) throw error;
       setAvailableEquipment(data || []);
+      
+      // 🔥 FIX: Otomatis tambahkan mandatory equipment ke form
+      const mandatoryEquipment = (data || []).filter(eq => eq.is_mandatory);
+      const mandatoryIds = mandatoryEquipment.map(eq => eq.id);
+      
+      // Get current equipment_requested array
+      const currentEquipment = form.getValues('equipment_requested') || [];
+      
+      // Merge dengan mandatory equipment (hindari duplikasi)
+      const updatedEquipment = [...new Set([...currentEquipment, ...mandatoryIds])];
+      
+      // Update form dengan mandatory equipment
+      form.setValue('equipment_requested', updatedEquipment);
+      
     } catch (error) {
       console.error('Error fetching equipment:', error);
       setAvailableEquipment([]);
