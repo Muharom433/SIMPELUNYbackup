@@ -790,6 +790,20 @@ const BookRoom = () => {
                       className="w-full pl-10 pr-4 py-2 bg-white/50 border border-gray-200/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                     />
                   </div>
+                  <div className="mb-4">
+  <label className="flex items-center space-x-2 cursor-pointer">
+    <input
+      type="checkbox"
+      id="showInUse"
+      checked={showInUse}
+      onChange={(e) => setShowInUse(e.target.checked)}
+      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+    />
+    <span className="text-sm text-gray-700">
+      {getText('Show rooms currently in use', 'Tampilkan ruangan yang sedang digunakan')}
+    </span>
+  </label>
+</div>
 
                   {/* Room List */}
                   <div className="space-y-3 max-h-80 overflow-y-auto">
