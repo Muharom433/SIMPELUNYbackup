@@ -43,7 +43,6 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { BookingWithDetails } from '../types';
 import { alert } from '../components/Alert/AlertHelper';
 import EquipmentQuantityManager from '../lib/equipmentQuantityManager';
-import EquipmentQuantityManager from '../lib/equipmentQuantityManager';
 import { format, isAfter, isBefore, parseISO } from 'date-fns';
 
 interface Booking {
