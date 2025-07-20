@@ -183,173 +183,188 @@ const BookingManagement: React.FC = () => {
     }
   };
 
-  // ✅ FIXED: Equipment quantity handling dengan EquipmentQuantityManager
-  // ✅ FIXED BookingManagement.tsx - handleStatusUpdate function only
-
-const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 'rejected') => {
-  try {
-    setProcessingIds(prev => new Set(prev).add(bookingId));
-    
-    const booking = bookings.find(b => b.id === bookingId);
-    if (!booking) {
-      throw new Error('Booking not found');
-    }
-
-    console.log('📋 Processing booking:', {
-      id: booking.id,
-      status: booking.status,
-      newStatus,
-      equipment_requested: booking.equipment_requested,
-      equipment_quantities: booking.equipment_quantities,
-      user: booking.user?.full_name
-    });
-
-    // ✅ CRITICAL FIX: Handle equipment quantities ONLY IF STATUS ACTUALLY CHANGES
-    if (booking.status !== newStatus && booking.equipment_requested && booking.equipment_requested.length > 0) {
-      const quantityManager = new EquipmentQuantityManager(supabase);
+  // ✅ COMPLETE FIXED: Equipment quantity handling dengan EquipmentQuantityManager
+  const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 'rejected') => {
+    try {
+      setProcessingIds(prev => new Set(prev).add(bookingId));
       
-      // ✅ FIXED: Build equipment list dengan quantity yang BENAR
-      const equipmentList: Array<{id: string, quantity: number}> = [];
-      
-      for (let i = 0; i < booking.equipment_requested.length; i++) {
-        const equipmentId = booking.equipment_requested[i];
-        // ✅ CRITICAL: Use the EXACT quantity from booking.equipment_quantities
-        const quantity = booking.equipment_quantities && booking.equipment_quantities[i] 
-          ? booking.equipment_quantities[i] 
-          : 1;
-        
-        equipmentList.push({ id: equipmentId, quantity });
+      const booking = bookings.find(b => b.id === bookingId);
+      if (!booking) {
+        throw new Error('Booking not found');
       }
 
-      console.log('🔧 Equipment to process:', equipmentList);
+      console.log('📋 Processing booking:', {
+        id: booking.id,
+        currentStatus: booking.status,
+        newStatus,
+        equipment_requested: booking.equipment_requested,
+        equipment_quantities: booking.equipment_quantities,
+        user: booking.user?.full_name
+      });
 
-      // ✅ FIXED: Handle status transitions correctly
-      if (newStatus === 'approved' && booking.status === 'pending') {
-        // ✅ APPROVE PENDING: Decrease quantity (reserve equipment)
-        console.log('✅ APPROVING: Decreasing equipment quantities');
-        await quantityManager.bulkDecreaseQuantity(
+      // ✅ CRITICAL FIX: ONLY process if status ACTUALLY changes AND has equipment
+      if (booking.status !== newStatus && booking.equipment_requested && booking.equipment_requested.length > 0) {
+        const quantityManager = new EquipmentQuantityManager(supabase);
+        
+        // ✅ Build equipment list dengan EXACT quantity dari equipment_quantities
+        const equipmentList: Array<{id: string, quantity: number}> = [];
+        
+        for (let i = 0; i < booking.equipment_requested.length; i++) {
+          const equipmentId = booking.equipment_requested[i];
+          // ✅ CRITICAL: Use EXACT quantity from equipment_quantities array
+          const quantity = booking.equipment_quantities && booking.equipment_quantities[i] 
+            ? booking.equipment_quantities[i] 
+            : 1;
+          
+          equipmentList.push({ id: equipmentId, quantity });
+        }
+
+        console.log('🔧 Equipment list to process:', equipmentList);
+
+        // ✅ Handle different status transitions
+        if (newStatus === 'approved' && booking.status === 'pending') {
+          // ✅ APPROVE PENDING: Decrease available quantity (reserve equipment)
+          console.log('✅ APPROVING PENDING BOOKING: Decreasing equipment quantities');
+          
+          // First validate quantities are available
+          const validation = await quantityManager.validateQuantityAvailable(equipmentList);
+          if (!validation.isValid) {
+            throw new Error(`Equipment validation failed: ${validation.errors.join(', ')}`);
+          }
+          
+          await quantityManager.bulkDecreaseQuantity(
+            equipmentList, 
+            `Booking approved: ${booking.id} by ${booking.user?.full_name}`
+          );
+          
+        } else if (newStatus === 'rejected') {
+          if (booking.status === 'approved') {
+            // ✅ REJECT APPROVED: Increase quantity (return to available inventory)
+            console.log('✅ REJECTING APPROVED BOOKING: Increasing equipment quantities');
+            await quantityManager.bulkIncreaseQuantity(
+              equipmentList, 
+              `Previously approved booking rejected: ${booking.id}`
+            );
+          }
+          // ✅ NOTE: If rejecting PENDING booking, no quantity change needed
+          console.log('ℹ️ Rejecting pending booking - no quantity changes needed');
+        }
+      } else {
+        console.log('ℹ️ No equipment quantity changes needed:', {
+          sameStatus: booking.status === newStatus,
+          hasEquipment: booking.equipment_requested && booking.equipment_requested.length > 0
+        });
+      }
+
+      // ✅ Update booking status in database AFTER quantity management
+      const { error: bookingError } = await supabase
+        .from('bookings')
+        .update({ 
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', bookingId);
+
+      if (bookingError) throw bookingError;
+      
+      // Success notification
+      const statusText = newStatus === 'approved' 
+        ? getText('approved', 'disetujui') 
+        : getText('rejected', 'ditolak');
+      
+      alert.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
+      
+      // Refresh data
+      await fetchBookings();
+      await fetchAllEquipment();
+      
+      // Close modal if open
+      if (selectedBooking?.id === bookingId) {
+        setShowDetailModal(false);
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Error updating booking status:', error);
+      alert.error(error.message || getText('Failed to update booking status', 'Gagal memperbarui status pemesanan'));
+    } finally {
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(bookingId);
+        return newSet;
+      });
+    }
+  };
+
+  // ✅ COMPLETE FIXED: Delete booking dengan equipment handling
+  const handleDelete = async (bookingId: string) => {
+    try {
+      setProcessingIds(prev => new Set(prev).add(bookingId));
+      
+      const booking = bookings.find(b => b.id === bookingId);
+      if (!booking) {
+        throw new Error('Booking not found');
+      }
+
+      console.log('🗑️ Deleting booking:', {
+        id: booking.id,
+        status: booking.status,
+        equipment_requested: booking.equipment_requested,
+        equipment_quantities: booking.equipment_quantities
+      });
+
+      // ✅ RESTORE: Equipment quantities jika booking approved
+      if (booking.status === 'approved' && booking.equipment_requested && booking.equipment_requested.length > 0) {
+        const quantityManager = new EquipmentQuantityManager(supabase);
+        
+        // Build equipment list dengan EXACT quantities
+        const equipmentList: Array<{id: string, quantity: number}> = [];
+        
+        for (let i = 0; i < booking.equipment_requested.length; i++) {
+          const equipmentId = booking.equipment_requested[i];
+          const quantity = booking.equipment_quantities && booking.equipment_quantities[i] 
+            ? booking.equipment_quantities[i] 
+            : 1;
+          
+          equipmentList.push({ id: equipmentId, quantity });
+        }
+
+        // ✅ RESTORE: Return quantities to available inventory
+        await quantityManager.bulkIncreaseQuantity(
           equipmentList, 
-          `Booking approved: ${booking.id}`
+          `Approved booking deleted: ${booking.id}`
         );
         
-      } else if (newStatus === 'rejected') {
-        if (booking.status === 'approved') {
-          // ✅ REJECT APPROVED: Increase quantity (return to inventory)
-          console.log('✅ REJECTING APPROVED: Increasing equipment quantities');
-          await quantityManager.bulkIncreaseQuantity(
-            equipmentList, 
-            `Previously approved booking rejected: ${booking.id}`
-          );
-        }
-        // ✅ NOTE: If rejecting PENDING booking, no quantity change needed
-      }
-    }
-
-    // ✅ Update booking status AFTER quantity management
-    const { error: bookingError } = await supabase
-      .from('bookings')
-      .update({ 
-        status: newStatus,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', bookingId);
-
-    if (bookingError) throw bookingError;
-    
-    const statusText = newStatus === 'approved' 
-      ? getText('approved', 'disetujui') 
-      : getText('rejected', 'ditolak');
-    
-    alert.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
-    fetchBookings();
-    fetchAllEquipment(); // Refresh equipment data
-    
-    if (selectedBooking?.id === bookingId) {
-      setShowDetailModal(false);
-    }
-    
-  } catch (error: any) {
-    console.error('❌ Error updating booking status:', error);
-    alert.error(error.message || getText('Failed to update booking status', 'Gagal memperbarui status pemesanan'));
-  } finally {
-    setProcessingIds(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(bookingId);
-      return newSet;
-    });
-  }
-};
-
-  // ✅ FIXED: Delete booking dengan equipment handling
-  const handleDelete = async (bookingId: string) => {
-  try {
-    setProcessingIds(prev => new Set(prev).add(bookingId));
-    
-    const booking = bookings.find(b => b.id === bookingId);
-    if (!booking) {
-      throw new Error('Booking not found');
-    }
-
-    console.log('🗑️ Deleting booking:', {
-      id: booking.id,
-      status: booking.status,
-      equipment_requested: booking.equipment_requested,
-      equipment_quantities: booking.equipment_quantities
-    });
-
-    // ✅ SIMPLE: Restore equipment quantities jika booking approved
-    if (booking.status === 'approved' && booking.equipment_requested && booking.equipment_requested.length > 0) {
-      const quantityManager = new EquipmentQuantityManager(supabase);
-      
-      // Build equipment list
-      const equipmentList: Array<{id: string, quantity: number}> = [];
-      
-      for (let i = 0; i < booking.equipment_requested.length; i++) {
-        const equipmentId = booking.equipment_requested[i];
-        const quantity = booking.equipment_quantities && booking.equipment_quantities[i] 
-          ? booking.equipment_quantities[i] 
-          : 1;
-        
-        equipmentList.push({ id: equipmentId, quantity });
+        console.log(`✅ Equipment quantities restored after booking deletion`);
       }
 
-      // ✅ RESTORE: Tambahkan kembali quantity
-      await quantityManager.bulkIncreaseQuantity(
-        equipmentList, 
-        `Booking deleted: ${booking.id}`
-      );
+      // ✅ Delete booking
+      const { error } = await supabase
+        .from('bookings')
+        .delete()
+        .eq('id', bookingId);
+
+      if (error) throw error;
       
-      console.log(`✅ Equipment quantities restored after booking deletion`);
+      alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
+      setShowDeleteConfirm(null);
+      await fetchBookings();
+      await fetchAllEquipment();
+      
+      if (selectedBooking?.id === bookingId) {
+        setShowDetailModal(false);
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Error deleting booking:', error);
+      alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
+    } finally {
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(bookingId);
+        return newSet;
+      });
     }
-
-    // ✅ Delete booking
-    const { error } = await supabase
-      .from('bookings')
-      .delete()
-      .eq('id', bookingId);
-
-    if (error) throw error;
-    
-    alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
-    setShowDeleteConfirm(null);
-    fetchBookings();
-    fetchAllEquipment(); // Refresh equipment data
-    
-    if (selectedBooking?.id === bookingId) {
-      setShowDetailModal(false);
-    }
-    
-  } catch (error: any) {
-    console.error('❌ Error deleting booking:', error);
-    alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
-  } finally {
-    setProcessingIds(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(bookingId);
-      return newSet;
-    });
-  }
-};
+  };
 
   const filteredBookings = bookings.filter(booking => {
     const searchLower = searchTerm.toLowerCase();
@@ -665,10 +680,10 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                             <div className="flex items-center text-xs text-gray-500">
                               <Package className="h-3 w-3 mr-1" />
                               <span>{booking.equipment_requested.length} {getText('equipment', 'peralatan')}</span>
-                              {/* Show first equipment name as preview */}
-                              {allEquipment.length > 0 && (
+                              {/* Show total quantity */}
+                              {booking.equipment_quantities && (
                                 <span className="ml-1 text-gray-400">
-                                  ({allEquipment.find(eq => eq.id === booking.equipment_requested[0])?.name || 'Equipment'})
+                                  ({booking.equipment_quantities.reduce((sum, qty) => sum + qty, 0)} total)
                                 </span>
                               )}
                             </div>
@@ -709,7 +724,11 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                                 className="text-green-600 hover:text-green-800 p-1 rounded transition-colors disabled:opacity-50"
                                 title={getText('Approve', 'Setujui')}
                               >
-                                <Check className="h-4 w-4" />
+                                {isProcessing ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Check className="h-4 w-4" />
+                                )}
                               </button>
                               
                               <button
@@ -718,7 +737,11 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                                 className="text-red-600 hover:text-red-800 p-1 rounded transition-colors disabled:opacity-50"
                                 title={getText('Reject', 'Tolak')}
                               >
-                                <X className="h-4 w-4" />
+                                {isProcessing ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <X className="h-4 w-4" />
+                                )}
                               </button>
                             </>
                           )}
@@ -863,19 +886,23 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                   </div>
                 </div>
 
-                {/* ✅ Enhanced Equipment Section with Availability */}
+                {/* ✅ Enhanced Equipment Section with Real-time Availability */}
                 {selectedBooking.equipment_requested && selectedBooking.equipment_requested.length > 0 && (
                   <div>
                     <h5 className="font-medium text-gray-900 mb-3 flex items-center">
                       <Package className="h-5 w-5 mr-2 text-blue-600" />
                       {getText('Requested Equipment', 'Peralatan yang Diminta')}
-                      <span className="ml-2 text-sm text-gray-500">({selectedBooking.equipment_requested.length} items)</span>
+                      <span className="ml-2 text-sm text-gray-500">
+                        ({selectedBooking.equipment_requested.length} types, {
+                          selectedBooking.equipment_quantities?.reduce((sum, qty) => sum + qty, 0) || selectedBooking.equipment_requested.length
+                        } total items)
+                      </span>
                     </h5>
                     
                     <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {selectedBooking.equipment_requested.map((equipmentId, index) => {
-                          // ✅ Get quantity based on INDEX
+                          // ✅ Get EXACT quantity from equipment_quantities array
                           const requestedQuantity = selectedBooking.equipment_quantities && selectedBooking.equipment_quantities[index] 
                             ? selectedBooking.equipment_quantities[index] 
                             : 1;
@@ -886,7 +913,7 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                           const equipmentCode = equipmentDetails?.code || 'Unknown';
                           const equipmentUnit = equipmentDetails?.unit || 'pcs';
                           
-                          // ✅ Get current availability
+                          // ✅ Get current real-time availability
                           const availability = getEquipmentAvailability(equipmentId);
 
                           return (
@@ -908,7 +935,7 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                                 </div>
                               </div>
                               
-                              {/* ✅ Equipment Availability Status */}
+                              {/* ✅ Real-time Equipment Availability Status */}
                               <div className="mt-3 p-3 bg-gray-50 rounded-lg border">
                                 <div className="text-xs font-medium text-gray-600 mb-2">CURRENT AVAILABILITY</div>
                                 <div className="grid grid-cols-3 gap-2 text-xs">
@@ -928,7 +955,7 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                                   </div>
                                 </div>
                                 
-                                {/* ✅ Availability Check */}
+                                {/* ✅ Availability Status Check */}
                                 <div className="mt-2 pt-2 border-t border-gray-200">
                                   {availability.available >= requestedQuantity ? (
                                     <div className="flex items-center text-green-700">
@@ -942,7 +969,9 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                                       <XCircle className="h-4 w-4 mr-1" />
                                       <span className="text-xs font-medium">
                                         {getText('Insufficient quantity!', 'Jumlah tidak mencukupi!')} 
-                                        <span className="ml-1">({getText('Need', 'Butuh')} {requestedQuantity}, {getText('Available', 'Tersedia')} {availability.available})</span>
+                                        <span className="ml-1">
+                                          ({getText('Need', 'Butuh')} {requestedQuantity}, {getText('Available', 'Tersedia')} {availability.available})
+                                        </span>
                                       </span>
                                     </div>
                                   )}
@@ -953,7 +982,7 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                         })}
                       </div>
                       
-                      {/* ✅ Overall Equipment Status */}
+                      {/* ✅ Overall Equipment Status Summary */}
                       <div className="mt-4 pt-4 border-t border-emerald-200">
                         {(() => {
                           const allSufficient = selectedBooking.equipment_requested.every((equipmentId, index) => {
@@ -962,11 +991,15 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                             return availability.available >= requestedQuantity;
                           });
                           
+                          const totalRequested = selectedBooking.equipment_quantities?.reduce((sum, qty) => sum + qty, 0) || 
+                                               selectedBooking.equipment_requested.length;
+                          
                           return allSufficient ? (
                             <div className="flex items-center text-green-700 bg-green-100 rounded-lg p-3">
                               <CheckCircle className="h-5 w-5 mr-2" />
                               <span className="font-medium">
                                 {getText('✅ All equipment available for booking', '✅ Semua peralatan tersedia untuk pemesanan')}
+                                <span className="ml-2 text-sm">({totalRequested} items total)</span>
                               </span>
                             </div>
                           ) : (
@@ -974,6 +1007,7 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                               <XCircle className="h-5 w-5 mr-2" />
                               <span className="font-medium">
                                 {getText('❌ Some equipment insufficient for booking', '❌ Beberapa peralatan tidak mencukupi untuk pemesanan')}
+                                <span className="ml-2 text-sm">({totalRequested} items requested)</span>
                               </span>
                             </div>
                           );
@@ -1108,7 +1142,7 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                   </div>
                 )}
 
-                {/* ✅ Enhanced Actions with Equipment Check */}
+                {/* ✅ Enhanced Actions with Equipment Check and Debug Info */}
                 {selectedBooking.status === 'pending' && (
                   <div className="space-y-4 pt-4 border-t">
                     {/* Equipment Availability Warning */}
@@ -1139,11 +1173,23 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                       ) : null;
                     })()}
                     
+                    {/* ✅ DEBUG INFO for Equipment Quantities */}
+                    {selectedBooking.equipment_requested && selectedBooking.equipment_requested.length > 0 && (
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                        <h6 className="font-medium text-gray-900 mb-2">Debug Info - Equipment Quantities:</h6>
+                        <div className="text-sm text-gray-700 space-y-1">
+                          <div>Equipment IDs: [{selectedBooking.equipment_requested.join(', ')}]</div>
+                          <div>Quantities: [{selectedBooking.equipment_quantities?.join(', ') || 'No quantities specified'}]</div>
+                          <div>Total Items: {selectedBooking.equipment_quantities?.reduce((sum, qty) => sum + qty, 0) || selectedBooking.equipment_requested.length}</div>
+                        </div>
+                      </div>
+                    )}
+                    
                     <div className="flex space-x-3">
                       <button
                         onClick={() => {
+                          console.log('🚀 Manual approval triggered for booking:', selectedBooking.id);
                           handleStatusUpdate(selectedBooking.id, 'approved');
-                          setShowDetailModal(false);
                         }}
                         disabled={processingIds.has(selectedBooking.id)}
                         className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
@@ -1157,8 +1203,8 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                       </button>
                       <button
                         onClick={() => {
+                          console.log('🚀 Manual rejection triggered for booking:', selectedBooking.id);
                           handleStatusUpdate(selectedBooking.id, 'rejected');
-                          setShowDetailModal(false);
                         }}
                         disabled={processingIds.has(selectedBooking.id)}
                         className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
