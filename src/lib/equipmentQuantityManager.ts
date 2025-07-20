@@ -54,56 +54,81 @@ class EquipmentQuantityManager {
   }
 
   // SIMPLE RETURN: Remove dari active_borrows, update currently_borrowed
-  async returnEquipment(equipmentId: string, userId: string, quantity: number, refType: string, refId: string) {
-    try {
-      // Find active borrow
-      const { data: borrow, error: borrowError } = await this.supabase
-        .from('active_borrows')
-        .select('*')
-        .eq('equipment_id', equipmentId)
-        .eq('user_id', userId)
-        .eq('reference_type', refType)
-        .eq('reference_id', refId)
-        .eq('status', 'active')
-        .maybeSingle();
+  // SIMPLE RETURN: Remove dari active_borrows, update currently_borrowed
+async returnEquipment(equipmentId: string, userId: string, quantity: number, refType: string, refId: string) {
+  try {
+    // Find active borrow
+    const { data: borrow, error: borrowError } = await this.supabase
+      .from('active_borrows')
+      .select('*')
+      .eq('equipment_id', equipmentId)
+      .eq('user_id', userId)
+      .eq('reference_type', refType)
+      .eq('reference_id', refId)
+      .eq('status', 'active')
+      .maybeSingle();
 
-      if (borrowError) throw borrowError;
-      if (!borrow) {
-        console.warn(`No active borrow found for equipment ${equipmentId}`);
-        return; // Don't throw error, just return
-      }
-
-      // Update or delete borrow record
-      if (quantity >= borrow.quantity) {
-        await this.supabase.from('active_borrows').delete().eq('id', borrow.id);
-      } else {
-        await this.supabase
-          .from('active_borrows')
-          .update({ quantity: borrow.quantity - quantity })
-          .eq('id', borrow.id);
-      }
-
-      // Update equipment
+    if (borrowError) throw borrowError;
+    
+    // ✅ TOLERANSI: Kalau tidak ada active borrow, langsung update currently_borrowed
+    if (!borrow) {
+      console.warn(`No active borrow found for equipment ${equipmentId}, directly updating currently_borrowed`);
+      
+      // Get current equipment data
       const { data: equipment } = await this.supabase
         .from('equipment')
         .select('quantity, currently_borrowed')
         .eq('id', equipmentId)
         .single();
 
+      // Update currently_borrowed directly (decrease)
+      const newCurrentlyBorrowed = Math.max(0, equipment.currently_borrowed - quantity);
+      
       await this.supabase
         .from('equipment')
         .update({ 
-          currently_borrowed: Math.max(0, equipment.currently_borrowed - quantity),
+          currently_borrowed: newCurrentlyBorrowed,
           is_available: true
         })
         .eq('id', equipmentId);
 
-      console.log(`✅ Returned ${quantity} of equipment ${equipmentId}`);
-    } catch (error) {
-      console.error('Error returning equipment:', error);
-      throw error;
+      console.log(`✅ Direct return: Equipment ${equipmentId} currently_borrowed: ${equipment.currently_borrowed} → ${newCurrentlyBorrowed}`);
+      return;
     }
+
+    // Update or delete borrow record
+    if (quantity >= borrow.quantity) {
+      await this.supabase.from('active_borrows').delete().eq('id', borrow.id);
+    } else {
+      await this.supabase
+        .from('active_borrows')
+        .update({ quantity: borrow.quantity - quantity })
+        .eq('id', borrow.id);
+    }
+
+    // Update equipment currently_borrowed (decrease)
+    const { data: equipment } = await this.supabase
+      .from('equipment')
+      .select('quantity, currently_borrowed')
+      .eq('id', equipmentId)
+      .single();
+
+    const newCurrentlyBorrowed = Math.max(0, equipment.currently_borrowed - quantity);
+
+    await this.supabase
+      .from('equipment')
+      .update({ 
+        currently_borrowed: newCurrentlyBorrowed,
+        is_available: true
+      })
+      .eq('id', equipmentId);
+
+    console.log(`✅ Return completed: Equipment ${equipmentId} currently_borrowed: ${equipment.currently_borrowed} → ${newCurrentlyBorrowed}`);
+  } catch (error) {
+    console.error('Error returning equipment:', error);
+    throw error;
   }
+}
 
   // LEGACY SUPPORT: Keep old updateQuantity method for existing code
   async updateQuantity(changes: Array<any>) {
