@@ -278,80 +278,74 @@ const BookingManagement: React.FC = () => {
 
   // ✅ FIXED: Delete booking dengan equipment handling
   const handleDelete = async (bookingId: string) => {
-    try {
-      setProcessingIds(prev => new Set(prev).add(bookingId));
-      
-      const booking = bookings.find(b => b.id === bookingId);
-      if (!booking) {
-        throw new Error('Booking not found');
-      }
-
-      console.log('🗑️ Deleting booking:', {
-        id: booking.id,
-        status: booking.status,
-        equipment_requested: booking.equipment_requested,
-        equipment_quantities: booking.equipment_quantities
-      });
-
-      // ✅ Handle equipment restoration jika booking approved
-      if (booking.status === 'approved' && booking.equipment_requested && booking.equipment_requested.length > 0) {
-        const quantityManager = new EquipmentQuantityManager(supabase);
-        
-        for (let i = 0; i < booking.equipment_requested.length; i++) {
-          const equipmentId = booking.equipment_requested[i];
-          const requestedQuantity = booking.equipment_quantities && booking.equipment_quantities[i] 
-            ? booking.equipment_quantities[i] 
-            : 1;
-
-          console.log(`🔄 Restoring equipment[${i}]: ${equipmentId} with quantity ${requestedQuantity}`);
-
-          try {
-            // ✅ RETURN: Kurangi currently_borrowed saat delete approved booking
-            await quantityManager.returnEquipment(
-              equipmentId,
-              booking.user_id,
-              requestedQuantity,
-              'booking',
-              booking.id
-            );
-            
-            console.log(`✅ Equipment ${equipmentId} restored: ${requestedQuantity} units`);
-            
-          } catch (equipmentError) {
-            console.error(`❌ Error restoring equipment ${equipmentId}:`, equipmentError);
-            // Continue with other equipment
-          }
-        }
-      }
-
-      // ✅ Delete booking
-      const { error } = await supabase
-        .from('bookings')
-        .delete()
-        .eq('id', bookingId);
-
-      if (error) throw error;
-      
-      alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
-      setShowDeleteConfirm(null);
-      fetchBookings();
-      fetchAllEquipment(); // Refresh equipment data
-      
-      if (selectedBooking?.id === bookingId) {
-        setShowDetailModal(false);
-      }
-      
-    } catch (error: any) {
-      console.error('❌ Error deleting booking:', error);
-      alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
-    } finally {
-      setProcessingIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(bookingId);
-        return newSet;
-      });
+  try {
+    setProcessingIds(prev => new Set(prev).add(bookingId));
+    
+    const booking = bookings.find(b => b.id === bookingId);
+    if (!booking) {
+      throw new Error('Booking not found');
     }
-  };
+
+    console.log('🗑️ Deleting booking:', {
+      id: booking.id,
+      status: booking.status,
+      equipment_requested: booking.equipment_requested,
+      equipment_quantities: booking.equipment_quantities
+    });
+
+    // ✅ SIMPLE: Restore equipment quantities jika booking approved
+    if (booking.status === 'approved' && booking.equipment_requested && booking.equipment_requested.length > 0) {
+      const quantityManager = new EquipmentQuantityManager(supabase);
+      
+      // Build equipment list
+      const equipmentList: Array<{id: string, quantity: number}> = [];
+      
+      for (let i = 0; i < booking.equipment_requested.length; i++) {
+        const equipmentId = booking.equipment_requested[i];
+        const quantity = booking.equipment_quantities && booking.equipment_quantities[i] 
+          ? booking.equipment_quantities[i] 
+          : 1;
+        
+        equipmentList.push({ id: equipmentId, quantity });
+      }
+
+      // ✅ RESTORE: Tambahkan kembali quantity
+      await quantityManager.bulkIncreaseQuantity(
+        equipmentList, 
+        `Booking deleted: ${booking.id}`
+      );
+      
+      console.log(`✅ Equipment quantities restored after booking deletion`);
+    }
+
+    // ✅ Delete booking
+    const { error } = await supabase
+      .from('bookings')
+      .delete()
+      .eq('id', bookingId);
+
+    if (error) throw error;
+    
+    alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
+    setShowDeleteConfirm(null);
+    fetchBookings();
+    fetchAllEquipment(); // Refresh equipment data
+    
+    if (selectedBooking?.id === bookingId) {
+      setShowDetailModal(false);
+    }
+    
+  } catch (error: any) {
+    console.error('❌ Error deleting booking:', error);
+    alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
+  } finally {
+    setProcessingIds(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(bookingId);
+      return newSet;
+    });
+  }
+};
 
   const filteredBookings = bookings.filter(booking => {
     const searchLower = searchTerm.toLowerCase();
