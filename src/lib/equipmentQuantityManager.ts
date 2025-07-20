@@ -5,155 +5,203 @@ class EquipmentQuantityManager {
     this.supabase = supabaseClient;
   }
 
-  // SIMPLE BORROW: Tambah ke active_borrows, update currently_borrowed
-  async borrowEquipment(equipmentId: string, userId: string, quantity: number, refType: string, refId: string) {
+  // ✅ SIMPLE: Langsung kurangi quantity saat approved
+  async decreaseQuantity(equipmentId: string, amount: number, reason: string = '') {
     try {
-      // Check current availability
-      const { data: equipment, error: eqError } = await this.supabase
+      console.log(`📉 DECREASE: Equipment ${equipmentId} by ${amount} (${reason})`);
+      
+      // Get current quantity
+      const { data: equipment, error: getError } = await this.supabase
         .from('equipment')
-        .select('quantity, currently_borrowed')
+        .select('quantity, name')
         .eq('id', equipmentId)
         .single();
 
-      if (eqError) throw eqError;
+      if (getError) throw getError;
 
-      const available = equipment.quantity - equipment.currently_borrowed;
-      if (quantity > available) {
-        throw new Error(`Only ${available} available, requested ${quantity}`);
-      }
+      const currentQuantity = equipment.quantity || 0;
+      const newQuantity = Math.max(0, currentQuantity - amount);
 
-      // Add to active_borrows
-      const { error: borrowError } = await this.supabase
-        .from('active_borrows')
-        .insert({
-          equipment_id: equipmentId,
-          user_id: userId,
-          quantity,
-          reference_type: refType,
-          reference_id: refId
-        });
+      console.log(`📊 ${equipment.name}: ${currentQuantity} → ${newQuantity} (-${amount})`);
 
-      if (borrowError) throw borrowError;
-
-      // Update currently_borrowed
+      // Update quantity directly
       const { error: updateError } = await this.supabase
         .from('equipment')
         .update({ 
-          currently_borrowed: equipment.currently_borrowed + quantity,
-          is_available: (available - quantity) > 0
+          quantity: newQuantity,
+          is_available: newQuantity > 0
         })
         .eq('id', equipmentId);
 
       if (updateError) throw updateError;
 
-      console.log(`✅ Borrowed ${quantity} of equipment ${equipmentId}`);
+      console.log(`✅ SUCCESS: Equipment ${equipmentId} quantity decreased`);
+      
     } catch (error) {
-      console.error('Error borrowing equipment:', error);
+      console.error('❌ Error decreasing quantity:', error);
       throw error;
     }
   }
 
-  // SIMPLE RETURN: Remove dari active_borrows, update currently_borrowed
-  // SIMPLE RETURN: Remove dari active_borrows, update currently_borrowed
-async returnEquipment(equipmentId: string, userId: string, quantity: number, refType: string, refId: string) {
-  try {
-    // Find active borrow
-    const { data: borrow, error: borrowError } = await this.supabase
-      .from('active_borrows')
-      .select('*')
-      .eq('equipment_id', equipmentId)
-      .eq('user_id', userId)
-      .eq('reference_type', refType)
-      .eq('reference_id', refId)
-      .eq('status', 'active')
-      .maybeSingle();
-
-    if (borrowError) throw borrowError;
-    
-    // ✅ TOLERANSI: Kalau tidak ada active borrow, langsung update currently_borrowed
-    if (!borrow) {
-      console.warn(`No active borrow found for equipment ${equipmentId}, directly updating currently_borrowed`);
+  // ✅ SIMPLE: Langsung tambah quantity saat return
+  async increaseQuantity(equipmentId: string, amount: number, reason: string = '') {
+    try {
+      console.log(`📈 INCREASE: Equipment ${equipmentId} by ${amount} (${reason})`);
       
-      // Get current equipment data
-      const { data: equipment } = await this.supabase
+      // Get current quantity
+      const { data: equipment, error: getError } = await this.supabase
         .from('equipment')
-        .select('quantity, currently_borrowed')
+        .select('quantity, name')
         .eq('id', equipmentId)
         .single();
 
-      // Update currently_borrowed directly (decrease)
-      const newCurrentlyBorrowed = Math.max(0, equipment.currently_borrowed - quantity);
-      
-      await this.supabase
+      if (getError) throw getError;
+
+      const currentQuantity = equipment.quantity || 0;
+      const newQuantity = currentQuantity + amount;
+
+      console.log(`📊 ${equipment.name}: ${currentQuantity} → ${newQuantity} (+${amount})`);
+
+      // Update quantity directly
+      const { error: updateError } = await this.supabase
         .from('equipment')
         .update({ 
-          currently_borrowed: newCurrentlyBorrowed,
+          quantity: newQuantity,
           is_available: true
         })
         .eq('id', equipmentId);
 
-      console.log(`✅ Direct return: Equipment ${equipmentId} currently_borrowed: ${equipment.currently_borrowed} → ${newCurrentlyBorrowed}`);
-      return;
+      if (updateError) throw updateError;
+
+      console.log(`✅ SUCCESS: Equipment ${equipmentId} quantity increased`);
+      
+    } catch (error) {
+      console.error('❌ Error increasing quantity:', error);
+      throw error;
     }
-
-    // Update or delete borrow record
-    if (quantity >= borrow.quantity) {
-      await this.supabase.from('active_borrows').delete().eq('id', borrow.id);
-    } else {
-      await this.supabase
-        .from('active_borrows')
-        .update({ quantity: borrow.quantity - quantity })
-        .eq('id', borrow.id);
-    }
-
-    // Update equipment currently_borrowed (decrease)
-    const { data: equipment } = await this.supabase
-      .from('equipment')
-      .select('quantity, currently_borrowed')
-      .eq('id', equipmentId)
-      .single();
-
-    const newCurrentlyBorrowed = Math.max(0, equipment.currently_borrowed - quantity);
-
-    await this.supabase
-      .from('equipment')
-      .update({ 
-        currently_borrowed: newCurrentlyBorrowed,
-        is_available: true
-      })
-      .eq('id', equipmentId);
-
-    console.log(`✅ Return completed: Equipment ${equipmentId} currently_borrowed: ${equipment.currently_borrowed} → ${newCurrentlyBorrowed}`);
-  } catch (error) {
-    console.error('Error returning equipment:', error);
-    throw error;
   }
-}
 
-  // LEGACY SUPPORT: Keep old updateQuantity method for existing code
-  async updateQuantity(changes: Array<any>) {
-    for (const change of changes) {
-      if (change.transaction_type === 'return' && change.change_amount > 0) {
-        // This is a return operation from validation queue
-        // We'll implement a simple version that just updates the equipment quantity
-        const { data: equipment } = await this.supabase
+  // ✅ BULK: Process multiple equipment at once
+  async bulkDecreaseQuantity(equipmentList: Array<{id: string, quantity: number}>, reason: string = '') {
+    console.log(`📉 BULK DECREASE: ${equipmentList.length} items (${reason})`);
+    
+    for (const item of equipmentList) {
+      try {
+        await this.decreaseQuantity(item.id, item.quantity, reason);
+      } catch (error) {
+        console.error(`❌ Failed to decrease ${item.id}:`, error);
+        // Continue with other items
+      }
+    }
+  }
+
+  async bulkIncreaseQuantity(equipmentList: Array<{id: string, quantity: number}>, reason: string = '') {
+    console.log(`📈 BULK INCREASE: ${equipmentList.length} items (${reason})`);
+    
+    for (const item of equipmentList) {
+      try {
+        await this.increaseQuantity(item.id, item.quantity, reason);
+      } catch (error) {
+        console.error(`❌ Failed to increase ${item.id}:`, error);
+        // Continue with other items
+      }
+    }
+  }
+
+  // ✅ VALIDATION: Check if enough quantity available
+  async validateQuantityAvailable(equipmentList: Array<{id: string, quantity: number}>) {
+    try {
+      const errors: string[] = [];
+      
+      for (const item of equipmentList) {
+        const { data: equipment, error } = await this.supabase
           .from('equipment')
-          .select('quantity')
-          .eq('id', change.equipment_id)
+          .select('id, name, quantity')
+          .eq('id', item.id)
           .single();
 
-        const newQuantity = equipment.quantity + change.change_amount;
+        if (error || !equipment) {
+          errors.push(`Equipment ${item.id} not found`);
+          continue;
+        }
 
-        await this.supabase
-          .from('equipment')
-          .update({ 
-            quantity: newQuantity,
-            is_available: newQuantity > 0
-          })
-          .eq('id', change.equipment_id);
-
-        console.log(`✅ Updated equipment ${change.equipment_id} quantity: +${change.change_amount}`);
+        if (item.quantity > equipment.quantity) {
+          errors.push(`${equipment.name}: Only ${equipment.quantity} available, requested ${item.quantity}`);
+        }
       }
+
+      return {
+        isValid: errors.length === 0,
+        errors
+      };
+    } catch (error) {
+      console.error('Error validating quantity:', error);
+      return {
+        isValid: false,
+        errors: ['Validation failed']
+      };
+    }
+  }
+
+  // ✅ LEGACY SUPPORT: Keep old updateQuantity method for ValidationQueue
+  async updateQuantity(changes: Array<any>) {
+    console.log('⚠️ LEGACY updateQuantity called:', changes);
+    
+    for (const change of changes) {
+      if (change.transaction_type === 'return' && change.change_amount > 0) {
+        console.log(`🔄 Processing return via legacy method: ${change.equipment_id} +${change.change_amount}`);
+        
+        try {
+          await this.increaseQuantity(
+            change.equipment_id,
+            change.change_amount,
+            'Validation Queue Return'
+          );
+        } catch (error) {
+          console.error(`❌ Error processing legacy return for ${change.equipment_id}:`, error);
+        }
+      } else if (change.transaction_type === 'borrow' && change.change_amount > 0) {
+        console.log(`🔄 Processing borrow via legacy method: ${change.equipment_id} -${change.change_amount}`);
+        
+        try {
+          await this.decreaseQuantity(
+            change.equipment_id,
+            change.change_amount,
+            'Validation Queue Borrow'
+          );
+        } catch (error) {
+          console.error(`❌ Error processing legacy borrow for ${change.equipment_id}:`, error);
+        }
+      }
+    }
+  }
+
+  // ✅ HELPER: Get current equipment status
+  async getEquipmentStatus(equipmentId: string) {
+    try {
+      const { data: equipment, error } = await this.supabase
+        .from('equipment')
+        .select('id, name, quantity, original_quantity')
+        .eq('id', equipmentId)
+        .single();
+
+      if (error) throw error;
+
+      const originalQty = equipment.original_quantity || equipment.quantity;
+      const currentQty = equipment.quantity || 0;
+      const missing = Math.max(0, originalQty - currentQty);
+
+      return {
+        id: equipment.id,
+        name: equipment.name,
+        current_quantity: currentQty,
+        original_quantity: originalQty,
+        missing: missing,
+        status: currentQty > 0 ? 'available' : 'out_of_stock'
+      };
+    } catch (error) {
+      console.error('Error getting equipment status:', error);
+      throw error;
     }
   }
 }
