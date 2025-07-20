@@ -202,47 +202,6 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
     });
   }
 };
-
-// ✅ SIMPLIFIED: Delete handlers (triggers handle equipment restoration)
-
-const handleDelete = async (bookingId: string) => {
-  try {
-    setProcessingIds(prev => new Set(prev).add(bookingId));
-    
-    console.log('🗑️ SIMPLIFIED: Deleting booking (triggers will restore equipment)');
-
-    // ✅ SIMPLE: Just delete booking - triggers handle equipment restoration!
-    const { error } = await supabase
-      .from('bookings')
-      .delete()
-      .eq('id', bookingId);
-
-    if (error) throw error;
-    
-    console.log('✅ SIMPLIFIED: Booking deleted, triggers restored equipment automatically');
-    
-    alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
-    setShowDeleteConfirm(null);
-    await fetchBookings();
-    await fetchAllEquipment();
-    
-    if (selectedBooking?.id === bookingId) {
-      setShowDetailModal(false);
-    }
-    
-  } catch (error: any) {
-    console.error('❌ Error deleting booking:', error);
-    alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
-  } finally {
-    setProcessingIds(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(bookingId);
-      return newSet;
-    });
-  }
-};
-
-
     const handleDelete = async (recordId: string) => {
   try {
     setProcessingIds(prev => new Set(prev).add(recordId));
