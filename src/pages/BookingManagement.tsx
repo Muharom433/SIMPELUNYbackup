@@ -185,117 +185,96 @@ const BookingManagement: React.FC = () => {
 
   // ✅ FIXED: Equipment quantity handling dengan EquipmentQuantityManager
   const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 'rejected') => {
-    try {
-      setProcessingIds(prev => new Set(prev).add(bookingId));
-      
-      const booking = bookings.find(b => b.id === bookingId);
-      if (!booking) {
-        throw new Error('Booking not found');
-      }
-
-      console.log('📋 Processing booking:', {
-        id: booking.id,
-        status: booking.status,
-        newStatus,
-        equipment_requested: booking.equipment_requested,
-        equipment_quantities: booking.equipment_quantities,
-        user: booking.user?.full_name
-      });
-
-      // ✅ Handle equipment quantities dengan system yang baru
-      if (booking.equipment_requested && booking.equipment_requested.length > 0) {
-        const quantityManager = new EquipmentQuantityManager(supabase);
-        
-        // ✅ Validate array lengths
-        const equipmentCount = booking.equipment_requested.length;
-        const quantityCount = booking.equipment_quantities?.length || 0;
-        
-        if (quantityCount > 0 && equipmentCount !== quantityCount) {
-          console.warn(`⚠️ Array length mismatch: equipment(${equipmentCount}) vs quantities(${quantityCount})`);
-        }
-
-        // ✅ Process equipment satu per satu berdasarkan INDEX
-        for (let i = 0; i < booking.equipment_requested.length; i++) {
-          const equipmentId = booking.equipment_requested[i];
-          const requestedQuantity = booking.equipment_quantities && booking.equipment_quantities[i] 
-            ? booking.equipment_quantities[i] 
-            : 1; // Default 1 jika tidak ada
-
-          console.log(`🔧 Processing equipment[${i}]: ${equipmentId} with quantity ${requestedQuantity}`);
-
-          try {
-            if (newStatus === 'approved') {
-              // ✅ BORROW: Tambah ke currently_borrowed, tidak ubah quantity fisik
-              await quantityManager.borrowEquipment(
-                equipmentId,
-                booking.user_id,
-                requestedQuantity,
-                'booking',
-                booking.id
-              );
-              
-              console.log(`✅ Equipment ${equipmentId} borrowed: ${requestedQuantity} units`);
-              
-            } else if (newStatus === 'rejected') {
-              // ✅ RETURN/RESTORE: Kurangi currently_borrowed (jika sudah ada)
-              try {
-                await quantityManager.returnEquipment(
-                  equipmentId,
-                  booking.user_id,
-                  requestedQuantity,
-                  'booking',
-                  booking.id
-                );
-                
-                console.log(`✅ Equipment ${equipmentId} restored: ${requestedQuantity} units`);
-              } catch (returnError) {
-                console.warn(`⚠️ Could not return equipment ${equipmentId}:`, returnError);
-                // Continue processing other equipment
-              }
-            }
-            
-          } catch (equipmentError) {
-            console.error(`❌ Error processing equipment ${equipmentId}:`, equipmentError);
-            // Continue with other equipment instead of failing completely
-            alert.error(`Failed to process equipment ${equipmentId}: ${equipmentError.message}`);
-          }
-        }
-      }
-
-      // ✅ Update booking status
-      const { error: bookingError } = await supabase
-        .from('bookings')
-        .update({ 
-          status: newStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', bookingId);
-
-      if (bookingError) throw bookingError;
-      
-      const statusText = newStatus === 'approved' 
-        ? getText('approved', 'disetujui') 
-        : getText('rejected', 'ditolak');
-      
-      alert.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
-      fetchBookings();
-      fetchAllEquipment(); // Refresh equipment data
-      
-      if (selectedBooking?.id === bookingId) {
-        setShowDetailModal(false);
-      }
-      
-    } catch (error: any) {
-      console.error('❌ Error updating booking status:', error);
-      alert.error(error.message || getText('Failed to update booking status', 'Gagal memperbarui status pemesanan'));
-    } finally {
-      setProcessingIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(bookingId);
-        return newSet;
-      });
+  try {
+    setProcessingIds(prev => new Set(prev).add(bookingId));
+    
+    const booking = bookings.find(b => b.id === bookingId);
+    if (!booking) {
+      throw new Error('Booking not found');
     }
-  };
+
+    console.log('📋 Processing booking:', {
+      id: booking.id,
+      status: booking.status,
+      newStatus,
+      equipment_requested: booking.equipment_requested,
+      equipment_quantities: booking.equipment_quantities,
+      user: booking.user?.full_name
+    });
+
+    // ✅ SIMPLE: Handle equipment quantities
+    if (booking.equipment_requested && booking.equipment_requested.length > 0) {
+      const quantityManager = new EquipmentQuantityManager(supabase);
+      
+      // Build equipment list dengan quantity yang benar
+      const equipmentList: Array<{id: string, quantity: number}> = [];
+      
+      for (let i = 0; i < booking.equipment_requested.length; i++) {
+        const equipmentId = booking.equipment_requested[i];
+        const quantity = booking.equipment_quantities && booking.equipment_quantities[i] 
+          ? booking.equipment_quantities[i] 
+          : 1;
+        
+        equipmentList.push({ id: equipmentId, quantity });
+      }
+
+      console.log('🔧 Equipment to process:', equipmentList);
+
+      if (newStatus === 'approved') {
+        // ✅ APPROVE: Kurangi quantity
+        await quantityManager.bulkDecreaseQuantity(
+          equipmentList, 
+          `Booking approved: ${booking.id}`
+        );
+        
+        console.log(`✅ Equipment quantities decreased for approved booking`);
+        
+      } else if (newStatus === 'rejected' && booking.status === 'approved') {
+        // ✅ REJECT PREVIOUSLY APPROVED: Kembalikan quantity 
+        await quantityManager.bulkIncreaseQuantity(
+          equipmentList, 
+          `Previously approved booking rejected: ${booking.id}`
+        );
+        
+        console.log(`✅ Equipment quantities restored for rejected previously approved booking`);
+      }
+      // ✅ NOTE: Jika reject booking yang masih pending, tidak ada perubahan quantity
+    }
+
+    // ✅ Update booking status
+    const { error: bookingError } = await supabase
+      .from('bookings')
+      .update({ 
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', bookingId);
+
+    if (bookingError) throw bookingError;
+    
+    const statusText = newStatus === 'approved' 
+      ? getText('approved', 'disetujui') 
+      : getText('rejected', 'ditolak');
+    
+    alert.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
+    fetchBookings();
+    fetchAllEquipment(); // Refresh equipment data
+    
+    if (selectedBooking?.id === bookingId) {
+      setShowDetailModal(false);
+    }
+    
+  } catch (error: any) {
+    console.error('❌ Error updating booking status:', error);
+    alert.error(error.message || getText('Failed to update booking status', 'Gagal memperbarui status pemesanan'));
+  } finally {
+    setProcessingIds(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(bookingId);
+      return newSet;
+    });
+  }
+};
 
   // ✅ FIXED: Delete booking dengan equipment handling
   const handleDelete = async (bookingId: string) => {
