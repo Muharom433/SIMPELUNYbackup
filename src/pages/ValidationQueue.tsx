@@ -356,84 +356,111 @@ const ValidationQueue: React.FC = () => {
         }
     }, [activeTab, statusFilter, profile]);
 
-    // ===== 🔑 FIXED UPDATE VERIFICATION ITEM WITH EQUIPMENT QUANTITY SYNC =====
-    const updateVerificationItem = async (
-        checkoutId: string, 
-        equipmentId: string, 
-        newReturnedQuantity: number, 
-        conditionNotes: string,
-        isVerified: boolean
-    ) => {
-        try {
-            // ✅ STEP 1: Get current checkout_items data
-            const { data: currentCheckoutItems, error: fetchError } = await supabase
+    // ✅ FIXED ValidationQueue.tsx - updateVerificationItem function only
+
+const updateVerificationItem = async (
+    checkoutId: string, 
+    equipmentId: string, 
+    newReturnedQuantity: number, 
+    conditionNotes: string,
+    isVerified: boolean
+) => {
+    try {
+        console.log('🔧 ValidationQueue: updateVerificationItem called', {
+            checkoutId,
+            equipmentId,
+            newReturnedQuantity,
+            isVerified
+        });
+
+        // ✅ STEP 1: Get current checkout_items data
+        const { data: currentCheckoutItems, error: fetchError } = await supabase
+            .from('checkout_items')
+            .select('quantity')
+            .eq('checkout_id', checkoutId)
+            .eq('equipment_id', equipmentId)
+            .maybeSingle();
+
+        if (fetchError) {
+            console.error('Error fetching current checkout items:', fetchError);
+            throw fetchError;
+        }
+
+        const currentReturnedQty = currentCheckoutItems?.quantity || 0;
+        console.log('📊 Current vs New quantity:', { currentReturnedQty, newReturnedQuantity });
+
+        // ✅ STEP 2: Update checkout_items (verified items)
+        if (isVerified && newReturnedQuantity > 0) {
+            // Save/update verification
+            const { error } = await supabase
                 .from('checkout_items')
-                .select('quantity')
-                .eq('checkout_id', checkoutId)
-                .eq('equipment_id', equipmentId)
-                .maybeSingle();
+                .upsert({
+                    checkout_id: checkoutId,
+                    equipment_id: equipmentId,
+                    quantity: newReturnedQuantity,
+                    condition_notes: conditionNotes || null
+                }, { 
+                    onConflict: 'checkout_id, equipment_id' 
+                });
 
-            if (fetchError) {
-                console.error('Error fetching current checkout items:', fetchError);
-                throw fetchError;
-            }
+            if (error) throw error;
+            
+        } else {
+            // Remove verification
+            const { error } = await supabase
+                .from('checkout_items')
+                .delete()
+                .match({ checkout_id: checkoutId, equipment_id: equipmentId });
 
-            const currentReturnedQty = currentCheckoutItems?.quantity || 0;
+            if (error) throw error;
+        }
 
-            // ✅ STEP 2: Update checkout_items (verified items)
-            if (isVerified && newReturnedQuantity > 0) {
-                // Save/update verification
-                const { error } = await supabase
-                    .from('checkout_items')
-                    .upsert({
-                        checkout_id: checkoutId,
-                        equipment_id: equipmentId,
-                        quantity: newReturnedQuantity,
-                        condition_notes: conditionNotes || null
-                    }, { 
-                        onConflict: 'checkout_id, equipment_id' 
-                    });
-
-                if (error) throw error;
+        // ✅ STEP 3: 🔑 CRITICAL FIX - UPDATE EQUIPMENT QUANTITY BASED ON ACTUAL DIFFERENCE
+        const quantityDifference = newReturnedQuantity - currentReturnedQty;
+        
+        console.log('📈 Quantity difference calculated:', { quantityDifference });
+        
+        // ✅ ONLY update if there's an actual difference
+        if (quantityDifference !== 0) {
+            const quantityManager = new EquipmentQuantityManager(supabase);
+            
+            if (quantityDifference > 0) {
+                // ✅ POSITIVE: User returned more items - increase equipment quantity
+                console.log(`✅ INCREASING equipment ${equipmentId} by ${quantityDifference}`);
+                await quantityManager.increaseQuantity(
+                    equipmentId,
+                    quantityDifference,
+                    `ValidationQueue: User returned ${quantityDifference} items`
+                );
                 
             } else {
-                // Remove verification
-                const { error } = await supabase
-                    .from('checkout_items')
-                    .delete()
-                    .match({ checkout_id: checkoutId, equipment_id: equipmentId });
-
-                if (error) throw error;
-            }
-
-            // ✅ STEP 3: 🔑 CRITICAL - UPDATE EQUIPMENT QUANTITY BASED ON DIFFERENCE
-            const quantityDifference = newReturnedQuantity - currentReturnedQty;
-            
-            if (quantityDifference !== 0) {
-                if (quantityDifference > 0) {
-                    // ✅ POSITIVE: User mengembalikan lebih banyak - tambah quantity
-                    await updateEquipmentQuantity(equipmentId, quantityDifference);
-                } else {
-                    // ✅ NEGATIVE: Admin mengurangi verifikasi - kurangi quantity
-                    await updateEquipmentQuantity(equipmentId, quantityDifference);
-                }
-            }
-
-            // ✅ STEP 4: Refresh verification items dengan data checkout yang lengkap
-            if (selectedCheckout) {
-                const newVerificationItems = await fetchVerificationItems(
-                    selectedCheckout.id, 
-                    selectedCheckout.equipment_list || [],
-                    selectedCheckout
+                // ✅ NEGATIVE: Admin reduced verification - decrease equipment quantity
+                console.log(`⬇️ DECREASING equipment ${equipmentId} by ${Math.abs(quantityDifference)}`);
+                await quantityManager.decreaseQuantity(
+                    equipmentId,
+                    Math.abs(quantityDifference),
+                    `ValidationQueue: Admin reduced verification by ${Math.abs(quantityDifference)}`
                 );
-                setVerificationItems(newVerificationItems);
             }
-            
-        } catch (error: any) {
-            console.error('❌ Error updating verification:', error);
-            toast.error(`Gagal memperbarui verifikasi: ${error.message}`);
+        } else {
+            console.log('ℹ️ No quantity change needed');
         }
-    };
+
+        // ✅ STEP 4: Refresh verification items
+        if (selectedCheckout) {
+            const newVerificationItems = await fetchVerificationItems(
+                selectedCheckout.id, 
+                selectedCheckout.equipment_list || [],
+                selectedCheckout
+            );
+            setVerificationItems(newVerificationItems);
+        }
+        
+    } catch (error: any) {
+        console.error('❌ Error updating verification:', error);
+        toast.error(`Gagal memperbarui verifikasi: ${error.message}`);
+    }
+};
 
     // ===== 🔑 FIXED UPDATE EQUIPMENT QUANTITY =====
     const updateEquipmentQuantity = async (equipmentId: string, quantityChange: number) => {
