@@ -63,7 +63,7 @@ interface CheckoutWithDetails {
             borrowed_quantity: number;
         }>;
     };
-    equipment_list?: Equipment[]; // Combined equipment from booking/lending
+    equipment_list?: Equipment[];
     verification_items?: VerificationItem[];
     has_report?: boolean;
     report?: {
@@ -150,14 +150,7 @@ const ValidationQueue: React.FC = () => {
                 checkoutId,
                 checkoutType: checkout.type,
                 equipmentList: equipmentList.map(eq => ({ id: eq.id, name: eq.name })),
-                booking: checkout.booking ? {
-                    equipment_requested: checkout.booking.equipment_requested,
-                    equipment_quantities: checkout.booking.equipment_quantities
-                } : null,
-                lendingTool: checkout.lendingTool ? {
-                    id_equipment: checkout.lendingTool.id_equipment,
-                    qty: checkout.lendingTool.qty
-                } : null
+                checkoutItems: checkoutItems?.map(item => ({ equipment_id: item.equipment_id, quantity: item.quantity }))
             });
 
             return equipmentList.map(equipment => {
@@ -167,13 +160,6 @@ const ValidationQueue: React.FC = () => {
                 
                 if (checkout.type === 'room' && checkout.booking) {
                     // ✅ PERBAIKAN: Untuk room booking, ambil quantity dari equipment_quantities array
-                    console.log('🔍 Room Booking Debug for equipment:', equipment.name, {
-                        equipmentId: equipment.id,
-                        equipment_requested: checkout.booking.equipment_requested,
-                        equipment_quantities: checkout.booking.equipment_quantities
-                    });
-
-                    // ✅ KUNCI: Cari SEMUA index dimana equipment ini muncul
                     const equipmentIndices: number[] = [];
                     checkout.booking.equipment_requested?.forEach((id: string, index: number) => {
                         if (id === equipment.id) {
@@ -181,31 +167,19 @@ const ValidationQueue: React.FC = () => {
                         }
                     });
 
-                    console.log(`📍 Equipment ${equipment.id} (${equipment.name}) found at indices:`, equipmentIndices);
-
                     // ✅ PERBAIKAN: Jumlahkan quantity dari SEMUA kemunculan
                     borrowedQty = equipmentIndices.reduce((total, index) => {
                         const qty = checkout.booking.equipment_quantities?.[index] || 1;
-                        console.log(`   Index ${index}: +${qty}`);
                         return total + qty;
                     }, 0);
 
                     // Fallback jika tidak ada di equipment_quantities
                     if (borrowedQty === 0 && equipmentIndices.length > 0) {
                         borrowedQty = equipmentIndices.length; // Default 1 per kemunculan
-                        console.log(`   Using fallback: ${borrowedQty}`);
                     }
-
-                    console.log(`📊 Final borrowed quantity for ${equipment.name}: ${borrowedQty}`);
                     
                 } else if (checkout.type === 'things' && checkout.lendingTool) {
                     // ✅ PERBAIKAN: Untuk equipment lending, ambil dari qty array
-                    console.log('🔧 Equipment Lending Debug for equipment:', equipment.name, {
-                        equipmentId: equipment.id,
-                        id_equipment: checkout.lendingTool.id_equipment,
-                        qty: checkout.lendingTool.qty
-                    });
-
                     const equipmentIndices: number[] = [];
                     checkout.lendingTool.id_equipment?.forEach((id: string, index: number) => {
                         if (id === equipment.id) {
@@ -213,20 +187,14 @@ const ValidationQueue: React.FC = () => {
                         }
                     });
 
-                    console.log(`📍 Equipment ${equipment.id} (${equipment.name}) found at indices:`, equipmentIndices);
-
                     borrowedQty = equipmentIndices.reduce((total, index) => {
                         const qty = checkout.lendingTool.qty?.[index] || 1;
-                        console.log(`   Index ${index}: +${qty}`);
                         return total + qty;
                     }, 0);
 
                     if (borrowedQty === 0 && equipmentIndices.length > 0) {
                         borrowedQty = equipmentIndices.length;
-                        console.log(`   Using fallback: ${borrowedQty}`);
                     }
-
-                    console.log(`📊 Final borrowed quantity for ${equipment.name}: ${borrowedQty}`);
                 }
 
                 const verificationItem: VerificationItem = {
@@ -234,7 +202,7 @@ const ValidationQueue: React.FC = () => {
                     equipment_name: equipment.name,
                     equipment_code: equipment.code,
                     equipment_unit: equipment.unit || 'pcs',
-                    borrowed_quantity: borrowedQty, // ✅ BENAR: gunakan quantity yang sudah dihitung
+                    borrowed_quantity: borrowedQty,
                     returned_quantity: checkoutItem?.quantity || 0,
                     is_verified: !!checkoutItem,
                     condition_notes: checkoutItem?.condition_notes || '',
@@ -287,38 +255,6 @@ const ValidationQueue: React.FC = () => {
                     .order('created_at', { ascending: false });
 
                 if (error) throw error;
-                
-                // ✅ DEBUG: Log setiap booking data
-                checkoutData?.forEach(checkout => {
-                    if (checkout.booking) {
-                        console.log('📋 Booking Data:', {
-                            id: checkout.booking.id,
-                            user: checkout.user?.full_name,
-                            equipment_requested: checkout.booking.equipment_requested,
-                            equipment_quantities: checkout.booking.equipment_quantities,
-                            equipmentCount: checkout.booking.equipment_requested?.length || 0,
-                            quantityCount: checkout.booking.equipment_quantities?.length || 0
-                        });
-
-                        // ✅ VALIDASI: Pastikan array length konsisten
-                        const equipmentCount = checkout.booking.equipment_requested?.length || 0;
-                        const quantityCount = checkout.booking.equipment_quantities?.length || 0;
-                        
-                        if (equipmentCount !== quantityCount) {
-                            console.warn(`⚠️ Array length mismatch for booking ${checkout.booking.id}:`, {
-                                equipment_requested: equipmentCount,
-                                equipment_quantities: quantityCount
-                            });
-                        }
-
-                        // ✅ LOG: Detail setiap equipment dan quantity
-                        checkout.booking.equipment_requested?.forEach((equipmentId: string, index: number) => {
-                            const quantity = checkout.booking.equipment_quantities?.[index] || 1;
-                            console.log(`   📦 Equipment[${index}]: ${equipmentId} → Quantity: ${quantity}`);
-                        });
-                    }
-                });
-                
                 processedData = checkoutData || [];
                 
             } else {
@@ -343,14 +279,6 @@ const ValidationQueue: React.FC = () => {
                 processedData = await Promise.all(
                     (checkoutData || []).map(async (checkout) => {
                         if (checkout.lendingTool?.id_equipment) {
-                            // Debug lending tool data
-                            console.log('🔧 Lending Tool Data:', {
-                                id: checkout.lendingTool.id,
-                                user: checkout.user?.full_name,
-                                id_equipment: checkout.lendingTool.id_equipment,
-                                qty: checkout.lendingTool.qty
-                            });
-
                             const { data: equipmentData } = await supabase
                                 .from('equipment')
                                 .select('id, name, code, category, unit')
@@ -381,22 +309,10 @@ const ValidationQueue: React.FC = () => {
             const enhancedData = await Promise.all(
                 processedData.map(async (checkout) => {
                     const equipment_list = await fetchEquipmentList(checkout);
-                    
-                    // ✅ KUNCI: Pass checkout data ke fetchVerificationItems
                     const verification_items = await fetchVerificationItems(
                         checkout.id, 
                         equipment_list, 
-                        checkout // ✅ Pass checkout data
-                    );
-                    
-                    // ✅ DEBUG: Log verification items
-                    console.log(`🔍 Verification items for checkout ${checkout.id}:`, 
-                        verification_items.map(item => ({
-                            equipment: item.equipment_name,
-                            borrowed: item.borrowed_quantity,
-                            returned: item.returned_quantity,
-                            missing: item.borrowed_quantity - item.returned_quantity
-                        }))
+                        checkout
                     );
                     
                     return {
@@ -417,32 +333,58 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    // ===== UPDATE VERIFICATION ITEM =====
+    // ===== 🔑 FIXED UPDATE VERIFICATION ITEM WITH EQUIPMENT QUANTITY SYNC =====
     const updateVerificationItem = async (
         checkoutId: string, 
         equipmentId: string, 
-        returnedQuantity: number, 
+        newReturnedQuantity: number, 
         conditionNotes: string,
         isVerified: boolean
     ) => {
         try {
-            if (isVerified && returnedQuantity > 0) {
+            console.log('🔄 updateVerificationItem called:', {
+                checkoutId,
+                equipmentId,
+                newReturnedQuantity,
+                isVerified
+            });
+
+            // ✅ STEP 1: Get current checkout_items data
+            const { data: currentCheckoutItems, error: fetchError } = await supabase
+                .from('checkout_items')
+                .select('quantity')
+                .eq('checkout_id', checkoutId)
+                .eq('equipment_id', equipmentId)
+                .maybeSingle();
+
+            if (fetchError) {
+                console.error('Error fetching current checkout items:', fetchError);
+                throw fetchError;
+            }
+
+            const currentReturnedQty = currentCheckoutItems?.quantity || 0;
+            console.log('📊 Current vs New quantity:', {
+                current: currentReturnedQty,
+                new: newReturnedQuantity,
+                difference: newReturnedQuantity - currentReturnedQty
+            });
+
+            // ✅ STEP 2: Update checkout_items (verified items)
+            if (isVerified && newReturnedQuantity > 0) {
                 // Save/update verification
                 const { error } = await supabase
                     .from('checkout_items')
                     .upsert({
                         checkout_id: checkoutId,
                         equipment_id: equipmentId,
-                        quantity: returnedQuantity,
+                        quantity: newReturnedQuantity,
                         condition_notes: conditionNotes || null
                     }, { 
                         onConflict: 'checkout_id, equipment_id' 
                     });
 
                 if (error) throw error;
-
-                // Update equipment quantity in inventory
-                await updateEquipmentQuantity(equipmentId, returnedQuantity);
+                console.log('✅ checkout_items updated successfully');
                 
             } else {
                 // Remove verification
@@ -452,71 +394,98 @@ const ValidationQueue: React.FC = () => {
                     .match({ checkout_id: checkoutId, equipment_id: equipmentId });
 
                 if (error) throw error;
-
-                // Revert equipment quantity
-                const currentItem = verificationItems.find(item => item.equipment_id === equipmentId);
-                if (currentItem && currentItem.returned_quantity > 0) {
-                    await updateEquipmentQuantity(equipmentId, -currentItem.returned_quantity);
-                }
+                console.log('✅ checkout_items removed successfully');
             }
 
-            // ✅ PERBAIKAN: Refresh verification items dengan data checkout yang lengkap
+            // ✅ STEP 3: 🔑 CRITICAL - UPDATE EQUIPMENT QUANTITY BASED ON DIFFERENCE
+            const quantityDifference = newReturnedQuantity - currentReturnedQty;
+            
+            if (quantityDifference !== 0) {
+                console.log(`🔄 Equipment quantity change needed: ${quantityDifference > 0 ? '+' : ''}${quantityDifference}`);
+                
+                if (quantityDifference > 0) {
+                    // ✅ POSITIVE: User mengembalikan lebih banyak - tambah quantity
+                    await updateEquipmentQuantity(equipmentId, quantityDifference);
+                    console.log(`✅ Equipment ${equipmentId} quantity INCREASED by ${quantityDifference}`);
+                    
+                } else {
+                    // ✅ NEGATIVE: Admin mengurangi verifikasi - kurangi quantity
+                    await updateEquipmentQuantity(equipmentId, quantityDifference);
+                    console.log(`✅ Equipment ${equipmentId} quantity DECREASED by ${Math.abs(quantityDifference)}`);
+                }
+            } else {
+                console.log('📌 No quantity change needed (difference = 0)');
+            }
+
+            // ✅ STEP 4: Refresh verification items dengan data checkout yang lengkap
             if (selectedCheckout) {
                 const newVerificationItems = await fetchVerificationItems(
                     selectedCheckout.id, 
                     selectedCheckout.equipment_list || [],
-                    selectedCheckout // ✅ Pass checkout data
+                    selectedCheckout
                 );
                 setVerificationItems(newVerificationItems);
+                console.log('🔄 Verification items refreshed');
             }
             
         } catch (error: any) {
-            console.error('Error updating verification:', error);
+            console.error('❌ Error updating verification:', error);
             toast.error(`Failed to update verification: ${error.message}`);
         }
     };
 
-    // ===== UPDATE EQUIPMENT QUANTITY =====
-    // ===== UPDATE EQUIPMENT QUANTITY =====
-// ===== UPDATE EQUIPMENT QUANTITY =====
-const updateEquipmentQuantity = async (equipmentId: string, quantityChange: number) => {
-  try {
-    const quantityManager = new EquipmentQuantityManager(supabase);
-    
-    console.log(`🔄 ValidationQueue: Equipment ${equipmentId} change: ${quantityChange}`);
-    
-    if (quantityChange > 0) {
-      // ✅ POSITIVE: User mengembalikan barang - tambah quantity
-      await quantityManager.increaseQuantity(
-        equipmentId,
-        quantityChange,
-        'User returned items'
-      );
-      
-      console.log(`✅ RETURN: Equipment ${equipmentId} +${quantityChange} (quantity increased)`);
-      
-    } else if (quantityChange < 0) {
-      // ✅ NEGATIVE: Admin membatalkan verifikasi - kurangi quantity
-      await quantityManager.decreaseQuantity(
-        equipmentId,
-        Math.abs(quantityChange),
-        'Admin reverted verification'
-      );
-      
-      console.log(`✅ REVERT: Equipment ${equipmentId} ${quantityChange} (quantity decreased)`);
-    }
-    
-  } catch (error) {
-    console.error('❌ Error updating equipment quantity in ValidationQueue:', error);
-    throw error;
-  }
-};
+    // ===== 🔑 FIXED UPDATE EQUIPMENT QUANTITY =====
+    const updateEquipmentQuantity = async (equipmentId: string, quantityChange: number) => {
+        try {
+            const quantityManager = new EquipmentQuantityManager(supabase);
+            
+            console.log(`🔄 ValidationQueue: Equipment ${equipmentId} change: ${quantityChange}`);
+            
+            if (quantityChange > 0) {
+                // ✅ POSITIVE: User mengembalikan barang - tambah quantity
+                await quantityManager.increaseQuantity(
+                    equipmentId,
+                    quantityChange,
+                    'ValidationQueue: User returned items'
+                );
+                
+                console.log(`✅ RETURN: Equipment ${equipmentId} +${quantityChange} (quantity increased)`);
+                
+            } else if (quantityChange < 0) {
+                // ✅ NEGATIVE: Admin membatalkan verifikasi - kurangi quantity
+                await quantityManager.decreaseQuantity(
+                    equipmentId,
+                    Math.abs(quantityChange),
+                    'ValidationQueue: Admin reverted verification'
+                );
+                
+                console.log(`✅ REVERT: Equipment ${equipmentId} ${quantityChange} (quantity decreased)`);
+            }
+            
+        } catch (error) {
+            console.error('❌ Error updating equipment quantity in ValidationQueue:', error);
+            throw error;
+        }
+    };
 
-    // ===== APPROVE RETURN =====
+    // ===== 🔑 FIXED APPROVE RETURN - AUTO UPDATE QUANTITIES =====
     const handleApproveReturn = async (checkoutId: string) => {
         try {
             setProcessingIds(prev => new Set(prev).add(checkoutId));
 
+            console.log('🎯 APPROVE RETURN: Starting approval process for checkout:', checkoutId);
+
+            // ✅ STEP 1: Get all verified checkout_items for this checkout
+            const { data: verifiedItems, error: itemsError } = await supabase
+                .from('checkout_items')
+                .select('equipment_id, quantity')
+                .eq('checkout_id', checkoutId);
+
+            if (itemsError) throw itemsError;
+
+            console.log('🔄 APPROVE RETURN: Processing verified items:', verifiedItems);
+
+            // ✅ STEP 2: Update checkout status to approved/completed
             const { error } = await supabase
                 .from('checkouts')
                 .update({ 
@@ -528,7 +497,7 @@ const updateEquipmentQuantity = async (equipmentId: string, quantityChange: numb
 
             if (error) throw error;
 
-            // Update related records
+            // ✅ STEP 3: Update related booking/lending status
             const checkout = checkouts.find(c => c.id === checkoutId);
             if (checkout) {
                 if (activeTab === 'room' && checkout.booking_id) {
@@ -536,20 +505,26 @@ const updateEquipmentQuantity = async (equipmentId: string, quantityChange: numb
                         .from('bookings')
                         .update({ status: 'completed' })
                         .eq('id', checkout.booking_id);
+                        
+                    console.log('✅ APPROVE: Room booking marked as completed');
                 } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
                     await supabase
                         .from('lending_tool')
                         .update({ status: 'completed' })
                         .eq('id', checkout.lendingTool_id);
+                        
+                    console.log('✅ APPROVE: Lending tool marked as completed');
                 }
             }
 
-            toast.success('Return approved successfully!');
+            console.log('🎉 APPROVE RETURN COMPLETED: Status updated successfully');
+            toast.success('Return approved successfully! Equipment quantities already updated during verification.');
+            
             fetchCheckouts();
             setShowDetailModal(false);
             
         } catch (error: any) {
-            console.error('Error approving return:', error);
+            console.error('❌ Error approving return:', error);
             toast.error(`Failed to approve return: ${error.message}`);
         } finally {
             setProcessingIds(prev => {
@@ -565,39 +540,57 @@ const updateEquipmentQuantity = async (equipmentId: string, quantityChange: numb
         try {
             setProcessingIds(prev => new Set(prev).add(checkoutId));
 
-            // Revert all equipment quantities
-            const checkout = checkouts.find(c => c.id === checkoutId);
-            if (checkout?.verification_items) {
-                for (const item of checkout.verification_items) {
-                    if (item.is_verified && item.returned_quantity > 0) {
-                        await updateEquipmentQuantity(item.equipment_id, -item.returned_quantity);
+            console.log('🚫 REJECT RETURN: Starting rejection process for checkout:', checkoutId);
+
+            // ✅ STEP 1: Revert all verified equipment quantities
+            const { data: verifiedItems, error: itemsError } = await supabase
+                .from('checkout_items')
+                .select('equipment_id, quantity')
+                .eq('checkout_id', checkoutId);
+
+            if (itemsError) throw itemsError;
+
+            if (verifiedItems && verifiedItems.length > 0) {
+                for (const item of verifiedItems) {
+                    if (item.quantity > 0) {
+                        console.log(`📦 REJECT: Reverting ${item.quantity} of equipment ${item.equipment_id}`);
+                        // ✅ REVERT: Negative quantity to decrease equipment inventory
+                        await updateEquipmentQuantity(item.equipment_id, -item.quantity);
                     }
                 }
+                console.log(`✅ REJECT: Successfully reverted quantities for ${verifiedItems.length} equipment items`);
             }
 
-            // Delete checkout and revert status
+            // ✅ STEP 2: Delete checkout and revert status
             await supabase.from('checkouts').delete().eq('id', checkoutId);
             
+            const checkout = checkouts.find(c => c.id === checkoutId);
             if (checkout) {
                 if (activeTab === 'room' && checkout.booking_id) {
                     await supabase
                         .from('bookings')
                         .update({ status: 'approved' })
                         .eq('id', checkout.booking_id);
+                        
+                    console.log('✅ REJECT: Room booking reverted to approved status');
                 } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
                     await supabase
                         .from('lending_tool')
                         .update({ status: 'borrow' })
                         .eq('id', checkout.lendingTool_id);
+                        
+                    console.log('✅ REJECT: Lending tool reverted to borrow status');
                 }
             }
 
-            toast.success('Return rejected and status reverted');
+            console.log('🎉 REJECT RETURN COMPLETED: All quantities reverted and status changed');
+            toast.success('Return rejected and quantities reverted');
+            
             fetchCheckouts();
             setShowDetailModal(false);
             
         } catch (error: any) {
-            console.error('Error rejecting return:', error);
+            console.error('❌ Error rejecting return:', error);
             toast.error(`Failed to reject return: ${error.message}`);
         } finally {
             setProcessingIds(prev => {
@@ -661,21 +654,6 @@ const updateEquipmentQuantity = async (equipmentId: string, quantityChange: numb
         const mandatoryItems = items.filter(item => item.is_mandatory);
         const verifiedMandatory = mandatoryItems.filter(item => item.is_verified).length;
         
-        // ✅ DEBUG: Log progress calculation
-        console.log('📊 Progress Calculation:', {
-            totalItems,
-            verifiedItems,
-            mandatoryCount: mandatoryItems.length,
-            verifiedMandatory,
-            items: items.map(item => ({
-                name: item.equipment_name,
-                borrowed: item.borrowed_quantity,
-                returned: item.returned_quantity,
-                verified: item.is_verified,
-                mandatory: item.is_mandatory
-            }))
-        });
-        
         return {
             total: totalItems,
             verified: verifiedItems,
@@ -689,11 +667,9 @@ const updateEquipmentQuantity = async (equipmentId: string, quantityChange: numb
     const getTotalQuantityGap = (items: VerificationItem[]) => {
         const totalGap = items.reduce((total, item) => {
             const gap = Math.max(0, item.borrowed_quantity - item.returned_quantity);
-            console.log(`📊 ${item.equipment_name}: ${item.borrowed_quantity} - ${item.returned_quantity} = ${gap}`);
             return total + gap;
         }, 0);
         
-        console.log(`📊 Total quantity gap: ${totalGap}`);
         return totalGap;
     };
 
@@ -1107,7 +1083,7 @@ const updateEquipmentQuantity = async (equipmentId: string, quantityChange: numb
                                                             </div>
                                                         </div>
 
-                                                        {/* ✅ ENHANCED Quantity Management with Debug */}
+                                                        {/* ✅ ENHANCED Quantity Management */}
                                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                                                             <div className="text-center p-3 bg-blue-50 rounded-lg border-2 border-blue-200">
                                                                 <div className="text-xl font-bold text-blue-600">
@@ -1349,7 +1325,7 @@ const updateEquipmentQuantity = async (equipmentId: string, quantityChange: numb
                                                         </div>
                                                     </div>
                                                 </div>
-                                            )}
+                                          )}
                                         </div>
                                     );
                                 })()}
