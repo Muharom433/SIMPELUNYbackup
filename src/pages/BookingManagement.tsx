@@ -43,6 +43,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { BookingWithDetails } from '../types';
 import { alert } from '../components/Alert/AlertHelper';
 import { format, isAfter, isBefore, parseISO } from 'date-fns';
+import EquipmentQuantityManager from '../lib/equipmentQuantityManager';
 
 interface Booking {
   id: string;
@@ -55,6 +56,7 @@ interface Booking {
   class_type: 'theory' | 'practical';
   status: 'pending' | 'approved' | 'rejected' | 'completed';
   equipment_requested: string[];
+  equipment_quantities: number[];
   notes: string | null;
   attachments: string[];
   user_info: any;
@@ -128,8 +130,10 @@ const BookingManagement: React.FC = () => {
     try {
       const { data, error } = await supabase
         .from('equipment')
-        .select('id, name, code, category')
+        .select('id, name, code, category, quantity, currently_borrowed, unit')
         .order('name');
+      
+      if (error) throw error;
       setAllEquipment(data || []);
     } catch (error) {
       console.error('Error fetching equipment:', error);
@@ -179,186 +183,196 @@ const BookingManagement: React.FC = () => {
     }
   };
 
-  // ===== PERBAIKAN BookingManagement.tsx =====
-// Mengikuti pola yang sama seperti ToolLendingManagement.tsx
-
-const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 'rejected') => {
-  try {
-    setProcessingIds(prev => new Set(prev).add(bookingId));
-    
-    const booking = bookings.find(b => b.id === bookingId);
-    if (!booking) {
-      throw new Error('Booking not found');
-    }
-
-    // Update booking status
-    const { error: bookingError } = await supabase
-      .from('bookings')
-      .update({ 
-        status: newStatus,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', bookingId);
-
-    if (bookingError) throw bookingError;
-
-    // ✅ PERBAIKAN: Handle equipment quantities dengan INDEX ARRAY (seperti ToolLendingManagement)
-    if (booking.equipment_requested && booking.equipment_requested.length > 0) {
+  // ✅ FIXED: Equipment quantity handling dengan EquipmentQuantityManager
+  const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 'rejected') => {
+    try {
+      setProcessingIds(prev => new Set(prev).add(bookingId));
       
-      // ✅ Loop berdasarkan INDEX, bukan forEach equipment
-      for (let i = 0; i < booking.equipment_requested.length; i++) {
-        const equipmentId = booking.equipment_requested[i];
+      const booking = bookings.find(b => b.id === bookingId);
+      if (!booking) {
+        throw new Error('Booking not found');
+      }
+
+      console.log('📋 Processing booking:', {
+        id: booking.id,
+        status: booking.status,
+        newStatus,
+        equipment_requested: booking.equipment_requested,
+        equipment_quantities: booking.equipment_quantities,
+        user: booking.user?.full_name
+      });
+
+      // ✅ Handle equipment quantities dengan system yang baru
+      if (booking.equipment_requested && booking.equipment_requested.length > 0) {
+        const quantityManager = new EquipmentQuantityManager(supabase);
         
-        // ✅ Ambil quantity berdasarkan INDEX yang sama
-        const requestedQuantity = booking.equipment_quantities && booking.equipment_quantities[i] 
-          ? booking.equipment_quantities[i] 
-          : 1; // Default 1 jika tidak ada
-
-        console.log(`Processing equipment ${equipmentId} with quantity ${requestedQuantity}`);
-
-        // Fetch current equipment quantity
-        const { data: equipment, error: equipmentFetchError } = await supabase
-          .from('equipment')
-          .select('quantity')
-          .eq('id', equipmentId)
-          .single();
-
-        if (equipmentFetchError) {
-          console.error('Error fetching equipment:', equipmentFetchError);
-          continue; // Skip yang error
+        // ✅ Validate array lengths
+        const equipmentCount = booking.equipment_requested.length;
+        const quantityCount = booking.equipment_quantities?.length || 0;
+        
+        if (quantityCount > 0 && equipmentCount !== quantityCount) {
+          console.warn(`⚠️ Array length mismatch: equipment(${equipmentCount}) vs quantities(${quantityCount})`);
         }
 
-        if (equipment) {
-          let newQuantity = equipment.quantity;
-          
-          if (newStatus === 'approved') {
-            // ✅ KURANGI sesuai quantity yang diminta (sama seperti ToolLendingManagement)
-            newQuantity = Math.max(0, equipment.quantity - requestedQuantity);
-            console.log(`Equipment ${equipmentId}: ${equipment.quantity} - ${requestedQuantity} = ${newQuantity}`);
+        // ✅ Process equipment satu per satu berdasarkan INDEX
+        for (let i = 0; i < booking.equipment_requested.length; i++) {
+          const equipmentId = booking.equipment_requested[i];
+          const requestedQuantity = booking.equipment_quantities && booking.equipment_quantities[i] 
+            ? booking.equipment_quantities[i] 
+            : 1; // Default 1 jika tidak ada
+
+          console.log(`🔧 Processing equipment[${i}]: ${equipmentId} with quantity ${requestedQuantity}`);
+
+          try {
+            if (newStatus === 'approved') {
+              // ✅ BORROW: Tambah ke currently_borrowed, tidak ubah quantity fisik
+              await quantityManager.borrowEquipment(
+                equipmentId,
+                booking.user_id,
+                requestedQuantity,
+                'booking',
+                booking.id
+              );
+              
+              console.log(`✅ Equipment ${equipmentId} borrowed: ${requestedQuantity} units`);
+              
+            } else if (newStatus === 'rejected') {
+              // ✅ RETURN/RESTORE: Kurangi currently_borrowed (jika sudah ada)
+              try {
+                await quantityManager.returnEquipment(
+                  equipmentId,
+                  booking.user_id,
+                  requestedQuantity,
+                  'booking',
+                  booking.id
+                );
+                
+                console.log(`✅ Equipment ${equipmentId} restored: ${requestedQuantity} units`);
+              } catch (returnError) {
+                console.warn(`⚠️ Could not return equipment ${equipmentId}:`, returnError);
+                // Continue processing other equipment
+              }
+            }
             
-          } else if (newStatus === 'rejected') {
-            // ✅ RESTORE quantity saat reject (sama seperti ToolLendingManagement)
-            newQuantity = equipment.quantity + requestedQuantity;
-            console.log(`Equipment ${equipmentId} restored: ${equipment.quantity} + ${requestedQuantity} = ${newQuantity}`);
-          }
-
-          // Update equipment quantity
-          const { error: equipmentUpdateError } = await supabase
-            .from('equipment')
-            .update({ 
-              quantity: newQuantity,
-              is_available: newQuantity > 0
-            })
-            .eq('id', equipmentId);
-
-          if (equipmentUpdateError) {
-            console.error('Error updating equipment quantity:', equipmentUpdateError);
-          } else {
-            console.log(`✅ Equipment ${equipmentId} quantity updated to ${newQuantity}`);
+          } catch (equipmentError) {
+            console.error(`❌ Error processing equipment ${equipmentId}:`, equipmentError);
+            // Continue with other equipment instead of failing completely
+            alert.error(`Failed to process equipment ${equipmentId}: ${equipmentError.message}`);
           }
         }
       }
-    }
-    
-    const statusText = newStatus === 'approved' 
-      ? getText('approved', 'disetujui') 
-      : getText('rejected', 'ditolak');
-    
-    alert.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
-    fetchBookings();
-    
-    if (selectedBooking?.id === bookingId) {
-      setShowDetailModal(false);
-    }
-    
-  } catch (error: any) {
-    console.error('Error updating booking status:', error);
-    alert.error(error.message || getText('Failed to update booking status', 'Gagal memperbarui status pemesanan'));
-  } finally {
-    setProcessingIds(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(bookingId);
-      return newSet;
-    });
-  }
-};
 
-  const handleDelete = async (bookingId: string) => {
-  try {
-    setProcessingIds(prev => new Set(prev).add(bookingId));
-    
-    const booking = bookings.find(b => b.id === bookingId);
-    if (!booking) {
-      throw new Error('Booking not found');
-    }
+      // ✅ Update booking status
+      const { error: bookingError } = await supabase
+        .from('bookings')
+        .update({ 
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', bookingId);
 
-    if (booking.status === 'approved' && booking.equipment_requested && booking.equipment_requested.length > 0) {
+      if (bookingError) throw bookingError;
       
-      for (let i = 0; i < booking.equipment_requested.length; i++) {
-        const equipmentId = booking.equipment_requested[i];
-        const requestedQuantity = booking.equipment_quantities && booking.equipment_quantities[i] 
-          ? booking.equipment_quantities[i] 
-          : 1;
+      const statusText = newStatus === 'approved' 
+        ? getText('approved', 'disetujui') 
+        : getText('rejected', 'ditolak');
+      
+      alert.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
+      fetchBookings();
+      fetchAllEquipment(); // Refresh equipment data
+      
+      if (selectedBooking?.id === bookingId) {
+        setShowDetailModal(false);
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Error updating booking status:', error);
+      alert.error(error.message || getText('Failed to update booking status', 'Gagal memperbarui status pemesanan'));
+    } finally {
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(bookingId);
+        return newSet;
+      });
+    }
+  };
 
-        const { data: equipment, error: equipmentFetchError } = await supabase
-          .from('equipment')
-          .select('quantity')
-          .eq('id', equipmentId)
-          .single();
+  // ✅ FIXED: Delete booking dengan equipment handling
+  const handleDelete = async (bookingId: string) => {
+    try {
+      setProcessingIds(prev => new Set(prev).add(bookingId));
+      
+      const booking = bookings.find(b => b.id === bookingId);
+      if (!booking) {
+        throw new Error('Booking not found');
+      }
 
-        if (equipmentFetchError) {
-          console.error('Error fetching equipment:', equipmentFetchError);
-          continue;
-        }
+      console.log('🗑️ Deleting booking:', {
+        id: booking.id,
+        status: booking.status,
+        equipment_requested: booking.equipment_requested,
+        equipment_quantities: booking.equipment_quantities
+      });
 
-        if (equipment) {
-          // ✅ RESTORE quantity saat delete approved booking
-          const newQuantity = equipment.quantity + requestedQuantity;
+      // ✅ Handle equipment restoration jika booking approved
+      if (booking.status === 'approved' && booking.equipment_requested && booking.equipment_requested.length > 0) {
+        const quantityManager = new EquipmentQuantityManager(supabase);
+        
+        for (let i = 0; i < booking.equipment_requested.length; i++) {
+          const equipmentId = booking.equipment_requested[i];
+          const requestedQuantity = booking.equipment_quantities && booking.equipment_quantities[i] 
+            ? booking.equipment_quantities[i] 
+            : 1;
 
-          const { error: equipmentUpdateError } = await supabase
-            .from('equipment')
-            .update({ 
-              quantity: newQuantity,
-              is_available: newQuantity > 0
-            })
-            .eq('id', equipmentId);
+          console.log(`🔄 Restoring equipment[${i}]: ${equipmentId} with quantity ${requestedQuantity}`);
 
-          if (equipmentUpdateError) {
-            console.error('Error updating equipment:', equipmentUpdateError);
-          } else {
-            console.log(`✅ Equipment ${equipmentId} quantity restored: +${requestedQuantity} = ${newQuantity}`);
+          try {
+            // ✅ RETURN: Kurangi currently_borrowed saat delete approved booking
+            await quantityManager.returnEquipment(
+              equipmentId,
+              booking.user_id,
+              requestedQuantity,
+              'booking',
+              booking.id
+            );
+            
+            console.log(`✅ Equipment ${equipmentId} restored: ${requestedQuantity} units`);
+            
+          } catch (equipmentError) {
+            console.error(`❌ Error restoring equipment ${equipmentId}:`, equipmentError);
+            // Continue with other equipment
           }
         }
       }
-    }
 
-    // Delete booking
-    const { error } = await supabase
-      .from('bookings')
-      .delete()
-      .eq('id', bookingId);
+      // ✅ Delete booking
+      const { error } = await supabase
+        .from('bookings')
+        .delete()
+        .eq('id', bookingId);
 
-    if (error) throw error;
-    
-    alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
-    setShowDeleteConfirm(null);
-    fetchBookings();
-    
-    if (selectedBooking?.id === bookingId) {
-      setShowDetailModal(false);
+      if (error) throw error;
+      
+      alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
+      setShowDeleteConfirm(null);
+      fetchBookings();
+      fetchAllEquipment(); // Refresh equipment data
+      
+      if (selectedBooking?.id === bookingId) {
+        setShowDetailModal(false);
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Error deleting booking:', error);
+      alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
+    } finally {
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(bookingId);
+        return newSet;
+      });
     }
-    
-  } catch (error: any) {
-    console.error('Error deleting booking:', error);
-    alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
-  } finally {
-    setProcessingIds(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(bookingId);
-      return newSet;
-    });
-  }
-};
+  };
 
   const filteredBookings = bookings.filter(booking => {
     const searchLower = searchTerm.toLowerCase();
@@ -405,11 +419,11 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
   };
 
   const getEquipmentDetails = (equipmentIds: string[]) => {
-  return equipmentIds.map(id => {
-    const equipment = allEquipment.find(eq => eq.id === id);
-    return equipment || { id, name: `Equipment ${id}`, code: 'Unknown', category: 'Unknown' };
-  });
-};
+    return equipmentIds.map(id => {
+      const equipment = allEquipment.find(eq => eq.id === id);
+      return equipment || { id, name: `Equipment ${id}`, code: 'Unknown', category: 'Unknown' };
+    });
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -419,6 +433,18 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
       case 'completed': return Award;
       default: return AlertIcon;
     }
+  };
+
+  // ✅ Get current equipment availability
+  const getEquipmentAvailability = (equipmentId: string) => {
+    const equipment = allEquipment.find(eq => eq.id === equipmentId);
+    if (!equipment) return { available: 0, total: 0 };
+    
+    return {
+      available: equipment.quantity - (equipment.currently_borrowed || 0),
+      total: equipment.quantity,
+      currently_borrowed: equipment.currently_borrowed || 0
+    };
   };
 
   if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
@@ -546,7 +572,10 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
           {/* Refresh Button */}
           <div className="flex items-center space-x-2">
             <button
-              onClick={() => fetchBookings()}
+              onClick={() => {
+                fetchBookings();
+                fetchAllEquipment();
+              }}
               disabled={loading}
               className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors duration-200 disabled:opacity-50"
             >
@@ -857,45 +886,126 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                   </div>
                 </div>
 
-              {/* Equipment Requested */}
-{selectedBooking.equipment_requested && selectedBooking.equipment_requested.length > 0 && (
-  <div>
-    <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide mb-3 block">
-      {getText('Requested Equipment', 'Peralatan yang Diminta')}
-    </span>
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      {selectedBooking.equipment_requested.map((equipmentId, index) => {
-        // ✅ Ambil quantity berdasarkan INDEX
-        const quantity = selectedBooking.equipment_quantities && selectedBooking.equipment_quantities[index] 
-          ? selectedBooking.equipment_quantities[index] 
-          : 1;
+                {/* ✅ Enhanced Equipment Section with Availability */}
+                {selectedBooking.equipment_requested && selectedBooking.equipment_requested.length > 0 && (
+                  <div>
+                    <h5 className="font-medium text-gray-900 mb-3 flex items-center">
+                      <Package className="h-5 w-5 mr-2 text-blue-600" />
+                      {getText('Requested Equipment', 'Peralatan yang Diminta')}
+                      <span className="ml-2 text-sm text-gray-500">({selectedBooking.equipment_requested.length} items)</span>
+                    </h5>
+                    
+                    <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {selectedBooking.equipment_requested.map((equipmentId, index) => {
+                          // ✅ Get quantity based on INDEX
+                          const requestedQuantity = selectedBooking.equipment_quantities && selectedBooking.equipment_quantities[index] 
+                            ? selectedBooking.equipment_quantities[index] 
+                            : 1;
 
-        // ✅ Cari nama equipment dari allEquipment
-        const equipmentDetails = allEquipment.find(eq => eq.id === equipmentId);
-        const equipmentName = equipmentDetails?.name || `Equipment ${equipmentId}`;
-        const equipmentCode = equipmentDetails?.code || 'Unknown';
+                          // ✅ Get equipment details
+                          const equipmentDetails = allEquipment.find(eq => eq.id === equipmentId);
+                          const equipmentName = equipmentDetails?.name || `Equipment ${equipmentId}`;
+                          const equipmentCode = equipmentDetails?.code || 'Unknown';
+                          const equipmentUnit = equipmentDetails?.unit || 'pcs';
+                          
+                          // ✅ Get current availability
+                          const availability = getEquipmentAvailability(equipmentId);
 
-        return (
-          <div key={`${equipmentId}-${index}`} className="flex items-center justify-between p-3 bg-white/60 rounded-xl border border-emerald-200/50">
-            <div className="flex items-center">
-              <div className="h-8 w-8 bg-emerald-100 rounded-lg flex items-center justify-center mr-3">
-                <Zap className="h-4 w-4 text-emerald-600" />
-              </div>
-              <div>
-                <div className="font-medium text-emerald-900">{equipmentName}</div>
-                <div className="text-sm text-emerald-700">{equipmentCode}</div>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="font-bold text-emerald-900 text-lg">{quantity}</div>
-              <div className="text-xs text-emerald-600">{getText('requested', 'diminta')}</div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  </div>
-)}
+                          return (
+                            <div key={`${equipmentId}-${index}`} className="bg-white rounded-xl border border-emerald-200 p-4 shadow-sm">
+                              <div className="flex items-start justify-between mb-3">
+                                <div className="flex items-center">
+                                  <div className="h-10 w-10 bg-emerald-100 rounded-lg flex items-center justify-center mr-3">
+                                    <Package className="h-5 w-5 text-emerald-600" />
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-emerald-900">{equipmentName}</div>
+                                    <div className="text-sm text-emerald-700">{equipmentCode}</div>
+                                  </div>
+                                </div>
+                                
+                                <div className="text-right">
+                                  <div className="font-bold text-emerald-900 text-lg">{requestedQuantity}</div>
+                                  <div className="text-xs text-emerald-600">{equipmentUnit}</div>
+                                </div>
+                              </div>
+                              
+                              {/* ✅ Equipment Availability Status */}
+                              <div className="mt-3 p-3 bg-gray-50 rounded-lg border">
+                                <div className="text-xs font-medium text-gray-600 mb-2">CURRENT AVAILABILITY</div>
+                                <div className="grid grid-cols-3 gap-2 text-xs">
+                                  <div className="text-center">
+                                    <div className="font-bold text-blue-600">{availability.total}</div>
+                                    <div className="text-gray-600">Total</div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="font-bold text-red-600">{availability.currently_borrowed}</div>
+                                    <div className="text-gray-600">Borrowed</div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className={`font-bold ${availability.available >= requestedQuantity ? 'text-green-600' : 'text-red-600'}`}>
+                                      {availability.available}
+                                    </div>
+                                    <div className="text-gray-600">Available</div>
+                                  </div>
+                                </div>
+                                
+                                {/* ✅ Availability Check */}
+                                <div className="mt-2 pt-2 border-t border-gray-200">
+                                  {availability.available >= requestedQuantity ? (
+                                    <div className="flex items-center text-green-700">
+                                      <CheckCircle className="h-4 w-4 mr-1" />
+                                      <span className="text-xs font-medium">
+                                        {getText('Sufficient quantity available', 'Jumlah mencukupi')}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center text-red-700">
+                                      <XCircle className="h-4 w-4 mr-1" />
+                                      <span className="text-xs font-medium">
+                                        {getText('Insufficient quantity!', 'Jumlah tidak mencukupi!')} 
+                                        <span className="ml-1">({getText('Need', 'Butuh')} {requestedQuantity}, {getText('Available', 'Tersedia')} {availability.available})</span>
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      
+                      {/* ✅ Overall Equipment Status */}
+                      <div className="mt-4 pt-4 border-t border-emerald-200">
+                        {(() => {
+                          const allSufficient = selectedBooking.equipment_requested.every((equipmentId, index) => {
+                            const requestedQuantity = selectedBooking.equipment_quantities?.[index] || 1;
+                            const availability = getEquipmentAvailability(equipmentId);
+                            return availability.available >= requestedQuantity;
+                          });
+                          
+                          return allSufficient ? (
+                            <div className="flex items-center text-green-700 bg-green-100 rounded-lg p-3">
+                              <CheckCircle className="h-5 w-5 mr-2" />
+                              <span className="font-medium">
+                                {getText('✅ All equipment available for booking', '✅ Semua peralatan tersedia untuk pemesanan')}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center text-red-700 bg-red-100 rounded-lg p-3">
+                              <XCircle className="h-5 w-5 mr-2" />
+                              <span className="font-medium">
+                                {getText('❌ Some equipment insufficient for booking', '❌ Beberapa peralatan tidak mencukupi untuk pemesanan')}
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Notes */}
                 {selectedBooking.notes && (
                   <div>
@@ -956,7 +1066,6 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  // Open in modal for better viewing
                                   const modal = document.createElement('div');
                                   modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4';
                                   modal.onclick = () => document.body.removeChild(modal);
@@ -1022,39 +1131,69 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
                   </div>
                 )}
 
-                {/* Actions */}
+                {/* ✅ Enhanced Actions with Equipment Check */}
                 {selectedBooking.status === 'pending' && (
-                  <div className="flex space-x-3 pt-4 border-t">
-                    <button
-                      onClick={() => {
-                        handleStatusUpdate(selectedBooking.id, 'approved');
-                        setShowDetailModal(false);
-                      }}
-                      disabled={processingIds.has(selectedBooking.id)}
-                      className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-                    >
-                      {processingIds.has(selectedBooking.id) ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Check className="h-4 w-4" />
-                      )}
-                      <span>{getText('Approve Booking', 'Setujui Pemesanan')}</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        handleStatusUpdate(selectedBooking.id, 'rejected');
-                        setShowDetailModal(false);
-                      }}
-                      disabled={processingIds.has(selectedBooking.id)}
-                      className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-                    >
-                      {processingIds.has(selectedBooking.id) ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <X className="h-4 w-4" />
-                      )}
-                      <span>{getText('Reject Booking', 'Tolak Pemesanan')}</span>
-                    </button>
+                  <div className="space-y-4 pt-4 border-t">
+                    {/* Equipment Availability Warning */}
+                    {selectedBooking.equipment_requested && selectedBooking.equipment_requested.length > 0 && (() => {
+                      const hasInsufficientEquipment = selectedBooking.equipment_requested.some((equipmentId, index) => {
+                        const requestedQuantity = selectedBooking.equipment_quantities?.[index] || 1;
+                        const availability = getEquipmentAvailability(equipmentId);
+                        return availability.available < requestedQuantity;
+                      });
+
+                      return hasInsufficientEquipment ? (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                          <div className="flex items-center">
+                            <AlertTriangle className="h-5 w-5 text-amber-600 mr-3" />
+                            <div>
+                              <p className="font-medium text-amber-800">
+                                {getText('Equipment Availability Warning', 'Peringatan Ketersediaan Peralatan')}
+                              </p>
+                              <p className="text-sm text-amber-700 mt-1">
+                                {getText(
+                                  'Some requested equipment may not be available in sufficient quantity. Approving this booking may cause conflicts.',
+                                  'Beberapa peralatan yang diminta mungkin tidak tersedia dalam jumlah yang cukup. Menyetujui pemesanan ini dapat menyebabkan konflik.'
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null;
+                    })()}
+                    
+                    <div className="flex space-x-3">
+                      <button
+                        onClick={() => {
+                          handleStatusUpdate(selectedBooking.id, 'approved');
+                          setShowDetailModal(false);
+                        }}
+                        disabled={processingIds.has(selectedBooking.id)}
+                        className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                      >
+                        {processingIds.has(selectedBooking.id) ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Check className="h-4 w-4" />
+                        )}
+                        <span>{getText('Approve Booking', 'Setujui Pemesanan')}</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          handleStatusUpdate(selectedBooking.id, 'rejected');
+                          setShowDetailModal(false);
+                        }}
+                        disabled={processingIds.has(selectedBooking.id)}
+                        className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                      >
+                        {processingIds.has(selectedBooking.id) ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <X className="h-4 w-4" />
+                        )}
+                        <span>{getText('Reject Booking', 'Tolak Pemesanan')}</span>
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1079,8 +1218,8 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
             </div>
             <p className="text-sm text-gray-500 mb-6">
               {getText(
-                'Are you sure you want to delete this booking? This action cannot be undone.',
-                'Apakah Anda yakin ingin menghapus pemesanan ini? Tindakan ini tidak dapat dibatalkan.'
+                'Are you sure you want to delete this booking? This action cannot be undone and will restore any reserved equipment quantities.',
+                'Apakah Anda yakin ingin menghapus pemesanan ini? Tindakan ini tidak dapat dibatalkan dan akan mengembalikan jumlah peralatan yang direservasi.'
               )}
             </p>
             <div className="flex space-x-3">
