@@ -365,15 +365,20 @@ const ToolLendingManagement: React.FC = () => {
             case 'completed': return 'bg-gray-100 text-gray-800';
             default: return 'bg-gray-100 text-gray-800';
         }
-    };
+      const quantityManager = new EquipmentQuantityManager(supabase);
 
-    const getStatusIcon = (status: string) => {
-        switch (status) {
-            case 'pending': return Clock;
-            case 'approved': return CheckCircle;
-            case 'rejected': return XCircle;
-            case 'borrow': return Package;
+      // If record was approved/borrowed, restore equipment quantities
+      if (recordToDelete.status === 'approved' || recordToDelete.status === 'borrow') {
+        const equipmentList: Array<{id: string, quantity: number}> = [];
+        
+        for (let i = 0; i < recordToDelete.id_equipment.length; i++) {
+          equipmentList.push({
+            id: recordToDelete.id_equipment[i],
+            quantity: recordToDelete.qty[i]
+          });
             case 'completed': return Check;
+
+        await quantityManager.processRestore(equipmentList, recordId, 'lending');
             default: return AlertCircle;
         }
     };
