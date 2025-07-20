@@ -148,6 +148,26 @@ const ToolLendingManagement: React.FC = () => {
             const record = lendingRecords.find(r => r.id === recordId);
             if (!record) throw new Error("Record not found");
 
+            const quantityManager = new EquipmentQuantityManager(supabase);
+
+            const equipmentList: Array<{id: string, quantity: number}> = [];
+            
+            for (let i = 0; i < record.id_equipment.length; i++) {
+                equipmentList.push({
+                    id: record.id_equipment[i],
+                    quantity: record.qty[i]
+                });
+            }
+
+            // Validate before approve
+            if (newStatus === 'approved') {
+                const validation = await quantityManager.validateBorrowRequest(equipmentList);
+                
+                if (!validation.isValid) {
+                    throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
+                }
+            }
+
             // Update lending record status
             const { error: recordError } = await supabase
                 .from('lending_tool')
@@ -160,37 +180,10 @@ const ToolLendingManagement: React.FC = () => {
             if (recordError) throw recordError;
 
             // Handle equipment quantities
-            for (let i = 0; i < record.id_equipment.length; i++) {
-                const equipmentId = record.id_equipment[i];
-                const quantity = record.qty[i];
-                
-                const equipment = allEquipment.find(eq => eq.id === equipmentId);
-                if (equipment) {
-                    let newQuantity = equipment.quantity;
-                    
-                    if (newStatus === 'approved') {
-                        // Decrease quantity when approved
-                        newQuantity = Math.max(0, equipment.quantity - quantity);
-                        
-                        // Update status to 'borrow' for approved items
-                        await supabase
-                            .from('lending_tool')
-                            .update({ status: 'borrow' })
-                            .eq('id', recordId);
-                            
-                    } else if (newStatus === 'rejected') {
-                        // Restore quantity when rejected
-                        newQuantity = equipment.quantity + quantity;
-                    }
-                    
-                    await supabase
-                        .from('equipment')
-                        .update({ 
-                            quantity: newQuantity,
-                            is_available: newQuantity > 0
-                        })
-                        .eq('id', equipmentId);
-                }
+            if (newStatus === 'approved') {
+                await quantityManager.processBorrowing(equipmentList, recordId, 'lending');
+            } else if (newStatus === 'rejected' && (record.status === 'approved' || record.status === 'borrow')) {
+                await quantityManager.processRestore(equipmentList, recordId, 'lending');
             }
             
             const statusText = newStatus === 'approved' 
@@ -225,25 +218,19 @@ const ToolLendingManagement: React.FC = () => {
             const recordToDelete = lendingRecords.find(r => r.id === recordId);
             if (!recordToDelete) throw new Error("Record not found");
 
-            // Restore equipment quantities if the record was approved/borrow
+            const quantityManager = new EquipmentQuantityManager(supabase);
+
             if (recordToDelete.status === 'approved' || recordToDelete.status === 'borrow') {
+                const equipmentList: Array<{id: string, quantity: number}> = [];
+                
                 for (let i = 0; i < recordToDelete.id_equipment.length; i++) {
-                    const equipmentId = recordToDelete.id_equipment[i];
-                    const quantity = recordToDelete.qty[i];
-                    
-                    const equipment = allEquipment.find(eq => eq.id === equipmentId);
-                    if (equipment) {
-                        const newQuantity = equipment.quantity + quantity;
-                        
-                        await supabase
-                            .from('equipment')
-                            .update({ 
-                                quantity: newQuantity,
-                                is_available: true
-                            })
-                            .eq('id', equipmentId);
-                    }
+                    equipmentList.push({
+                        id: recordToDelete.id_equipment[i],
+                        quantity: recordToDelete.qty[i]
+                    });
                 }
+
+                await quantityManager.processRestore(equipmentList, recordId, 'lending');
             }
             
             // Delete the lending record
@@ -304,36 +291,6 @@ const ToolLendingManagement: React.FC = () => {
         
         return matchesSearch && matchesStatus && matchesDate;
     });
-      const quantityManager = new EquipmentQuantityManager(supabase);
-
-      if (recordToDelete.status === 'approved' || recordToDelete.status === 'borrow') {
-        const equipmentList: Array<{id: string, quantity: number}> = [];
-        
-        for (let i = 0; i < recordToDelete.id_equipment.length; i++) {
-          equipmentList.push({
-            id: recordToDelete.id_equipment[i],
-            quantity: recordToDelete.qty[i]
-          });
-        }
-
-        await quantityManager.processRestore(equipmentList, recordId, 'lending');
-      const equipmentList: Array<{id: string, quantity: number}> = [];
-      
-      for (let i = 0; i < record.id_equipment.length; i++) {
-        equipmentList.push({
-          id: record.id_equipment[i],
-          quantity: record.qty[i]
-        });
-      }
-
-      // Validate before approve
-      if (newStatus === 'approved') {
-        const validation = await quantityManager.validateBorrowRequest(equipmentList);
-        
-        if (!validation.isValid) {
-          throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
-        }
-      }
 
     const getUserDisplayName = (record: LendingRecord) => {
         return record.user?.full_name || record.user_info?.full_name || 'Unknown User';
@@ -345,11 +302,16 @@ const ToolLendingManagement: React.FC = () => {
     };
 
     // ✅ FUNGSI STATUS COLOR
-      // Handle equipment quantities
-      if (newStatus === 'approved') {
-        await quantityManager.processBorrowing(equipmentList, recordId, 'lending');
-      } else if (newStatus === 'rejected' && (record.status === 'approved' || record.status === 'borrow')) {
-        await quantityManager.processRestore(equipmentList, recordId, 'lending');
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'pending': return 'bg-yellow-100 text-yellow-800';
+            case 'approved': return 'bg-green-100 text-green-800';
+            case 'rejected': return 'bg-red-100 text-red-800';
+            case 'borrow': return 'bg-blue-100 text-blue-800';
+            case 'completed': return 'bg-gray-100 text-gray-800';
+            default: return 'bg-gray-100 text-gray-800';
+        }
+    };
 
     const getStatusIcon = (status: string) => {
         switch (status) {
@@ -360,6 +322,10 @@ const ToolLendingManagement: React.FC = () => {
             case 'completed': return Check;
             default: return AlertCircle;
         }
+    };
+
+    const getTotalItemsInRecord = (record: LendingRecord) => {
+        return record.qty.reduce((total, qty) => total + qty, 0);
     };
 
     if (profile?.role !== 'super_admin') {
