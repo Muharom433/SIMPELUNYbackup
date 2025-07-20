@@ -478,31 +478,36 @@ const ValidationQueue: React.FC = () => {
 
     // ===== UPDATE EQUIPMENT QUANTITY =====
     // ===== UPDATE EQUIPMENT QUANTITY =====
+// ===== UPDATE EQUIPMENT QUANTITY =====
 const updateEquipmentQuantity = async (equipmentId: string, quantityChange: number) => {
     try {
-        // Simple approach: Just update the equipment quantity directly
-        const { data: equipment, error: fetchError } = await supabase
-            .from('equipment')
-            .select('quantity')
-            .eq('id', equipmentId)
-            .single();
+        if (!selectedCheckout) return;
 
-        if (fetchError) throw fetchError;
-
-        const newQuantity = Math.max(0, equipment.quantity + quantityChange);
-
-        const { error: updateError } = await supabase
-            .from('equipment')
-            .update({ 
-                quantity: newQuantity,
-                is_available: newQuantity > 0,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', equipmentId);
-
-        if (updateError) throw updateError;
-
-        console.log(`✅ Equipment ${equipmentId} quantity updated: ${equipment.quantity} → ${newQuantity} (${quantityChange > 0 ? '+' : ''}${quantityChange})`);
+        const quantityManager = new EquipmentQuantityManager(supabase);
+        
+        if (quantityChange > 0) {
+            // ✅ RETURN: Kurangi currently_borrowed, JANGAN ubah quantity fisik
+            await quantityManager.returnEquipment(
+                equipmentId,
+                selectedCheckout.user_id,
+                quantityChange,
+                selectedCheckout.type === 'room' ? 'booking' : 'lending',
+                selectedCheckout.type === 'room' ? selectedCheckout.booking_id : selectedCheckout.lendingTool_id
+            );
+            
+            console.log(`✅ RETURN: Equipment ${equipmentId} returned ${quantityChange} units (currently_borrowed decreased)`);
+        } else if (quantityChange < 0) {
+            // ✅ REVERT: Tambah kembali ke currently_borrowed
+            await quantityManager.borrowEquipment(
+                equipmentId,
+                selectedCheckout.user_id,
+                Math.abs(quantityChange),
+                selectedCheckout.type === 'room' ? 'booking' : 'lending',
+                selectedCheckout.type === 'room' ? selectedCheckout.booking_id : selectedCheckout.lendingTool_id
+            );
+            
+            console.log(`✅ REVERT: Equipment ${equipmentId} reverted ${Math.abs(quantityChange)} units (currently_borrowed increased)`);
+        }
         
     } catch (error) {
         console.error('Error updating equipment quantity:', error);
