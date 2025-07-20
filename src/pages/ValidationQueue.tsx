@@ -597,20 +597,36 @@ const ValidationQueue: React.FC = () => {
 
     // ===== UTILITY FUNCTIONS =====
     const getVerificationProgress = (items: VerificationItem[]) => {
-        const totalItems = items.length;
-        const verifiedItems = items.filter(item => item.is_verified).length;
-        const mandatoryItems = items.filter(item => item.is_mandatory);
-        const verifiedMandatory = mandatoryItems.filter(item => item.is_verified).length;
-        
-        return {
-            total: totalItems,
-            verified: verifiedItems,
-            mandatory: mandatoryItems.length,
-            verifiedMandatory,
-            percentage: totalItems > 0 ? Math.round((verifiedItems / totalItems) * 100) : 0,
-            canApprove: mandatoryItems.length === verifiedMandatory
-        };
+    const totalItems = items.length;
+    const verifiedItems = items.filter(item => item.is_verified).length;
+    const mandatoryItems = items.filter(item => item.is_mandatory);
+    const verifiedMandatory = mandatoryItems.filter(item => item.is_verified).length;
+    
+    // ✅ DEBUG: Log progress calculation
+    console.log('📊 Progress Calculation:', {
+        totalItems,
+        verifiedItems,
+        mandatoryCount: mandatoryItems.length,
+        verifiedMandatory,
+        items: items.map(item => ({
+            name: item.equipment_name,
+            borrowed: item.borrowed_quantity,
+            returned: item.returned_quantity,
+            verified: item.is_verified,
+            mandatory: item.is_mandatory
+        }))
+    });
+    
+    return {
+        total: totalItems,
+        verified: verifiedItems,
+        mandatory: mandatoryItems.length,
+        verifiedMandatory,
+        percentage: totalItems > 0 ? Math.round((verifiedItems / totalItems) * 100) : 0,
+        canApprove: mandatoryItems.length === verifiedMandatory
     };
+};
+
 
     const getTotalQuantityGap = (items: VerificationItem[]) => {
     const totalGap = items.reduce((total, item) => {
