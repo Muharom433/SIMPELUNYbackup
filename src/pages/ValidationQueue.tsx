@@ -1341,6 +1341,29 @@ const ValidationQueue: React.FC = () => {
                                                                                     newQty > 0
                                                                                 );
                                                                             }}
+                                                                            className="p-1 bg-gray-200 hover:bg-gray-300 rounded"
+                                                                        >
+                                                                            <Minus className="h-3 w-3" />
+                                                                        </button>
+                                                                        
+                                                                        <span className="text-xl font-bold text-gray-900 min-w-[3rem] text-center">
+                                                                            {item.returned_quantity}
+                                                                        </span>
+                                                                        
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                const newQty = Math.min(item.borrowed_quantity, item.returned_quantity + 1);
+                                                                                const newItems = [...verificationItems];
+                                                                              newItems[index].returned_quantity = newQty;
+                                                                                setVerificationItems(newItems);
+                                                                                updateVerificationItem(
+                                                                                    selectedCheckout.id,
+                                                                                    item.equipment_id,
+                                                                                    newQty,
+                                                                                    item.condition_notes || '',
+                                                                                    newQty > 0
+                                                                                );
+                                                                            }}
                                                                             className="p-1 bg-indigo-200 hover:bg-indigo-300 rounded"
                                                                         >
                                                                             <Plus className="h-3 w-3" />
@@ -1639,15 +1662,19 @@ const ValidationQueue: React.FC = () => {
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Report Title
+                                    Report Title *
                                 </label>
                                 <input
                                     type="text"
                                     value={reportData.title}
                                     onChange={(e) => setReportData(prev => ({ ...prev, title: e.target.value }))}
-                                    placeholder="Brief description of the issue"
+                                    placeholder="Brief description of the issue (required)"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    required
                                 />
+                                <p className="text-xs text-gray-500 mt-1">
+                                    This field is required. If empty, default title will be used.
+                                </p>
                             </div>
 
                             <div>
