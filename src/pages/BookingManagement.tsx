@@ -184,7 +184,9 @@ const BookingManagement: React.FC = () => {
   };
 
   // ✅ FIXED: Equipment quantity handling dengan EquipmentQuantityManager
-  const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 'rejected') => {
+  // ✅ FIXED BookingManagement.tsx - handleStatusUpdate function only
+
+const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 'rejected') => {
   try {
     setProcessingIds(prev => new Set(prev).add(bookingId));
     
@@ -202,15 +204,16 @@ const BookingManagement: React.FC = () => {
       user: booking.user?.full_name
     });
 
-    // ✅ SIMPLE: Handle equipment quantities
-    if (booking.equipment_requested && booking.equipment_requested.length > 0) {
+    // ✅ CRITICAL FIX: Handle equipment quantities ONLY IF STATUS ACTUALLY CHANGES
+    if (booking.status !== newStatus && booking.equipment_requested && booking.equipment_requested.length > 0) {
       const quantityManager = new EquipmentQuantityManager(supabase);
       
-      // Build equipment list dengan quantity yang benar
+      // ✅ FIXED: Build equipment list dengan quantity yang BENAR
       const equipmentList: Array<{id: string, quantity: number}> = [];
       
       for (let i = 0; i < booking.equipment_requested.length; i++) {
         const equipmentId = booking.equipment_requested[i];
+        // ✅ CRITICAL: Use the EXACT quantity from booking.equipment_quantities
         const quantity = booking.equipment_quantities && booking.equipment_quantities[i] 
           ? booking.equipment_quantities[i] 
           : 1;
@@ -220,28 +223,29 @@ const BookingManagement: React.FC = () => {
 
       console.log('🔧 Equipment to process:', equipmentList);
 
-      if (newStatus === 'approved') {
-        // ✅ APPROVE: Kurangi quantity
+      // ✅ FIXED: Handle status transitions correctly
+      if (newStatus === 'approved' && booking.status === 'pending') {
+        // ✅ APPROVE PENDING: Decrease quantity (reserve equipment)
+        console.log('✅ APPROVING: Decreasing equipment quantities');
         await quantityManager.bulkDecreaseQuantity(
           equipmentList, 
           `Booking approved: ${booking.id}`
         );
         
-        console.log(`✅ Equipment quantities decreased for approved booking`);
-        
-      } else if (newStatus === 'rejected' && booking.status === 'approved') {
-        // ✅ REJECT PREVIOUSLY APPROVED: Kembalikan quantity 
-        await quantityManager.bulkIncreaseQuantity(
-          equipmentList, 
-          `Previously approved booking rejected: ${booking.id}`
-        );
-        
-        console.log(`✅ Equipment quantities restored for rejected previously approved booking`);
+      } else if (newStatus === 'rejected') {
+        if (booking.status === 'approved') {
+          // ✅ REJECT APPROVED: Increase quantity (return to inventory)
+          console.log('✅ REJECTING APPROVED: Increasing equipment quantities');
+          await quantityManager.bulkIncreaseQuantity(
+            equipmentList, 
+            `Previously approved booking rejected: ${booking.id}`
+          );
+        }
+        // ✅ NOTE: If rejecting PENDING booking, no quantity change needed
       }
-      // ✅ NOTE: Jika reject booking yang masih pending, tidak ada perubahan quantity
     }
 
-    // ✅ Update booking status
+    // ✅ Update booking status AFTER quantity management
     const { error: bookingError } = await supabase
       .from('bookings')
       .update({ 
