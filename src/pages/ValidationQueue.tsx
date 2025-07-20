@@ -2,240 +2,173 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     Bell, Clock, CheckCircle, XCircle, AlertTriangle, User, Building, Calendar,
     Timer, Eye, Check, X, RefreshCw, Filter, Search, FileText, Zap, Users, Package,
-    Flag, AlertCircle as AlertCircleIcon, Phone, Wrench, Trash2
+    Flag, AlertCircle as AlertCircleIcon, Phone, Wrench, Trash2, Plus, Minus,
+    ChevronDown, ChevronUp, ArrowRight, Calculator, Info, Award
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { Booking, Room, User as UserType, Department } from '../types';
-import toast from 'react-hot-toast';
 import { format, isToday, isTomorrow, isThisWeek, isPast, parseISO, compareAsc, startOfDay, endOfDay } from 'date-fns';
-import { debounce } from 'lodash';
+import toast from 'react-hot-toast';
 
-// --- TYPE DEFINITIONS ---
+// ===== ENHANCED TYPE DEFINITIONS =====
 interface Equipment {
     id: string;
     name: string;
     code?: string;
     category?: string;
     quantity?: number;
+    unit?: string;
     is_mandatory: boolean;
-    borrowed_quantity?: number;
 }
 
-interface RoomWithEquipment extends Room {
-    equipment: Equipment[];
-}
-
-interface BookingWithDetails extends Booking {
-    user?: UserType;
-    room?: RoomWithEquipment & { department?: Department };
-    equipment_requested_details?: Equipment[];
-}
-
-interface LendingTool {
-    id: string;
-    id_user: string;
-    date: string;
-    id_equipment: string[];
-    qty: number[];
-    status: string;
-    created_at: string;
-    user?: UserType;
-    equipment_details?: Array<{
-        id: string;
-        name: string;
-        code: string;
-        category: string;
-        quantity: number;
-        borrowed_quantity?: number;
-    }>;
-}
-
-interface Checkout {
+interface CheckoutWithDetails {
     id: string;
     user_id: string;
     booking_id?: string;
     lendingTool_id?: string;
     checkout_date: string;
     expected_return_date: string;
-    status: 'active' | 'returned' | 'overdue' | 'lost' | 'damaged' | 'pending';
-    created_at: string;
+    status: 'returned' | 'active' | 'overdue' | 'pending';
     type: 'room' | 'things';
-    user?: UserType;
-    booking?: BookingWithDetails;
-    lendingTool?: LendingTool;
+    created_at: string;
+    user?: {
+        id: string;
+        full_name: string;
+        identity_number: string;
+        phone_number?: string;
+        email?: string;
+    };
+    booking?: {
+        id: string;
+        purpose: string;
+        equipment_requested: string[];
+        equipment_quantities: number[];
+        room?: {
+            name: string;
+            code: string;
+            department?: { name: string };
+        };
+    };
+    lendingTool?: {
+        id: string;
+        id_equipment: string[];
+        qty: number[];
+        date: string;
+        equipment_details?: Array<{
+            id: string;
+            name: string;
+            code: string;
+            category: string;
+            borrowed_quantity: number;
+        }>;
+    };
+    equipment_list?: Equipment[]; // Combined equipment from booking/lending
+    verification_items?: VerificationItem[];
     has_report?: boolean;
     report?: {
         id: string;
         title: string;
         description: string;
         severity: 'minor' | 'major' | 'critical';
-        created_at: string;
     };
 }
 
-// --- MAIN COMPONENT ---
+interface VerificationItem {
+    equipment_id: string;
+    equipment_name: string;
+    equipment_code?: string;
+    equipment_unit?: string;
+    borrowed_quantity: number;
+    returned_quantity: number;
+    is_verified: boolean;
+    condition_notes?: string;
+    is_mandatory: boolean;
+}
+
 const ValidationQueue: React.FC = () => {
     const { profile } = useAuth();
     
     const [activeTab, setActiveTab] = useState<'room' | 'equipment'>('room');
-    const [checkouts, setCheckouts] = useState<Checkout[]>([]);
+    const [checkouts, setCheckouts] = useState<CheckoutWithDetails[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedCheckoutId, setSelectedCheckoutId] = useState<string | null>(null);
+    const [selectedCheckout, setSelectedCheckout] = useState<CheckoutWithDetails | null>(null);
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
     const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+    const [verificationItems, setVerificationItems] = useState<VerificationItem[]>([]);
     const [showReportModal, setShowReportModal] = useState(false);
-    const [reportTitle, setReportTitle] = useState('');
-    const [reportDescription, setReportDescription] = useState('');
-    const [reportSeverity, setReportSeverity] = useState<'minor' | 'major' | 'critical'>('minor');
-    const [sortOption, setSortOption] = useState<'priority' | 'date' | 'status'>('date');  
-    const [statusFilter, setStatusFilter] = useState<'all'| 'active' | 'returned' | 'overdue' | 'lost' | 'damaged' | 'pending'>('returned');
-    const [dateFilter, setDateFilter] = useState<string>('');
-    const [showFilters, setShowFilters] = useState(false);
-    const [activeFiltersCount, setActiveFiltersCount] = useState(0);
-    const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
-    const [conditionNotes, setConditionNotes] = useState<Record<string, string>>({});
-    const [returnedQuantities, setReturnedQuantities] = useState<Record<string, number>>({});
-    const [isDetailLoading, setIsDetailLoading] = useState(false);
-    const [requestedEquipmentDetails, setRequestedEquipmentDetails] = useState<Equipment[]>([]);
+    const [reportData, setReportData] = useState({
+        title: '',
+        description: '',
+        severity: 'minor' as 'minor' | 'major' | 'critical'
+    });
 
-    useEffect(() => {
-        setStatusFilter('returned'); // Both tabs default to 'returned'
-    }, [activeTab]);
-
-    const getCheckoutPriority = (checkout: Checkout): string => { 
-        if (checkout.status === 'overdue') return 'overdue'; 
-        const returnDate = new Date(checkout.expected_return_date); 
-        if (isPast(returnDate) && checkout.status === 'active') return 'overdue'; 
-        if (isToday(returnDate)) return 'urgent'; 
-        if (isTomorrow(returnDate)) return 'high'; 
-        if (isThisWeek(returnDate, { weekStartsOn: 1 })) return 'medium'; 
-        return 'low'; 
-    };
-
-    const getPriorityIcon = (priority: string) => { 
-        switch (priority) { 
-            case 'overdue': return AlertTriangle; 
-            case 'urgent': return Clock; 
-            case 'high': return Timer; 
-            case 'medium': return Calendar; 
-            default: return FileText; 
-        } 
-    };
-
-    const getPriorityColor = (priority: string, hasReport: boolean = false) => { 
-        if (hasReport) return 'border-yellow-400 bg-yellow-50'; 
-        switch (priority) { 
-            case 'overdue': return 'border-red-300 bg-red-50'; 
-            case 'urgent': return 'border-orange-300 bg-orange-50'; 
-            case 'high': return 'border-yellow-300 bg-yellow-50'; 
-            case 'medium': return 'border-blue-300 bg-blue-50'; 
-            default: return 'border-gray-300 bg-gray-50'; 
-        } 
-    };
-
-    const getPriorityIconBgColor = (priority: string, hasReport: boolean = false) => { 
-        if (hasReport) return 'bg-yellow-500'; 
-        switch (priority) { 
-            case 'overdue': return 'bg-red-500'; 
-            case 'urgent': return 'bg-orange-500'; 
-            case 'high': return 'bg-yellow-500'; 
-            case 'medium': return 'bg-blue-500'; 
-            default: return 'bg-gray-500'; 
-        } 
-    };
-
-    const getSeverityColor = (severity: string) => { 
-        switch (severity) { 
-            case 'minor': return 'bg-blue-100 text-blue-800'; 
-            case 'major': return 'bg-orange-100 text-orange-800'; 
-            case 'critical': return 'bg-red-100 text-red-800'; 
-            default: return 'bg-gray-100 text-gray-800'; 
-        } 
-    };
-
-    useEffect(() => {
-        let count = 0;
-        if (statusFilter !== 'returned') count++;
-        if (dateFilter) count++;
-        setActiveFiltersCount(count);
-    }, [statusFilter, dateFilter, activeTab]);
-
-    const fetchPendingCheckouts = async () => {
+    // ===== FETCH CHECKOUTS WITH SMART FILTERING =====
+    const fetchCheckouts = async () => {
         try {
-            if (!loading) setLoading(true);
+            setLoading(true);
             
             let query;
-            let processedData: any[] = [];
+            let processedData: CheckoutWithDetails[] = [];
             
             if (activeTab === 'room') {
                 // Fetch room checkouts
-                query = supabase.from('checkouts')
-                    .select(`*, user:users!checkouts_user_id_fkey(*, phone_number), booking:bookings(*, equipment_requested, room:rooms(*, department:departments(*), equipment:room_equipment(equipment(*))))`)
-                    .eq('type', 'room');
-                
-                if (dateFilter) { 
-                    const d = new Date(dateFilter); 
-                    query = query.gte('checkout_date', startOfDay(d).toISOString()).lte('checkout_date', endOfDay(d).toISOString()); 
-                }
-                if (statusFilter !== 'all') { 
-                    query = query.eq('status', statusFilter); 
-                }
-                
-                const { data: checkoutData, error: checkoutError } = await query.order('created_at', { ascending: false });
-                if (checkoutError) throw checkoutError;
+                const { data: checkoutData, error } = await supabase
+                    .from('checkouts')
+                    .select(`
+                        *,
+                        user:users!checkouts_user_id_fkey(
+                            id, full_name, identity_number, phone_number, email
+                        ),
+                        booking:bookings!checkouts_booking_id_fkey(
+                            id, purpose, equipment_requested, equipment_quantities,
+                            room:rooms(
+                                name, code,
+                                department:departments(name)
+                            )
+                        )
+                    `)
+                    .eq('type', 'room')
+                    .eq('status', 'returned')
+                    .order('created_at', { ascending: false });
 
-                processedData = (checkoutData || []).map(c => ({ 
-                    ...c, 
-                    booking: { 
-                        ...c.booking, 
-                        room: { 
-                            ...c.booking.room, 
-                            equipment: c.booking.room.equipment.map(e => e.equipment).filter(Boolean) 
-                        } 
-                    } 
-                }));
+                if (error) throw error;
+                processedData = checkoutData || [];
                 
-                if (profile?.role === 'department_admin' && profile.department_id) {
-                    processedData = processedData.filter(c => c.booking?.room?.department?.id === profile.department_id);
-                }
             } else {
-                // Fetch equipment checkouts (type: 'things')
-                query = supabase.from('checkouts')
-                    .select(`*, user:users!checkouts_user_id_fkey(*, phone_number), lendingTool:lending_tool!checkouts_lendingTool_id_fkey(*)`)
-                    .eq('type', 'things');
-                
-                if (dateFilter) { 
-                    const d = new Date(dateFilter); 
-                    query = query.gte('checkout_date', startOfDay(d).toISOString()).lte('checkout_date', endOfDay(d).toISOString()); 
-                }
-                if (statusFilter !== 'all') { 
-                    query = query.eq('status', statusFilter); 
-                }
-                
-                const { data: checkoutData, error: checkoutError } = await query.order('created_at', { ascending: false });
-                if (checkoutError) throw checkoutError;
+                // Fetch equipment checkouts
+                const { data: checkoutData, error } = await supabase
+                    .from('checkouts')
+                    .select(`
+                        *,
+                        user:users!checkouts_user_id_fkey(
+                            id, full_name, identity_number, phone_number, email
+                        ),
+                        lendingTool:lending_tool!checkouts_lendingTool_id_fkey(
+                            id, id_equipment, qty, date
+                        )
+                    `)
+                    .eq('type', 'things')
+                    .eq('status', 'returned')
+                    .order('created_at', { ascending: false });
 
-                // Process equipment checkouts and fetch equipment details
+                if (error) throw error;
+                
+                // Fetch equipment details for lending tools
                 processedData = await Promise.all(
                     (checkoutData || []).map(async (checkout) => {
-                        if (checkout.lendingTool && checkout.lendingTool.id_equipment) {
-                            try {
-                                const { data: equipmentData, error: equipmentError } = await supabase
-                                    .from('equipment')
-                                    .select('id, name, code, category, quantity')
-                                    .in('id', checkout.lendingTool.id_equipment);
-                                
-                                if (!equipmentError && equipmentData) {
-                                    checkout.lendingTool.equipment_details = equipmentData.map((eq, index) => ({
-                                        ...eq,
-                                        borrowed_quantity: checkout.lendingTool.qty[index] || 1
-                                    }));
-                                }
-                            } catch (error) {
-                                console.log('Equipment not found for lending tool:', checkout.lendingTool.id);
+                        if (checkout.lendingTool?.id_equipment) {
+                            const { data: equipmentData } = await supabase
+                                .from('equipment')
+                                .select('id, name, code, category, unit')
+                                .in('id', checkout.lendingTool.id_equipment);
+                            
+                            if (equipmentData) {
+                                checkout.lendingTool.equipment_details = equipmentData.map((eq, index) => ({
+                                    ...eq,
+                                    borrowed_quantity: checkout.lendingTool.qty[index] || 1
+                                }));
                             }
                         }
                         return checkout;
@@ -243,526 +176,351 @@ const ValidationQueue: React.FC = () => {
                 );
             }
 
-            // Fetch reports for all checkouts
-            const checkoutsWithReports = await Promise.all(
-                processedData.map(async c => {
-                    const { data: reports, error } = await supabase
-                        .from('checkout_violations')
-                        .select('*')
-                        .eq('checkout_id', c.id)
-                        .order('created_at', { ascending: false })
-                        .limit(1);
+            // Department filter for department admin
+            if (profile?.role === 'department_admin' && profile.department_id) {
+                if (activeTab === 'room') {
+                    processedData = processedData.filter(checkout => 
+                        checkout.booking?.room?.department?.name
+                    );
+                }
+            }
+
+            // Fetch equipment details and verification status for each checkout
+            const enhancedData = await Promise.all(
+                processedData.map(async (checkout) => {
+                    const equipment_list = await fetchEquipmentList(checkout);
+                    const verification_items = await fetchVerificationItems(checkout.id, equipment_list);
                     
-                    if (error) return c;
-                    return reports && reports.length > 0 ? { 
-                        ...c, 
-                        has_report: true, 
-                        report: { ...reports[0] } 
-                    } : { 
-                        ...c, 
-                        has_report: false 
+                    return {
+                        ...checkout,
+                        equipment_list,
+                        verification_items
                     };
                 })
             );
+
+            setCheckouts(enhancedData);
             
-            setCheckouts(checkoutsWithReports as Checkout[]);
-        } catch (err: any) {
-            console.error('Error fetching pending checkouts:', err);
-            toast.error(`Failed to load data: ${err.message}`);
+        } catch (error: any) {
+            console.error('Error fetching checkouts:', error);
+            toast.error(`Failed to load validation queue: ${error.message}`);
         } finally {
             setLoading(false);
         }
     };
-    
-    useEffect(() => { 
-        fetchPendingCheckouts(); 
-    }, [profile, activeTab, statusFilter, dateFilter]);
 
-    const fetchCheckoutItemState = async (checkoutId: string) => {
-        setIsDetailLoading(true);
-        const { data, error } = await supabase.from('checkout_items').select('*').eq('checkout_id', checkoutId);
-        
-        if (error) {
-            toast.error("Failed to load item verification status.");
-            setCheckedItems(new Set());
-            setConditionNotes({});
-            setReturnedQuantities({});
-        } else {
-            const checked = new Set<string>();
-            const notes: Record<string, string> = {};
-            const quantities: Record<string, number> = {};
-            data.forEach(item => {
-                checked.add(item.equipment_id);
-                if (item.condition_notes) { notes[item.equipment_id] = item.condition_notes; }
-                if (item.quantity) { quantities[item.equipment_id] = item.quantity; }
-            });
-            setCheckedItems(checked);
-            setConditionNotes(notes);
-            setReturnedQuantities(quantities);
-        }
-        setIsDetailLoading(false);
-    };
-
-    const fetchRequestedEquipmentDetails = async (equipmentIds: string[]) => {
-        if (!equipmentIds || equipmentIds.length === 0) {
-            setRequestedEquipmentDetails([]);
-            return;
-        }
-        
+    // ===== FETCH EQUIPMENT LIST FOR CHECKOUT =====
+    const fetchEquipmentList = async (checkout: CheckoutWithDetails): Promise<Equipment[]> => {
         try {
+            let equipmentIds: string[] = [];
+            
+            if (activeTab === 'room' && checkout.booking?.equipment_requested) {
+                equipmentIds = checkout.booking.equipment_requested;
+            } else if (activeTab === 'equipment' && checkout.lendingTool?.id_equipment) {
+                equipmentIds = checkout.lendingTool.id_equipment;
+            }
+
+            if (equipmentIds.length === 0) return [];
+
             const { data, error } = await supabase
                 .from('equipment')
-                .select('*')
+                .select('id, name, code, category, unit, is_mandatory')
                 .in('id', equipmentIds);
-            
+
             if (error) throw error;
+            return data || [];
             
-            setRequestedEquipmentDetails(data || []);
         } catch (error) {
-            console.error('Error fetching equipment details:', error);
-            toast.error('Failed to load equipment details');
-            setRequestedEquipmentDetails([]);
+            console.error('Error fetching equipment list:', error);
+            return [];
         }
     };
 
-    useEffect(() => {
-        if (showDetailModal && selectedCheckoutId) {
-            fetchCheckoutItemState(selectedCheckoutId);
-            
-            const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId);
-            
-            if (activeTab === 'room' && selectedCheckout?.booking?.equipment_requested) {
-                fetchRequestedEquipmentDetails(selectedCheckout.booking.equipment_requested);
-            } else if (activeTab === 'equipment' && selectedCheckout?.lendingTool?.id_equipment) {
-                fetchRequestedEquipmentDetails(selectedCheckout.lendingTool.id_equipment);
-            } else {
-                setRequestedEquipmentDetails([]);
-            }
-        }
-    }, [showDetailModal, selectedCheckoutId, checkouts, activeTab]);
+    // ===== FETCH VERIFICATION ITEMS =====
+    const fetchVerificationItems = async (checkoutId: string, equipmentList: Equipment[]): Promise<VerificationItem[]> => {
+        try {
+            const { data: checkoutItems, error } = await supabase
+                .from('checkout_items')
+                .select('*')
+                .eq('checkout_id', checkoutId);
 
+            if (error) throw error;
+
+            // Combine equipment info with verification status
+            return equipmentList.map(equipment => {
+                const checkoutItem = checkoutItems?.find(item => item.equipment_id === equipment.id);
+                const checkout = checkouts.find(c => c.id === checkoutId);
+                
+                let borrowedQty = 1; // Default
+                
+                if (activeTab === 'room' && checkout?.booking) {
+                    const equipmentIndex = checkout.booking.equipment_requested?.indexOf(equipment.id);
+                    borrowedQty = equipmentIndex !== -1 && checkout.booking.equipment_quantities 
+                        ? checkout.booking.equipment_quantities[equipmentIndex] || 1 
+                        : 1;
+                } else if (activeTab === 'equipment' && checkout?.lendingTool) {
+                    const equipmentIndex = checkout.lendingTool.id_equipment?.indexOf(equipment.id);
+                    borrowedQty = equipmentIndex !== -1 && checkout.lendingTool.qty
+                        ? checkout.lendingTool.qty[equipmentIndex] || 1
+                        : 1;
+                }
+
+                return {
+                    equipment_id: equipment.id,
+                    equipment_name: equipment.name,
+                    equipment_code: equipment.code,
+                    equipment_unit: equipment.unit || 'pcs',
+                    borrowed_quantity: borrowedQty,
+                    returned_quantity: checkoutItem?.quantity || 0,
+                    is_verified: !!checkoutItem,
+                    condition_notes: checkoutItem?.condition_notes || '',
+                    is_mandatory: equipment.is_mandatory
+                };
+            });
+            
+        } catch (error) {
+            console.error('Error fetching verification items:', error);
+            return [];
+        }
+    };
+
+    // ===== UPDATE VERIFICATION ITEM =====
+    const updateVerificationItem = async (
+        checkoutId: string, 
+        equipmentId: string, 
+        returnedQuantity: number, 
+        conditionNotes: string,
+        isVerified: boolean
+    ) => {
+        try {
+            if (isVerified && returnedQuantity > 0) {
+                // Save/update verification
+                const { error } = await supabase
+                    .from('checkout_items')
+                    .upsert({
+                        checkout_id: checkoutId,
+                        equipment_id: equipmentId,
+                        quantity: returnedQuantity,
+                        condition_notes: conditionNotes || null
+                    }, { 
+                        onConflict: 'checkout_id, equipment_id' 
+                    });
+
+                if (error) throw error;
+
+                // Update equipment quantity in inventory
+                await updateEquipmentQuantity(equipmentId, returnedQuantity);
+                
+            } else {
+                // Remove verification
+                const { error } = await supabase
+                    .from('checkout_items')
+                    .delete()
+                    .match({ checkout_id: checkoutId, equipment_id: equipmentId });
+
+                if (error) throw error;
+
+                // Revert equipment quantity
+                const currentItem = verificationItems.find(item => item.equipment_id === equipmentId);
+                if (currentItem && currentItem.returned_quantity > 0) {
+                    await updateEquipmentQuantity(equipmentId, -currentItem.returned_quantity);
+                }
+            }
+
+            // Refresh verification items
+            if (selectedCheckout) {
+                const newVerificationItems = await fetchVerificationItems(
+                    selectedCheckout.id, 
+                    selectedCheckout.equipment_list || []
+                );
+                setVerificationItems(newVerificationItems);
+            }
+            
+        } catch (error: any) {
+            console.error('Error updating verification:', error);
+            toast.error(`Failed to update verification: ${error.message}`);
+        }
+    };
+
+    // ===== UPDATE EQUIPMENT QUANTITY =====
     const updateEquipmentQuantity = async (equipmentId: string, quantityChange: number) => {
         try {
-            const { data: currentEquipment, error: getError } = await supabase
+            const { data: equipment, error: fetchError } = await supabase
                 .from('equipment')
                 .select('quantity')
                 .eq('id', equipmentId)
                 .single();
 
-            if (!getError && currentEquipment) {
-                const newQuantity = Math.max(0, currentEquipment.quantity + quantityChange);
-                
-                const { error: updateError } = await supabase
-                    .from('equipment')
-                    .update({ 
-                        quantity: newQuantity,
-                        is_available: newQuantity > 0
-                    })
-                    .eq('id', equipmentId);
+            if (fetchError) throw fetchError;
 
-                if (updateError) {
-                    console.error('Error updating equipment quantity:', updateError);
-                    toast.error('Failed to update equipment quantity');
-                    return false;
-                }
-                
-                console.log(`Equipment ${equipmentId} quantity updated: ${currentEquipment.quantity} → ${newQuantity}`);
-                return true;
-            }
+            const newQuantity = Math.max(0, equipment.quantity + quantityChange);
+            
+            const { error: updateError } = await supabase
+                .from('equipment')
+                .update({ 
+                    quantity: newQuantity,
+                    is_available: newQuantity > 0
+                })
+                .eq('id', equipmentId);
+
+            if (updateError) throw updateError;
+            
+            console.log(`Equipment ${equipmentId} quantity: ${equipment.quantity} → ${newQuantity} (${quantityChange > 0 ? '+' : ''}${quantityChange})`);
+            
         } catch (error) {
             console.error('Error updating equipment quantity:', error);
-            return false;
-        }
-        return false;
-    };
-
-    const handleCheckItem = async (checkoutId: string, equipmentId: string, isChecked: boolean) => {
-        const tempCheckedItems = new Set(checkedItems);
-        
-        if (isChecked) {
-            tempCheckedItems.add(equipmentId);
-        } else {
-            tempCheckedItems.delete(equipmentId);
-        }
-        
-        setCheckedItems(tempCheckedItems);
-
-        if (isChecked) {
-            // When checking an item, save to checkout_items table
-            const quantity = activeTab === 'equipment' ? (returnedQuantities[equipmentId] || 1) : 1;
-            
-            const { error } = await supabase.from('checkout_items').upsert({ 
-                checkout_id: checkoutId, 
-                equipment_id: equipmentId, 
-                condition_notes: conditionNotes[equipmentId] || null, 
-                quantity: quantity
-            }, { onConflict: 'checkout_id, equipment_id' });
-            
-            if (error) { 
-                toast.error(`Failed to save check status.`); 
-                setCheckedItems(prev => { const s = new Set(prev); s.delete(equipmentId); return s; }); 
-                return;
-            }
-
-            // Update equipment quantity based on tab type
-            let quantityChange = 0;
-            if (activeTab === 'room') {
-                // Room checkout: checking means equipment is returned (+1 to inventory)
-                quantityChange = 1;
-            } else {
-                // Equipment checkout: checking means equipment is returned (use returned quantity)
-                quantityChange = quantity;
-            }
-
-            const success = await updateEquipmentQuantity(equipmentId, quantityChange);
-            if (!success) {
-                // Revert the checkbox state if quantity update failed
-                setCheckedItems(prev => { const s = new Set(prev); s.delete(equipmentId); return s; });
-            }
-        } else {
-            // When unchecking an item, remove from checkout_items table
-            const { error } = await supabase.from('checkout_items').delete().match({ 
-                checkout_id: checkoutId, 
-                equipment_id: equipmentId 
-            });
-            
-            if (error) { 
-                toast.error(`Failed to save uncheck status.`); 
-                setCheckedItems(prev => { const s = new Set(prev); s.add(equipmentId); return s; }); 
-                return;
-            }
-
-            // Revert equipment quantity based on tab type
-            let quantityChange = 0;
-            if (activeTab === 'room') {
-                // Room checkout: unchecking means equipment is not returned (-1 from inventory)
-                quantityChange = -1;
-            } else {
-                // Equipment checkout: unchecking means equipment is not returned (subtract returned quantity)
-                const quantity = returnedQuantities[equipmentId] || 1;
-                quantityChange = -quantity;
-            }
-
-            const success = await updateEquipmentQuantity(equipmentId, quantityChange);
-            if (!success) {
-                // Revert the checkbox state if quantity update failed
-                setCheckedItems(prev => { const s = new Set(prev); s.add(equipmentId); return s; });
-            }
+            throw error;
         }
     };
-    
-    const debouncedUpdateNote = useCallback(debounce(async (checkoutId: string, equipmentId: string, note: string) => {
-        if (checkedItems.has(equipmentId)) {
-            const { error } = await supabase.from('checkout_items').update({ condition_notes: note }).match({ 
-                checkout_id: checkoutId, 
-                equipment_id: equipmentId 
-            });
-            if (error) toast.error(`Failed to save note.`);
-        }
-    }, 500), [checkedItems]);
 
-    const debouncedUpdateQuantity = useCallback(debounce(async (checkoutId: string, equipmentId: string, quantity: number) => {
-        if (checkedItems.has(equipmentId)) {
-            const { error } = await supabase.from('checkout_items').update({ quantity: quantity }).match({ 
-                checkout_id: checkoutId, 
-                equipment_id: equipmentId 
-            });
-            if (error) toast.error(`Failed to save quantity.`);
-        }
-    }, 500), [checkedItems]);
-
-    const handleNoteChange = (equipmentId: string, note: string) => {
-        setConditionNotes(prev => ({...prev, [equipmentId]: note }));
-        if (selectedCheckoutId) { debouncedUpdateNote(selectedCheckoutId, equipmentId, note); }
-    };
-
-    const handleQuantityChange = (equipmentId: string, quantity: number) => {
-        setReturnedQuantities(prev => ({...prev, [equipmentId]: quantity }));
-        if (selectedCheckoutId && checkedItems.has(equipmentId)) { 
-            debouncedUpdateQuantity(selectedCheckoutId, equipmentId, quantity); 
-        }
-    };
-    
-    const handleApproval = async (checkoutId: string) => {
-        setProcessingIds(prev => new Set(prev).add(checkoutId));
+    // ===== APPROVE RETURN =====
+    const handleApproveReturn = async (checkoutId: string) => {
         try {
-            const checkout = checkouts.find(c => c.id === checkoutId);
-            if (!checkout) throw new Error('Checkout data missing');
+            setProcessingIds(prev => new Set(prev).add(checkoutId));
 
-            // Update checkout status
-            const { error: checkoutError } = await supabase.from('checkouts').update({ 
-                approved_by: profile?.id, 
-                status: 'active', 
-                updated_at: new Date().toISOString() 
-            }).eq('id', checkoutId);
-            if (checkoutError) throw checkoutError;
-            
-            if (activeTab === 'room') {
-                // For room checkouts - update room availability
-                if (!checkout.booking?.room) throw new Error('Room data missing');
-                
-                const { error: roomError } = await supabase.from('rooms').update({ 
-                    is_available: true, 
-                    updated_at: new Date().toISOString() 
-                }).eq('id', checkout.booking.room.id);
-                
-                if (roomError) console.error('Error updating room availability:', roomError);
-            } else {
-                // For equipment checkouts - update lending tool status
-                if (!checkout.lendingTool) throw new Error('Lending tool data missing');
-                
-                const { error: lendingUpdateError } = await supabase
-                    .from('lending_tool')
-                    .update({ 
-                        status: 'completed',
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', checkout.lendingTool.id);
+            const { error } = await supabase
+                .from('checkouts')
+                .update({ 
+                    status: 'active',
+                    approved_by: profile?.id,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', checkoutId);
 
-                if (lendingUpdateError) {
-                    console.error('Error updating lending tool status:', lendingUpdateError);
-                }
-            }
-            
-            toast.success('Checkout approved successfully!');
-            fetchPendingCheckouts();
-            setShowDetailModal(false);
-        } catch (error: any) {
-            toast.error(error.message || 'Failed to approve checkout');
-        } finally {
-            setProcessingIds(prev => { const s = new Set(prev); s.delete(checkoutId); return s; });
-        }
-    };
-    
-    const handleReject = async (checkoutId: string) => {
-        setProcessingIds(prev => new Set(prev).add(checkoutId));
-        try {
-            const checkout = checkouts.find(c => c.id === checkoutId);
-            
-            if (activeTab === 'room') {
-                const bookingId = checkout?.booking_id;
-                if (!bookingId) throw new Error('Booking ID not found for this checkout');
-
-                const { error: bookingError } = await supabase.from('bookings').update({ 
-                    status: 'approved', 
-                    updated_at: new Date().toISOString() 
-                }).eq('id', bookingId);
-                
-                if (bookingError) throw bookingError;
-
-                // Revert equipment quantities for checked items in room checkouts
-                const checkoutItems = await supabase
-                    .from('checkout_items')
-                    .select('*')
-                    .eq('checkout_id', checkoutId);
-
-                if (checkoutItems.data) {
-                    for (const item of checkoutItems.data) {
-                        // For room checkouts, subtract 1 from equipment quantity when rejecting
-                        await updateEquipmentQuantity(item.equipment_id, -1);
-                    }
-                }
-            } else {
-                const lendingToolId = checkout?.lendingTool_id;
-                if (!lendingToolId) throw new Error('Lending tool ID not found for this checkout');
-
-                const { error: lendingError } = await supabase.from('lending_tool').update({ 
-                    status: 'borrow', 
-                    updated_at: new Date().toISOString() 
-                }).eq('id', lendingToolId);
-                
-                if (lendingError) throw lendingError;
-
-                // Revert equipment quantities for checked items in equipment checkouts
-                const checkoutItems = await supabase
-                    .from('checkout_items')
-                    .select('*')
-                    .eq('checkout_id', checkoutId);
-
-                if (checkoutItems.data) {
-                    for (const item of checkoutItems.data) {
-                        await updateEquipmentQuantity(item.equipment_id, -item.quantity);
-                    }
-                }
-            }
-            
-            const { error: checkoutError } = await supabase.from('checkouts').delete().eq('id', checkoutId);
-            if (checkoutError) throw checkoutError;
-            
-            toast.success('Checkout rejected and status restored.');
-            fetchPendingCheckouts();
-            if (selectedCheckoutId === checkoutId) setShowDetailModal(false);
-            setShowDeleteConfirm(null);
-        } catch (error: any) {
-            toast.error(error.message || 'Failed to reject checkout');
-        } finally {
-            setProcessingIds(prev => { const s = new Set(prev); s.delete(checkoutId); return s; });
-        }
-    };
-    
-    const handleAddReport = async () => {
-        const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId);
-        if (!selectedCheckout) return;
-        if (!reportDescription) { 
-            toast.error('Description is required'); 
-            return; 
-        }
-
-        setProcessingIds(prev => new Set(prev).add(selectedCheckout.id));
-        try {
-            const { error } = await supabase.from('checkout_violations').insert({ 
-                checkout_id: selectedCheckout.id, 
-                user_id: selectedCheckout.user_id, 
-                violation_type: 'other', 
-                severity: reportSeverity, 
-                title: reportTitle || 'Validation Report', 
-                description: reportDescription, 
-                reported_by: profile?.id, 
-                status: 'active' 
-            });
-            
             if (error) throw error;
-            toast.success('Report added successfully');
-            setShowReportModal(false); 
-            setReportTitle(''); 
-            setReportDescription(''); 
-            setReportSeverity('minor');
-            fetchPendingCheckouts();
-        } catch (error: any) { 
-            toast.error(error.message || 'Failed to add report');
-        } finally { 
-            if (selectedCheckout) { 
-                setProcessingIds(prev => { const s = new Set(prev); s.delete(selectedCheckout.id); return s; }); 
-            } 
+
+            // Update related records
+            const checkout = checkouts.find(c => c.id === checkoutId);
+            if (checkout) {
+                if (activeTab === 'room' && checkout.booking_id) {
+                    await supabase
+                        .from('bookings')
+                        .update({ status: 'completed' })
+                        .eq('id', checkout.booking_id);
+                } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
+                    await supabase
+                        .from('lending_tool')
+                        .update({ status: 'completed' })
+                        .eq('id', checkout.lendingTool_id);
+                }
+            }
+
+            toast.success('Return approved successfully!');
+            fetchCheckouts();
+            setShowDetailModal(false);
+            
+        } catch (error: any) {
+            console.error('Error approving return:', error);
+            toast.error(`Failed to approve return: ${error.message}`);
+        } finally {
+            setProcessingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(checkoutId);
+                return newSet;
+            });
         }
     };
 
-    const handleDeleteCheckout = async (checkoutId: string) => {
-    setProcessingIds(prev => new Set(prev).add(checkoutId));
-    
-    try {
-        const checkout = checkouts.find(c => c.id === checkoutId);
-        if (!checkout) throw new Error('Checkout not found');
-
-        console.log(`Deleting checkout: ${checkoutId}`);
-
-        // STEP 1: Revert equipment quantities (opsional)
+    // ===== REJECT RETURN =====
+    const handleRejectReturn = async (checkoutId: string) => {
         try {
-            const { data: items } = await supabase
-                .from('checkout_items')
-                .select('*')
-                .eq('checkout_id', checkoutId);
+            setProcessingIds(prev => new Set(prev).add(checkoutId));
 
-            if (items && items.length > 0) {
-                console.log(`Reverting quantities for ${items.length} items...`);
-                for (const item of items) {
-                    const quantityChange = activeTab === 'room' ? -1 : -item.quantity;
-                    await updateEquipmentQuantity(item.equipment_id, quantityChange);
+            // Revert all equipment quantities
+            const checkout = checkouts.find(c => c.id === checkoutId);
+            if (checkout?.verification_items) {
+                for (const item of checkout.verification_items) {
+                    if (item.is_verified && item.returned_quantity > 0) {
+                        await updateEquipmentQuantity(item.equipment_id, -item.returned_quantity);
+                    }
                 }
-                console.log('✓ Equipment quantities reverted');
             }
-        } catch (revertError) {
-            console.warn('Equipment quantity revert failed, continuing...', revertError);
-            // Tidak akan menggagalkan proses deletion
-        }
 
-        // STEP 2: Update related records status (sebelum delete)
-        try {
-            if (activeTab === 'room' && checkout.booking_id) {
-                const { error: bookingError } = await supabase
-                    .from('bookings')
-                    .update({ 
-                        status: 'approved',
-                        updated_at: new Date().toISOString() 
-                    })
-                    .eq('id', checkout.booking_id);
-                
-                if (bookingError) console.warn('Booking update failed:', bookingError);
-                else console.log('✓ Booking status updated');
-                
-            } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
-                const { error: lendingError } = await supabase
-                    .from('lending_tool')
-                    .update({ 
-                        status: 'borrow',
-                        updated_at: new Date().toISOString() 
-                    })
-                    .eq('id', checkout.lendingTool_id);
-                
-                if (lendingError) console.warn('Lending tool update failed:', lendingError);
-                else console.log('✓ Lending tool status updated');
+            // Delete checkout and revert status
+            await supabase.from('checkouts').delete().eq('id', checkoutId);
+            
+            if (checkout) {
+                if (activeTab === 'room' && checkout.booking_id) {
+                    await supabase
+                        .from('bookings')
+                        .update({ status: 'approved' })
+                        .eq('id', checkout.booking_id);
+                } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
+                    await supabase
+                        .from('lending_tool')
+                        .update({ status: 'borrow' })
+                        .eq('id', checkout.lendingTool_id);
+                }
             }
-        } catch (updateError) {
-            console.warn('Related record update failed:', updateError);
-            // Tidak akan menggagalkan proses deletion
+
+            toast.success('Return rejected and status reverted');
+            fetchCheckouts();
+            setShowDetailModal(false);
+            
+        } catch (error: any) {
+            console.error('Error rejecting return:', error);
+            toast.error(`Failed to reject return: ${error.message}`);
+        } finally {
+            setProcessingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(checkoutId);
+                return newSet;
+            });
         }
+    };
 
-        // STEP 3: DELETE CHECKOUT (Trigger akan otomatis hapus child records)
-        const { error: deleteError } = await supabase
-            .from('checkouts')
-            .delete()
-            .eq('id', checkoutId);
-
-        if (deleteError) {
-            throw new Error(`Failed to delete checkout: ${deleteError.message}`);
+    // ===== EFFECTS =====
+    useEffect(() => {
+        if (profile) {
+            fetchCheckouts();
         }
+    }, [profile, activeTab]);
 
-        // SUCCESS!
-        console.log('✅ Checkout deleted successfully (trigger handled child records)');
-        toast.success('Checkout deleted successfully!');
+    useEffect(() => {
+        if (selectedCheckout) {
+            setVerificationItems(selectedCheckout.verification_items || []);
+        }
+    }, [selectedCheckout]);
+
+    // ===== FILTERS =====
+    const filteredCheckouts = checkouts.filter(checkout => {
+        const searchLower = searchTerm.toLowerCase();
         
-        // Update UI
-        fetchPendingCheckouts();
-        if (selectedCheckoutId === checkoutId) setShowDetailModal(false);
-        setShowDeleteConfirm(null);
-
-    } catch (error: any) {
-        console.error('❌ Delete checkout failed:', error);
-        toast.error(`Delete failed: ${error.message}`);
-    } finally {
-        setProcessingIds(prev => { 
-            const s = new Set(prev); 
-            s.delete(checkoutId); 
-            return s; 
-        });
-    }
-};
-
-    const filteredCheckouts = checkouts.filter(c => { 
-        const s = searchTerm.toLowerCase(); 
-        if (activeTab === 'room') {
-            return !s || 
-                c.user?.full_name?.toLowerCase().includes(s) || 
-                c.booking?.purpose?.toLowerCase().includes(s) || 
-                c.booking?.room?.name?.toLowerCase().includes(s);
-        } else {
-            return !s || 
-                c.user?.full_name?.toLowerCase().includes(s) || 
-                c.lendingTool?.equipment_details?.some(eq => 
-                    eq.name.toLowerCase().includes(s) || 
-                    eq.code?.toLowerCase().includes(s) ||
-                    eq.category?.toLowerCase().includes(s)
-                );
-        }
-    }).sort((a, b) => { 
-        if (a.has_report && !b.has_report) return -1; 
-        if (!a.has_report && b.has_report) return 1; 
-        const pOrder = { overdue: 0, urgent: 1, high: 2, medium: 3, low: 4 }; 
-        if (sortOption === 'priority') return pOrder[getCheckoutPriority(a)] - pOrder[getCheckoutPriority(b)]; 
-        if (sortOption === 'date') { 
-            const dateA = a.created_at ? parseISO(a.created_at) : 0; 
-            const dateB = b.created_at ? parseISO(b.created_at) : 0; 
-            if (!dateA || !dateB) return 0; 
-            return compareAsc(dateB, dateA); 
-        } 
-        if (sortOption === 'status') { 
-            const sOrder = { overdue: 0, active: 1, returned: 2, pending: 3 }; 
-            const getStatus = (c: Checkout) => c.status === 'overdue' || (isPast(new Date(c.expected_return_date)) && c.status === 'active') ? 'overdue' : c.status; 
-            return sOrder[getStatus(a)] - sOrder[getStatus(b)]; 
-        } 
-        return 0; 
+        const matchesSearch = 
+            checkout.user?.full_name?.toLowerCase().includes(searchLower) ||
+            checkout.user?.identity_number?.toLowerCase().includes(searchLower) ||
+            (activeTab === 'room' && checkout.booking?.room?.name?.toLowerCase().includes(searchLower)) ||
+            (activeTab === 'equipment' && checkout.lendingTool?.equipment_details?.some(eq => 
+                eq.name.toLowerCase().includes(searchLower)
+            ));
+        
+        return matchesSearch;
     });
 
+    // ===== UTILITY FUNCTIONS =====
+    const getVerificationProgress = (items: VerificationItem[]) => {
+        const totalItems = items.length;
+        const verifiedItems = items.filter(item => item.is_verified).length;
+        const mandatoryItems = items.filter(item => item.is_mandatory);
+        const verifiedMandatory = mandatoryItems.filter(item => item.is_verified).length;
+        
+        return {
+            total: totalItems,
+            verified: verifiedItems,
+            mandatory: mandatoryItems.length,
+            verifiedMandatory,
+            percentage: totalItems > 0 ? Math.round((verifiedItems / totalItems) * 100) : 0,
+            canApprove: mandatoryItems.length === verifiedMandatory
+        };
+    };
+
+    const getTotalQuantityGap = (items: VerificationItem[]) => {
+        return items.reduce((total, item) => {
+            return total + Math.max(0, item.borrowed_quantity - item.returned_quantity);
+        }, 0);
+    };
+
+    // ===== ACCESS CONTROL =====
     if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
         return (
             <div className="flex items-center justify-center h-64">
@@ -777,281 +535,260 @@ const ValidationQueue: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-orange-600 to-red-600 rounded-xl p-6 text-white">
+            {/* ===== HEADER ===== */}
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl p-6 text-white">
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-3xl font-bold flex items-center space-x-3">
                             <Bell className="h-8 w-8" />
-                            <span>Validation Queue</span>
+                            <span>Return Validation Queue</span>
                         </h1>
-                        <p className="mt-2 opacity-90">Review and validate checkouts</p>
+                        <p className="mt-2 opacity-90">
+                            Verify and approve equipment returns from users
+                        </p>
                     </div>
                     <div className="hidden md:block text-right">
                         <div className="text-2xl font-bold">{checkouts.length}</div>
-                        <div className="text-sm opacity-80">Items in Queue</div>
+                        <div className="text-sm opacity-80">Pending Returns</div>
                     </div>
                 </div>
             </div>
 
-            {/* Tabs */}
+            {/* ===== TABS ===== */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="flex border-b border-gray-200">
                     <button 
                         onClick={() => setActiveTab('room')} 
-                        className={`flex-1 py-4 px-6 text-center font-medium text-sm transition-colors duration-200 ${
+                        className={`flex-1 py-4 px-6 text-center font-medium transition-colors duration-200 ${
                             activeTab === 'room' 
-                                ? 'text-orange-600 border-b-2 border-orange-600' 
+                                ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50' 
                                 : 'text-gray-500 hover:text-gray-700'
                         }`}
                     >
-                        Room Checkouts
+                        <div className="flex items-center justify-center space-x-2">
+                            <Building className="h-5 w-5" />
+                            <span>Room Returns</span>
+                            <span className="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded-full">
+                                {checkouts.filter(c => c.type === 'room').length}
+                            </span>
+                        </div>
                     </button>
                     <button 
                         onClick={() => setActiveTab('equipment')} 
-                        className={`flex-1 py-4 px-6 text-center font-medium text-sm transition-colors duration-200 ${
+                        className={`flex-1 py-4 px-6 text-center font-medium transition-colors duration-200 ${
                             activeTab === 'equipment' 
-                                ? 'text-orange-600 border-b-2 border-orange-600' 
+                                ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50' 
                                 : 'text-gray-500 hover:text-gray-700'
                         }`}
                     >
-                        Equipment Checkouts
+                        <div className="flex items-center justify-center space-x-2">
+                            <Package className="h-5 w-5" />
+                            <span>Equipment Returns</span>
+                            <span className="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded-full">
+                                {checkouts.filter(c => c.type === 'things').length}
+                            </span>
+                        </div>
                     </button>
                 </div>
             </div>
 
-            {/* Search and Filters */}
+            {/* ===== SEARCH & FILTERS ===== */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+                <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
                     <div className="relative w-full md:w-auto md:flex-1">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                         <input 
                             type="text" 
-                            placeholder={activeTab === 'room' ? "Search by name, purpose, or room..." : "Search by name or equipment..."} 
+                            placeholder={`Search ${activeTab === 'room' ? 'by user, room' : 'by user, equipment'}...`}
                             value={searchTerm} 
                             onChange={(e) => setSearchTerm(e.target.value)} 
-                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500" 
+                            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" 
                         />
                     </div>
-                    <div className="flex items-center space-x-2 w-full md:w-auto">
+                    <div className="flex items-center space-x-3">
                         <button 
-                            onClick={() => { setStatusFilter('returned'); fetchPendingCheckouts(); }} 
+                            onClick={fetchCheckouts} 
                             disabled={loading} 
-                            className="flex items-center space-x-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors disabled:opacity-50"
+                            className="flex items-center space-x-2 px-4 py-3 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition-colors disabled:opacity-50"
                         >
                             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                            <span>Refresh Returned</span>
+                            <span>Refresh</span>
                         </button>
-                        <button 
-                            onClick={() => setShowFilters(!showFilters)} 
-                            className="flex items-center space-x-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                        >
-                            <Filter className="h-4 w-4" />
-                            <span>Filters</span>
-                            {activeFiltersCount > 0 && (
-                                <span className="inline-flex items-center justify-center w-5 h-5 ml-1 text-xs font-bold text-white bg-orange-500 rounded-full">
-                                    {activeFiltersCount}
-                                </span>
-                            )}
-                        </button>
-                        <select 
-                            value={sortOption} 
-                            onChange={(e) => setSortOption(e.target.value as any)} 
-                            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                        >
-                            <option value="date">Sort: Date (Recent)</option>
-                            <option value="priority">Sort: Priority</option>
-                            <option value="status">Sort: Status</option>
-                        </select>
                     </div>
                 </div>
-
-                {/* Filters Panel */}
-                {showFilters && (
-                    <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Status</label>
-                            <select 
-                                value={statusFilter} 
-                                onChange={(e) => setStatusFilter(e.target.value as any)} 
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                            >
-                                <option value="all">All Statuses</option>
-                                <option value="pending">Pending</option>
-                                <option value="active">Active</option>
-                                <option value="overdue">Overdue</option>
-                                <option value="returned">Returned</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Date</label>
-                            <div className="relative">
-                                <input 
-                                    type="date" 
-                                    value={dateFilter} 
-                                    onChange={(e) => setDateFilter(e.target.value)} 
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                                />
-                                {dateFilter && (
-                                    <button 
-                                        onClick={() => setDateFilter('')} 
-                                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                    >
-                                        <X className="h-4 w-4" />
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                        <div className="md:col-span-2 flex justify-end">
-                            <button 
-                                onClick={() => { setStatusFilter('returned'); setDateFilter(''); }} 
-                                className="text-sm text-orange-600 hover:text-orange-800 font-medium"
-                            >
-                                Clear Filters
-                            </button>
-                        </div>
-                    </div>
-                )}
             </div>
 
-            {/* Checkout List */}
+            {/* ===== CHECKOUT LIST ===== */}
             <div className="space-y-4">
                 {loading ? (
                     <div className="flex items-center justify-center h-64">
-                        <RefreshCw className="h-6 w-6 animate-spin text-orange-600 mr-2" />
-                        <span>Loading...</span>
+                        <div className="text-center">
+                            <RefreshCw className="h-8 w-8 animate-spin text-indigo-600 mx-auto mb-4" />
+                            <p className="text-gray-600">Loading returns...</p>
+                        </div>
                     </div>
                 ) : filteredCheckouts.length === 0 ? (
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
                         <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
                         <h3 className="text-xl font-semibold text-gray-900 mb-2">All Caught Up!</h3>
-                        <p className="text-gray-600">No items match the current filters.</p>
+                        <p className="text-gray-600">No pending returns to validate.</p>
                     </div>
                 ) : (
                     filteredCheckouts.map((checkout) => {
-                        const priority = getCheckoutPriority(checkout);
-                        const PriorityIcon = getPriorityIcon(priority);
+                        const progress = getVerificationProgress(checkout.verification_items || []);
+                        const quantityGap = getTotalQuantityGap(checkout.verification_items || []);
                         
                         return (
                             <div 
-                                key={checkout.id} 
-                                className={`bg-white rounded-xl shadow-sm border p-4 md:p-6 hover:shadow-lg transition-all duration-200 ${getPriorityColor(priority, checkout.has_report)}`}
+                                key={checkout.id}
+                                className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all duration-200"
                             >
                                 <div className="flex items-start justify-between">
                                     <div className="flex-1">
+                                        {/* Header */}
                                         <div className="flex items-center space-x-4 mb-4">
-                                            <div className={`flex-shrink-0 h-12 w-12 rounded-lg flex items-center justify-center ${getPriorityIconBgColor(priority, checkout.has_report)}`}>
-                                                <PriorityIcon className="h-6 w-6 text-white" />
+                                            <div className="flex-shrink-0 h-12 w-12 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-lg flex items-center justify-center">
+                                                {activeTab === 'room' ? (
+                                                    <Building className="h-6 w-6 text-white" />
+                                                ) : (
+                                                    <Package className="h-6 w-6 text-white" />
+                                                )}
                                             </div>
                                             <div>
                                                 <h3 className="text-lg font-semibold text-gray-900">
                                                     {activeTab === 'room' 
-                                                        ? (checkout.booking?.purpose || 'Room Checkout')
-                                                        : 'Equipment Checkout'
+                                                        ? `${checkout.booking?.room?.name} Return`
+                                                        : 'Equipment Return'
                                                     }
                                                 </h3>
-                                                <div className="flex items-center space-x-2">
-                                                    <p className="text-sm text-gray-600 capitalize">
-                                                        {priority} Priority • Status: {checkout.status}
+                                                <p className="text-sm text-gray-600">
+                                                    Return requested on {format(new Date(checkout.checkout_date), 'MMM d, yyyy')}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* User & Details */}
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                            <div className="flex items-center space-x-3">
+                                                <User className="h-4 w-4 text-gray-400" />
+                                                <div>
+                                                    <p className="font-medium text-gray-900">{checkout.user?.full_name}</p>
+                                                    <p className="text-xs text-gray-500">{checkout.user?.identity_number}</p>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex items-center space-x-3">
+                                                <Calendar className="h-4 w-4 text-gray-400" />
+                                                <div>
+                                                    <p className="font-medium text-gray-900">
+                                                        {format(new Date(checkout.expected_return_date), 'MMM d')}
                                                     </p>
-                                                    {checkout.has_report && (
-                                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                                            <Flag className="h-3 w-3 mr-1" />
-                                                            REPORTED
+                                                    <p className="text-xs text-gray-500">Expected Return</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center space-x-3">
+                                                <Package className="h-4 w-4 text-gray-400" />
+                                                <div>
+                                                    <p className="font-medium text-gray-900">
+                                                        {checkout.equipment_list?.length || 0} Items
+                                                    </p>
+                                                    <p className="text-xs text-gray-500">Equipment Count</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Progress Bar */}
+                                        <div className="mb-4">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="text-sm font-medium text-gray-700">
+                                                    Verification Progress
+                                                </span>
+                                                <span className="text-sm text-gray-500">
+                                                    {progress.verified}/{progress.total} verified ({progress.percentage}%)
+                                                </span>
+                                            </div>
+                                            <div className="w-full bg-gray-200 rounded-full h-2">
+                                                <div 
+                                                    className={`h-2 rounded-full ${
+                                                        progress.percentage === 100 
+                                                            ? 'bg-green-500' 
+                                                            : progress.percentage > 50 
+                                                                ? 'bg-blue-500' 
+                                                                : 'bg-yellow-500'
+                                                    }`}
+                                                    style={{ width: `${progress.percentage}%` }}
+                                                ></div>
+                                            </div>
+                                        </div>
+
+                                        {/* Alerts - Lanjutan dari kode sebelumnya */}
+                                        <div className="space-y-2">
+                                            {!progress.canApprove && (
+                                                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                                                    <div className="flex items-center">
+                                                        <AlertTriangle className="h-4 w-4 text-red-600 mr-2" />
+                                                        <span className="text-sm font-medium text-red-800">
+                                                            {progress.mandatory - progress.verifiedMandatory} mandatory items need verification
                                                         </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4 text-sm">
-                                            {/* User Info */}
-                                            <div className="flex items-center space-x-3">
-                                                <User className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                                                <div>
-                                                    <p className="font-medium text-gray-800">{checkout.user?.full_name}</p>
-                                                    <p className="text-xs text-gray-500">
-                                                        {checkout.user?.phone_number || `ID: ${checkout.user?.identity_number}`}
-                                                    </p>
-                                                </div>
-                                            </div>
-
-                                            {/* Location/Equipment Info */}
-                                            <div className="flex items-center space-x-3">
-                                                {activeTab === 'room' ? (
-                                                    <>
-                                                        <Building className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                                                        <div>
-                                                            <p className="font-medium text-gray-800">{checkout.booking?.room?.name}</p>
-                                                            <p className="text-xs text-gray-500">{checkout.booking?.room?.department?.name}</p>
-                                                        </div>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <Package className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                                                        <div>
-                                                            <p className="font-medium text-gray-800">
-                                                                {checkout.lendingTool?.equipment_details?.length || 0} Item(s)
-                                                            </p>
-                                                            <p className="text-xs text-gray-500">
-                                                                {checkout.lendingTool?.equipment_details?.[0]?.name || 'Equipment'}
-                                                                {checkout.lendingTool?.equipment_details && checkout.lendingTool.equipment_details.length > 1 && 
-                                                                    ` +${checkout.lendingTool.equipment_details.length - 1} more`
-                                                                }
-                                                            </p>
-                                                        </div>
-                                                    </>
-                                                )}
-                                            </div>
-
-                                            {/* Date Info */}
-                                            <div className="flex items-center space-x-3">
-                                                <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                                                <div>
-                                                    <p className="font-medium text-gray-800">
-                                                        {format(new Date(checkout.checkout_date), 'MMM d, yy')}
-                                                    </p>
-                                                    <p className="text-xs text-gray-500">
-                                                        Return by: {format(new Date(checkout.expected_return_date), 'MMM d, yy')}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Report Section */}
-                                        {checkout.has_report && checkout.report && (
-                                            <div className="mt-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg p-3">
-                                                <div className="flex items-start space-x-3">
-                                                    <Flag className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-                                                    <div>
-                                                        <p className="font-medium text-yellow-800">{checkout.report.title}</p>
-                                                        <p className="text-sm text-yellow-700 mt-1">{checkout.report.description}</p>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        )}
+                                            )}
+                                            
+                                            {quantityGap > 0 && (
+                                                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                                                    <div className="flex items-center">
+                                                        <Calculator className="h-4 w-4 text-orange-600 mr-2" />
+                                                        <span className="text-sm font-medium text-orange-800">
+                                                            {quantityGap} items missing (quantity mismatch detected)
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {progress.canApprove && quantityGap === 0 && (
+                                                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                                                    <div className="flex items-center">
+                                                        <CheckCircle className="h-4 w-4 text-green-600 mr-2" />
+                                                        <span className="text-sm font-medium text-green-800">
+                                                            Ready to approve - all items verified!
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
                                     {/* Actions */}
-                                    <div className="flex items-center space-x-1 ml-4">
+                                    <div className="flex items-center space-x-2 ml-4">
                                         <button 
-                                            onClick={() => { 
-                                                if(checkout.id) { 
-                                                    setSelectedCheckoutId(checkout.id); 
-                                                    setShowDetailModal(true); 
-                                                }
-                                            }} 
-                                            className="p-2 text-gray-500 hover:bg-gray-100 rounded-md" 
-                                            title="View Details"
+                                            onClick={() => {
+                                                setSelectedCheckout(checkout);
+                                                setShowDetailModal(true);
+                                            }}
+                                            className="p-2 bg-indigo-100 text-indigo-600 hover:bg-indigo-200 rounded-lg transition-colors"
+                                            title="Verify Items"
                                         >
                                             <Eye className="h-4 w-4" />
                                         </button>
+                                        
+                                        {progress.canApprove && quantityGap === 0 && (
+                                            <button 
+                                                onClick={() => handleApproveReturn(checkout.id)}
+                                                disabled={processingIds.has(checkout.id)}
+                                                className="p-2 bg-green-100 text-green-600 hover:bg-green-200 rounded-lg transition-colors disabled:opacity-50"
+                                                title="Approve Return"
+                                            >
+                                                <Check className="h-4 w-4" />
+                                            </button>
+                                        )}
+                                        
                                         <button 
-                                            onClick={() => setShowDeleteConfirm(checkout.id)} 
-                                            className="p-2 text-red-500 hover:bg-red-100 rounded-md" 
-                                            title="Delete Checkout"
+                                            onClick={() => setShowDeleteConfirm(checkout.id)}
+                                            className="p-2 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg transition-colors"
+                                            title="Reject Return"
                                         >
-                                            <Trash2 className="h-4 w-4" />
+                                            <X className="h-4 w-4" />
                                         </button>
                                     </div>
                                 </div>
@@ -1061,212 +798,482 @@ const ValidationQueue: React.FC = () => {
                 )}
             </div>
 
-            {/* Detail Modal */}
-            {showDetailModal && selectedCheckoutId && (() => {
-                const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId);
-                if (!selectedCheckout) return null;
-
-                // Use requested equipment details instead of room equipment
-                const verificationList = requestedEquipmentDetails;
-                const mandatoryEquipment = verificationList.filter(eq => eq.is_mandatory);
-                const allMandatoryChecked = mandatoryEquipment.every(eq => checkedItems.has(eq.id));
-                const isProcessing = processingIds.has(selectedCheckout.id);
-
-                return (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white p-6 rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-                            <div className="flex justify-between items-center pb-4 border-b border-gray-200">
+            {/* ===== VERIFICATION MODAL ===== */}
+            {showDetailModal && selectedCheckout && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden">
+                        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white">
+                            <div className="flex items-center justify-between">
                                 <div>
-                                    <h2 className="text-xl font-bold text-gray-900">Checkout Validation</h2>
+                                    <h2 className="text-2xl font-bold">Return Verification</h2>
+                                    <p className="mt-1 opacity-90">
+                                        Verify returned items from {selectedCheckout.user?.full_name}
+                                    </p>
                                 </div>
                                 <button 
-                                    onClick={() => setShowDetailModal(false)} 
-                                    className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100"
+                                    onClick={() => setShowDetailModal(false)}
+                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
                                 >
-                                    <X className="h-5 w-5"/>
+                                    <X className="h-6 w-6" />
                                 </button>
                             </div>
+                        </div>
 
-                            {isDetailLoading ? (
-                                <div className="flex justify-center items-center h-64">
-                                    <RefreshCw className="h-6 w-6 animate-spin text-orange-600"/>
-                                </div>
-                            ) : (
-                                <div className="space-y-6 pt-5">
-                                    {/* User & Location Info */}
-                                    <div>
-                                        <h4 className="text-base font-semibold text-gray-500 mb-2">
-                                            {activeTab === 'room' ? 'User & Room' : 'User & Equipment'}
-                                        </h4>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            {/* User Card */}
-                                            <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center space-x-4">
-                                                <div className="flex-shrink-0 h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center">
-                                                    <User className="h-6 w-6 text-blue-600" />
-                                                </div>
-                                                <div>
-                                                    <p className="text-lg font-bold text-gray-900">{selectedCheckout.user?.full_name}</p>
-                                                    <p className="text-sm text-gray-500">
-                                                        {selectedCheckout.user?.phone_number || `ID: ${selectedCheckout.user?.identity_number}`}
-                                                    </p>
-                                                </div>
-                                            </div>
-
-                                            {/* Location/Equipment Card */}
-                                            <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center space-x-4">
-                                                <div className="flex-shrink-0 h-12 w-12 bg-green-100 rounded-full flex items-center justify-center">
-                                                    {activeTab === 'room' ? (
-                                                        <Building className="h-6 w-6 text-green-600" />
-                                                    ) : (
-                                                        <Package className="h-6 w-6 text-green-600" />
-                                                    )}
-                                                </div>
-                                                <div>
-                                                    {activeTab === 'room' ? (
-                                                        <>
-                                                            <p className="text-lg font-bold text-gray-900">{selectedCheckout.booking?.room?.name}</p>
-                                                            <p className="text-sm text-gray-500">{selectedCheckout.booking?.room?.department?.name}</p>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <p className="text-lg font-bold text-gray-900">
-                                                                {selectedCheckout.lendingTool?.equipment_details?.length || 0} Equipment Items
-                                                            </p>
-                                                            <p className="text-sm text-gray-500">
-                                                                {selectedCheckout.lendingTool?.equipment_details?.[0]?.category || 'Various Categories'}
-                                                            </p>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
+                        <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+                            {/* User & Context Info */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                                <div className="bg-indigo-50 rounded-xl p-4">
+                                    <div className="flex items-center space-x-3">
+                                        <div className="h-12 w-12 bg-indigo-100 rounded-full flex items-center justify-center">
+                                            <User className="h-6 w-6 text-indigo-600" />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-semibold text-indigo-900">
+                                                {selectedCheckout.user?.full_name}
+                                            </h3>
+                                            <p className="text-sm text-indigo-600">
+                                                ID: {selectedCheckout.user?.identity_number}
+                                            </p>
+                                            <p className="text-sm text-indigo-600">
+                                                📞 {selectedCheckout.user?.phone_number || 'No phone'}
+                                            </p>
                                         </div>
                                     </div>
+                                </div>
 
-                                    {/* Equipment Verification */}
-                                    {verificationList.length > 0 && (
-                                        <div className="border rounded-xl p-4">
-                                            <h4 className="text-base font-semibold text-gray-500 mb-3">Equipment Verification</h4>
-                                            
-                                            {!allMandatoryChecked && selectedCheckout.status === 'returned' && (
-                                                <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-3 rounded-md mb-4 flex items-center space-x-2">
-                                                    <AlertCircleIcon className="h-5 w-5" />
-                                                    <p className="font-bold">All mandatory items must be checked to approve.</p>
-                                                </div>
+                                <div className="bg-purple-50 rounded-xl p-4">
+                                    <div className="flex items-center space-x-3">
+                                        <div className="h-12 w-12 bg-purple-100 rounded-full flex items-center justify-center">
+                                            {activeTab === 'room' ? (
+                                                <Building className="h-6 w-6 text-purple-600" />
+                                            ) : (
+                                                <Package className="h-6 w-6 text-purple-600" />
                                             )}
-                                            
-                                            <div className="space-y-3">
-                                                {verificationList.map(eq => {
-                                                    // Get borrowed quantity for equipment checkouts
-                                                    const borrowedQty = activeTab === 'equipment' 
-                                                        ? selectedCheckout.lendingTool?.equipment_details?.find(ed => ed.id === eq.id)?.borrowed_quantity || 1
-                                                        : 1;
-                                                    
-                                                    return (
-                                                        <div key={eq.id} className="grid grid-cols-[auto,1fr,auto,1fr] gap-x-4 items-center">
-                                                            <input 
-                                                                type="checkbox" 
-                                                                checked={checkedItems.has(eq.id)} 
-                                                                onChange={(e) => handleCheckItem(selectedCheckout.id, eq.id, e.target.checked)} 
-                                                                className="h-5 w-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
-                                                            />
-                                                            <label className="text-sm font-medium text-gray-800">
-                                                                {eq.name}
-                                                                {eq.code && <span className="text-gray-500 ml-1">({eq.code})</span>}
-                                                                {eq.is_mandatory && <span className="text-red-500 font-bold ml-1">*</span>}
-                                                                {activeTab === 'equipment' && (
-                                                                    <span className="text-blue-600 ml-2 text-xs font-medium">
-                                                                        Borrowed: {borrowedQty}
-                                                                    </span>
-                                                                )}
-                                                            </label>
-                                                            
-                                                            {activeTab === 'equipment' ? (
-                                                                <input 
-                                                                    type="number" 
-                                                                    min="0"
-                                                                    max={borrowedQty}
-                                                                    placeholder="Qty returned ?" 
-                                                                    value={returnedQuantities[eq.id] || ''} 
-                                                                    onChange={(e) => handleQuantityChange(eq.id, parseInt(e.target.value) || 0)} 
-                                                                    className="text-sm border border-gray-300 rounded-md px-2 py-1 w-24 focus:ring-orange-500 focus:border-orange-500"
-                                                                />
-                                                            ) : (
-                                                                <input 
-                                                                    type="text" 
-                                                                    placeholder="Condition notes..." 
-                                                                    value={conditionNotes[eq.id] || ''} 
-                                                                    onChange={(e) => handleNoteChange(eq.id, e.target.value)} 
-                                                                    className="text-sm border border-gray-300 rounded-md px-2 py-1 w-full focus:ring-orange-500 focus:border-orange-500"
-                                                                />
-                                                            )}
-                                                            
-                                                            {activeTab === 'equipment' && (
-                                                                <input 
-                                                                    type="text" 
-                                                                    placeholder="Condition notes..." 
-                                                                    value={conditionNotes[eq.id] || ''} 
-                                                                    onChange={(e) => handleNoteChange(eq.id, e.target.value)} 
-                                                                    className="text-sm border border-gray-300 rounded-md px-2 py-1 w-full focus:ring-orange-500 focus:border-orange-500"
-                                                                />
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
                                         </div>
-                                    )}
-
-                                    {/* Action Buttons */}
-                                    <div className="mt-8 flex justify-end items-center gap-x-3 border-t pt-4">
-                                        <button 
-                                            onClick={() => { 
-                                                setShowDetailModal(false); 
-                                                if(selectedCheckout.id) { 
-                                                    setSelectedCheckoutId(selectedCheckout.id); 
-                                                    setReportTitle(selectedCheckout.report?.title || ''); 
-                                                    setReportDescription(selectedCheckout.report?.description || ''); 
-                                                    setReportSeverity(selectedCheckout.report?.severity || 'minor'); 
-                                                    setShowReportModal(true); 
+                                        <div>
+                                            <h3 className="font-semibold text-purple-900">
+                                                {activeTab === 'room' 
+                                                    ? selectedCheckout.booking?.room?.name
+                                                    : 'Equipment Lending'
                                                 }
-                                            }} 
-                                            className="flex items-center space-x-2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200"
-                                        >
-                                            <Flag className="h-4 w-4" />
-                                            <span>{selectedCheckout.has_report ? 'Update Report' : 'Add Report'}</span>
-                                        </button>
+                                            </h3>
+                                            <p className="text-sm text-purple-600">
+                                                Expected: {format(new Date(selectedCheckout.expected_return_date), 'MMM d, yyyy')}
+                                            </p>
+                                            <p className="text-sm text-purple-600">
+                                                {activeTab === 'room' 
+                                                    ? selectedCheckout.booking?.room?.department?.name
+                                                    : `${verificationItems.length} equipment items`
+                                                }
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
 
-                                        {selectedCheckout.status === 'returned' && (
-                                            <>
-                                                <button 
-                                                    onClick={() => handleApproval(selectedCheckout.id)} 
-                                                    disabled={isProcessing || !allMandatoryChecked} 
-                                                    className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                            {/* Equipment Verification Section */}
+                            <div className="bg-gray-50 rounded-xl p-6">
+                                <div className="flex items-center justify-between mb-6">
+                                    <h3 className="text-xl font-bold text-gray-900 flex items-center">
+                                        <Package className="h-5 w-5 mr-2 text-indigo-600" />
+                                        Equipment Verification
+                                    </h3>
+                                    <div className="text-sm text-gray-600">
+                                        {verificationItems.filter(item => item.is_verified).length}/{verificationItems.length} verified
+                                    </div>
+                                </div>
+
+                                {verificationItems.length === 0 ? (
+                                    <div className="text-center py-8">
+                                        <Package className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                                        <p className="text-gray-600">No equipment to verify</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        {verificationItems.map((item, index) => (
+                                            <div 
+                                                key={item.equipment_id}
+                                                className={`border-2 rounded-xl p-4 transition-all duration-200 ${
+                                                    item.is_verified 
+                                                        ? 'border-green-300 bg-green-50' 
+                                                        : item.is_mandatory 
+                                                            ? 'border-red-300 bg-red-50' 
+                                                            : 'border-gray-200 bg-white'
+                                                }`}
+                                            >
+                                                <div className="flex items-start justify-between">
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center space-x-3 mb-3">
+                                                            <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${
+                                                                item.is_verified 
+                                                                    ? 'bg-green-100' 
+                                                                    : 'bg-gray-100'
+                                                            }`}>
+                                                                {item.is_verified ? (
+                                                                    <CheckCircle className="h-5 w-5 text-green-600" />
+                                                                ) : (
+                                                                    <Package className="h-5 w-5 text-gray-600" />
+                                                                )}
+                                                            </div>
+                                                            <div className="flex-1">
+                                                                <h4 className="font-semibold text-gray-900 flex items-center">
+                                                                    {item.equipment_name}
+                                                                    {item.is_mandatory && (
+                                                                        <span className="ml-2 px-2 py-1 bg-red-100 text-red-800 text-xs font-bold rounded">
+                                                                            MANDATORY
+                                                                        </span>
+                                                                    )}
+                                                                </h4>
+                                                                <p className="text-sm text-gray-600">
+                                                                    Code: {item.equipment_code || 'N/A'}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Quantity Management */}
+                                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                                            <div className="text-center p-3 bg-blue-50 rounded-lg">
+                                                                <div className="text-lg font-bold text-blue-600">
+                                                                    {item.borrowed_quantity}
+                                                                </div>
+                                                                <div className="text-xs text-blue-600 font-medium">
+                                                                    BORROWED
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="text-center p-3 bg-white rounded-lg border">
+                                                                <div className="flex items-center justify-center space-x-2">
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            const newQty = Math.max(0, item.returned_quantity - 1);
+                                                                            const newItems = [...verificationItems];
+                                                                            newItems[index].returned_quantity = newQty;
+                                                                            setVerificationItems(newItems);
+                                                                            updateVerificationItem(
+                                                                                selectedCheckout.id,
+                                                                                item.equipment_id,
+                                                                                newQty,
+                                                                                item.condition_notes,
+                                                                                newQty > 0
+                                                                            );
+                                                                        }}
+                                                                        className="p-1 bg-gray-200 hover:bg-gray-300 rounded"
+                                                                    >
+                                                                        <Minus className="h-3 w-3" />
+                                                                    </button>
+                                                                    
+                                                                    <span className="text-lg font-bold text-gray-900 min-w-[3rem] text-center">
+                                                                        {item.returned_quantity}
+                                                                    </span>
+                                                                    
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            const newQty = Math.min(item.borrowed_quantity, item.returned_quantity + 1);
+                                                                            const newItems = [...verificationItems];
+                                                                            newItems[index].returned_quantity = newQty;
+                                                                            setVerificationItems(newItems);
+                                                                            updateVerificationItem(
+                                                                                selectedCheckout.id,
+                                                                                item.equipment_id,
+                                                                                newQty,
+                                                                                item.condition_notes,
+                                                                                newQty > 0
+                                                                            );
+                                                                        }}
+                                                                        className="p-1 bg-indigo-200 hover:bg-indigo-300 rounded"
+                                                                    >
+                                                                        <Plus className="h-3 w-3" />
+                                                                    </button>
+                                                                </div>
+                                                                <div className="text-xs text-gray-600 font-medium mt-1">
+                                                                    RETURNED
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="text-center p-3 bg-red-50 rounded-lg">
+                                                                <div className={`text-lg font-bold ${
+                                                                    item.borrowed_quantity - item.returned_quantity > 0 
+                                                                        ? 'text-red-600' 
+                                                                        : 'text-green-600'
+                                                                }`}>
+                                                                    {item.borrowed_quantity - item.returned_quantity}
+                                                                </div>
+                                                                <div className="text-xs text-red-600 font-medium">
+                                                                    MISSING
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Condition Notes */}
+                                                        <div className="mb-3">
+                                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                                Condition Notes (Optional)
+                                                            </label>
+                                                            <textarea
+                                                                value={item.condition_notes}
+                                                                onChange={(e) => {
+                                                                    const newNotes = e.target.value;
+                                                                    const newItems = [...verificationItems];
+                                                                    newItems[index].condition_notes = newNotes;
+                                                                    setVerificationItems(newItems);
+                                                                    
+                                                                    // Debounced update
+                                                                    if (item.is_verified) {
+                                                                        updateVerificationItem(
+                                                                            selectedCheckout.id,
+                                                                            item.equipment_id,
+                                                                            item.returned_quantity,
+                                                                            newNotes,
+                                                                            true
+                                                                        );
+                                                                    }
+                                                                }}
+                                                                placeholder="e.g., Good condition, minor scratches, working properly..."
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                                rows={2}
+                                                            />
+                                                        </div>
+
+                                                        {/* Verification Toggle */}
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center space-x-3">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={item.is_verified}
+                                                                    onChange={(e) => {
+                                                                        const isChecked = e.target.checked;
+                                                                        const newItems = [...verificationItems];
+                                                                        newItems[index].is_verified = isChecked;
+                                                                        
+                                                                        // Auto-set returned quantity to borrowed if checking
+                                                                        if (isChecked && item.returned_quantity === 0) {
+                                                                            newItems[index].returned_quantity = item.borrowed_quantity;
+                                                                        }
+                                                                        
+                                                                        setVerificationItems(newItems);
+                                                                        
+                                                                        updateVerificationItem(
+                                                                            selectedCheckout.id,
+                                                                            item.equipment_id,
+                                                                            isChecked ? newItems[index].returned_quantity : 0,
+                                                                            item.condition_notes,
+                                                                            isChecked
+                                                                        );
+                                                                    }}
+                                                                    className="h-5 w-5 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                                                                />
+                                                                <label className="text-sm font-medium text-gray-900">
+                                                                    I verify this item has been returned
+                                                                </label>
+                                                            </div>
+                                                            
+                                                            <div className="text-xs text-gray-500">
+                                                                {item.equipment_unit}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Summary & Actions */}
+                            <div className="mt-8 bg-white border border-gray-200 rounded-xl p-6">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-4">Verification Summary</h3>
+                                
+                                {(() => {
+                                    const progress = getVerificationProgress(verificationItems);
+                                    const quantityGap = getTotalQuantityGap(verificationItems);
+                                    
+                                    return (
+                                        <div className="space-y-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                <div className="text-center p-4 bg-blue-50 rounded-lg">
+                                                    <div className="text-2xl font-bold text-blue-600">{progress.verified}</div>
+                                                    <div className="text-sm text-blue-600">Items Verified</div>
+                                                    <div className="text-xs text-gray-500">out of {progress.total}</div>
+                                                </div>
+                                                
+                                                <div className="text-center p-4 bg-green-50 rounded-lg">
+                                                    <div className="text-2xl font-bold text-green-600">{progress.verifiedMandatory}</div>
+                                                    <div className="text-sm text-green-600">Mandatory OK</div>
+                                                    <div className="text-xs text-gray-500">out of {progress.mandatory}</div>
+                                                </div>
+                                                
+                                                <div className="text-center p-4 bg-red-50 rounded-lg">
+                                                    <div className="text-2xl font-bold text-red-600">{quantityGap}</div>
+                                                    <div className="text-sm text-red-600">Missing Items</div>
+                                                    <div className="text-xs text-gray-500">quantity gap</div>
+                                                </div>
+                                            </div>
+
+                                            {/* Action Buttons */}
+                                            <div className="flex justify-end space-x-4 pt-4 border-t">
+                                                <button
+                                                    onClick={() => {
+                                                        setShowReportModal(true);
+                                                    }}
+                                                    className="flex items-center space-x-2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200 transition-colors"
                                                 >
-                                                    <Check className="h-4 w-4" />
-                                                    <span>Approve Return</span>
+                                                    <Flag className="h-4 w-4" />
+                                                    <span>Add Report</span>
                                                 </button>
-                                                <button 
-                                                    onClick={() => { 
-                                                        setShowDetailModal(false); 
-                                                        setShowDeleteConfirm(selectedCheckout.id);
-                                                    }} 
-                                                    disabled={isProcessing} 
-                                                    className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+
+                                                <button
+                                                    onClick={() => handleRejectReturn(selectedCheckout.id)}
+                                                    disabled={processingIds.has(selectedCheckout.id)}
+                                                    className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
                                                 >
                                                     <X className="h-4 w-4" />
                                                     <span>Reject Return</span>
                                                 </button>
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
+
+                                                <button
+                                                    onClick={() => handleApproveReturn(selectedCheckout.id)}
+                                                    disabled={!progress.canApprove || processingIds.has(selectedCheckout.id)}
+                                                    className="flex items-center space-x-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                                                >
+                                                    {processingIds.has(selectedCheckout.id) ? (
+                                                        <RefreshCw className="h-4 w-4 animate-spin" />
+                                                    ) : (
+                                                        <CheckCircle className="h-4 w-4" />
+                                                    )}
+                                                    <span>Approve Return</span>
+                                                </button>
+                                            </div>
+
+                                            {/* Approval Requirements */}
+                                            {!progress.canApprove && (
+                                                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                                                    <div className="flex items-center">
+                                                        <AlertTriangle className="h-5 w-5 text-red-600 mr-3" />
+                                                        <div>
+                                                            <p className="font-medium text-red-800">Cannot approve yet</p>
+                                                            <p className="text-sm text-red-600">
+                                                                Please verify all {progress.mandatory - progress.verifiedMandatory} remaining mandatory items before approval.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
                         </div>
                     </div>
-                );
-            })()}
+                </div>
+            )}
 
-            {/* Delete Confirmation Modal */}
+            {/* ===== REPORT MODAL ===== */}
+            {showReportModal && selectedCheckout && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="text-lg font-semibold text-gray-900">Add Issue Report</h3>
+                            <button
+                                onClick={() => setShowReportModal(false)}
+                                className="text-gray-400 hover:text-gray-600"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Report Title
+                                </label>
+                                <input
+                                    type="text"
+                                    value={reportData.title}
+                                    onChange={(e) => setReportData(prev => ({ ...prev, title: e.target.value }))}
+                                    placeholder="Brief description of the issue"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Description *
+                                </label>
+                                <textarea
+                                    value={reportData.description}
+                                    onChange={(e) => setReportData(prev => ({ ...prev, description: e.target.value }))}
+                                    placeholder="Detailed description of the issue..."
+                                    rows={4}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Severity Level
+                                </label>
+                                <select
+                                    value={reportData.severity}
+                                    onChange={(e) => setReportData(prev => ({ ...prev, severity: e.target.value as any }))}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                >
+                                    <option value="minor">Minor - Small issue</option>
+                                    <option value="major">Major - Significant problem</option>
+                                    <option value="critical">Critical - Serious violation</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end space-x-3 mt-6">
+                            <button
+                                onClick={() => setShowReportModal(false)}
+                                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    if (!reportData.description.trim()) {
+                                        toast.error('Description is required');
+                                        return;
+                                    }
+
+                                    try {
+                                        const { error } = await supabase
+                                            .from('checkout_violations')
+                                            .insert({
+                                                checkout_id: selectedCheckout.id,
+                                                user_id: selectedCheckout.user_id,
+                                                violation_type: 'other',
+                                                severity: reportData.severity,
+                                                title: reportData.title || 'Validation Report',
+                                                description: reportData.description,
+                                                reported_by: profile?.id,
+                                                status: 'active'
+                                            });
+
+                                        if (error) throw error;
+
+                                        toast.success('Report added successfully');
+                                        setShowReportModal(false);
+                                        setReportData({ title: '', description: '', severity: 'minor' });
+                                        fetchCheckouts();
+                                    } catch (error: any) {
+                                        console.error('Error adding report:', error);
+                                        toast.error(`Failed to add report: ${error.message}`);
+                                    }
+                                }}
+                                disabled={!reportData.description.trim()}
+                                className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50"
+                            >
+                                Add Report
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ===== DELETE CONFIRMATION ===== */}
             {showDeleteConfirm && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-lg p-6 max-w-sm w-full">
@@ -1274,113 +1281,33 @@ const ValidationQueue: React.FC = () => {
                             <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
                                 <AlertTriangle className="h-5 w-5 text-red-600" />
                             </div>
-                            <h3 className="text-lg font-bold text-gray-900">Confirm Deletion</h3>
+                            <h3 className="text-lg font-bold text-gray-900">Reject Return</h3>
                         </div>
-                        <p className="text-sm text-gray-600 mb-2">Are you sure you want to delete this checkout?</p>
-                        <p className="text-sm text-red-600 font-medium mb-6">
-                            This action cannot be undone. All associated data including reports and verification status will be permanently removed.
+                        <p className="text-sm text-gray-600 mb-6">
+                            Are you sure you want to reject this return? All verified items will be reverted and the user will need to return them again.
                         </p>
                         <div className="flex justify-end space-x-3">
-                            <button 
-                                onClick={() => setShowDeleteConfirm(null)} 
+                            <button
+                                onClick={() => setShowDeleteConfirm(null)}
                                 className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
                             >
                                 Cancel
                             </button>
-                            <button 
-                                onClick={() => { 
-                                    if(showDeleteConfirm) handleDeleteCheckout(showDeleteConfirm); 
-                                }} 
-                                disabled={processingIds.has(showDeleteConfirm || '')} 
-                                className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                            <button
+                                onClick={() => {
+                                    if (showDeleteConfirm) {
+                                        handleRejectReturn(showDeleteConfirm);
+                                    }
+                                }}
+                                disabled={processingIds.has(showDeleteConfirm || '')}
+                                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
                             >
-                                <Trash2 className="h-4 w-4" />
-                                <span>
-                                    {processingIds.has(showDeleteConfirm || '') ? 'Deleting...' : 'Delete Checkout'}
-                                </span>
+                                {processingIds.has(showDeleteConfirm || '') ? 'Processing...' : 'Reject Return'}
                             </button>
                         </div>
                     </div>
                 </div>
             )}
-
-            {/* Report Modal */}
-            {showReportModal && selectedCheckoutId && (() => {
-                const selectedCheckout = checkouts.find(c => c.id === selectedCheckoutId);
-                if(!selectedCheckout) return null;
-
-                const isProcessing = processingIds.has(selectedCheckout.id);
-
-                return (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-                            <div className="flex justify-between items-center pb-4 border-b border-gray-200">
-                                <h3 className="text-lg font-bold text-gray-900">
-                                    {selectedCheckout.has_report ? 'Update Report' : 'Add Report'}
-                                </h3>
-                                <button 
-                                    onClick={() => setShowReportModal(false)} 
-                                    className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100"
-                                >
-                                    <X className="h-5 w-5"/>
-                                </button>
-                            </div>
-                            <div className="space-y-4 mt-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-                                    <input 
-                                        type="text"
-                                        value={reportTitle} 
-                                        onChange={(e) => setReportTitle(e.target.value)} 
-                                        placeholder="Enter report title (optional)"
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
-                                    <textarea 
-                                        value={reportDescription} 
-                                        onChange={(e) => setReportDescription(e.target.value)} 
-                                        rows={4} 
-                                        placeholder="Describe the issue or observation..."
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Severity</label>
-                                    <select 
-                                        value={reportSeverity} 
-                                        onChange={(e) => setReportSeverity(e.target.value as any)} 
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                                    >
-                                        <option value="minor">Minor - Small issue or note</option>
-                                        <option value="major">Major - Significant problem</option>
-                                        <option value="critical">Critical - Serious violation</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div className="mt-6 flex justify-end space-x-3 pt-4 border-t">
-                                <button 
-                                    onClick={() => setShowReportModal(false)} 
-                                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                                >
-                                    Cancel
-                                </button>
-                                <button 
-                                    onClick={handleAddReport} 
-                                    disabled={!reportDescription || isProcessing} 
-                                    className="flex items-center justify-center space-x-2 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50"
-                                >
-                                    <Flag className="h-4 w-4" />
-                                    <span>
-                                        {isProcessing ? 'Saving...' : (selectedCheckout.has_report ? 'Update Report' : 'Add Report')}
-                                    </span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                );
-            })()}
         </div>
     );
 };
