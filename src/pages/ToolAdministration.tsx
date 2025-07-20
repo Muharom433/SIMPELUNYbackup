@@ -274,160 +274,186 @@ const ToolAdministration: React.FC = () => {
     };
 
     const fetchLendingDetails = async (equipmentId: string) => {
-        try {
-            setLoadingLending(true);
+  try {
+    setLoadingLending(true);
+    
+    // ✅ FETCH SEMUA LENDING (Termasuk yang completed/returned)
+    const { data: lendingData, error: lendingError } = await supabase
+      .from('lending_tool')
+      .select('*')
+      .contains('id_equipment', [equipmentId])
+      .in('status', ['borrow', 'completed']) // ✅ TERMASUK yang sudah completed
+      .order('created_at', { ascending: false });
+
+    if (lendingError) throw lendingError;
+
+    // ✅ FETCH SEMUA BOOKINGS (Termasuk yang completed)  
+    const { data: bookingData, error: bookingError } = await supabase
+      .from('bookings')
+      .select('*, user:users(id, full_name, identity_number, email, phone_number)')
+      .in('status', ['approved', 'completed']) // ✅ TERMASUK yang sudah completed
+      .contains('equipment_requested', [equipmentId])
+      .order('created_at', { ascending: false });
+
+    if (bookingError) throw bookingError;
+
+    let allLendingDetails: LendingDetail[] = [];
+
+    // ✅ PROCESS LENDING TOOLS - CEK QUANTITY GAP
+    if (lendingData && lendingData.length > 0) {
+      const detailedLendings = await Promise.all(
+        lendingData.map(async (lending) => {
+          const equipmentIndex = lending.id_equipment.findIndex((id: string) => id === equipmentId);
+          if (equipmentIndex === -1) return null;
+
+          const borrowedQty = lending.qty[equipmentIndex] || 0;
+          if (borrowedQty === 0) return null;
+
+          let lendingDetail: LendingDetail = {
+            id: lending.id,
+            date: lending.date,
+            borrowed_quantity: borrowedQty,
+            returned_quantity: 0,
+            missing_quantity: borrowedQty, // Default: semua missing
+            status: lending.status, // Keep original status
+            created_at: lending.created_at,
+            source: 'lending_tool'
+          };
+
+          // Fetch user
+          if (lending.id_user) {
+            const { data: userData } = await supabase
+              .from('users')
+              .select('id, full_name, identity_number, email, phone_number')
+              .eq('id', lending.id_user)
+              .single();
             
-            // Fetch all lending tool records for this equipment
-            const { data: lendingData, error: lendingError } = await supabase
-                .from('lending_tool')
-                .select('*')
-                .contains('id_equipment', [equipmentId])
-                .order('created_at', { ascending: false });
+            if (userData) lendingDetail.user = userData;
+          }
 
-            if (lendingError) throw lendingError;
+          // ✅ KUNCI: CEK ACTUAL RETURN QUANTITY dari checkout_items
+          const { data: checkoutData } = await supabase
+            .from('checkouts')
+            .select(`
+              id, status, checkout_date, expected_return_date,
+              checkout_items!inner(equipment_id, quantity)
+            `)
+            .eq('lendingTool_id', lending.id)
+            .eq('checkout_items.equipment_id', equipmentId)
+            .order('created_at', { ascending: false })
+            .limit(1);
 
-            // Fetch approved bookings that include this equipment
-            const { data: bookingData, error: bookingError } = await supabase
-                .from('bookings')
-                .select('*, user:users(id, full_name, identity_number, email, phone_number)')
-                .eq('status', 'approved')
-                .contains('equipment_requested', [equipmentId])
-                .order('created_at', { ascending: false });
-
-            if (bookingError) throw bookingError;
-
-            let allLendingDetails: LendingDetail[] = [];
-
-            // Process lending_tool records
-            if (lendingData && lendingData.length > 0) {
-                const detailedLendings = await Promise.all(
-                    lendingData.map(async (lending) => {
-                        let lendingDetail: LendingDetail = {
-                            id: lending.id,
-                            date: lending.date,
-                            borrowed_quantity: 0,
-                            returned_quantity: 0,
-                            missing_quantity: 0,
-                            status: 'active',
-                            created_at: lending.created_at,
-                            source: 'lending_tool'
-                        };
-
-                        // Find the equipment index in the arrays
-                        const equipmentIndex = lending.id_equipment.findIndex((id: string) => id === equipmentId);
-                        if (equipmentIndex !== -1) {
-                            lendingDetail.borrowed_quantity = lending.qty[equipmentIndex] || 0;
-                        }
-
-                        // Fetch user information
-                        if (lending.id_user) {
-                            const { data: userData } = await supabase
-                                .from('users')
-                                .select('id, full_name, identity_number, email, phone_number')
-                                .eq('id', lending.id_user)
-                                .single();
-                            
-                            if (userData) {
-                                lendingDetail.user = userData;
-                            }
-                        }
-
-                        // Fetch checkout information to determine status and returned quantities
-                        const { data: checkoutData } = await supabase
-                            .from('checkouts')
-                            .select('*')
-                            .eq('lendingTool_id', lending.id)
-                            .eq('type', 'things')
-                            .order('created_at', { ascending: false })
-                            .limit(1);
-
-                        if (checkoutData && checkoutData.length > 0) {
-                            const checkout = checkoutData[0];
-                            lendingDetail.checkout = {
-                                id: checkout.id,
-                                checkout_date: checkout.checkout_date,
-                                expected_return_date: checkout.expected_return_date,
-                                status: checkout.status
-                            };
-
-                            // Fetch checkout items to get returned quantities
-                            const { data: checkoutItems } = await supabase
-                                .from('checkout_items')
-                                .select('*')
-                                .eq('checkout_id', checkout.id)
-                                .eq('equipment_id', equipmentId);
-
-                            if (checkoutItems && checkoutItems.length > 0) {
-                                const item = checkoutItems[0];
-                                lendingDetail.returned_quantity = item.quantity || 0;
-                                lendingDetail.missing_quantity = lendingDetail.borrowed_quantity - lendingDetail.returned_quantity;
-                                
-                                if (lendingDetail.missing_quantity <= 0) {
-                                    lendingDetail.status = 'returned';
-                                    lendingDetail.missing_quantity = 0;
-                                }
-                            } else {
-                                lendingDetail.returned_quantity = 0;
-                                lendingDetail.missing_quantity = lendingDetail.borrowed_quantity;
-                            }
-                        } else {
-                            lendingDetail.returned_quantity = 0;
-                            lendingDetail.missing_quantity = lendingDetail.borrowed_quantity;
-                            lendingDetail.status = 'active';
-                        }
-
-                        return lendingDetail;
-                    })
-                );
-                
-                allLendingDetails = [...allLendingDetails, ...detailedLendings];
-            }
-
-            // Process booking records
-            if (bookingData && bookingData.length > 0) {
-                const bookingLendings = bookingData.map((booking) => {
-                    const lendingDetail: LendingDetail = {
-                        id: `booking-${booking.id}`,
-                        date: booking.start_time,
-                        borrowed_quantity: 1,
-                        returned_quantity: 0,
-                        missing_quantity: 1,
-                        status: 'active',
-                        created_at: booking.created_at,
-                        source: 'booking',
-                        user: booking.user || (booking.user_info ? {
-                            id: 'temp',
-                            full_name: booking.user_info.full_name,
-                            identity_number: booking.user_info.identity_number,
-                            email: booking.user_info.email || null,
-                            phone_number: booking.user_info.phone_number || null
-                        } : undefined),
-                        checkout: {
-                            id: `booking-checkout-${booking.id}`,
-                            checkout_date: booking.start_time,
-                            expected_return_date: booking.end_time,
-                            status: 'active'
-                        }
-                    };
-
-                    return lendingDetail;
-                });
-
-                allLendingDetails = [...allLendingDetails, ...bookingLendings];
-            }
-
-            // Filter to show only records with missing items
-            const missingItemsOnly = allLendingDetails.filter(detail => detail.missing_quantity > 0);
+          if (checkoutData && checkoutData.length > 0) {
+            const checkout = checkoutData[0];
+            const returnedItem = checkout.checkout_items?.[0];
             
-            setLendingDetails(missingItemsOnly);
-        } catch (error) {
-            console.error('Error fetching lending details:', error);
-            toast.error(getText('Failed to load lending details', 'Gagal memuat detail peminjaman'));
-            setLendingDetails([]);
-        } finally {
-            setLoadingLending(false);
-        }
-    };
+            if (returnedItem && returnedItem.quantity >= 0) {
+              lendingDetail.returned_quantity = returnedItem.quantity;
+              lendingDetail.missing_quantity = borrowedQty - returnedItem.quantity;
+              
+              lendingDetail.checkout = {
+                id: checkout.id,
+                checkout_date: checkout.checkout_date,
+                expected_return_date: checkout.expected_return_date,
+                status: checkout.status
+              };
+            }
+          }
+
+          // ✅ CRITICAL: Hanya return jika ADA QUANTITY GAP
+          // Tidak peduli status completed/returned, yang penting ada gap!
+          return lendingDetail.missing_quantity > 0 ? lendingDetail : null;
+        })
+      );
+      
+      allLendingDetails = [...allLendingDetails, ...detailedLendings.filter(Boolean)];
+    }
+
+    // ✅ PROCESS BOOKINGS - CEK QUANTITY GAP
+    if (bookingData && bookingData.length > 0) {
+      const bookingLendings = await Promise.all(
+        bookingData.map(async (booking) => {
+          const equipmentIndex = booking.equipment_requested?.findIndex(id => id === equipmentId);
+          if (equipmentIndex === -1) return null;
+
+          const borrowedQty = booking.equipment_quantities?.[equipmentIndex] || 1;
+          if (borrowedQty === 0) return null;
+
+          let lendingDetail: LendingDetail = {
+            id: `booking-${booking.id}`,
+            date: booking.start_time,
+            borrowed_quantity: borrowedQty,
+            returned_quantity: 0,
+            missing_quantity: borrowedQty, // Default: semua missing
+            status: booking.status, // Keep original status
+            created_at: booking.created_at,
+            source: 'booking',
+            user: booking.user,
+            checkout: {
+              id: `booking-checkout-${booking.id}`,
+              checkout_date: booking.start_time,
+              expected_return_date: booking.end_time,
+              status: booking.status
+            }
+          };
+
+          // ✅ KUNCI: CEK ACTUAL RETURN QUANTITY dari checkout_items
+          const { data: checkoutData } = await supabase
+            .from('checkouts')
+            .select(`
+              id, status, checkout_date, expected_return_date,
+              checkout_items!inner(equipment_id, quantity)
+            `)
+            .eq('booking_id', booking.id)
+            .eq('checkout_items.equipment_id', equipmentId)
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          if (checkoutData && checkoutData.length > 0) {
+            const checkout = checkoutData[0];
+            const returnedItem = checkout.checkout_items?.[0];
+            
+            if (returnedItem && returnedItem.quantity >= 0) {
+              lendingDetail.returned_quantity = returnedItem.quantity;
+              lendingDetail.missing_quantity = borrowedQty - returnedItem.quantity;
+            }
+          }
+
+          // ✅ CRITICAL: Hanya return jika ADA QUANTITY GAP
+          // Meskipun status completed, tetap cek apakah ada kesenjangan
+          return lendingDetail.missing_quantity > 0 ? lendingDetail : null;
+        })
+      );
+
+      allLendingDetails = [...allLendingDetails, ...bookingLendings.filter(Boolean)];
+    }
+
+    // ✅ FINAL FILTER: HANYA yang ada QUANTITY GAP (terlepas dari status)
+    const quantityGapOnly = allLendingDetails.filter(detail => 
+      detail && detail.missing_quantity > 0
+    );
+    
+    console.log(`🚨 Equipment ${equipmentId}: Found ${quantityGapOnly.length} records with quantity gaps`);
+    console.log('Quantity gaps details:', quantityGapOnly.map(d => ({
+      id: d.id,
+      user: d.user?.full_name,
+      borrowed: d.borrowed_quantity,
+      returned: d.returned_quantity,
+      missing: d.missing_quantity,
+      status: d.status,
+      source: d.source
+    })));
+    
+    setLendingDetails(quantityGapOnly);
+    
+  } catch (error) {
+    console.error('Error detecting quantity gaps:', error);
+    toast.error(getText('Failed to detect quantity gaps', 'Gagal mendeteksi kesenjangan jumlah'));
+    setLendingDetails([]);
+  } finally {
+    setLoadingLending(false);
+  }
+};
 
     const handleSubmit = async (data: EquipmentForm) => {
         try {
