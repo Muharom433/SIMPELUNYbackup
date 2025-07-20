@@ -110,8 +110,12 @@ const BookingManagement: React.FC = () => {
           schema: 'public', 
           table: 'bookings'
         }, 
-        () => {
-          fetchBookings();
+        (payload) => {
+          try {
+            fetchBookings();
+          } catch (error) {
+            console.error('Error in real-time subscription:', error);
+          }
         }
       )
       .subscribe();
