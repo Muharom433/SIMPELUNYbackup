@@ -104,158 +104,14 @@ const ValidationQueue: React.FC = () => {
         severity: 'minor' as 'minor' | 'major' | 'critical'
     });
 
-    // ===== FETCH CHECKOUTS WITH SMART FILTERING =====
-    const fetchCheckouts = async () => {
-    try {
-        setLoading(true);
-        
-        let processedData: CheckoutWithDetails[] = [];
-        
-        if (activeTab === 'room') {
-            // ✅ PERBAIKAN: Pastikan equipment_quantities dimuat
-            const { data: checkoutData, error } = await supabase
-                .from('checkouts')
-                .select(`
-                    *,
-                    user:users!checkouts_user_id_fkey(
-                        id, full_name, identity_number, phone_number, email
-                    ),
-                    booking:bookings!checkouts_booking_id_fkey(
-                        id, purpose, equipment_requested, equipment_quantities,
-                        room:rooms(
-                            name, code,
-                            department:departments(name)
-                        )
-                    )
-                `)
-                .eq('type', 'room')
-                .eq('status', 'returned')
-                .order('created_at', { ascending: false });
-
-            if (error) throw error;
-            
-            // ✅ DEBUG: Log setiap booking data
-            checkoutData?.forEach(checkout => {
-                if (checkout.booking) {
-                    console.log('📋 Booking Data:', {
-                        id: checkout.booking.id,
-                        user: checkout.user?.full_name,
-                        equipment_requested: checkout.booking.equipment_requested,
-                        equipment_quantities: checkout.booking.equipment_quantities,
-                        equipmentCount: checkout.booking.equipment_requested?.length || 0,
-                        quantityCount: checkout.booking.equipment_quantities?.length || 0
-                    });
-
-                    // ✅ VALIDASI: Pastikan array length konsisten
-                    const equipmentCount = checkout.booking.equipment_requested?.length || 0;
-                    const quantityCount = checkout.booking.equipment_quantities?.length || 0;
-                    
-                    if (equipmentCount !== quantityCount) {
-                        console.warn(`⚠️ Array length mismatch for booking ${checkout.booking.id}:`, {
-                            equipment_requested: equipmentCount,
-                            equipment_quantities: quantityCount
-                        });
-                    }
-
-                    // ✅ LOG: Detail setiap equipment dan quantity
-                    checkout.booking.equipment_requested?.forEach((equipmentId: string, index: number) => {
-                        const quantity = checkout.booking.equipment_quantities?.[index] || 1;
-                        console.log(`   📦 Equipment[${index}]: ${equipmentId} → Quantity: ${quantity}`);
-                    });
-                }
-            });
-            
-            processedData = checkoutData || [];
-            
-        } else {
-            // Equipment checkouts (tetap sama)
-            const { data: checkoutData, error } = await supabase
-                .from('checkouts')
-                .select(`
-                    *,
-                    user:users!checkouts_user_id_fkey(
-                        id, full_name, identity_number, phone_number, email
-                    ),
-                    lendingTool:lending_tool!checkouts_lendingTool_id_fkey(
-                        id, id_equipment, qty, date
-                    )
-                `)
-                .eq('type', 'things')
-                .eq('status', 'returned')
-                .order('created_at', { ascending: false });
-
-            if (error) throw error;
-            
-            processedData = await Promise.all(
-                (checkoutData || []).map(async (checkout) => {
-                    if (checkout.lendingTool?.id_equipment) {
-                        // Debug lending tool data
-                        console.log('🔧 Lending Tool Data:', {
-                            id: checkout.lendingTool.id,
-                            user: checkout.user?.full_name,
-                            id_equipment: checkout.lendingTool.id_equipment,
-                            qty: checkout.lendingTool.qty
-                        });
-
-                        const { data: equipmentData } = await supabase
-                            .from('equipment')
-                            .select('id, name, code, category, unit')
-                            .in('id', checkout.lendingTool.id_equipment);
-                        
-                        if (equipmentData) {
-                            checkout.lendingTool.equipment_details = equipmentData.map((eq, index) => ({
-                                ...eq,
-                                borrowed_quantity: checkout.lendingTool.qty[index] || 1
-                            }));
-                        }
-                    }
-                    return checkout;
-                })
-            );
-        }
-
-        // ✅ Enhanced data processing dengan verification items
-        const enhancedData = await Promise.all(
-            processedData.map(async (checkout) => {
-                const equipment_list = await fetchEquipmentList(checkout);
-                const verification_items = await fetchVerificationItems(checkout.id, equipment_list);
-                
-                // ✅ DEBUG: Log verification items
-                console.log(`🔍 Verification items for checkout ${checkout.id}:`, 
-                    verification_items.map(item => ({
-                        equipment: item.equipment_name,
-                        borrowed: item.borrowed_quantity,
-                        returned: item.returned_quantity,
-                        missing: item.borrowed_quantity - item.returned_quantity
-                    }))
-                );
-                
-                return {
-                    ...checkout,
-                    equipment_list,
-                    verification_items
-                };
-            })
-        );
-
-        setCheckouts(enhancedData);
-        
-    } catch (error: any) {
-        console.error('Error fetching checkouts:', error);
-        toast.error(`Failed to load validation queue: ${error.message}`);
-    } finally {
-        setLoading(false);
-    }
-};
-
     // ===== FETCH EQUIPMENT LIST FOR CHECKOUT =====
     const fetchEquipmentList = async (checkout: CheckoutWithDetails): Promise<Equipment[]> => {
         try {
             let equipmentIds: string[] = [];
             
-            if (activeTab === 'room' && checkout.booking?.equipment_requested) {
+            if (checkout.type === 'room' && checkout.booking?.equipment_requested) {
                 equipmentIds = checkout.booking.equipment_requested;
-            } else if (activeTab === 'equipment' && checkout.lendingTool?.id_equipment) {
+            } else if (checkout.type === 'things' && checkout.lendingTool?.id_equipment) {
                 equipmentIds = checkout.lendingTool.id_equipment;
             }
 
@@ -275,112 +131,290 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    // ===== FETCH VERIFICATION ITEMS =====
-    const fetchVerificationItems = async (checkoutId: string, equipmentList: Equipment[]): Promise<VerificationItem[]> => {
-    try {
-        const { data: checkoutItems, error } = await supabase
-            .from('checkout_items')
-            .select('*')
-            .eq('checkout_id', checkoutId);
+    // ===== FIXED FETCH VERIFICATION ITEMS =====
+    const fetchVerificationItems = async (
+        checkoutId: string, 
+        equipmentList: Equipment[], 
+        checkout: CheckoutWithDetails
+    ): Promise<VerificationItem[]> => {
+        try {
+            const { data: checkoutItems, error } = await supabase
+                .from('checkout_items')
+                .select('*')
+                .eq('checkout_id', checkoutId);
 
-        if (error) throw error;
+            if (error) throw error;
 
-        // ✅ PERBAIKAN UTAMA: Ambil borrowed quantity yang BENAR dari booking/lending
-        return equipmentList.map(equipment => {
-            const checkoutItem = checkoutItems?.find(item => item.equipment_id === equipment.id);
-            const checkout = checkouts.find(c => c.id === checkoutId);
-            
-            let borrowedQty = 1; // Default
-            
-            if (activeTab === 'room' && checkout?.booking) {
-                // ✅ PERBAIKAN: Untuk room booking, ambil quantity dari equipment_quantities array
-                console.log('🔍 Room Booking Debug:', {
-                    equipmentId: equipment.id,
+            console.log('🔍 fetchVerificationItems Debug:', {
+                checkoutId,
+                checkoutType: checkout.type,
+                equipmentList: equipmentList.map(eq => ({ id: eq.id, name: eq.name })),
+                booking: checkout.booking ? {
                     equipment_requested: checkout.booking.equipment_requested,
                     equipment_quantities: checkout.booking.equipment_quantities
-                });
-
-                // ✅ KUNCI: Cari SEMUA index dimana equipment ini muncul
-                const equipmentIndices: number[] = [];
-                checkout.booking.equipment_requested?.forEach((id: string, index: number) => {
-                    if (id === equipment.id) {
-                        equipmentIndices.push(index);
-                    }
-                });
-
-                console.log(`📍 Equipment ${equipment.id} found at indices:`, equipmentIndices);
-
-                // ✅ PERBAIKAN: Jumlahkan quantity dari SEMUA kemunculan
-                borrowedQty = equipmentIndices.reduce((total, index) => {
-                    const qty = checkout.booking.equipment_quantities?.[index] || 1;
-                    console.log(`   Index ${index}: +${qty}`);
-                    return total + qty;
-                }, 0);
-
-                // Fallback jika tidak ada di equipment_quantities
-                if (borrowedQty === 0 && equipmentIndices.length > 0) {
-                    borrowedQty = equipmentIndices.length; // Default 1 per kemunculan
-                }
-
-                console.log(`📊 Final borrowed quantity for ${equipment.name}: ${borrowedQty}`);
-                
-            } else if (activeTab === 'equipment' && checkout?.lendingTool) {
-                // ✅ PERBAIKAN: Untuk equipment lending, ambil dari qty array
-                console.log('🔧 Equipment Lending Debug:', {
-                    equipmentId: equipment.id,
+                } : null,
+                lendingTool: checkout.lendingTool ? {
                     id_equipment: checkout.lendingTool.id_equipment,
                     qty: checkout.lendingTool.qty
-                });
-
-                const equipmentIndices: number[] = [];
-                checkout.lendingTool.id_equipment?.forEach((id: string, index: number) => {
-                    if (id === equipment.id) {
-                        equipmentIndices.push(index);
-                    }
-                });
-
-                console.log(`📍 Equipment ${equipment.id} found at indices:`, equipmentIndices);
-
-                borrowedQty = equipmentIndices.reduce((total, index) => {
-                    const qty = checkout.lendingTool.qty?.[index] || 1;
-                    console.log(`   Index ${index}: +${qty}`);
-                    return total + qty;
-                }, 0);
-
-                if (borrowedQty === 0 && equipmentIndices.length > 0) {
-                    borrowedQty = equipmentIndices.length;
-                }
-
-                console.log(`📊 Final borrowed quantity for ${equipment.name}: ${borrowedQty}`);
-            }
-
-            const verificationItem: VerificationItem = {
-                equipment_id: equipment.id,
-                equipment_name: equipment.name,
-                equipment_code: equipment.code,
-                equipment_unit: equipment.unit || 'pcs',
-                borrowed_quantity: borrowedQty, // ✅ BENAR: gunakan quantity yang sudah dihitung
-                returned_quantity: checkoutItem?.quantity || 0,
-                is_verified: !!checkoutItem,
-                condition_notes: checkoutItem?.condition_notes || '',
-                is_mandatory: equipment.is_mandatory
-            };
-
-            console.log('✅ Verification Item Created:', {
-                equipment: equipment.name,
-                borrowed: verificationItem.borrowed_quantity,
-                returned: verificationItem.returned_quantity,
-                missing: verificationItem.borrowed_quantity - verificationItem.returned_quantity
+                } : null
             });
 
-            return verificationItem;
-        });
-        
-    } catch (error) {
-        console.error('Error fetching verification items:', error);
-        return [];
-    }
-};
+            return equipmentList.map(equipment => {
+                const checkoutItem = checkoutItems?.find(item => item.equipment_id === equipment.id);
+                
+                let borrowedQty = 1; // Default
+                
+                if (checkout.type === 'room' && checkout.booking) {
+                    // ✅ PERBAIKAN: Untuk room booking, ambil quantity dari equipment_quantities array
+                    console.log('🔍 Room Booking Debug for equipment:', equipment.name, {
+                        equipmentId: equipment.id,
+                        equipment_requested: checkout.booking.equipment_requested,
+                        equipment_quantities: checkout.booking.equipment_quantities
+                    });
+
+                    // ✅ KUNCI: Cari SEMUA index dimana equipment ini muncul
+                    const equipmentIndices: number[] = [];
+                    checkout.booking.equipment_requested?.forEach((id: string, index: number) => {
+                        if (id === equipment.id) {
+                            equipmentIndices.push(index);
+                        }
+                    });
+
+                    console.log(`📍 Equipment ${equipment.id} (${equipment.name}) found at indices:`, equipmentIndices);
+
+                    // ✅ PERBAIKAN: Jumlahkan quantity dari SEMUA kemunculan
+                    borrowedQty = equipmentIndices.reduce((total, index) => {
+                        const qty = checkout.booking.equipment_quantities?.[index] || 1;
+                        console.log(`   Index ${index}: +${qty}`);
+                        return total + qty;
+                    }, 0);
+
+                    // Fallback jika tidak ada di equipment_quantities
+                    if (borrowedQty === 0 && equipmentIndices.length > 0) {
+                        borrowedQty = equipmentIndices.length; // Default 1 per kemunculan
+                        console.log(`   Using fallback: ${borrowedQty}`);
+                    }
+
+                    console.log(`📊 Final borrowed quantity for ${equipment.name}: ${borrowedQty}`);
+                    
+                } else if (checkout.type === 'things' && checkout.lendingTool) {
+                    // ✅ PERBAIKAN: Untuk equipment lending, ambil dari qty array
+                    console.log('🔧 Equipment Lending Debug for equipment:', equipment.name, {
+                        equipmentId: equipment.id,
+                        id_equipment: checkout.lendingTool.id_equipment,
+                        qty: checkout.lendingTool.qty
+                    });
+
+                    const equipmentIndices: number[] = [];
+                    checkout.lendingTool.id_equipment?.forEach((id: string, index: number) => {
+                        if (id === equipment.id) {
+                            equipmentIndices.push(index);
+                        }
+                    });
+
+                    console.log(`📍 Equipment ${equipment.id} (${equipment.name}) found at indices:`, equipmentIndices);
+
+                    borrowedQty = equipmentIndices.reduce((total, index) => {
+                        const qty = checkout.lendingTool.qty?.[index] || 1;
+                        console.log(`   Index ${index}: +${qty}`);
+                        return total + qty;
+                    }, 0);
+
+                    if (borrowedQty === 0 && equipmentIndices.length > 0) {
+                        borrowedQty = equipmentIndices.length;
+                        console.log(`   Using fallback: ${borrowedQty}`);
+                    }
+
+                    console.log(`📊 Final borrowed quantity for ${equipment.name}: ${borrowedQty}`);
+                }
+
+                const verificationItem: VerificationItem = {
+                    equipment_id: equipment.id,
+                    equipment_name: equipment.name,
+                    equipment_code: equipment.code,
+                    equipment_unit: equipment.unit || 'pcs',
+                    borrowed_quantity: borrowedQty, // ✅ BENAR: gunakan quantity yang sudah dihitung
+                    returned_quantity: checkoutItem?.quantity || 0,
+                    is_verified: !!checkoutItem,
+                    condition_notes: checkoutItem?.condition_notes || '',
+                    is_mandatory: equipment.is_mandatory
+                };
+
+                console.log('✅ Verification Item Created:', {
+                    equipment: equipment.name,
+                    borrowed: verificationItem.borrowed_quantity,
+                    returned: verificationItem.returned_quantity,
+                    missing: verificationItem.borrowed_quantity - verificationItem.returned_quantity,
+                    verified: verificationItem.is_verified
+                });
+
+                return verificationItem;
+            });
+            
+        } catch (error) {
+            console.error('Error fetching verification items:', error);
+            return [];
+        }
+    };
+
+    // ===== FIXED FETCH CHECKOUTS =====
+    const fetchCheckouts = async () => {
+        try {
+            setLoading(true);
+            
+            let processedData: CheckoutWithDetails[] = [];
+            
+            if (activeTab === 'room') {
+                // ✅ PERBAIKAN: Pastikan equipment_quantities dimuat
+                const { data: checkoutData, error } = await supabase
+                    .from('checkouts')
+                    .select(`
+                        *,
+                        user:users!checkouts_user_id_fkey(
+                            id, full_name, identity_number, phone_number, email
+                        ),
+                        booking:bookings!checkouts_booking_id_fkey(
+                            id, purpose, equipment_requested, equipment_quantities,
+                            room:rooms(
+                                name, code,
+                                department:departments(name)
+                            )
+                        )
+                    `)
+                    .eq('type', 'room')
+                    .eq('status', 'returned')
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+                
+                // ✅ DEBUG: Log setiap booking data
+                checkoutData?.forEach(checkout => {
+                    if (checkout.booking) {
+                        console.log('📋 Booking Data:', {
+                            id: checkout.booking.id,
+                            user: checkout.user?.full_name,
+                            equipment_requested: checkout.booking.equipment_requested,
+                            equipment_quantities: checkout.booking.equipment_quantities,
+                            equipmentCount: checkout.booking.equipment_requested?.length || 0,
+                            quantityCount: checkout.booking.equipment_quantities?.length || 0
+                        });
+
+                        // ✅ VALIDASI: Pastikan array length konsisten
+                        const equipmentCount = checkout.booking.equipment_requested?.length || 0;
+                        const quantityCount = checkout.booking.equipment_quantities?.length || 0;
+                        
+                        if (equipmentCount !== quantityCount) {
+                            console.warn(`⚠️ Array length mismatch for booking ${checkout.booking.id}:`, {
+                                equipment_requested: equipmentCount,
+                                equipment_quantities: quantityCount
+                            });
+                        }
+
+                        // ✅ LOG: Detail setiap equipment dan quantity
+                        checkout.booking.equipment_requested?.forEach((equipmentId: string, index: number) => {
+                            const quantity = checkout.booking.equipment_quantities?.[index] || 1;
+                            console.log(`   📦 Equipment[${index}]: ${equipmentId} → Quantity: ${quantity}`);
+                        });
+                    }
+                });
+                
+                processedData = checkoutData || [];
+                
+            } else {
+                // Equipment checkouts
+                const { data: checkoutData, error } = await supabase
+                    .from('checkouts')
+                    .select(`
+                        *,
+                        user:users!checkouts_user_id_fkey(
+                            id, full_name, identity_number, phone_number, email
+                        ),
+                        lendingTool:lending_tool!checkouts_lendingTool_id_fkey(
+                            id, id_equipment, qty, date
+                        )
+                    `)
+                    .eq('type', 'things')
+                    .eq('status', 'returned')
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+                
+                processedData = await Promise.all(
+                    (checkoutData || []).map(async (checkout) => {
+                        if (checkout.lendingTool?.id_equipment) {
+                            // Debug lending tool data
+                            console.log('🔧 Lending Tool Data:', {
+                                id: checkout.lendingTool.id,
+                                user: checkout.user?.full_name,
+                                id_equipment: checkout.lendingTool.id_equipment,
+                                qty: checkout.lendingTool.qty
+                            });
+
+                            const { data: equipmentData } = await supabase
+                                .from('equipment')
+                                .select('id, name, code, category, unit')
+                                .in('id', checkout.lendingTool.id_equipment);
+                            
+                            if (equipmentData) {
+                                checkout.lendingTool.equipment_details = equipmentData.map((eq, index) => ({
+                                    ...eq,
+                                    borrowed_quantity: checkout.lendingTool.qty[index] || 1
+                                }));
+                            }
+                        }
+                        return checkout;
+                    })
+                );
+            }
+
+            // Department filter for department admin
+            if (profile?.role === 'department_admin' && profile.department_id) {
+                if (activeTab === 'room') {
+                    processedData = processedData.filter(checkout => 
+                        checkout.booking?.room?.department?.name
+                    );
+                }
+            }
+
+            // ✅ PERBAIKAN UTAMA: Enhanced data processing dengan verification items
+            const enhancedData = await Promise.all(
+                processedData.map(async (checkout) => {
+                    const equipment_list = await fetchEquipmentList(checkout);
+                    
+                    // ✅ KUNCI: Pass checkout data ke fetchVerificationItems
+                    const verification_items = await fetchVerificationItems(
+                        checkout.id, 
+                        equipment_list, 
+                        checkout // ✅ Pass checkout data
+                    );
+                    
+                    // ✅ DEBUG: Log verification items
+                    console.log(`🔍 Verification items for checkout ${checkout.id}:`, 
+                        verification_items.map(item => ({
+                            equipment: item.equipment_name,
+                            borrowed: item.borrowed_quantity,
+                            returned: item.returned_quantity,
+                            missing: item.borrowed_quantity - item.returned_quantity
+                        }))
+                    );
+                    
+                    return {
+                        ...checkout,
+                        equipment_list,
+                        verification_items
+                    };
+                })
+            );
+
+            setCheckouts(enhancedData);
+            
+        } catch (error: any) {
+            console.error('Error fetching checkouts:', error);
+            toast.error(`Failed to load validation queue: ${error.message}`);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     // ===== UPDATE VERIFICATION ITEM =====
     const updateVerificationItem = async (
@@ -425,11 +459,12 @@ const ValidationQueue: React.FC = () => {
                 }
             }
 
-            // Refresh verification items
+            // ✅ PERBAIKAN: Refresh verification items dengan data checkout yang lengkap
             if (selectedCheckout) {
                 const newVerificationItems = await fetchVerificationItems(
                     selectedCheckout.id, 
-                    selectedCheckout.equipment_list || []
+                    selectedCheckout.equipment_list || [],
+                    selectedCheckout // ✅ Pass checkout data
                 );
                 setVerificationItems(newVerificationItems);
             }
@@ -576,7 +611,25 @@ const ValidationQueue: React.FC = () => {
 
     useEffect(() => {
         if (selectedCheckout) {
-            setVerificationItems(selectedCheckout.verification_items || []);
+            // ✅ PERBAIKAN: Re-fetch verification items dengan data checkout yang lengkap
+            const refreshVerificationItems = async () => {
+                if (selectedCheckout.equipment_list) {
+                    const newVerificationItems = await fetchVerificationItems(
+                        selectedCheckout.id,
+                        selectedCheckout.equipment_list,
+                        selectedCheckout
+                    );
+                    setVerificationItems(newVerificationItems);
+                }
+            };
+            
+            if (selectedCheckout.verification_items && selectedCheckout.verification_items.length > 0) {
+                // Gunakan yang sudah ada
+                setVerificationItems(selectedCheckout.verification_items);
+            } else {
+                // Re-fetch dengan data yang benar
+                refreshVerificationItems();
+            }
         }
     }, [selectedCheckout]);
 
@@ -597,47 +650,46 @@ const ValidationQueue: React.FC = () => {
 
     // ===== UTILITY FUNCTIONS =====
     const getVerificationProgress = (items: VerificationItem[]) => {
-    const totalItems = items.length;
-    const verifiedItems = items.filter(item => item.is_verified).length;
-    const mandatoryItems = items.filter(item => item.is_mandatory);
-    const verifiedMandatory = mandatoryItems.filter(item => item.is_verified).length;
-    
-    // ✅ DEBUG: Log progress calculation
-    console.log('📊 Progress Calculation:', {
-        totalItems,
-        verifiedItems,
-        mandatoryCount: mandatoryItems.length,
-        verifiedMandatory,
-        items: items.map(item => ({
-            name: item.equipment_name,
-            borrowed: item.borrowed_quantity,
-            returned: item.returned_quantity,
-            verified: item.is_verified,
-            mandatory: item.is_mandatory
-        }))
-    });
-    
-    return {
-        total: totalItems,
-        verified: verifiedItems,
-        mandatory: mandatoryItems.length,
-        verifiedMandatory,
-        percentage: totalItems > 0 ? Math.round((verifiedItems / totalItems) * 100) : 0,
-        canApprove: mandatoryItems.length === verifiedMandatory
+        const totalItems = items.length;
+        const verifiedItems = items.filter(item => item.is_verified).length;
+        const mandatoryItems = items.filter(item => item.is_mandatory);
+        const verifiedMandatory = mandatoryItems.filter(item => item.is_verified).length;
+        
+        // ✅ DEBUG: Log progress calculation
+        console.log('📊 Progress Calculation:', {
+            totalItems,
+            verifiedItems,
+            mandatoryCount: mandatoryItems.length,
+            verifiedMandatory,
+            items: items.map(item => ({
+                name: item.equipment_name,
+                borrowed: item.borrowed_quantity,
+                returned: item.returned_quantity,
+                verified: item.is_verified,
+                mandatory: item.is_mandatory
+            }))
+        });
+        
+        return {
+            total: totalItems,
+            verified: verifiedItems,
+            mandatory: mandatoryItems.length,
+            verifiedMandatory,
+            percentage: totalItems > 0 ? Math.round((verifiedItems / totalItems) * 100) : 0,
+            canApprove: mandatoryItems.length === verifiedMandatory
+        };
     };
-};
-
 
     const getTotalQuantityGap = (items: VerificationItem[]) => {
-    const totalGap = items.reduce((total, item) => {
-        const gap = Math.max(0, item.borrowed_quantity - item.returned_quantity);
-        console.log(`📊 ${item.equipment_name}: ${item.borrowed_quantity} - ${item.returned_quantity} = ${gap}`);
-        return total + gap;
-    }, 0);
-    
-    console.log(`📊 Total quantity gap: ${totalGap}`);
-    return totalGap;
-};
+        const totalGap = items.reduce((total, item) => {
+            const gap = Math.max(0, item.borrowed_quantity - item.returned_quantity);
+            console.log(`📊 ${item.equipment_name}: ${item.borrowed_quantity} - ${item.returned_quantity} = ${gap}`);
+            return total + gap;
+        }, 0);
+        
+        console.log(`📊 Total quantity gap: ${totalGap}`);
+        return totalGap;
+    };
 
     // ===== ACCESS CONTROL =====
     if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
@@ -711,7 +763,7 @@ const ValidationQueue: React.FC = () => {
                 </div>
             </div>
 
-            {/* ===== SEARCH & FILTERS ===== */}
+           {/* ===== SEARCH & FILTERS ===== */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
                     <div className="relative w-full md:w-auto md:flex-1">
@@ -841,7 +893,7 @@ const ValidationQueue: React.FC = () => {
                                             </div>
                                         </div>
 
-                                        {/* Alerts - Lanjutan dari kode sebelumnya */}
+                                        {/* Alerts */}
                                         <div className="space-y-2">
                                             {!progress.canApprove && (
                                                 <div className="bg-red-50 border border-red-200 rounded-lg p-3">
@@ -1049,18 +1101,21 @@ const ValidationQueue: React.FC = () => {
                                                             </div>
                                                         </div>
 
-                                                        {/* Quantity Management */}
+                                                        {/* ✅ ENHANCED Quantity Management with Debug */}
                                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                                                            <div className="text-center p-3 bg-blue-50 rounded-lg">
-                                                                <div className="text-lg font-bold text-blue-600">
+                                                            <div className="text-center p-3 bg-blue-50 rounded-lg border-2 border-blue-200">
+                                                                <div className="text-xl font-bold text-blue-600">
                                                                     {item.borrowed_quantity}
                                                                 </div>
                                                                 <div className="text-xs text-blue-600 font-medium">
                                                                     BORROWED
                                                                 </div>
+                                                                <div className="text-xs text-gray-500 mt-1">
+                                                                    {item.equipment_unit}
+                                                                </div>
                                                             </div>
 
-                                                            <div className="text-center p-3 bg-white rounded-lg border">
+                                                            <div className="text-center p-3 bg-white rounded-lg border-2 border-gray-300">
                                                                 <div className="flex items-center justify-center space-x-2">
                                                                     <button
                                                                         onClick={() => {
@@ -1072,7 +1127,7 @@ const ValidationQueue: React.FC = () => {
                                                                                 selectedCheckout.id,
                                                                                 item.equipment_id,
                                                                                 newQty,
-                                                                                item.condition_notes,
+                                                                                item.condition_notes || '',
                                                                                 newQty > 0
                                                                             );
                                                                         }}
@@ -1081,7 +1136,7 @@ const ValidationQueue: React.FC = () => {
                                                                         <Minus className="h-3 w-3" />
                                                                     </button>
                                                                     
-                                                                    <span className="text-lg font-bold text-gray-900 min-w-[3rem] text-center">
+                                                                    <span className="text-xl font-bold text-gray-900 min-w-[3rem] text-center">
                                                                         {item.returned_quantity}
                                                                     </span>
                                                                     
@@ -1095,7 +1150,7 @@ const ValidationQueue: React.FC = () => {
                                                                                 selectedCheckout.id,
                                                                                 item.equipment_id,
                                                                                 newQty,
-                                                                                item.condition_notes,
+                                                                                item.condition_notes || '',
                                                                                 newQty > 0
                                                                             );
                                                                         }}
@@ -1109,18 +1164,30 @@ const ValidationQueue: React.FC = () => {
                                                                 </div>
                                                             </div>
 
-                                                            <div className="text-center p-3 bg-red-50 rounded-lg">
-                                                                <div className={`text-lg font-bold ${
+                                                            <div className="text-center p-3 bg-red-50 rounded-lg border-2 border-red-200">
+                                                                <div className={`text-xl font-bold ${
                                                                     item.borrowed_quantity - item.returned_quantity > 0 
                                                                         ? 'text-red-600' 
                                                                         : 'text-green-600'
                                                                 }`}>
-                                                                    {item.borrowed_quantity - item.returned_quantity}
+                                                                    {Math.max(0, item.borrowed_quantity - item.returned_quantity)}
                                                                 </div>
                                                                 <div className="text-xs text-red-600 font-medium">
                                                                     MISSING
                                                                 </div>
+                                                                <div className="text-xs text-gray-500 mt-1">
+                                                                    {item.equipment_unit}
+                                                                </div>
                                                             </div>
+                                                        </div>
+
+                                                        {/* ✅ DEBUG INFO (dapat dihapus di production) */}
+                                                        <div className="mt-2 p-2 bg-yellow-50 rounded text-xs text-yellow-800 border border-yellow-200">
+                                                            <strong>🐛 Debug:</strong> {item.equipment_name} | 
+                                                            Borrowed: {item.borrowed_quantity} | 
+                                                            Returned: {item.returned_quantity} | 
+                                                            Gap: {item.borrowed_quantity - item.returned_quantity} |
+                                                            Verified: {item.is_verified ? '✅' : '❌'}
                                                         </div>
 
                                                         {/* Condition Notes */}
@@ -1129,7 +1196,7 @@ const ValidationQueue: React.FC = () => {
                                                                 Condition Notes (Optional)
                                                             </label>
                                                             <textarea
-                                                                value={item.condition_notes}
+                                                                value={item.condition_notes || ''}
                                                                 onChange={(e) => {
                                                                     const newNotes = e.target.value;
                                                                     const newItems = [...verificationItems];
@@ -1175,7 +1242,7 @@ const ValidationQueue: React.FC = () => {
                                                                             selectedCheckout.id,
                                                                             item.equipment_id,
                                                                             isChecked ? newItems[index].returned_quantity : 0,
-                                                                            item.condition_notes,
+                                                                            item.condition_notes || '',
                                                                             isChecked
                                                                         );
                                                                     }}
