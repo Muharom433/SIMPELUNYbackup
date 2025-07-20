@@ -1341,29 +1341,6 @@ const ValidationQueue: React.FC = () => {
                                                                                     newQty > 0
                                                                                 );
                                                                             }}
-                                                                            className="p-1 bg-gray-200 hover:bg-gray-300 rounded"
-                                                                        >
-                                                                            <Minus className="h-3 w-3" />
-                                                                        </button>
-                                                                        
-                                                                        <span className="text-xl font-bold text-gray-900 min-w-[3rem] text-center">
-                                                                            {item.returned_quantity}
-                                                                        </span>
-                                                                        
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                const newQty = Math.min(item.borrowed_quantity, item.returned_quantity + 1);
-                                                                                const newItems = [...verificationItems];
-                                                                              newItems[index].returned_quantity = newQty;
-                                                                                setVerificationItems(newItems);
-                                                                                updateVerificationItem(
-                                                                                    selectedCheckout.id,
-                                                                                    item.equipment_id,
-                                                                                    newQty,
-                                                                                    item.condition_notes || '',
-                                                                                    newQty > 0
-                                                                                );
-                                                                            }}
                                                                             className="p-1 bg-indigo-200 hover:bg-indigo-300 rounded"
                                                                         >
                                                                             <Plus className="h-3 w-3" />
