@@ -141,107 +141,105 @@ const ToolLendingManagement: React.FC = () => {
     };
 
     // ✅ TAMBAH FUNGSI APPROVAL/REJECTION
-    const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rejected') => {
-        try {
-            setProcessingIds(prev => new Set(prev).add(recordId));
-            
-            const record = lendingRecords.find(r => r.id === recordId);
-            if (!record) throw new Error("Record not found");
+    
+const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rejected') => {
+  try {
+    setProcessingIds(prev => new Set(prev).add(recordId));
+    
+    const record = lendingRecords.find(r => r.id === recordId);
+    if (!record) throw new Error("Record not found");
 
-            // Update lending record status
-            const { error: recordError } = await supabase
-                .from('lending_tool')
-                .update({ 
-                    status: newStatus,
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', recordId);
+    console.log('🔧 Processing lending record:', {
+      id: record.id,
+      status: record.status,
+      newStatus,
+      id_equipment: record.id_equipment,
+      qty: record.qty,
+      user: record.user?.full_name
+    });
 
-            if (recordError) throw recordError;
+    // ✅ SIMPLE: Handle equipment quantities
+    if (record.id_equipment && record.id_equipment.length > 0) {
+      const quantityManager = new EquipmentQuantityManager(supabase);
+      
+      // Build equipment list dengan quantity yang benar
+      const equipmentList: Array<{id: string, quantity: number}> = [];
+      
+      for (let i = 0; i < record.id_equipment.length; i++) {
+        const equipmentId = record.id_equipment[i];
+        const quantity = record.qty && record.qty[i] ? record.qty[i] : 1;
+        
+        equipmentList.push({ id: equipmentId, quantity });
+      }
 
-            const quantityManager = new EquipmentQuantityManager(supabase);
-            const equipmentList: Array<{id: string, quantity: number}> = [];
-            
-            for (let i = 0; i < record.id_equipment.length; i++) {
-                equipmentList.push({
-                    id: record.id_equipment[i],
-                    quantity: record.qty[i]
-                });
-            }
+      console.log('🔧 Equipment to process:', equipmentList);
 
-            // Validate before approve
-            if (newStatus === 'approved') {
-                const validation = await quantityManager.validateBorrowRequest(equipmentList);
-                
-                if (!validation.isValid) {
-                    throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
-                }
-            }
-
-            // Handle equipment quantities
-            for (let i = 0; i < record.id_equipment.length; i++) {
-                const equipmentId = record.id_equipment[i];
-                const quantity = record.qty[i];
-                
-                const equipment = allEquipment.find(eq => eq.id === equipmentId);
-                if (equipment) {
-                    let newQuantity = equipment.quantity;
-                    
-                    if (newStatus === 'approved') {
-                        // Decrease quantity when approved
-                        newQuantity = Math.max(0, equipment.quantity - quantity);
-                        
-                        // Update status to 'borrow' for approved items
-                        await supabase
-                            .from('lending_tool')
-                            .update({ status: 'borrow' })
-                            .eq('id', recordId);
-                            
-                    } else if (newStatus === 'rejected') {
-                        // Restore quantity when rejected
-                        newQuantity = equipment.quantity + quantity;
-                    }
-                    
-                    await supabase
-                        .from('equipment')
-                        .update({ 
-                            quantity: newQuantity,
-                            is_available: newQuantity > 0
-                        })
-                        .eq('id', equipmentId);
-                }
-            }
-
-            // Handle equipment quantities
-            if (newStatus === 'approved') {
-                await quantityManager.processBorrowing(equipmentList, recordId, 'lending');
-            } else if (newStatus === 'rejected' && (record.status === 'approved' || record.status === 'borrow')) {
-                await quantityManager.processRestore(equipmentList, recordId, 'lending');
-            }
-            
-            const statusText = newStatus === 'approved' 
-                ? getText('approved', 'disetujui') 
-                : getText('rejected', 'ditolak');
-            
-            toast.success(getText(`Tool lending ${statusText} successfully`, `Peminjaman alat berhasil ${statusText}`));
-            await fetchLendingRecords();
-            await fetchAllEquipment();
-            
-            if (selectedRecord?.id === recordId) {
-                setShowDetailModal(false);
-            }
-            
-        } catch (error: any) {
-            console.error('Error updating lending status:', error);
-            toast.error(error.message || getText('Failed to update lending status', 'Gagal memperbarui status peminjaman'));
-        } finally {
-            setProcessingIds(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(recordId);
-                return newSet;
-            });
+      if (newStatus === 'approved') {
+        const validation = await quantityManager.validateQuantityAvailable(equipmentList);
+        
+        if (!validation.isValid) {
+          throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
         }
-    };
+
+        // ✅ APPROVE: Kurangi quantity
+        await quantityManager.bulkDecreaseQuantity(
+          equipmentList, 
+          `Tool lending approved: ${record.id}`
+        );
+        
+        console.log(`✅ Equipment quantities decreased for approved lending`);
+        
+      } else if (newStatus === 'rejected' && (record.status === 'approved' || record.status === 'borrow')) {
+        // ✅ REJECT PREVIOUSLY APPROVED: Kembalikan quantity
+        await quantityManager.bulkIncreaseQuantity(
+          equipmentList, 
+          `Previously approved lending rejected: ${record.id}`
+        );
+        
+        console.log(`✅ Equipment quantities restored for rejected previously approved lending`);
+      }
+      // ✅ NOTE: Jika reject lending yang masih pending, tidak ada perubahan quantity
+    }
+
+    // ✅ Update record status
+    let finalStatus = newStatus;
+    if (newStatus === 'approved') {
+      finalStatus = 'borrow'; // Change to 'borrow' when approved
+    }
+    
+    const { error: recordError } = await supabase
+      .from('lending_tool')
+      .update({ 
+        status: finalStatus,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', recordId);
+
+    if (recordError) throw recordError;
+    
+    const statusText = newStatus === 'approved' 
+      ? getText('approved', 'disetujui') 
+      : getText('rejected', 'ditolak');
+    
+    toast.success(getText(`Tool lending ${statusText} successfully`, `Peminjaman alat berhasil ${statusText}`));
+    await fetchLendingRecords();
+    await fetchAllEquipment(); // Refresh equipment data
+    
+    if (selectedRecord?.id === recordId) {
+      setShowDetailModal(false);
+    }
+    
+  } catch (error: any) {
+    console.error('❌ Error updating lending status:', error);
+    toast.error(error.message || getText('Failed to update lending status', 'Gagal memperbarui status peminjaman'));
+  } finally {
+    setProcessingIds(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(recordId);
+      return newSet;
+    });
+  }
+};
 
     const handleDelete = async (recordId: string) => {
         try {
