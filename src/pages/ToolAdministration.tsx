@@ -684,6 +684,7 @@ const ToolAdministration: React.FC = () => {
             </div>
         );
     };
+
   const renderRoomSelection = () => {
         return (
             <div className="space-y-2">
@@ -886,6 +887,7 @@ const ToolAdministration: React.FC = () => {
             </div>
         );
     };
+  
 
     // Render room selection component
     const renderQuantityGapDisplay = () => {
