@@ -873,31 +873,39 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
               {/* Equipment Requested */}
 {selectedBooking.equipment_requested && selectedBooking.equipment_requested.length > 0 && (
   <div>
-    <h5 className="font-medium text-gray-900 mb-3">{getText('Equipment Requested', 'Peralatan yang Diminta')}</h5>
-    <div className="bg-purple-50 rounded-lg p-4">
-      <div className="space-y-2">  {/* ✅ Layout berubah dari flex-wrap ke space-y-2 */}
-        {getEquipmentDetails(selectedBooking.equipment_requested).map((equipment, index) => (
-          <div key={equipment.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-purple-200">
-            <div className="flex items-center space-x-3">
-              <div className="h-10 w-10 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full flex items-center justify-center">
-                <Package className="h-5 w-5 text-white" />
+    <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide mb-3 block">
+      {getText('Requested Equipment', 'Peralatan yang Diminta')}
+    </span>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {selectedBooking.equipment_requested.map((equipmentId, index) => {
+        // ✅ Ambil quantity berdasarkan INDEX
+        const quantity = selectedBooking.equipment_quantities && selectedBooking.equipment_quantities[index] 
+          ? selectedBooking.equipment_quantities[index] 
+          : 1;
+
+        // ✅ Cari nama equipment dari allEquipment
+        const equipmentDetails = allEquipment.find(eq => eq.id === equipmentId);
+        const equipmentName = equipmentDetails?.name || `Equipment ${equipmentId}`;
+        const equipmentCode = equipmentDetails?.code || 'Unknown';
+
+        return (
+          <div key={`${equipmentId}-${index}`} className="flex items-center justify-between p-3 bg-white/60 rounded-xl border border-emerald-200/50">
+            <div className="flex items-center">
+              <div className="h-8 w-8 bg-emerald-100 rounded-lg flex items-center justify-center mr-3">
+                <Zap className="h-4 w-4 text-emerald-600" />
               </div>
               <div>
-                <div className="font-medium text-gray-900">{equipment.name}</div>  {/* ✅ Nama Equipment */}
-                <div className="text-sm text-gray-500">{equipment.code}</div>     {/* ✅ Kode Equipment */}
-                <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-purple-100 text-purple-800 mt-1">
-                  {equipment.category}  {/* ✅ Kategori Equipment */}
-                </span>
+                <div className="font-medium text-emerald-900">{equipmentName}</div>
+                <div className="text-sm text-emerald-700">{equipmentCode}</div>
               </div>
             </div>
             <div className="text-right">
-              <div className="text-sm text-gray-500">
-                {getText('Requested', 'Diminta')}
-              </div>
+              <div className="font-bold text-emerald-900 text-lg">{quantity}</div>
+              <div className="text-xs text-emerald-600">{getText('requested', 'diminta')}</div>
             </div>
           </div>
-        ))}
-      </div>
+        );
+      })}
     </div>
   </div>
 )}
