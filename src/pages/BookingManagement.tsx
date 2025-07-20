@@ -190,87 +190,109 @@ const BookingManagement: React.FC = () => {
     }
   };
 
-  const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 'rejected') => {
-    try {
-      setProcessingIds(prev => new Set(prev).add(bookingId));
+  // ===== PERBAIKAN BookingManagement.tsx =====
+// Mengikuti pola yang sama seperti ToolLendingManagement.tsx
+
+const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 'rejected') => {
+  try {
+    setProcessingIds(prev => new Set(prev).add(bookingId));
+    
+    const booking = bookings.find(b => b.id === bookingId);
+    if (!booking) {
+      throw new Error('Booking not found');
+    }
+
+    // Update booking status
+    const { error: bookingError } = await supabase
+      .from('bookings')
+      .update({ 
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', bookingId);
+
+    if (bookingError) throw bookingError;
+
+    // ✅ PERBAIKAN: Handle equipment quantities dengan INDEX ARRAY (seperti ToolLendingManagement)
+    if (booking.equipment_requested && booking.equipment_requested.length > 0) {
       
-      const booking = bookings.find(b => b.id === bookingId);
-      if (!booking) {
-        throw new Error('Booking not found');
-      }
+      // ✅ Loop berdasarkan INDEX, bukan forEach equipment
+      for (let i = 0; i < booking.equipment_requested.length; i++) {
+        const equipmentId = booking.equipment_requested[i];
+        
+        // ✅ Ambil quantity berdasarkan INDEX yang sama
+        const requestedQuantity = booking.equipment_quantities && booking.equipment_quantities[i] 
+          ? booking.equipment_quantities[i] 
+          : 1; // Default 1 jika tidak ada
 
-      // Update booking status ONLY - NO ROOM AVAILABILITY UPDATE
-      const { error: bookingError } = await supabase
-        .from('bookings')
-        .update({ 
-          status: newStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', bookingId);
+        console.log(`Processing equipment ${equipmentId} with quantity ${requestedQuantity}`);
 
-      if (bookingError) throw bookingError;
+        // Fetch current equipment quantity
+        const { data: equipment, error: equipmentFetchError } = await supabase
+          .from('equipment')
+          .select('quantity')
+          .eq('id', equipmentId)
+          .single();
 
-      // Handle equipment quantities if equipment was requested
-      if (booking.equipment_requested && booking.equipment_requested.length > 0) {
-        for (const equipmentId of booking.equipment_requested) {
-          const { data: equipment, error: equipmentFetchError } = await supabase
-            .from('equipment')
-            .select('quantity')
-            .eq('id', equipmentId)
-            .single();
+        if (equipmentFetchError) {
+          console.error('Error fetching equipment:', equipmentFetchError);
+          continue; // Skip yang error
+        }
 
-          if (equipmentFetchError) {
-            console.error('Error fetching equipment:', equipmentFetchError);
-            continue;
+        if (equipment) {
+          let newQuantity = equipment.quantity;
+          
+          if (newStatus === 'approved') {
+            // ✅ KURANGI sesuai quantity yang diminta (sama seperti ToolLendingManagement)
+            newQuantity = Math.max(0, equipment.quantity - requestedQuantity);
+            console.log(`Equipment ${equipmentId}: ${equipment.quantity} - ${requestedQuantity} = ${newQuantity}`);
+            
+          } else if (newStatus === 'rejected') {
+            // ✅ RESTORE quantity saat reject (sama seperti ToolLendingManagement)
+            newQuantity = equipment.quantity + requestedQuantity;
+            console.log(`Equipment ${equipmentId} restored: ${equipment.quantity} + ${requestedQuantity} = ${newQuantity}`);
           }
 
-          if (equipment) {
-            let newQuantity = equipment.quantity;
-            
-            if (newStatus === 'approved') {
-              // Decrease quantity when approved
-              newQuantity = Math.max(0, equipment.quantity - 1);
-            } else if (newStatus === 'rejected') {
-              // Increase quantity when rejected (restore)
-              newQuantity = equipment.quantity + 1;
-            }
+          // Update equipment quantity
+          const { error: equipmentUpdateError } = await supabase
+            .from('equipment')
+            .update({ 
+              quantity: newQuantity,
+              is_available: newQuantity > 0
+            })
+            .eq('id', equipmentId);
 
-            const { error: equipmentUpdateError } = await supabase
-              .from('equipment')
-              .update({ 
-                quantity: newQuantity,
-                is_available: newQuantity > 0
-              })
-              .eq('id', equipmentId);
-
-            if (equipmentUpdateError) {
-              console.error('Error updating equipment:', equipmentUpdateError);
-            }
+          if (equipmentUpdateError) {
+            console.error('Error updating equipment quantity:', equipmentUpdateError);
+          } else {
+            console.log(`✅ Equipment ${equipmentId} quantity updated to ${newQuantity}`);
           }
         }
       }
-      
-      const statusText = newStatus === 'approved' 
-        ? getText('approved', 'disetujui') 
-        : getText('rejected', 'ditolak');
-      
-      alert.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
-      fetchBookings();
-      
-      if (selectedBooking?.id === bookingId) {
-        setShowDetailModal(false);
-      }
-    } catch (error: any) {
-      console.error('Error updating booking status:', error);
-      alert.error(error.message || getText('Failed to update booking status', 'Gagal memperbarui status pemesanan'));
-    } finally {
-      setProcessingIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(bookingId);
-        return newSet;
-      });
     }
-  };
+    
+    const statusText = newStatus === 'approved' 
+      ? getText('approved', 'disetujui') 
+      : getText('rejected', 'ditolak');
+    
+    alert.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
+    fetchBookings();
+    
+    if (selectedBooking?.id === bookingId) {
+      setShowDetailModal(false);
+    }
+    
+  } catch (error: any) {
+    console.error('Error updating booking status:', error);
+    alert.error(error.message || getText('Failed to update booking status', 'Gagal memperbarui status pemesanan'));
+  } finally {
+    setProcessingIds(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(bookingId);
+      return newSet;
+    });
+  }
+};
 
   const handleDelete = async (bookingId: string) => {
     try {
