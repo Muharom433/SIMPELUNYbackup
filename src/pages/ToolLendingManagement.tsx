@@ -142,71 +142,81 @@ const ToolLendingManagement: React.FC = () => {
 
     // ✅ TAMBAH FUNGSI APPROVAL/REJECTION
     
+// ✅ FIXED: ToolLendingManagement handleStatusUpdate function dengan enhanced logging
+
 const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rejected') => {
   try {
     setProcessingIds(prev => new Set(prev).add(recordId));
     
     const record = lendingRecords.find(r => r.id === recordId);
-    if (!record) throw new Error("Record not found");
+    if (!record) throw new Error("Lending record not found");
 
-    console.log('🔧 Processing lending record:', {
-      id: record.id,
-      status: record.status,
+    console.log('🚀 TOOL LENDING MANAGEMENT: Status update started', {
+      recordId: record.id,
+      currentStatus: record.status,
       newStatus,
+      user: record.user?.full_name,
       id_equipment: record.id_equipment,
-      qty: record.qty,
-      user: record.user?.full_name
+      qty: record.qty
     });
 
-    // ✅ SIMPLE: Handle equipment quantities
-    if (record.id_equipment && record.id_equipment.length > 0) {
+    // ✅ CRITICAL: Only process if status actually changes AND has equipment
+    if (record.status !== newStatus && record.id_equipment && record.id_equipment.length > 0) {
       const quantityManager = new EquipmentQuantityManager(supabase);
       
-      // Build equipment list dengan quantity yang benar
-      const equipmentList: Array<{id: string, quantity: number}> = [];
-      
-      for (let i = 0; i < record.id_equipment.length; i++) {
-        const equipmentId = record.id_equipment[i];
-        const quantity = record.qty && record.qty[i] ? record.qty[i] : 1;
+      // ✅ Build equipment list using utility function
+      const equipmentList = EquipmentQuantityManager.buildEquipmentListFromLending(record);
+
+      console.log('🔧 Equipment list to process:', equipmentList);
+
+      // ✅ Handle different status transitions
+      if (newStatus === 'approved' && record.status === 'pending') {
+        console.log('✅ APPROVING PENDING LENDING: Will decrease equipment quantities');
         
-        equipmentList.push({ id: equipmentId, quantity });
-      }
-
-      console.log('🔧 Equipment to process:', equipmentList);
-
-      if (newStatus === 'approved') {
+        // ✅ First validate all quantities are available
         const validation = await quantityManager.validateQuantityAvailable(equipmentList);
-        
         if (!validation.isValid) {
-          throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
+          throw new Error(`Equipment validation failed: ${validation.errors.join(', ')}`);
         }
-
-        // ✅ APPROVE: Kurangi quantity
+        
+        // ✅ Decrease quantities (reserve equipment)
         await quantityManager.bulkDecreaseQuantity(
           equipmentList, 
-          `Tool lending approved: ${record.id}`
+          `Tool lending approved: ${record.id} by ${record.user?.full_name}`
         );
         
-        console.log(`✅ Equipment quantities decreased for approved lending`);
+        console.log('✅ TOOL LENDING APPROVED: Equipment quantities decreased successfully');
         
-      } else if (newStatus === 'rejected' && (record.status === 'approved' || record.status === 'borrow')) {
-        // ✅ REJECT PREVIOUSLY APPROVED: Kembalikan quantity
-        await quantityManager.bulkIncreaseQuantity(
-          equipmentList, 
-          `Previously approved lending rejected: ${record.id}`
-        );
-        
-        console.log(`✅ Equipment quantities restored for rejected previously approved lending`);
+      } else if (newStatus === 'rejected') {
+        if (record.status === 'approved' || record.status === 'borrow') {
+          console.log('✅ REJECTING APPROVED/BORROWED LENDING: Will increase equipment quantities');
+          
+          // ✅ Increase quantities (return to inventory)
+          await quantityManager.bulkIncreaseQuantity(
+            equipmentList, 
+            `Previously approved lending rejected: ${record.id}`
+          );
+          
+          console.log('✅ TOOL LENDING REJECTED: Equipment quantities restored successfully');
+        } else {
+          console.log('ℹ️ Rejecting pending lending - no quantity changes needed');
+        }
       }
-      // ✅ NOTE: Jika reject lending yang masih pending, tidak ada perubahan quantity
+    } else {
+      console.log('ℹ️ No equipment quantity changes needed:', {
+        statusSame: record.status === newStatus,
+        hasEquipment: record.id_equipment && record.id_equipment.length > 0,
+        equipmentCount: record.id_equipment?.length || 0
+      });
     }
 
-    // ✅ Update record status
+    // ✅ Update record status (approved becomes 'borrow')
     let finalStatus = newStatus;
     if (newStatus === 'approved') {
       finalStatus = 'borrow'; // Change to 'borrow' when approved
     }
     
+    console.log('📝 Updating lending record status in database...');
     const { error: recordError } = await supabase
       .from('lending_tool')
       .update({ 
@@ -217,20 +227,25 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
 
     if (recordError) throw recordError;
     
+    // ✅ Success notification
     const statusText = newStatus === 'approved' 
       ? getText('approved', 'disetujui') 
       : getText('rejected', 'ditolak');
     
+    console.log('✅ TOOL LENDING MANAGEMENT: Status update completed successfully');
     toast.success(getText(`Tool lending ${statusText} successfully`, `Peminjaman alat berhasil ${statusText}`));
-    await fetchLendingRecords();
-    await fetchAllEquipment(); // Refresh equipment data
     
+    // ✅ Refresh data
+    await fetchLendingRecords();
+    await fetchAllEquipment();
+    
+    // Close modal if open
     if (selectedRecord?.id === recordId) {
       setShowDetailModal(false);
     }
     
   } catch (error: any) {
-    console.error('❌ Error updating lending status:', error);
+    console.error('❌ TOOL LENDING MANAGEMENT: Error updating lending status:', error);
     toast.error(error.message || getText('Failed to update lending status', 'Gagal memperbarui status peminjaman'));
   } finally {
     setProcessingIds(prev => {
