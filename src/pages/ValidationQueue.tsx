@@ -106,108 +106,147 @@ const ValidationQueue: React.FC = () => {
 
     // ===== FETCH CHECKOUTS WITH SMART FILTERING =====
     const fetchCheckouts = async () => {
-        try {
-            setLoading(true);
-            
-            let query;
-            let processedData: CheckoutWithDetails[] = [];
-            
-            if (activeTab === 'room') {
-                // Fetch room checkouts
-                const { data: checkoutData, error } = await supabase
-                    .from('checkouts')
-                    .select(`
-                        *,
-                        user:users!checkouts_user_id_fkey(
-                            id, full_name, identity_number, phone_number, email
-                        ),
-                        booking:bookings!checkouts_booking_id_fkey(
-                            id, purpose, equipment_requested, equipment_quantities,
-                            room:rooms(
-                                name, code,
-                                department:departments(name)
-                            )
+    try {
+        setLoading(true);
+        
+        let processedData: CheckoutWithDetails[] = [];
+        
+        if (activeTab === 'room') {
+            // ✅ PERBAIKAN: Pastikan equipment_quantities dimuat
+            const { data: checkoutData, error } = await supabase
+                .from('checkouts')
+                .select(`
+                    *,
+                    user:users!checkouts_user_id_fkey(
+                        id, full_name, identity_number, phone_number, email
+                    ),
+                    booking:bookings!checkouts_booking_id_fkey(
+                        id, purpose, equipment_requested, equipment_quantities,
+                        room:rooms(
+                            name, code,
+                            department:departments(name)
                         )
-                    `)
-                    .eq('type', 'room')
-                    .eq('status', 'returned')
-                    .order('created_at', { ascending: false });
+                    )
+                `)
+                .eq('type', 'room')
+                .eq('status', 'returned')
+                .order('created_at', { ascending: false });
 
-                if (error) throw error;
-                processedData = checkoutData || [];
-                
-            } else {
-                // Fetch equipment checkouts
-                const { data: checkoutData, error } = await supabase
-                    .from('checkouts')
-                    .select(`
-                        *,
-                        user:users!checkouts_user_id_fkey(
-                            id, full_name, identity_number, phone_number, email
-                        ),
-                        lendingTool:lending_tool!checkouts_lendingTool_id_fkey(
-                            id, id_equipment, qty, date
-                        )
-                    `)
-                    .eq('type', 'things')
-                    .eq('status', 'returned')
-                    .order('created_at', { ascending: false });
+            if (error) throw error;
+            
+            // ✅ DEBUG: Log setiap booking data
+            checkoutData?.forEach(checkout => {
+                if (checkout.booking) {
+                    console.log('📋 Booking Data:', {
+                        id: checkout.booking.id,
+                        user: checkout.user?.full_name,
+                        equipment_requested: checkout.booking.equipment_requested,
+                        equipment_quantities: checkout.booking.equipment_quantities,
+                        equipmentCount: checkout.booking.equipment_requested?.length || 0,
+                        quantityCount: checkout.booking.equipment_quantities?.length || 0
+                    });
 
-                if (error) throw error;
-                
-                // Fetch equipment details for lending tools
-                processedData = await Promise.all(
-                    (checkoutData || []).map(async (checkout) => {
-                        if (checkout.lendingTool?.id_equipment) {
-                            const { data: equipmentData } = await supabase
-                                .from('equipment')
-                                .select('id, name, code, category, unit')
-                                .in('id', checkout.lendingTool.id_equipment);
-                            
-                            if (equipmentData) {
-                                checkout.lendingTool.equipment_details = equipmentData.map((eq, index) => ({
-                                    ...eq,
-                                    borrowed_quantity: checkout.lendingTool.qty[index] || 1
-                                }));
-                            }
-                        }
-                        return checkout;
-                    })
-                );
-            }
-
-            // Department filter for department admin
-            if (profile?.role === 'department_admin' && profile.department_id) {
-                if (activeTab === 'room') {
-                    processedData = processedData.filter(checkout => 
-                        checkout.booking?.room?.department?.name
-                    );
-                }
-            }
-
-            // Fetch equipment details and verification status for each checkout
-            const enhancedData = await Promise.all(
-                processedData.map(async (checkout) => {
-                    const equipment_list = await fetchEquipmentList(checkout);
-                    const verification_items = await fetchVerificationItems(checkout.id, equipment_list);
+                    // ✅ VALIDASI: Pastikan array length konsisten
+                    const equipmentCount = checkout.booking.equipment_requested?.length || 0;
+                    const quantityCount = checkout.booking.equipment_quantities?.length || 0;
                     
-                    return {
-                        ...checkout,
-                        equipment_list,
-                        verification_items
-                    };
+                    if (equipmentCount !== quantityCount) {
+                        console.warn(`⚠️ Array length mismatch for booking ${checkout.booking.id}:`, {
+                            equipment_requested: equipmentCount,
+                            equipment_quantities: quantityCount
+                        });
+                    }
+
+                    // ✅ LOG: Detail setiap equipment dan quantity
+                    checkout.booking.equipment_requested?.forEach((equipmentId: string, index: number) => {
+                        const quantity = checkout.booking.equipment_quantities?.[index] || 1;
+                        console.log(`   📦 Equipment[${index}]: ${equipmentId} → Quantity: ${quantity}`);
+                    });
+                }
+            });
+            
+            processedData = checkoutData || [];
+            
+        } else {
+            // Equipment checkouts (tetap sama)
+            const { data: checkoutData, error } = await supabase
+                .from('checkouts')
+                .select(`
+                    *,
+                    user:users!checkouts_user_id_fkey(
+                        id, full_name, identity_number, phone_number, email
+                    ),
+                    lendingTool:lending_tool!checkouts_lendingTool_id_fkey(
+                        id, id_equipment, qty, date
+                    )
+                `)
+                .eq('type', 'things')
+                .eq('status', 'returned')
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            
+            processedData = await Promise.all(
+                (checkoutData || []).map(async (checkout) => {
+                    if (checkout.lendingTool?.id_equipment) {
+                        // Debug lending tool data
+                        console.log('🔧 Lending Tool Data:', {
+                            id: checkout.lendingTool.id,
+                            user: checkout.user?.full_name,
+                            id_equipment: checkout.lendingTool.id_equipment,
+                            qty: checkout.lendingTool.qty
+                        });
+
+                        const { data: equipmentData } = await supabase
+                            .from('equipment')
+                            .select('id, name, code, category, unit')
+                            .in('id', checkout.lendingTool.id_equipment);
+                        
+                        if (equipmentData) {
+                            checkout.lendingTool.equipment_details = equipmentData.map((eq, index) => ({
+                                ...eq,
+                                borrowed_quantity: checkout.lendingTool.qty[index] || 1
+                            }));
+                        }
+                    }
+                    return checkout;
                 })
             );
-
-            setCheckouts(enhancedData);
-            
-        } catch (error: any) {
-            console.error('Error fetching checkouts:', error);
-            toast.error(`Failed to load validation queue: ${error.message}`);
-        } finally {
-            setLoading(false);
         }
-    };
+
+        // ✅ Enhanced data processing dengan verification items
+        const enhancedData = await Promise.all(
+            processedData.map(async (checkout) => {
+                const equipment_list = await fetchEquipmentList(checkout);
+                const verification_items = await fetchVerificationItems(checkout.id, equipment_list);
+                
+                // ✅ DEBUG: Log verification items
+                console.log(`🔍 Verification items for checkout ${checkout.id}:`, 
+                    verification_items.map(item => ({
+                        equipment: item.equipment_name,
+                        borrowed: item.borrowed_quantity,
+                        returned: item.returned_quantity,
+                        missing: item.borrowed_quantity - item.returned_quantity
+                    }))
+                );
+                
+                return {
+                    ...checkout,
+                    equipment_list,
+                    verification_items
+                };
+            })
+        );
+
+        setCheckouts(enhancedData);
+        
+    } catch (error: any) {
+        console.error('Error fetching checkouts:', error);
+        toast.error(`Failed to load validation queue: ${error.message}`);
+    } finally {
+        setLoading(false);
+    }
+};
 
     // ===== FETCH EQUIPMENT LIST FOR CHECKOUT =====
     const fetchEquipmentList = async (checkout: CheckoutWithDetails): Promise<Equipment[]> => {
