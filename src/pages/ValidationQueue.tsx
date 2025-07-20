@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { format, isToday, isTomorrow, isThisWeek, isPast, parseISO, compareAsc, startOfDay, endOfDay } from 'date-fns';
 import toast from 'react-hot-toast';
+import EquipmentQuantityManager from '../lib/equipmentQuantityManager';
 
 // ===== ENHANCED TYPE DEFINITIONS =====
 interface Equipment {
@@ -478,27 +479,17 @@ const ValidationQueue: React.FC = () => {
     // ===== UPDATE EQUIPMENT QUANTITY =====
     const updateEquipmentQuantity = async (equipmentId: string, quantityChange: number) => {
         try {
-            const { data: equipment, error: fetchError } = await supabase
-                .from('equipment')
-                .select('quantity')
-                .eq('id', equipmentId)
-                .single();
-
-            if (fetchError) throw fetchError;
-
-            const newQuantity = Math.max(0, equipment.quantity + quantityChange);
+            const quantityManager = new EquipmentQuantityManager(supabase);
             
-            const { error: updateError } = await supabase
-                .from('equipment')
-                .update({ 
-                    quantity: newQuantity,
-                    is_available: newQuantity > 0
-                })
-                .eq('id', equipmentId);
-
-            if (updateError) throw updateError;
-            
-            console.log(`Equipment ${equipmentId} quantity: ${equipment.quantity} → ${newQuantity} (${quantityChange > 0 ? '+' : ''}${quantityChange})`);
+            if (quantityChange !== 0) {
+                await quantityManager.updateQuantity([{
+                    equipment_id: equipmentId,
+                    change_amount: quantityChange,
+                    transaction_type: quantityChange > 0 ? 'return' : 'borrow',
+                    reference_id: 'validation_queue',
+                    reference_type: 'booking'
+                }]);
+            }
             
         } catch (error) {
             console.error('Error updating equipment quantity:', error);
