@@ -242,73 +242,66 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
 };
 
     const handleDelete = async (recordId: string) => {
-        try {
-            setProcessingIds(prev => new Set(prev).add(recordId));
-            
-            // Find the record to get equipment details
-            const recordToDelete = lendingRecords.find(r => r.id === recordId);
-            if (!recordToDelete) throw new Error("Record not found");
+  try {
+    setProcessingIds(prev => new Set(prev).add(recordId));
+    
+    const recordToDelete = lendingRecords.find(r => r.id === recordId);
+    if (!recordToDelete) throw new Error("Record not found");
 
-            const quantityManager = new EquipmentQuantityManager(supabase);
+    console.log('🗑️ Deleting lending record:', {
+      id: recordToDelete.id,
+      status: recordToDelete.status,
+      id_equipment: recordToDelete.id_equipment,
+      qty: recordToDelete.qty
+    });
 
-            if (recordToDelete.status === 'approved' || recordToDelete.status === 'borrow') {
-                const equipmentList: Array<{id: string, quantity: number}> = [];
-                
-                for (let i = 0; i < recordToDelete.id_equipment.length; i++) {
-                    equipmentList.push({
-                        id: recordToDelete.id_equipment[i],
-                        quantity: recordToDelete.qty[i]
-                    });
-                }
+    // ✅ SIMPLE: Restore equipment quantities if the record was approved/borrow
+    if (recordToDelete.status === 'approved' || recordToDelete.status === 'borrow') {
+      const quantityManager = new EquipmentQuantityManager(supabase);
+      
+      // Build equipment list
+      const equipmentList: Array<{id: string, quantity: number}> = [];
+      
+      for (let i = 0; i < recordToDelete.id_equipment.length; i++) {
+        const equipmentId = recordToDelete.id_equipment[i];
+        const quantity = recordToDelete.qty && recordToDelete.qty[i] ? recordToDelete.qty[i] : 1;
+        
+        equipmentList.push({ id: equipmentId, quantity });
+      }
 
-                await quantityManager.processRestore(equipmentList, recordId, 'lending');
-            }
+      // ✅ RESTORE: Tambahkan kembali quantity
+      await quantityManager.bulkIncreaseQuantity(
+        equipmentList, 
+        `Tool lending deleted: ${recordToDelete.id}`
+      );
+      
+      console.log(`✅ Equipment quantities restored after lending deletion`);
+    }
+    
+    // ✅ Delete the lending record
+    const { error } = await supabase
+      .from('lending_tool')
+      .delete()
+      .eq('id', recordId);
 
-            // Restore equipment quantities if the record was approved/borrow
-            if (recordToDelete.status === 'approved' || recordToDelete.status === 'borrow') {
-                for (let i = 0; i < recordToDelete.id_equipment.length; i++) {
-                    const equipmentId = recordToDelete.id_equipment[i];
-                    const quantity = recordToDelete.qty[i];
-                    
-                    const equipment = allEquipment.find(eq => eq.id === equipmentId);
-                    if (equipment) {
-                        const newQuantity = equipment.quantity + quantity;
-                        
-                        await supabase
-                            .from('equipment')
-                            .update({ 
-                                quantity: newQuantity,
-                                is_available: true
-                            })
-                            .eq('id', equipmentId);
-                    }
-                }
-            }
-            
-            // Delete the lending record
-            const { error } = await supabase
-                .from('lending_tool')
-                .delete()
-                .eq('id', recordId);
-
-            if (error) throw error;
-            
-            toast.success(getText('Lending record deleted successfully', 'Data peminjaman berhasil dihapus'));
-            setShowDeleteConfirm(null);
-            await fetchLendingRecords();
-            await fetchAllEquipment();
-            
-        } catch (error: any) {
-            console.error('Error deleting lending record:', error);
-            toast.error(error.message || getText('Failed to delete lending record', 'Gagal menghapus data peminjaman'));
-        } finally {
-            setProcessingIds(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(recordId);
-                return newSet;
-            });
-        }
-    };
+    if (error) throw error;
+    
+    toast.success(getText('Lending record deleted successfully', 'Data peminjaman berhasil dihapus'));
+    setShowDeleteConfirm(null);
+    await fetchLendingRecords();
+    await fetchAllEquipment(); // Refresh equipment data
+    
+  } catch (error: any) {
+    console.error('❌ Error deleting lending record:', error);
+    toast.error(error.message || getText('Failed to delete lending record', 'Gagal menghapus data peminjaman'));
+  } finally {
+    setProcessingIds(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(recordId);
+      return newSet;
+    });
+  }
+};
 
     const filteredRecords = lendingRecords.filter(record => {
         const userName = record.user?.full_name || record.user_info?.full_name || '';
