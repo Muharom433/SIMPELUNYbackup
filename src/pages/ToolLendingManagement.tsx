@@ -148,8 +148,18 @@ const ToolLendingManagement: React.FC = () => {
             const record = lendingRecords.find(r => r.id === recordId);
             if (!record) throw new Error("Record not found");
 
-            const quantityManager = new EquipmentQuantityManager(supabase);
+            // Update lending record status
+            const { error: recordError } = await supabase
+                .from('lending_tool')
+                .update({ 
+                    status: newStatus,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', recordId);
 
+            if (recordError) throw recordError;
+
+            const quantityManager = new EquipmentQuantityManager(supabase);
             const equipmentList: Array<{id: string, quantity: number}> = [];
             
             for (let i = 0; i < record.id_equipment.length; i++) {
@@ -168,16 +178,39 @@ const ToolLendingManagement: React.FC = () => {
                 }
             }
 
-            // Update lending record status
-            const { error: recordError } = await supabase
-                .from('lending_tool')
-                .update({ 
-                    status: newStatus,
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', recordId);
-
-            if (recordError) throw recordError;
+            // Handle equipment quantities
+            for (let i = 0; i < record.id_equipment.length; i++) {
+                const equipmentId = record.id_equipment[i];
+                const quantity = record.qty[i];
+                
+                const equipment = allEquipment.find(eq => eq.id === equipmentId);
+                if (equipment) {
+                    let newQuantity = equipment.quantity;
+                    
+                    if (newStatus === 'approved') {
+                        // Decrease quantity when approved
+                        newQuantity = Math.max(0, equipment.quantity - quantity);
+                        
+                        // Update status to 'borrow' for approved items
+                        await supabase
+                            .from('lending_tool')
+                            .update({ status: 'borrow' })
+                            .eq('id', recordId);
+                            
+                    } else if (newStatus === 'rejected') {
+                        // Restore quantity when rejected
+                        newQuantity = equipment.quantity + quantity;
+                    }
+                    
+                    await supabase
+                        .from('equipment')
+                        .update({ 
+                            quantity: newQuantity,
+                            is_available: newQuantity > 0
+                        })
+                        .eq('id', equipmentId);
+                }
+            }
 
             // Handle equipment quantities
             if (newStatus === 'approved') {
@@ -231,6 +264,27 @@ const ToolLendingManagement: React.FC = () => {
                 }
 
                 await quantityManager.processRestore(equipmentList, recordId, 'lending');
+            }
+
+            // Restore equipment quantities if the record was approved/borrow
+            if (recordToDelete.status === 'approved' || recordToDelete.status === 'borrow') {
+                for (let i = 0; i < recordToDelete.id_equipment.length; i++) {
+                    const equipmentId = recordToDelete.id_equipment[i];
+                    const quantity = recordToDelete.qty[i];
+                    
+                    const equipment = allEquipment.find(eq => eq.id === equipmentId);
+                    if (equipment) {
+                        const newQuantity = equipment.quantity + quantity;
+                        
+                        await supabase
+                            .from('equipment')
+                            .update({ 
+                                quantity: newQuantity,
+                                is_available: true
+                            })
+                            .eq('id', equipmentId);
+                    }
+                }
             }
             
             // Delete the lending record

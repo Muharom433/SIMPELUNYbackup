@@ -110,24 +110,28 @@ const BookingManagement: React.FC = () => {
           schema: 'public', 
           table: 'bookings'
         }, 
+        () => {
+          fetchBookings();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const fetchAllEquipment = async () => {
+      const { data, error } = await supabase
+        .from('equipment')
+        .select('id, name, code, category')
+        .order('name');
+      setAllEquipment(data || []);
+  };
+
+  const fetchBookings = async () => {
     try {
-        for (let i = 0; i < booking.equipment_requested.length; i++) {
-          const equipmentId = booking.equipment_requested[i];
-          const quantity = booking.equipment_quantities?.[i] || 1;
-          
-          equipmentList.push({ id: equipmentId, quantity });
-        }
-      }
-
-      // Validate before approve
-      if (newStatus === 'approved' && equipmentList.length > 0) {
-        const validation = await quantityManager.validateBorrowRequest(equipmentList);
-        
-        if (!validation.isValid) {
-          throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
-        }
-      }
-
+      setLoading(true);
       
       let query = supabase
         .from('bookings')
@@ -158,13 +162,6 @@ const BookingManagement: React.FC = () => {
       // Filter by department for department admins
       if (profile?.role === 'department_admin' && profile.department_id) {
         // Get rooms in this department first
-      // Handle equipment quantities
-      if (equipmentList.length > 0) {
-        if (newStatus === 'approved') {
-          await quantityManager.processBorrowing(equipmentList, bookingId, 'booking');
-        } else if (newStatus === 'rejected' && booking.status === 'approved') {
-          await quantityManager.processRestore(equipmentList, bookingId, 'booking');
-        }
       }
       
       query = query.order('created_at', { ascending: false });
@@ -192,6 +189,28 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
       throw new Error('Booking not found');
     }
 
+    const quantityManager = new EquipmentQuantityManager(supabase);
+
+    const equipmentList: Array<{id: string, quantity: number}> = [];
+    
+    if (booking.equipment_requested && booking.equipment_requested.length > 0) {
+      for (let i = 0; i < booking.equipment_requested.length; i++) {
+        const equipmentId = booking.equipment_requested[i];
+        const quantity = booking.equipment_quantities?.[i] || 1;
+        
+        equipmentList.push({ id: equipmentId, quantity });
+      }
+    }
+
+    // Validate before approve
+    if (newStatus === 'approved' && equipmentList.length > 0) {
+      const validation = await quantityManager.validateBorrowRequest(equipmentList);
+      
+      if (!validation.isValid) {
+        throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
+      }
+    }
+
     // Update booking status
     const { error: bookingError } = await supabase
       .from('bookings')
@@ -202,6 +221,15 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
       .eq('id', bookingId);
 
     if (bookingError) throw bookingError;
+
+    // Handle equipment quantities
+    if (equipmentList.length > 0) {
+      if (newStatus === 'approved') {
+        await quantityManager.processBorrowing(equipmentList, bookingId, 'booking');
+      } else if (newStatus === 'rejected' && booking.status === 'approved') {
+        await quantityManager.processRestore(equipmentList, bookingId, 'booking');
+      }
+    }
 
     // ✅ PERBAIKAN: Handle equipment quantities dengan INDEX ARRAY (seperti ToolLendingManagement)
     if (booking.equipment_requested && booking.equipment_requested.length > 0) {
@@ -291,18 +319,22 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
     const booking = bookings.find(b => b.id === bookingId);
     if (!booking) {
       throw new Error('Booking not found');
-      const quantityManager = new EquipmentQuantityManager(supabase);
+    }
 
-      if (booking.status === 'approved' && booking.equipment_requested && booking.equipment_requested.length > 0) {
-        const equipmentList: Array<{id: string, quantity: number}> = [];
-        
-        for (let i = 0; i < booking.equipment_requested.length; i++) {
-          const equipmentId = booking.equipment_requested[i];
-          const quantity = booking.equipment_quantities?.[i] || 1;
-          equipmentList.push({ id: equipmentId, quantity });
-        }
+    const quantityManager = new EquipmentQuantityManager(supabase);
 
-        await quantityManager.processRestore(equipmentList, bookingId, 'booking');
+    if (booking.status === 'approved' && booking.equipment_requested && booking.equipment_requested.length > 0) {
+      const equipmentList: Array<{id: string, quantity: number}> = [];
+      
+      for (let i = 0; i < booking.equipment_requested.length; i++) {
+        const equipmentId = booking.equipment_requested[i];
+        const quantity = booking.equipment_quantities?.[i] || 1;
+        equipmentList.push({ id: equipmentId, quantity });
+      }
+
+      await quantityManager.processRestore(equipmentList, bookingId, 'booking');
+      
+      for (let i = 0; i < booking.equipment_requested.length; i++) {
         const equipmentId = booking.equipment_requested[i];
         const requestedQuantity = booking.equipment_quantities && booking.equipment_quantities[i] 
           ? booking.equipment_quantities[i] 
