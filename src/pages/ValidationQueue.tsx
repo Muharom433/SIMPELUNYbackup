@@ -1,5 +1,3 @@
-// ===== ENHANCED VALIDATION QUEUE WITH MULTI-STATUS SUPPORT =====
-
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     Bell, Clock, CheckCircle, XCircle, AlertTriangle, User, Building, Calendar,
@@ -92,10 +90,7 @@ const ValidationQueue: React.FC = () => {
     const { profile } = useAuth();
     
     const [activeTab, setActiveTab] = useState<'room' | 'equipment'>('room');
-    
-    // ✅ ENHANCED: Multi-status filter
     const [statusFilter, setStatusFilter] = useState<'all' | 'returned' | 'active' | 'overdue' | 'pending'>('all');
-    
     const [checkouts, setCheckouts] = useState<CheckoutWithDetails[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -111,153 +106,315 @@ const ValidationQueue: React.FC = () => {
         severity: 'minor' as 'minor' | 'major' | 'critical'
     });
 
-    // ===== ENHANCED FETCH CHECKOUTS WITH MULTI-STATUS SUPPORT =====
-    const fetchCheckouts = async () => {
+    // ===== ✅ MOVED ALL HELPER FUNCTIONS INSIDE COMPONENT =====
+    
+    const fetchEquipmentList = async (checkout: CheckoutWithDetails): Promise<Equipment[]> => {
         try {
-            setLoading(true);
+            let equipmentIds: string[] = [];
             
-            let processedData: CheckoutWithDetails[] = [];
-            
-            if (activeTab === 'room') {
-                // ✅ ENHANCED: Fetch ALL statuses, not just 'returned'
-                const { data: checkoutData, error } = await supabase
-                    .from('checkouts')
-                    .select(`
-                        *,
-                        user:users!checkouts_user_id_fkey(
-                            id, full_name, identity_number, phone_number, email
-                        ),
-                        booking:bookings!checkouts_booking_id_fkey(
-                            id, purpose, equipment_requested, equipment_quantities,
-                            room:rooms(
-                                name, code,
-                                department:departments(name)
-                            )
-                        )
-                    `)
-                    .eq('type', 'room')
-                    // ✅ REMOVED: .eq('status', 'returned') - now fetch all statuses
-                    .order('created_at', { ascending: false });
-
-                if (error) throw error;
-                processedData = checkoutData || [];
-                
-            } else {
-                // ✅ ENHANCED: Equipment checkouts - all statuses
-                const { data: checkoutData, error } = await supabase
-                    .from('checkouts')
-                    .select(`
-                        *,
-                        user:users!checkouts_user_id_fkey(
-                            id, full_name, identity_number, phone_number, email
-                        ),
-                        lendingTool:lending_tool!checkouts_lendingTool_id_fkey(
-                            id, id_equipment, qty, date
-                        )
-                    `)
-                    .eq('type', 'things')
-                    // ✅ REMOVED: .eq('status', 'returned') - now fetch all statuses
-                    .order('created_at', { ascending: false });
-
-                if (error) throw error;
-                
-                processedData = await Promise.all(
-                    (checkoutData || []).map(async (checkout) => {
-                        if (checkout.lendingTool?.id_equipment) {
-                            const { data: equipmentData } = await supabase
-                                .from('equipment')
-                                .select('id, name, code, category, unit')
-                                .in('id', checkout.lendingTool.id_equipment);
-                            
-                            if (equipmentData) {
-                                checkout.lendingTool.equipment_details = equipmentData.map((eq, index) => ({
-                                    ...eq,
-                                    borrowed_quantity: checkout.lendingTool.qty[index] || 1
-                                }));
-                            }
-                        }
-                        return checkout;
-                    })
-                );
+            if (checkout.type === 'room' && checkout.booking?.equipment_requested) {
+                equipmentIds = checkout.booking.equipment_requested;
+            } else if (checkout.type === 'things' && checkout.lendingTool?.id_equipment) {
+                equipmentIds = checkout.lendingTool.id_equipment;
             }
 
-            // ✅ ENHANCED: Calculate real-time overdue status
-            processedData = processedData.map(checkout => {
-                const expectedReturn = new Date(checkout.expected_return_date);
-                const now = new Date();
-                
-                // Auto-update overdue status if past expected return date
-                if (checkout.status === 'active' && expectedReturn < now) {
-                    return { ...checkout, status: 'overdue' as const };
-                }
-                
-                return checkout;
-            });
+            if (equipmentIds.length === 0) return [];
 
-            // Department filter for department admin
-            if (profile?.role === 'department_admin' && profile.department_id) {
-                if (activeTab === 'room') {
-                    processedData = processedData.filter(checkout => 
-                        checkout.booking?.room?.department?.name
-                    );
-                }
-            }
+            const { data, error } = await supabase
+                .from('equipment')
+                .select('id, name, code, category, unit, is_mandatory')
+                .in('id', equipmentIds);
 
-            // Enhanced data processing dengan verification items
-            const enhancedData = await Promise.all(
-                processedData.map(async (checkout) => {
-                    const equipment_list = await fetchEquipmentList(checkout);
-                    const verification_items = await fetchVerificationItems(
-                        checkout.id, 
-                        equipment_list, 
-                        checkout
-                    );
-                    
-                    return {
-                        ...checkout,
-                        equipment_list,
-                        verification_items
-                    };
-                })
-            );
-
-            setCheckouts(enhancedData);
+            if (error) throw error;
+            return data || [];
             
-            console.log('✅ Fetched checkouts by status:', {
-                returned: enhancedData.filter(c => c.status === 'returned').length,
-                active: enhancedData.filter(c => c.status === 'active').length,
-                overdue: enhancedData.filter(c => c.status === 'overdue').length,
-                pending: enhancedData.filter(c => c.status === 'pending').length,
-                total: enhancedData.length
-            });
-            
-        } catch (error: any) {
-            console.error('Error fetching checkouts:', error);
-            toast.error(`Failed to load validation queue: ${error.message}`);
-        } finally {
-            setLoading(false);
+        } catch (error) {
+            console.error('Error fetching equipment list:', error);
+            return [];
         }
     };
 
-    // ===== ENHANCED FILTERS WITH STATUS =====
-    const filteredCheckouts = checkouts.filter(checkout => {
-        const searchLower = searchTerm.toLowerCase();
-        
-        // ✅ ENHANCED: Status filter
-        const matchesStatus = statusFilter === 'all' || checkout.status === statusFilter;
-        
-        const matchesSearch = 
-            checkout.user?.full_name?.toLowerCase().includes(searchLower) ||
-            checkout.user?.identity_number?.toLowerCase().includes(searchLower) ||
-            (activeTab === 'room' && checkout.booking?.room?.name?.toLowerCase().includes(searchLower)) ||
-            (activeTab === 'equipment' && checkout.lendingTool?.equipment_details?.some(eq => 
-                eq.name.toLowerCase().includes(searchLower)
-            ));
-        
-        return matchesStatus && matchesSearch;
-    });
+    const fetchVerificationItems = async (
+        checkoutId: string, 
+        equipmentList: Equipment[], 
+        checkout: CheckoutWithDetails
+    ): Promise<VerificationItem[]> => {
+        try {
+            const { data: checkoutItems, error } = await supabase
+                .from('checkout_items')
+                .select('*')
+                .eq('checkout_id', checkoutId);
 
-    // ===== ENHANCED STATUS CONFIGURATION =====
+            if (error) throw error;
+
+            return equipmentList.map(equipment => {
+                const checkoutItem = checkoutItems?.find(item => item.equipment_id === equipment.id);
+                
+                let borrowedQty = 1;
+                
+                if (checkout.type === 'room' && checkout.booking) {
+                    const equipmentIndices: number[] = [];
+                    checkout.booking.equipment_requested?.forEach((id: string, index: number) => {
+                        if (id === equipment.id) {
+                            equipmentIndices.push(index);
+                        }
+                    });
+
+                    borrowedQty = equipmentIndices.reduce((total, index) => {
+                        const qty = checkout.booking.equipment_quantities?.[index] || 1;
+                        return total + qty;
+                    }, 0);
+
+                    if (borrowedQty === 0 && equipmentIndices.length > 0) {
+                        borrowedQty = equipmentIndices.length;
+                    }
+                    
+                } else if (checkout.type === 'things' && checkout.lendingTool) {
+                    const equipmentIndices: number[] = [];
+                    checkout.lendingTool.id_equipment?.forEach((id: string, index: number) => {
+                        if (id === equipment.id) {
+                            equipmentIndices.push(index);
+                        }
+                    });
+
+                    borrowedQty = equipmentIndices.reduce((total, index) => {
+                        const qty = checkout.lendingTool.qty?.[index] || 1;
+                        return total + qty;
+                    }, 0);
+
+                    if (borrowedQty === 0 && equipmentIndices.length > 0) {
+                        borrowedQty = equipmentIndices.length;
+                    }
+                }
+
+                const verificationItem: VerificationItem = {
+                    equipment_id: equipment.id,
+                    equipment_name: equipment.name,
+                    equipment_code: equipment.code,
+                    equipment_unit: equipment.unit || 'pcs',
+                    borrowed_quantity: borrowedQty,
+                    returned_quantity: checkoutItem?.quantity || 0,
+                    is_verified: !!checkoutItem,
+                    condition_notes: checkoutItem?.condition_notes || '',
+                    is_mandatory: equipment.is_mandatory
+                };
+
+                return verificationItem;
+            });
+            
+        } catch (error) {
+            console.error('Error fetching verification items:', error);
+            return [];
+        }
+    };
+
+    const updateEquipmentQuantity = async (equipmentId: string, quantityChange: number) => {
+        try {
+            const quantityManager = new EquipmentQuantityManager(supabase);
+            
+            if (quantityChange > 0) {
+                await quantityManager.increaseQuantity(
+                    equipmentId,
+                    quantityChange,
+                    'ValidationQueue: User returned items'
+                );
+            } else if (quantityChange < 0) {
+                await quantityManager.decreaseQuantity(
+                    equipmentId,
+                    Math.abs(quantityChange),
+                    'ValidationQueue: Admin reverted verification'
+                );
+            }
+            
+        } catch (error) {
+            console.error('❌ Error updating equipment quantity:', error);
+            throw error;
+        }
+    };
+
+    const updateVerificationItem = async (
+        checkoutId: string, 
+        equipmentId: string, 
+        newReturnedQuantity: number, 
+        conditionNotes: string,
+        isVerified: boolean
+    ) => {
+        try {
+            const { data: currentCheckoutItems, error: fetchError } = await supabase
+                .from('checkout_items')
+                .select('quantity')
+                .eq('checkout_id', checkoutId)
+                .eq('equipment_id', equipmentId)
+                .maybeSingle();
+
+            if (fetchError) throw fetchError;
+
+            const currentReturnedQty = currentCheckoutItems?.quantity || 0;
+
+            if (isVerified && newReturnedQuantity > 0) {
+                const { error } = await supabase
+                    .from('checkout_items')
+                    .upsert({
+                        checkout_id: checkoutId,
+                        equipment_id: equipmentId,
+                        quantity: newReturnedQuantity,
+                        condition_notes: conditionNotes || null
+                    }, { 
+                        onConflict: 'checkout_id, equipment_id' 
+                    });
+
+                if (error) throw error;
+            } else {
+                const { error } = await supabase
+                    .from('checkout_items')
+                    .delete()
+                    .match({ checkout_id: checkoutId, equipment_id: equipmentId });
+
+                if (error) throw error;
+            }
+
+            const quantityDifference = newReturnedQuantity - currentReturnedQty;
+            
+            if (quantityDifference !== 0) {
+                await updateEquipmentQuantity(equipmentId, quantityDifference);
+            }
+
+            if (selectedCheckout) {
+                const newVerificationItems = await fetchVerificationItems(
+                    selectedCheckout.id, 
+                    selectedCheckout.equipment_list || [],
+                    selectedCheckout
+                );
+                setVerificationItems(newVerificationItems);
+            }
+            
+        } catch (error: any) {
+            console.error('❌ Error updating verification:', error);
+            toast.error(`Failed to update verification: ${error.message}`);
+        }
+    };
+
+    const handleApproveReturn = async (checkoutId: string) => {
+        try {
+            setProcessingIds(prev => new Set(prev).add(checkoutId));
+
+            const { error } = await supabase
+                .from('checkouts')
+                .update({ 
+                    status: 'active',
+                    approved_by: profile?.id,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', checkoutId);
+
+            if (error) throw error;
+
+            const checkout = checkouts.find(c => c.id === checkoutId);
+            if (checkout) {
+                if (activeTab === 'room' && checkout.booking_id) {
+                    await supabase
+                        .from('bookings')
+                        .update({ status: 'completed' })
+                        .eq('id', checkout.booking_id);
+                } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
+                    await supabase
+                        .from('lending_tool')
+                        .update({ status: 'completed' })
+                        .eq('id', checkout.lendingTool_id);
+                }
+            }
+
+            toast.success('Return approved successfully!');
+            fetchCheckouts();
+            setShowDetailModal(false);
+            
+        } catch (error: any) {
+            console.error('❌ Error approving return:', error);
+            toast.error(`Failed to approve return: ${error.message}`);
+        } finally {
+            setProcessingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(checkoutId);
+                return newSet;
+            });
+        }
+    };
+
+    const handleRejectReturn = async (checkoutId: string) => {
+        try {
+            setProcessingIds(prev => new Set(prev).add(checkoutId));
+
+            const { data: verifiedItems, error: itemsError } = await supabase
+                .from('checkout_items')
+                .select('equipment_id, quantity')
+                .eq('checkout_id', checkoutId);
+
+            if (itemsError) throw itemsError;
+
+            if (verifiedItems && verifiedItems.length > 0) {
+                for (const item of verifiedItems) {
+                    if (item.quantity > 0) {
+                        await updateEquipmentQuantity(item.equipment_id, -item.quantity);
+                    }
+                }
+            }
+
+            await supabase.from('checkouts').delete().eq('id', checkoutId);
+            
+            const checkout = checkouts.find(c => c.id === checkoutId);
+            if (checkout) {
+                if (activeTab === 'room' && checkout.booking_id) {
+                    await supabase
+                        .from('bookings')
+                        .update({ status: 'approved' })
+                        .eq('id', checkout.booking_id);
+                } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
+                    await supabase
+                        .from('lending_tool')
+                        .update({ status: 'borrow' })
+                        .eq('id', checkout.lendingTool_id);
+                }
+            }
+
+            toast.success('Return rejected and quantities reverted');
+            fetchCheckouts();
+            setShowDetailModal(false);
+            
+        } catch (error: any) {
+            console.error('❌ Error rejecting return:', error);
+            toast.error(`Failed to reject return: ${error.message}`);
+        } finally {
+            setProcessingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(checkoutId);
+                return newSet;
+            });
+        }
+    };
+
+    const getVerificationProgress = (items: VerificationItem[]) => {
+        const totalItems = items.length;
+        const verifiedItems = items.filter(item => item.is_verified).length;
+        const mandatoryItems = items.filter(item => item.is_mandatory);
+        const verifiedMandatory = mandatoryItems.filter(item => item.is_verified).length;
+        
+        return {
+            total: totalItems,
+            verified: verifiedItems,
+            mandatory: mandatoryItems.length,
+            verifiedMandatory,
+            percentage: totalItems > 0 ? Math.round((verifiedItems / totalItems) * 100) : 0,
+            canApprove: mandatoryItems.length === verifiedMandatory
+        };
+    };
+
+    const getTotalQuantityGap = (items: VerificationItem[]) => {
+        return items.reduce((total, item) => {
+            const gap = Math.max(0, item.borrowed_quantity - item.returned_quantity);
+            return total + gap;
+        }, 0);
+    };
+
     const getStatusConfig = (status: string) => {
         switch (status) {
             case 'returned':
@@ -303,7 +460,6 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    // ===== ENHANCED STATUS STATS =====
     const getStatusStats = () => {
         return {
             returned: checkouts.filter(c => c.status === 'returned').length,
@@ -314,8 +470,165 @@ const ValidationQueue: React.FC = () => {
         };
     };
 
-    // Keep all the existing functions (fetchEquipmentList, fetchVerificationItems, etc.)
-    // ... [Previous functions remain the same] ...
+    // ===== ENHANCED FETCH CHECKOUTS WITH MULTI-STATUS SUPPORT =====
+    const fetchCheckouts = async () => {
+        try {
+            setLoading(true);
+            
+            let processedData: CheckoutWithDetails[] = [];
+            
+            if (activeTab === 'room') {
+                const { data: checkoutData, error } = await supabase
+                    .from('checkouts')
+                    .select(`
+                        *,
+                        user:users!checkouts_user_id_fkey(
+                            id, full_name, identity_number, phone_number, email
+                        ),
+                        booking:bookings!checkouts_booking_id_fkey(
+                            id, purpose, equipment_requested, equipment_quantities,
+                            room:rooms(
+                                name, code,
+                                department:departments(name)
+                            )
+                        )
+                    `)
+                    .eq('type', 'room')
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+                processedData = checkoutData || [];
+                
+            } else {
+                const { data: checkoutData, error } = await supabase
+                    .from('checkouts')
+                    .select(`
+                        *,
+                        user:users!checkouts_user_id_fkey(
+                            id, full_name, identity_number, phone_number, email
+                        ),
+                        lendingTool:lending_tool!checkouts_lendingTool_id_fkey(
+                            id, id_equipment, qty, date
+                        )
+                    `)
+                    .eq('type', 'things')
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+                
+                processedData = await Promise.all(
+                    (checkoutData || []).map(async (checkout) => {
+                        if (checkout.lendingTool?.id_equipment) {
+                            const { data: equipmentData } = await supabase
+                                .from('equipment')
+                                .select('id, name, code, category, unit')
+                                .in('id', checkout.lendingTool.id_equipment);
+                            
+                            if (equipmentData) {
+                                checkout.lendingTool.equipment_details = equipmentData.map((eq, index) => ({
+                                    ...eq,
+                                    borrowed_quantity: checkout.lendingTool.qty[index] || 1
+                                }));
+                            }
+                        }
+                        return checkout;
+                    })
+                );
+            }
+
+            // Calculate real-time overdue status
+            processedData = processedData.map(checkout => {
+                const expectedReturn = new Date(checkout.expected_return_date);
+                const now = new Date();
+                
+                if (checkout.status === 'active' && expectedReturn < now) {
+                    return { ...checkout, status: 'overdue' as const };
+                }
+                
+                return checkout;
+            });
+
+            // Department filter for department admin
+            if (profile?.role === 'department_admin' && profile.department_id) {
+                if (activeTab === 'room') {
+                    processedData = processedData.filter(checkout => 
+                        checkout.booking?.room?.department?.name
+                    );
+                }
+            }
+
+            // Enhanced data processing
+            const enhancedData = await Promise.all(
+                processedData.map(async (checkout) => {
+                    const equipment_list = await fetchEquipmentList(checkout);
+                    const verification_items = await fetchVerificationItems(
+                        checkout.id, 
+                        equipment_list, 
+                        checkout
+                    );
+                    
+                    return {
+                        ...checkout,
+                        equipment_list,
+                        verification_items
+                    };
+                })
+            );
+
+            setCheckouts(enhancedData);
+            
+        } catch (error: any) {
+            console.error('Error fetching checkouts:', error);
+            toast.error(`Failed to load validation queue: ${error.message}`);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // ===== ENHANCED FILTERS WITH STATUS =====
+    const filteredCheckouts = checkouts.filter(checkout => {
+        const searchLower = searchTerm.toLowerCase();
+        
+        const matchesStatus = statusFilter === 'all' || checkout.status === statusFilter;
+        
+        const matchesSearch = 
+            checkout.user?.full_name?.toLowerCase().includes(searchLower) ||
+            checkout.user?.identity_number?.toLowerCase().includes(searchLower) ||
+            (activeTab === 'room' && checkout.booking?.room?.name?.toLowerCase().includes(searchLower)) ||
+            (activeTab === 'equipment' && checkout.lendingTool?.equipment_details?.some(eq => 
+                eq.name.toLowerCase().includes(searchLower)
+            ));
+        
+        return matchesStatus && matchesSearch;
+    });
+
+    // ===== EFFECTS =====
+    useEffect(() => {
+        if (profile) {
+            fetchCheckouts();
+        }
+    }, [profile, activeTab]);
+
+    useEffect(() => {
+        if (selectedCheckout) {
+            const refreshVerificationItems = async () => {
+                if (selectedCheckout.equipment_list) {
+                    const newVerificationItems = await fetchVerificationItems(
+                        selectedCheckout.id,
+                        selectedCheckout.equipment_list,
+                        selectedCheckout
+                    );
+                    setVerificationItems(newVerificationItems);
+                }
+            };
+            
+            if (selectedCheckout.verification_items && selectedCheckout.verification_items.length > 0) {
+                setVerificationItems(selectedCheckout.verification_items);
+            } else {
+                refreshVerificationItems();
+            }
+        }
+    }, [selectedCheckout]);
 
     // ===== ACCESS CONTROL =====
     if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
@@ -347,7 +660,7 @@ const ValidationQueue: React.FC = () => {
                         </p>
                     </div>
                     
-                    {/* ✅ ENHANCED: Status Overview */}
+                    {/* Status Overview */}
                     <div className="hidden lg:grid grid-cols-4 gap-4 text-center">
                         <div className="bg-white bg-opacity-20 rounded-lg p-3">
                             <div className="text-2xl font-bold">{statusStats.returned}</div>
@@ -422,7 +735,7 @@ const ValidationQueue: React.FC = () => {
                     </div>
                     
                     <div className="flex items-center space-x-3">
-                        {/* ✅ ENHANCED: Status Filter */}
+                        {/* Status Filter */}
                         <select 
                             value={statusFilter} 
                             onChange={(e) => setStatusFilter(e.target.value as any)} 
@@ -446,7 +759,7 @@ const ValidationQueue: React.FC = () => {
                     </div>
                 </div>
                 
-                {/* ✅ ENHANCED: Quick Status Chips */}
+                {/* Quick Status Chips */}
                 <div className="mt-4 flex flex-wrap gap-2">
                     {['all', 'returned', 'active', 'overdue', 'pending'].map((status) => {
                         const count = status === 'all' ? statusStats.total : statusStats[status as keyof typeof statusStats];
@@ -505,7 +818,7 @@ const ValidationQueue: React.FC = () => {
                             >
                                 <div className="flex items-start justify-between">
                                     <div className="flex-1">
-                                        {/* ✅ ENHANCED: Header with Status */}
+                                        {/* Enhanced Header with Status */}
                                         <div className="flex items-center justify-between mb-4">
                                             <div className="flex items-center space-x-4">
                                                 <div className="flex-shrink-0 h-12 w-12 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-lg flex items-center justify-center">
@@ -528,7 +841,7 @@ const ValidationQueue: React.FC = () => {
                                                 </div>
                                             </div>
                                             
-                                            {/* ✅ ENHANCED: Status Badge */}
+                                            {/* Status Badge */}
                                             <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border ${statusConfig.className}`}>
                                                 <StatusIcon className="h-4 w-4" />
                                                 <span>{statusConfig.label}</span>
@@ -566,7 +879,7 @@ const ValidationQueue: React.FC = () => {
                                             </div>
                                         </div>
 
-                                        {/* ✅ ENHANCED: Conditional Progress Bar (only for returned status) */}
+                                        {/* Conditional Progress Bar (only for returned status) */}
                                         {checkout.status === 'returned' && (
                                             <div className="mb-4">
                                                 <div className="flex justify-between items-center mb-2">
@@ -592,7 +905,7 @@ const ValidationQueue: React.FC = () => {
                                             </div>
                                         )}
 
-                                        {/* ✅ ENHANCED: Status-specific Alerts */}
+                                        {/* Status-specific Alerts */}
                                         <div className="space-y-2">
                                             {checkout.status === 'returned' && (
                                                 <>
@@ -644,7 +957,7 @@ const ValidationQueue: React.FC = () => {
                                             
                                             {checkout.status === 'active' && (
                                                 <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                                                  <div className="flex items-center">
+                                                    <div className="flex items-center">
                                                         <CheckCircle className="h-4 w-4 text-green-600 mr-2" />
                                                         <span className="text-sm font-medium text-green-800">
                                                             Currently borrowed - due {format(new Date(checkout.expected_return_date), 'MMM d, yyyy')}
@@ -666,7 +979,7 @@ const ValidationQueue: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    {/* ✅ ENHANCED: Status-dependent Actions */}
+                                    {/* Status-dependent Actions */}
                                     <div className="flex items-center space-x-2 ml-4">
                                         {/* View Details - Always available */}
                                         <button 
@@ -708,7 +1021,6 @@ const ValidationQueue: React.FC = () => {
                                         {checkout.status === 'overdue' && (
                                             <button 
                                                 onClick={() => {
-                                                    // TODO: Add manual return override functionality
                                                     toast.info('Manual return override feature coming soon');
                                                 }}
                                                 className="p-2 bg-orange-100 text-orange-600 hover:bg-orange-200 rounded-lg transition-colors"
@@ -759,7 +1071,7 @@ const ValidationQueue: React.FC = () => {
                                         }
                                     </p>
                                     
-                                    {/* ✅ ENHANCED: Status indicator in modal */}
+                                    {/* Status indicator in modal */}
                                     <div className="mt-2">
                                         {(() => {
                                             const statusConfig = getStatusConfig(selectedCheckout.status);
@@ -841,7 +1153,7 @@ const ValidationQueue: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* ✅ ENHANCED: Equipment Section with Status-dependent UI */}
+                            {/* Equipment Section with Status-dependent UI */}
                             <div className="bg-gray-50 rounded-xl p-6">
                                 <div className="flex items-center justify-between mb-6">
                                     <h3 className="text-xl font-bold text-gray-900 flex items-center">
@@ -911,7 +1223,7 @@ const ValidationQueue: React.FC = () => {
                                                             </div>
                                                         </div>
 
-                                                        {/* ✅ ENHANCED: Quantity Display with Status Context */}
+                                                        {/* Quantity Display with Status Context */}
                                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                                                             <div className="text-center p-3 bg-blue-50 rounded-lg border-2 border-blue-200">
                                                                 <div className="text-xl font-bold text-blue-600">
@@ -925,7 +1237,7 @@ const ValidationQueue: React.FC = () => {
                                                                 </div>
                                                             </div>
 
-                                                            {/* ✅ CONDITIONAL: Interactive returned quantity only for 'returned' status */}
+                                                            {/* Interactive returned quantity only for 'returned' status */}
                                                             {selectedCheckout.status === 'returned' ? (
                                                                 <div className="text-center p-3 bg-white rounded-lg border-2 border-gray-300">
                                                                     <div className="flex items-center justify-center space-x-2">
@@ -1016,7 +1328,7 @@ const ValidationQueue: React.FC = () => {
                                                             </div>
                                                         </div>
 
-                                                        {/* ✅ CONDITIONAL: Verification controls only for 'returned' status */}
+                                                        {/* Verification controls only for 'returned' status */}
                                                         {selectedCheckout.status === 'returned' && (
                                                             <>
                                                                 {/* Condition Notes */}
@@ -1024,7 +1336,7 @@ const ValidationQueue: React.FC = () => {
                                                                     <label className="block text-sm font-medium text-gray-700 mb-2">
                                                                         Condition Notes (Optional)
                                                                     </label>
-                                                                    <textarea
+                                                                  <textarea
                                                                         value={item.condition_notes || ''}
                                                                         onChange={(e) => {
                                                                             const newNotes = e.target.value;
@@ -1094,7 +1406,7 @@ const ValidationQueue: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* ✅ CONDITIONAL: Summary & Actions only for 'returned' status */}
+                            {/* Summary & Actions only for 'returned' status */}
                             {selectedCheckout.status === 'returned' && (
                                 <div className="mt-8 bg-white border border-gray-200 rounded-xl p-6">
                                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Verification Summary</h3>
@@ -1181,348 +1493,6 @@ const ValidationQueue: React.FC = () => {
                     </div>
                 </div>
             )}
-
-            {/* Keep all existing modals (Report Modal, Delete Confirmation) unchanged */}
-            {/* ... Rest of the modals remain the same ... */}
-        </div>
-    );
-};
-
-// ===== ADD MISSING HELPER FUNCTIONS =====
-const fetchEquipmentList = async (checkout: CheckoutWithDetails): Promise<Equipment[]> => {
-    try {
-        let equipmentIds: string[] = [];
-        
-        if (checkout.type === 'room' && checkout.booking?.equipment_requested) {
-            equipmentIds = checkout.booking.equipment_requested;
-        } else if (checkout.type === 'things' && checkout.lendingTool?.id_equipment) {
-            equipmentIds = checkout.lendingTool.id_equipment;
-        }
-
-        if (equipmentIds.length === 0) return [];
-
-        const { data, error } = await supabase
-            .from('equipment')
-            .select('id, name, code, category, unit, is_mandatory')
-            .in('id', equipmentIds);
-
-        if (error) throw error;
-        return data || [];
-        
-    } catch (error) {
-        console.error('Error fetching equipment list:', error);
-        return [];
-    }
-};
-
-const fetchVerificationItems = async (
-    checkoutId: string, 
-    equipmentList: Equipment[], 
-    checkout: CheckoutWithDetails
-): Promise<VerificationItem[]> => {
-    try {
-        const { data: checkoutItems, error } = await supabase
-            .from('checkout_items')
-            .select('*')
-            .eq('checkout_id', checkoutId);
-
-        if (error) throw error;
-
-        return equipmentList.map(equipment => {
-            const checkoutItem = checkoutItems?.find(item => item.equipment_id === equipment.id);
-            
-            let borrowedQty = 1;
-            
-            if (checkout.type === 'room' && checkout.booking) {
-                const equipmentIndices: number[] = [];
-                checkout.booking.equipment_requested?.forEach((id: string, index: number) => {
-                    if (id === equipment.id) {
-                        equipmentIndices.push(index);
-                    }
-                });
-
-                borrowedQty = equipmentIndices.reduce((total, index) => {
-                    const qty = checkout.booking.equipment_quantities?.[index] || 1;
-                    return total + qty;
-                }, 0);
-
-                if (borrowedQty === 0 && equipmentIndices.length > 0) {
-                    borrowedQty = equipmentIndices.length;
-                }
-                
-            } else if (checkout.type === 'things' && checkout.lendingTool) {
-                const equipmentIndices: number[] = [];
-                checkout.lendingTool.id_equipment?.forEach((id: string, index: number) => {
-                    if (id === equipment.id) {
-                        equipmentIndices.push(index);
-                    }
-                });
-
-                borrowedQty = equipmentIndices.reduce((total, index) => {
-                    const qty = checkout.lendingTool.qty?.[index] || 1;
-                    return total + qty;
-                }, 0);
-
-                if (borrowedQty === 0 && equipmentIndices.length > 0) {
-                    borrowedQty = equipmentIndices.length;
-                }
-            }
-
-            const verificationItem: VerificationItem = {
-                equipment_id: equipment.id,
-                equipment_name: equipment.name,
-                equipment_code: equipment.code,
-                equipment_unit: equipment.unit || 'pcs',
-                borrowed_quantity: borrowedQty,
-                returned_quantity: checkoutItem?.quantity || 0,
-                is_verified: !!checkoutItem,
-                condition_notes: checkoutItem?.condition_notes || '',
-                is_mandatory: equipment.is_mandatory
-            };
-
-            return verificationItem;
-        });
-        
-    } catch (error) {
-        console.error('Error fetching verification items:', error);
-        return [];
-    }
-};
-
-const updateVerificationItem = async (
-    checkoutId: string, 
-    equipmentId: string, 
-    newReturnedQuantity: number, 
-    conditionNotes: string,
-    isVerified: boolean
-) => {
-    try {
-        const { data: currentCheckoutItems, error: fetchError } = await supabase
-            .from('checkout_items')
-            .select('quantity')
-            .eq('checkout_id', checkoutId)
-            .eq('equipment_id', equipmentId)
-            .maybeSingle();
-
-        if (fetchError) throw fetchError;
-
-        const currentReturnedQty = currentCheckoutItems?.quantity || 0;
-
-        if (isVerified && newReturnedQuantity > 0) {
-            const { error } = await supabase
-                .from('checkout_items')
-                .upsert({
-                    checkout_id: checkoutId,
-                    equipment_id: equipmentId,
-                    quantity: newReturnedQuantity,
-                    condition_notes: conditionNotes || null
-                }, { 
-                    onConflict: 'checkout_id, equipment_id' 
-                });
-
-            if (error) throw error;
-        } else {
-            const { error } = await supabase
-                .from('checkout_items')
-                .delete()
-                .match({ checkout_id: checkoutId, equipment_id: equipmentId });
-
-            if (error) throw error;
-        }
-
-        const quantityDifference = newReturnedQuantity - currentReturnedQty;
-        
-        if (quantityDifference !== 0) {
-            await updateEquipmentQuantity(equipmentId, quantityDifference);
-        }
-
-        if (selectedCheckout) {
-            const newVerificationItems = await fetchVerificationItems(
-                selectedCheckout.id, 
-                selectedCheckout.equipment_list || [],
-                selectedCheckout
-            );
-            setVerificationItems(newVerificationItems);
-        }
-        
-    } catch (error: any) {
-        console.error('❌ Error updating verification:', error);
-        toast.error(`Failed to update verification: ${error.message}`);
-    }
-};
-
-const updateEquipmentQuantity = async (equipmentId: string, quantityChange: number) => {
-    try {
-        const quantityManager = new EquipmentQuantityManager(supabase);
-        
-        if (quantityChange > 0) {
-            await quantityManager.increaseQuantity(
-                equipmentId,
-                quantityChange,
-                'ValidationQueue: User returned items'
-            );
-        } else if (quantityChange < 0) {
-            await quantityManager.decreaseQuantity(
-                equipmentId,
-                Math.abs(quantityChange),
-                'ValidationQueue: Admin reverted verification'
-            );
-        }
-        
-    } catch (error) {
-        console.error('❌ Error updating equipment quantity:', error);
-        throw error;
-    }
-};
-
-const handleApproveReturn = async (checkoutId: string) => {
-    try {
-        setProcessingIds(prev => new Set(prev).add(checkoutId));
-
-        const { error } = await supabase
-            .from('checkouts')
-            .update({ 
-                status: 'active',
-                approved_by: profile?.id,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', checkoutId);
-
-        if (error) throw error;
-
-        const checkout = checkouts.find(c => c.id === checkoutId);
-        if (checkout) {
-            if (activeTab === 'room' && checkout.booking_id) {
-                await supabase
-                    .from('bookings')
-                    .update({ status: 'completed' })
-                    .eq('id', checkout.booking_id);
-            } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
-                await supabase
-                    .from('lending_tool')
-                    .update({ status: 'completed' })
-                    .eq('id', checkout.lendingTool_id);
-            }
-        }
-
-        toast.success('Return approved successfully!');
-        fetchCheckouts();
-        setShowDetailModal(false);
-        
-    } catch (error: any) {
-        console.error('❌ Error approving return:', error);
-        toast.error(`Failed to approve return: ${error.message}`);
-    } finally {
-        setProcessingIds(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(checkoutId);
-            return newSet;
-        });
-    }
-};
-
-const handleRejectReturn = async (checkoutId: string) => {
-    try {
-        setProcessingIds(prev => new Set(prev).add(checkoutId));
-
-        const { data: verifiedItems, error: itemsError } = await supabase
-            .from('checkout_items')
-            .select('equipment_id, quantity')
-            .eq('checkout_id', checkoutId);
-
-        if (itemsError) throw itemsError;
-
-        if (verifiedItems && verifiedItems.length > 0) {
-            for (const item of verifiedItems) {
-                if (item.quantity > 0) {
-                    await updateEquipmentQuantity(item.equipment_id, -item.quantity);
-                }
-            }
-        }
-
-        await supabase.from('checkouts').delete().eq('id', checkoutId);
-        
-        const checkout = checkouts.find(c => c.id === checkoutId);
-        if (checkout) {
-            if (activeTab === 'room' && checkout.booking_id) {
-                await supabase
-                    .from('bookings')
-                    .update({ status: 'approved' })
-                    .eq('id', checkout.booking_id);
-            } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
-                await supabase
-                    .from('lending_tool')
-                    .update({ status: 'borrow' })
-                    .eq('id', checkout.lendingTool_id);
-            }
-        }
-
-        toast.success('Return rejected and quantities reverted');
-        fetchCheckouts();
-        setShowDetailModal(false);
-        
-    } catch (error: any) {
-        console.error('❌ Error rejecting return:', error);
-        toast.error(`Failed to reject return: ${error.message}`);
-    } finally {
-        setProcessingIds(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(checkoutId);
-            return newSet;
-        });
-    }
-};
-
-const getVerificationProgress = (items: VerificationItem[]) => {
-    const totalItems = items.length;
-    const verifiedItems = items.filter(item => item.is_verified).length;
-    const mandatoryItems = items.filter(item => item.is_mandatory);
-    const verifiedMandatory = mandatoryItems.filter(item => item.is_verified).length;
-    
-    return {
-        total: totalItems,
-        verified: verifiedItems,
-        mandatory: mandatoryItems.length,
-        verifiedMandatory,
-        percentage: totalItems > 0 ? Math.round((verifiedItems / totalItems) * 100) : 0,
-        canApprove: mandatoryItems.length === verifiedMandatory
-    };
-};
-
-const getTotalQuantityGap = (items: VerificationItem[]) => {
-    return items.reduce((total, item) => {
-        const gap = Math.max(0, item.borrowed_quantity - item.returned_quantity);
-        return total + gap;
-    }, 0);
-};
-
-// ===== EFFECTS =====
-useEffect(() => {
-    if (profile) {
-        fetchCheckouts();
-    }
-}, [profile, activeTab]);
-
-useEffect(() => {
-    if (selectedCheckout) {
-        const refreshVerificationItems = async () => {
-            if (selectedCheckout.equipment_list) {
-                const newVerificationItems = await fetchVerificationItems(
-                    selectedCheckout.id,
-                    selectedCheckout.equipment_list,
-                    selectedCheckout
-                );
-                setVerificationItems(newVerificationItems);
-            }
-        };
-        
-        if (selectedCheckout.verification_items && selectedCheckout.verification_items.length > 0) {
-            setVerificationItems(selectedCheckout.verification_items);
-        } else {
-            refreshVerificationItems();
-        }
-    }
-}, [selectedCheckout]);
 
             {/* ===== REPORT MODAL ===== */}
             {showReportModal && selectedCheckout && (
@@ -1665,5 +1635,8 @@ useEffect(() => {
                     </div>
                 </div>
             )}
+        </div>
+    );
+};
 
 export default ValidationQueue;
