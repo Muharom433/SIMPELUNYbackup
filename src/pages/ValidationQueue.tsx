@@ -238,51 +238,110 @@ const ValidationQueue: React.FC = () => {
 
     // ===== FETCH VERIFICATION ITEMS =====
     const fetchVerificationItems = async (checkoutId: string, equipmentList: Equipment[]): Promise<VerificationItem[]> => {
-        try {
-            const { data: checkoutItems, error } = await supabase
-                .from('checkout_items')
-                .select('*')
-                .eq('checkout_id', checkoutId);
+    try {
+        const { data: checkoutItems, error } = await supabase
+            .from('checkout_items')
+            .select('*')
+            .eq('checkout_id', checkoutId);
 
-            if (error) throw error;
+        if (error) throw error;
 
-            // Combine equipment info with verification status
-            return equipmentList.map(equipment => {
-                const checkoutItem = checkoutItems?.find(item => item.equipment_id === equipment.id);
-                const checkout = checkouts.find(c => c.id === checkoutId);
-                
-                let borrowedQty = 1; // Default
-                
-                if (activeTab === 'room' && checkout?.booking) {
-                    const equipmentIndex = checkout.booking.equipment_requested?.indexOf(equipment.id);
-                    borrowedQty = equipmentIndex !== -1 && checkout.booking.equipment_quantities 
-                        ? checkout.booking.equipment_quantities[equipmentIndex] || 1 
-                        : 1;
-                } else if (activeTab === 'equipment' && checkout?.lendingTool) {
-                    const equipmentIndex = checkout.lendingTool.id_equipment?.indexOf(equipment.id);
-                    borrowedQty = equipmentIndex !== -1 && checkout.lendingTool.qty
-                        ? checkout.lendingTool.qty[equipmentIndex] || 1
-                        : 1;
+        // ✅ PERBAIKAN UTAMA: Ambil borrowed quantity yang BENAR dari booking/lending
+        return equipmentList.map(equipment => {
+            const checkoutItem = checkoutItems?.find(item => item.equipment_id === equipment.id);
+            const checkout = checkouts.find(c => c.id === checkoutId);
+            
+            let borrowedQty = 1; // Default
+            
+            if (activeTab === 'room' && checkout?.booking) {
+                // ✅ PERBAIKAN: Untuk room booking, ambil quantity dari equipment_quantities array
+                console.log('🔍 Room Booking Debug:', {
+                    equipmentId: equipment.id,
+                    equipment_requested: checkout.booking.equipment_requested,
+                    equipment_quantities: checkout.booking.equipment_quantities
+                });
+
+                // ✅ KUNCI: Cari SEMUA index dimana equipment ini muncul
+                const equipmentIndices: number[] = [];
+                checkout.booking.equipment_requested?.forEach((id: string, index: number) => {
+                    if (id === equipment.id) {
+                        equipmentIndices.push(index);
+                    }
+                });
+
+                console.log(`📍 Equipment ${equipment.id} found at indices:`, equipmentIndices);
+
+                // ✅ PERBAIKAN: Jumlahkan quantity dari SEMUA kemunculan
+                borrowedQty = equipmentIndices.reduce((total, index) => {
+                    const qty = checkout.booking.equipment_quantities?.[index] || 1;
+                    console.log(`   Index ${index}: +${qty}`);
+                    return total + qty;
+                }, 0);
+
+                // Fallback jika tidak ada di equipment_quantities
+                if (borrowedQty === 0 && equipmentIndices.length > 0) {
+                    borrowedQty = equipmentIndices.length; // Default 1 per kemunculan
                 }
 
-                return {
-                    equipment_id: equipment.id,
-                    equipment_name: equipment.name,
-                    equipment_code: equipment.code,
-                    equipment_unit: equipment.unit || 'pcs',
-                    borrowed_quantity: borrowedQty,
-                    returned_quantity: checkoutItem?.quantity || 0,
-                    is_verified: !!checkoutItem,
-                    condition_notes: checkoutItem?.condition_notes || '',
-                    is_mandatory: equipment.is_mandatory
-                };
+                console.log(`📊 Final borrowed quantity for ${equipment.name}: ${borrowedQty}`);
+                
+            } else if (activeTab === 'equipment' && checkout?.lendingTool) {
+                // ✅ PERBAIKAN: Untuk equipment lending, ambil dari qty array
+                console.log('🔧 Equipment Lending Debug:', {
+                    equipmentId: equipment.id,
+                    id_equipment: checkout.lendingTool.id_equipment,
+                    qty: checkout.lendingTool.qty
+                });
+
+                const equipmentIndices: number[] = [];
+                checkout.lendingTool.id_equipment?.forEach((id: string, index: number) => {
+                    if (id === equipment.id) {
+                        equipmentIndices.push(index);
+                    }
+                });
+
+                console.log(`📍 Equipment ${equipment.id} found at indices:`, equipmentIndices);
+
+                borrowedQty = equipmentIndices.reduce((total, index) => {
+                    const qty = checkout.lendingTool.qty?.[index] || 1;
+                    console.log(`   Index ${index}: +${qty}`);
+                    return total + qty;
+                }, 0);
+
+                if (borrowedQty === 0 && equipmentIndices.length > 0) {
+                    borrowedQty = equipmentIndices.length;
+                }
+
+                console.log(`📊 Final borrowed quantity for ${equipment.name}: ${borrowedQty}`);
+            }
+
+            const verificationItem: VerificationItem = {
+                equipment_id: equipment.id,
+                equipment_name: equipment.name,
+                equipment_code: equipment.code,
+                equipment_unit: equipment.unit || 'pcs',
+                borrowed_quantity: borrowedQty, // ✅ BENAR: gunakan quantity yang sudah dihitung
+                returned_quantity: checkoutItem?.quantity || 0,
+                is_verified: !!checkoutItem,
+                condition_notes: checkoutItem?.condition_notes || '',
+                is_mandatory: equipment.is_mandatory
+            };
+
+            console.log('✅ Verification Item Created:', {
+                equipment: equipment.name,
+                borrowed: verificationItem.borrowed_quantity,
+                returned: verificationItem.returned_quantity,
+                missing: verificationItem.borrowed_quantity - verificationItem.returned_quantity
             });
-            
-        } catch (error) {
-            console.error('Error fetching verification items:', error);
-            return [];
-        }
-    };
+
+            return verificationItem;
+        });
+        
+    } catch (error) {
+        console.error('Error fetching verification items:', error);
+        return [];
+    }
+};
 
     // ===== UPDATE VERIFICATION ITEM =====
     const updateVerificationItem = async (
