@@ -42,7 +42,6 @@ import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { BookingWithDetails } from '../types';
 import { alert } from '../components/Alert/AlertHelper';
-import EquipmentQuantityManager from '../lib/equipmentQuantityManager';
 import { format, isAfter, isBefore, parseISO } from 'date-fns';
 
 interface Booking {
@@ -227,7 +226,7 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
       const validation = await quantityManager.validateBorrowRequest(equipmentList);
       
       if (!validation.isValid) {
-        throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
+        throw new Error('Validation failed: ' + validation.errors.join(', '));
       }
     }
 
