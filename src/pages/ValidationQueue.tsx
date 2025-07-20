@@ -8,7 +8,6 @@ import {
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { format, isToday, isTomorrow, isThisWeek, isPast, parseISO, compareAsc, startOfDay, endOfDay } from 'date-fns';
-import EquipmentQuantityManager from '../lib/equipmentQuantityManager';
 import toast from 'react-hot-toast';
 import EquipmentQuantityManager from '../lib/equipmentQuantityManager';
 
