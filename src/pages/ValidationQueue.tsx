@@ -477,25 +477,38 @@ const ValidationQueue: React.FC = () => {
     };
 
     // ===== UPDATE EQUIPMENT QUANTITY =====
-    const updateEquipmentQuantity = async (equipmentId: string, quantityChange: number) => {
-        try {
-            const quantityManager = new EquipmentQuantityManager(supabase);
-            
-            if (quantityChange !== 0) {
-                await quantityManager.updateQuantity([{
-                    equipment_id: equipmentId,
-                    change_amount: quantityChange,
-                    transaction_type: quantityChange > 0 ? 'return' : 'borrow',
-                    reference_id: 'validation_queue',
-                    reference_type: 'booking'
-                }]);
-            }
-            
-        } catch (error) {
-            console.error('Error updating equipment quantity:', error);
-            throw error;
-        }
-    };
+    // ===== UPDATE EQUIPMENT QUANTITY =====
+const updateEquipmentQuantity = async (equipmentId: string, quantityChange: number) => {
+    try {
+        // Simple approach: Just update the equipment quantity directly
+        const { data: equipment, error: fetchError } = await supabase
+            .from('equipment')
+            .select('quantity')
+            .eq('id', equipmentId)
+            .single();
+
+        if (fetchError) throw fetchError;
+
+        const newQuantity = Math.max(0, equipment.quantity + quantityChange);
+
+        const { error: updateError } = await supabase
+            .from('equipment')
+            .update({ 
+                quantity: newQuantity,
+                is_available: newQuantity > 0,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', equipmentId);
+
+        if (updateError) throw updateError;
+
+        console.log(`✅ Equipment ${equipmentId} quantity updated: ${equipment.quantity} → ${newQuantity} (${quantityChange > 0 ? '+' : ''}${quantityChange})`);
+        
+    } catch (error) {
+        console.error('Error updating equipment quantity:', error);
+        throw error;
+    }
+};
 
     // ===== APPROVE RETURN =====
     const handleApproveReturn = async (checkoutId: string) => {
