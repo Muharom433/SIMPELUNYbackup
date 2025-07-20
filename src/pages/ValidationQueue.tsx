@@ -480,39 +480,36 @@ const ValidationQueue: React.FC = () => {
     // ===== UPDATE EQUIPMENT QUANTITY =====
 // ===== UPDATE EQUIPMENT QUANTITY =====
 const updateEquipmentQuantity = async (equipmentId: string, quantityChange: number) => {
-    try {
-        if (!selectedCheckout) return;
-
-        const quantityManager = new EquipmentQuantityManager(supabase);
-        
-        if (quantityChange > 0) {
-            // ✅ RETURN: Kurangi currently_borrowed, JANGAN ubah quantity fisik
-            await quantityManager.returnEquipment(
-                equipmentId,
-                selectedCheckout.user_id,
-                quantityChange,
-                selectedCheckout.type === 'room' ? 'booking' : 'lending',
-                selectedCheckout.type === 'room' ? selectedCheckout.booking_id : selectedCheckout.lendingTool_id
-            );
-            
-            console.log(`✅ RETURN: Equipment ${equipmentId} returned ${quantityChange} units (currently_borrowed decreased)`);
-        } else if (quantityChange < 0) {
-            // ✅ REVERT: Tambah kembali ke currently_borrowed
-            await quantityManager.borrowEquipment(
-                equipmentId,
-                selectedCheckout.user_id,
-                Math.abs(quantityChange),
-                selectedCheckout.type === 'room' ? 'booking' : 'lending',
-                selectedCheckout.type === 'room' ? selectedCheckout.booking_id : selectedCheckout.lendingTool_id
-            );
-            
-            console.log(`✅ REVERT: Equipment ${equipmentId} reverted ${Math.abs(quantityChange)} units (currently_borrowed increased)`);
-        }
-        
-    } catch (error) {
-        console.error('Error updating equipment quantity:', error);
-        throw error;
+  try {
+    const quantityManager = new EquipmentQuantityManager(supabase);
+    
+    console.log(`🔄 ValidationQueue: Equipment ${equipmentId} change: ${quantityChange}`);
+    
+    if (quantityChange > 0) {
+      // ✅ POSITIVE: User mengembalikan barang - tambah quantity
+      await quantityManager.increaseQuantity(
+        equipmentId,
+        quantityChange,
+        'User returned items'
+      );
+      
+      console.log(`✅ RETURN: Equipment ${equipmentId} +${quantityChange} (quantity increased)`);
+      
+    } else if (quantityChange < 0) {
+      // ✅ NEGATIVE: Admin membatalkan verifikasi - kurangi quantity
+      await quantityManager.decreaseQuantity(
+        equipmentId,
+        Math.abs(quantityChange),
+        'Admin reverted verification'
+      );
+      
+      console.log(`✅ REVERT: Equipment ${equipmentId} ${quantityChange} (quantity decreased)`);
     }
+    
+  } catch (error) {
+    console.error('❌ Error updating equipment quantity in ValidationQueue:', error);
+    throw error;
+  }
 };
 
     // ===== APPROVE RETURN =====
