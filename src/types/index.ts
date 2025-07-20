@@ -57,6 +57,12 @@ export interface Equipment {
   is_mandatory: boolean;
   is_available: boolean;
   department_id: string | null;
+  quantity: number | null;
+  original_quantity: number | null;
+  unit: string | null;
+  condition: string | null;
+  Spesification: string | null;
+  rooms_id: string | null;
   created_at: string;
   updated_at: string;
 }
