@@ -195,67 +195,15 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
       throw new Error('Booking not found');
     }
 
-    console.log('🚀 BOOKING MANAGEMENT: Status update started', {
+    console.log('📋 SIMPLIFIED: Updating booking status (triggers will handle equipment):', {
       bookingId: booking.id,
       currentStatus: booking.status,
       newStatus,
-      user: booking.user?.full_name,
       equipment_requested: booking.equipment_requested,
       equipment_quantities: booking.equipment_quantities
     });
 
-    // ✅ CRITICAL: Only process if status actually changes AND has equipment
-    if (booking.status !== newStatus && booking.equipment_requested && booking.equipment_requested.length > 0) {
-      const quantityManager = new EquipmentQuantityManager(supabase);
-      
-      // ✅ Build equipment list using utility function
-      const equipmentList = EquipmentQuantityManager.buildEquipmentListFromBooking(booking);
-
-      console.log('🔧 Equipment list to process:', equipmentList);
-
-      // ✅ Handle different status transitions
-      if (newStatus === 'approved' && booking.status === 'pending') {
-        console.log('✅ APPROVING PENDING BOOKING: Will decrease equipment quantities');
-        
-        // ✅ First validate all quantities are available
-        const validation = await quantityManager.validateQuantityAvailable(equipmentList);
-        if (!validation.isValid) {
-          throw new Error(`Equipment validation failed: ${validation.errors.join(', ')}`);
-        }
-        
-        // ✅ Decrease quantities (reserve equipment)
-        await quantityManager.bulkDecreaseQuantity(
-          equipmentList, 
-          `Booking approved: ${booking.id} by ${booking.user?.full_name}`
-        );
-        
-        console.log('✅ BOOKING APPROVED: Equipment quantities decreased successfully');
-        
-      } else if (newStatus === 'rejected') {
-        if (booking.status === 'approved') {
-          console.log('✅ REJECTING APPROVED BOOKING: Will increase equipment quantities');
-          
-          // ✅ Increase quantities (return to inventory)
-          await quantityManager.bulkIncreaseQuantity(
-            equipmentList, 
-            `Previously approved booking rejected: ${booking.id}`
-          );
-          
-          console.log('✅ BOOKING REJECTED: Equipment quantities restored successfully');
-        } else {
-          console.log('ℹ️ Rejecting pending booking - no quantity changes needed');
-        }
-      }
-    } else {
-      console.log('ℹ️ No equipment quantity changes needed:', {
-        statusSame: booking.status === newStatus,
-        hasEquipment: booking.equipment_requested && booking.equipment_requested.length > 0,
-        equipmentCount: booking.equipment_requested?.length || 0
-      });
-    }
-
-    // ✅ Update booking status in database
-    console.log('📝 Updating booking status in database...');
+    // ✅ SIMPLE: Just update booking status - triggers handle the rest!
     const { error: bookingError } = await supabase
       .from('bookings')
       .update({ 
@@ -266,15 +214,16 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
 
     if (bookingError) throw bookingError;
     
-    // ✅ Success notification
+    console.log('✅ SIMPLIFIED: Booking status updated, triggers processed equipment automatically');
+    
+    // Success notification
     const statusText = newStatus === 'approved' 
       ? getText('approved', 'disetujui') 
       : getText('rejected', 'ditolak');
     
-    console.log('✅ BOOKING MANAGEMENT: Status update completed successfully');
     alert.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
     
-    // ✅ Refresh data
+    // Refresh data
     await fetchBookings();
     await fetchAllEquipment();
     
@@ -284,7 +233,7 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
     }
     
   } catch (error: any) {
-    console.error('❌ BOOKING MANAGEMENT: Error updating booking status:', error);
+    console.error('❌ Error updating booking status:', error);
     alert.error(error.message || getText('Failed to update booking status', 'Gagal memperbarui status pemesanan'));
   } finally {
     setProcessingIds(prev => {
