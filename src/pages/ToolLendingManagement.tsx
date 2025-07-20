@@ -142,8 +142,6 @@ const ToolLendingManagement: React.FC = () => {
 
     // ✅ TAMBAH FUNGSI APPROVAL/REJECTION
     
-// ✅ FIXED: ToolLendingManagement handleStatusUpdate function dengan enhanced logging
-
 const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rejected') => {
   try {
     setProcessingIds(prev => new Set(prev).add(recordId));
@@ -151,72 +149,20 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
     const record = lendingRecords.find(r => r.id === recordId);
     if (!record) throw new Error("Lending record not found");
 
-    console.log('🚀 TOOL LENDING MANAGEMENT: Status update started', {
+    console.log('🔧 SIMPLIFIED: Updating lending status (triggers will handle equipment):', {
       recordId: record.id,
       currentStatus: record.status,
       newStatus,
-      user: record.user?.full_name,
       id_equipment: record.id_equipment,
       qty: record.qty
     });
 
-    // ✅ CRITICAL: Only process if status actually changes AND has equipment
-    if (record.status !== newStatus && record.id_equipment && record.id_equipment.length > 0) {
-      const quantityManager = new EquipmentQuantityManager(supabase);
-      
-      // ✅ Build equipment list using utility function
-      const equipmentList = EquipmentQuantityManager.buildEquipmentListFromLending(record);
-
-      console.log('🔧 Equipment list to process:', equipmentList);
-
-      // ✅ Handle different status transitions
-      if (newStatus === 'approved' && record.status === 'pending') {
-        console.log('✅ APPROVING PENDING LENDING: Will decrease equipment quantities');
-        
-        // ✅ First validate all quantities are available
-        const validation = await quantityManager.validateQuantityAvailable(equipmentList);
-        if (!validation.isValid) {
-          throw new Error(`Equipment validation failed: ${validation.errors.join(', ')}`);
-        }
-        
-        // ✅ Decrease quantities (reserve equipment)
-        await quantityManager.bulkDecreaseQuantity(
-          equipmentList, 
-          `Tool lending approved: ${record.id} by ${record.user?.full_name}`
-        );
-        
-        console.log('✅ TOOL LENDING APPROVED: Equipment quantities decreased successfully');
-        
-      } else if (newStatus === 'rejected') {
-        if (record.status === 'approved' || record.status === 'borrow') {
-          console.log('✅ REJECTING APPROVED/BORROWED LENDING: Will increase equipment quantities');
-          
-          // ✅ Increase quantities (return to inventory)
-          await quantityManager.bulkIncreaseQuantity(
-            equipmentList, 
-            `Previously approved lending rejected: ${record.id}`
-          );
-          
-          console.log('✅ TOOL LENDING REJECTED: Equipment quantities restored successfully');
-        } else {
-          console.log('ℹ️ Rejecting pending lending - no quantity changes needed');
-        }
-      }
-    } else {
-      console.log('ℹ️ No equipment quantity changes needed:', {
-        statusSame: record.status === newStatus,
-        hasEquipment: record.id_equipment && record.id_equipment.length > 0,
-        equipmentCount: record.id_equipment?.length || 0
-      });
-    }
-
-    // ✅ Update record status (approved becomes 'borrow')
+    // ✅ SIMPLE: Just update record status - triggers handle the rest!
     let finalStatus = newStatus;
     if (newStatus === 'approved') {
       finalStatus = 'borrow'; // Change to 'borrow' when approved
     }
     
-    console.log('📝 Updating lending record status in database...');
     const { error: recordError } = await supabase
       .from('lending_tool')
       .update({ 
@@ -227,15 +173,16 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
 
     if (recordError) throw recordError;
     
-    // ✅ Success notification
+    console.log('✅ SIMPLIFIED: Lending status updated, triggers processed equipment automatically');
+    
+    // Success notification
     const statusText = newStatus === 'approved' 
       ? getText('approved', 'disetujui') 
       : getText('rejected', 'ditolak');
     
-    console.log('✅ TOOL LENDING MANAGEMENT: Status update completed successfully');
     toast.success(getText(`Tool lending ${statusText} successfully`, `Peminjaman alat berhasil ${statusText}`));
     
-    // ✅ Refresh data
+    // Refresh data
     await fetchLendingRecords();
     await fetchAllEquipment();
     
@@ -245,7 +192,7 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
     }
     
   } catch (error: any) {
-    console.error('❌ TOOL LENDING MANAGEMENT: Error updating lending status:', error);
+    console.error('❌ Error updating lending status:', error);
     toast.error(error.message || getText('Failed to update lending status', 'Gagal memperbarui status peminjaman'));
   } finally {
     setProcessingIds(prev => {
@@ -255,6 +202,46 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
     });
   }
 };
+
+// ✅ SIMPLIFIED: Delete handlers (triggers handle equipment restoration)
+
+const handleDelete = async (bookingId: string) => {
+  try {
+    setProcessingIds(prev => new Set(prev).add(bookingId));
+    
+    console.log('🗑️ SIMPLIFIED: Deleting booking (triggers will restore equipment)');
+
+    // ✅ SIMPLE: Just delete booking - triggers handle equipment restoration!
+    const { error } = await supabase
+      .from('bookings')
+      .delete()
+      .eq('id', bookingId);
+
+    if (error) throw error;
+    
+    console.log('✅ SIMPLIFIED: Booking deleted, triggers restored equipment automatically');
+    
+    alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
+    setShowDeleteConfirm(null);
+    await fetchBookings();
+    await fetchAllEquipment();
+    
+    if (selectedBooking?.id === bookingId) {
+      setShowDetailModal(false);
+    }
+    
+  } catch (error: any) {
+    console.error('❌ Error deleting booking:', error);
+    alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
+  } finally {
+    setProcessingIds(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(bookingId);
+      return newSet;
+    });
+  }
+};
+
 
     const handleDelete = async (recordId: string) => {
   try {
