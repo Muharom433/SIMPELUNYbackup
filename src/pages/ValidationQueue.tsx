@@ -613,10 +613,15 @@ const ValidationQueue: React.FC = () => {
     };
 
     const getTotalQuantityGap = (items: VerificationItem[]) => {
-        return items.reduce((total, item) => {
-            return total + Math.max(0, item.borrowed_quantity - item.returned_quantity);
-        }, 0);
-    };
+    const totalGap = items.reduce((total, item) => {
+        const gap = Math.max(0, item.borrowed_quantity - item.returned_quantity);
+        console.log(`📊 ${item.equipment_name}: ${item.borrowed_quantity} - ${item.returned_quantity} = ${gap}`);
+        return total + gap;
+    }, 0);
+    
+    console.log(`📊 Total quantity gap: ${totalGap}`);
+    return totalGap;
+};
 
     // ===== ACCESS CONTROL =====
     if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
