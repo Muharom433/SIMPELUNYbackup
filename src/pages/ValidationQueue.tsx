@@ -87,7 +87,7 @@ interface VerificationItem {
     is_mandatory: boolean;
 }
 
-// Tipe untuk data laporan yang sesuai dengan constraint database
+// ✅ Tipe untuk data laporan yang sesuai dengan constraint database
 type ViolationType = 'late_return' | 'damage' | 'loss' | 'misuse' | 'other';
 
 const ValidationQueue: React.FC = () => {
@@ -104,12 +104,12 @@ const ValidationQueue: React.FC = () => {
     const [verificationItems, setVerificationItems] = useState<VerificationItem[]>([]);
     const [showReportModal, setShowReportModal] = useState(false);
     
-    // ✅ FIXED: State untuk report disesuaikan dengan constraint baru
+    // ✅ State untuk report disesuaikan dengan constraint baru
     const [reportData, setReportData] = useState({
         title: '',
         description: '',
         severity: 'minor' as 'minor' | 'major' | 'critical',
-        violation_type: 'damage' as ViolationType // Default value
+        violation_type: 'damage' as ViolationType // Nilai default yang valid
     });
     
     const [statusFilter, setStatusFilter] = useState<'all' | 'returned' | 'active' | 'overdue' | 'pending'>('returned');
@@ -141,7 +141,7 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    // ===== FETCH VERIFICATION ITEMS =====
+    // ===== FIXED FETCH VERIFICATION ITEMS =====
     const fetchVerificationItems = async (
         checkoutId: string, 
         equipmentList: Equipment[], 
@@ -174,7 +174,7 @@ const ValidationQueue: React.FC = () => {
                     }, 0);
 
                     if (borrowedQty === 0 && equipmentIndices.length > 0) {
-                        borrowedQty = equipmentIndices.length;
+                        borrowedQty = equipmentIndices.length; // Default 1 per kemunculan
                     }
                     
                 } else if (checkout.type === 'things' && checkout.lendingTool) {
@@ -216,7 +216,7 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    // ===== FETCH CHECKOUTS WITH VIOLATION CHECK =====
+    // ===== ENHANCED FETCH CHECKOUTS WITH VIOLATION CHECK =====
     const fetchCheckouts = useCallback(async () => {
         try {
             setLoading(true);
@@ -1031,8 +1031,107 @@ const ValidationQueue: React.FC = () => {
                                                         : 'border-gray-200 bg-white'
                                                 }`}
                                             >
-                                                {/* Item details and quantity controls */}
-                                                {/* ... (omitted for brevity, same as original) ... */}
+                                                <div className="flex flex-col md:flex-row items-start justify-between">
+                                                    <div className="flex-1 mb-4 md:mb-0 md:mr-6">
+                                                        <div className="flex items-center space-x-3 mb-3">
+                                                            <div className={`h-10 w-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                                                                selectedCheckout.status === 'returned'
+                                                                ? (item.is_verified 
+                                                                    ? 'bg-green-100' 
+                                                                    : 'bg-gray-100')
+                                                                : 'bg-blue-100'
+                                                            }`}>
+                                                                {selectedCheckout.status === 'returned' && item.is_verified ? (
+                                                                    <CheckCircle className="h-5 w-5 text-green-600" />
+                                                                ) : (
+                                                                    <Package className={`h-5 w-5 ${selectedCheckout.status === 'returned' ? 'text-gray-600' : 'text-blue-600'}`} />
+                                                                )}
+                                                            </div>
+                                                            <div className="flex-1">
+                                                                <h4 className="font-semibold text-gray-900 flex items-center">
+                                                                    {item.equipment_name}
+                                                                    {item.is_mandatory && (
+                                                                        <span className="ml-2 px-2 py-1 bg-red-100 text-red-800 text-xs font-bold rounded">
+                                                                            WAJIB
+                                                                        </span>
+                                                                    )}
+                                                                </h4>
+                                                                <p className="text-sm text-gray-600">
+                                                                    Kode: {item.equipment_code || 'N/A'}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Condition Notes */}
+                                                        {selectedCheckout.status === 'returned' && (
+                                                            <div className="mt-4">
+                                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                                    Catatan Kondisi (Opsional)
+                                                                </label>
+                                                                <textarea
+                                                                    value={item.condition_notes || ''}
+                                                                    onChange={(e) => {
+                                                                        const newNotes = e.target.value;
+                                                                        const newItems = [...verificationItems];
+                                                                        newItems[index].condition_notes = newNotes;
+                                                                        setVerificationItems(newItems);
+                                                                    }}
+                                                                    onBlur={() => { // Update on blur to avoid too many requests
+                                                                        if (item.is_verified) {
+                                                                            updateVerificationItem(
+                                                                                selectedCheckout.id,
+                                                                                item.equipment_id,
+                                                                                item.returned_quantity,
+                                                                                item.condition_notes || '',
+                                                                                true
+                                                                            );
+                                                                        }
+                                                                    }}
+                                                                    placeholder="Contoh: Kondisi baik, ada goresan kecil..."
+                                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                                    rows={2}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="w-full md:w-auto">
+                                                        {/* Quantity Display */}
+                                                        <div className="grid grid-cols-3 gap-2 mb-4">
+                                                            <div className="text-center p-2 bg-blue-50 rounded-lg border border-blue-200">
+                                                                <div className="text-lg font-bold text-blue-600">{item.borrowed_quantity}</div>
+                                                                <div className="text-xs text-blue-600 font-medium">DIPINJAM</div>
+                                                            </div>
+                                                            <div className="text-center p-2 bg-green-50 rounded-lg border border-green-200">
+                                                                <div className="text-lg font-bold text-green-600">{item.returned_quantity}</div>
+                                                                <div className="text-xs text-green-600 font-medium">KEMBALI</div>
+                                                            </div>
+                                                            <div className="text-center p-2 bg-red-50 rounded-lg border border-red-200">
+                                                                <div className="text-lg font-bold text-red-600">{Math.max(0, item.borrowed_quantity - item.returned_quantity)}</div>
+                                                                <div className="text-xs text-red-600 font-medium">KURANG</div>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        {/* Quantity Controls */}
+                                                        {selectedCheckout.status === 'returned' && (
+                                                            <div className="flex items-center justify-center space-x-3 bg-white p-2 border rounded-lg">
+                                                                <button
+                                                                    onClick={() => handleQuantityChange(index, -1)}
+                                                                    className="p-2 bg-gray-200 hover:bg-gray-300 rounded-full"
+                                                                >
+                                                                    <Minus className="h-4 w-4" />
+                                                                </button>
+                                                                <span className="text-xl font-bold text-gray-900 min-w-[3rem] text-center">{item.returned_quantity}</span>
+                                                                <button
+                                                                    onClick={() => handleQuantityChange(index, 1)}
+                                                                    className="p-2 bg-gray-200 hover:bg-gray-300 rounded-full"
+                                                                >
+                                                                    <Plus className="h-4 w-4" />
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -1086,7 +1185,7 @@ const ValidationQueue: React.FC = () => {
                 </div>
             )}
 
-            {/* ===== ✅ FIXED: REPORT MODAL WITH VIOLATION TYPE SELECTOR ===== */}
+            {/* ===== REPORT MODAL ===== */}
             {showReportModal && selectedCheckout && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
@@ -1101,7 +1200,6 @@ const ValidationQueue: React.FC = () => {
                         </div>
 
                         <div className="space-y-4">
-                            {/* Input Judul Laporan */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                     Judul Laporan
@@ -1115,7 +1213,6 @@ const ValidationQueue: React.FC = () => {
                                 />
                             </div>
 
-                            {/* ✅ ADDED: Violation Type Selector */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                     Jenis Pelanggaran *
@@ -1133,7 +1230,6 @@ const ValidationQueue: React.FC = () => {
                                 </select>
                             </div>
 
-                            {/* Input Deskripsi */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                     Deskripsi *
@@ -1148,7 +1244,6 @@ const ValidationQueue: React.FC = () => {
                                 />
                             </div>
 
-                            {/* Input Tingkat Keparahan */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                     Tingkat Keparahan
