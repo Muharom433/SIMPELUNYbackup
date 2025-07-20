@@ -90,7 +90,6 @@ const ValidationQueue: React.FC = () => {
     const { profile } = useAuth();
     
     const [activeTab, setActiveTab] = useState<'room' | 'equipment'>('room');
-    const [statusFilter, setStatusFilter] = useState<'all' | 'returned' | 'active' | 'overdue' | 'pending'>('all');
     const [checkouts, setCheckouts] = useState<CheckoutWithDetails[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -106,8 +105,7 @@ const ValidationQueue: React.FC = () => {
         severity: 'minor' as 'minor' | 'major' | 'critical'
     });
 
-    // ===== ✅ MOVED ALL HELPER FUNCTIONS INSIDE COMPONENT =====
-    
+    // ===== FETCH EQUIPMENT LIST FOR CHECKOUT =====
     const fetchEquipmentList = async (checkout: CheckoutWithDetails): Promise<Equipment[]> => {
         try {
             let equipmentIds: string[] = [];
@@ -134,6 +132,7 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
+    // ===== FIXED FETCH VERIFICATION ITEMS =====
     const fetchVerificationItems = async (
         checkoutId: string, 
         equipmentList: Equipment[], 
@@ -147,12 +146,20 @@ const ValidationQueue: React.FC = () => {
 
             if (error) throw error;
 
+            console.log('🔍 fetchVerificationItems Debug:', {
+                checkoutId,
+                checkoutType: checkout.type,
+                equipmentList: equipmentList.map(eq => ({ id: eq.id, name: eq.name })),
+                checkoutItems: checkoutItems?.map(item => ({ equipment_id: item.equipment_id, quantity: item.quantity }))
+            });
+
             return equipmentList.map(equipment => {
                 const checkoutItem = checkoutItems?.find(item => item.equipment_id === equipment.id);
                 
-                let borrowedQty = 1;
+                let borrowedQty = 1; // Default
                 
                 if (checkout.type === 'room' && checkout.booking) {
+                    // ✅ PERBAIKAN: Untuk room booking, ambil quantity dari equipment_quantities array
                     const equipmentIndices: number[] = [];
                     checkout.booking.equipment_requested?.forEach((id: string, index: number) => {
                         if (id === equipment.id) {
@@ -160,16 +167,19 @@ const ValidationQueue: React.FC = () => {
                         }
                     });
 
+                    // ✅ PERBAIKAN: Jumlahkan quantity dari SEMUA kemunculan
                     borrowedQty = equipmentIndices.reduce((total, index) => {
                         const qty = checkout.booking.equipment_quantities?.[index] || 1;
                         return total + qty;
                     }, 0);
 
+                    // Fallback jika tidak ada di equipment_quantities
                     if (borrowedQty === 0 && equipmentIndices.length > 0) {
-                        borrowedQty = equipmentIndices.length;
+                        borrowedQty = equipmentIndices.length; // Default 1 per kemunculan
                     }
                     
                 } else if (checkout.type === 'things' && checkout.lendingTool) {
+                    // ✅ PERBAIKAN: Untuk equipment lending, ambil dari qty array
                     const equipmentIndices: number[] = [];
                     checkout.lendingTool.id_equipment?.forEach((id: string, index: number) => {
                         if (id === equipment.id) {
@@ -199,6 +209,14 @@ const ValidationQueue: React.FC = () => {
                     is_mandatory: equipment.is_mandatory
                 };
 
+                console.log('✅ Verification Item Created:', {
+                    equipment: equipment.name,
+                    borrowed: verificationItem.borrowed_quantity,
+                    returned: verificationItem.returned_quantity,
+                    missing: verificationItem.borrowed_quantity - verificationItem.returned_quantity,
+                    verified: verificationItem.is_verified
+                });
+
                 return verificationItem;
             });
             
@@ -208,269 +226,7 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    const updateEquipmentQuantity = async (equipmentId: string, quantityChange: number) => {
-        try {
-            const quantityManager = new EquipmentQuantityManager(supabase);
-            
-            if (quantityChange > 0) {
-                await quantityManager.increaseQuantity(
-                    equipmentId,
-                    quantityChange,
-                    'ValidationQueue: User returned items'
-                );
-            } else if (quantityChange < 0) {
-                await quantityManager.decreaseQuantity(
-                    equipmentId,
-                    Math.abs(quantityChange),
-                    'ValidationQueue: Admin reverted verification'
-                );
-            }
-            
-        } catch (error) {
-            console.error('❌ Error updating equipment quantity:', error);
-            throw error;
-        }
-    };
-
-    const updateVerificationItem = async (
-        checkoutId: string, 
-        equipmentId: string, 
-        newReturnedQuantity: number, 
-        conditionNotes: string,
-        isVerified: boolean
-    ) => {
-        try {
-            const { data: currentCheckoutItems, error: fetchError } = await supabase
-                .from('checkout_items')
-                .select('quantity')
-                .eq('checkout_id', checkoutId)
-                .eq('equipment_id', equipmentId)
-                .maybeSingle();
-
-            if (fetchError) throw fetchError;
-
-            const currentReturnedQty = currentCheckoutItems?.quantity || 0;
-
-            if (isVerified && newReturnedQuantity > 0) {
-                const { error } = await supabase
-                    .from('checkout_items')
-                    .upsert({
-                        checkout_id: checkoutId,
-                        equipment_id: equipmentId,
-                        quantity: newReturnedQuantity,
-                        condition_notes: conditionNotes || null
-                    }, { 
-                        onConflict: 'checkout_id, equipment_id' 
-                    });
-
-                if (error) throw error;
-            } else {
-                const { error } = await supabase
-                    .from('checkout_items')
-                    .delete()
-                    .match({ checkout_id: checkoutId, equipment_id: equipmentId });
-
-                if (error) throw error;
-            }
-
-            const quantityDifference = newReturnedQuantity - currentReturnedQty;
-            
-            if (quantityDifference !== 0) {
-                await updateEquipmentQuantity(equipmentId, quantityDifference);
-            }
-
-            if (selectedCheckout) {
-                const newVerificationItems = await fetchVerificationItems(
-                    selectedCheckout.id, 
-                    selectedCheckout.equipment_list || [],
-                    selectedCheckout
-                );
-                setVerificationItems(newVerificationItems);
-            }
-            
-        } catch (error: any) {
-            console.error('❌ Error updating verification:', error);
-            toast.error(`Failed to update verification: ${error.message}`);
-        }
-    };
-
-    const handleApproveReturn = async (checkoutId: string) => {
-        try {
-            setProcessingIds(prev => new Set(prev).add(checkoutId));
-
-            const { error } = await supabase
-                .from('checkouts')
-                .update({ 
-                    status: 'active',
-                    approved_by: profile?.id,
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', checkoutId);
-
-            if (error) throw error;
-
-            const checkout = checkouts.find(c => c.id === checkoutId);
-            if (checkout) {
-                if (activeTab === 'room' && checkout.booking_id) {
-                    await supabase
-                        .from('bookings')
-                        .update({ status: 'completed' })
-                        .eq('id', checkout.booking_id);
-                } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
-                    await supabase
-                        .from('lending_tool')
-                        .update({ status: 'completed' })
-                        .eq('id', checkout.lendingTool_id);
-                }
-            }
-
-            toast.success('Return approved successfully!');
-            fetchCheckouts();
-            setShowDetailModal(false);
-            
-        } catch (error: any) {
-            console.error('❌ Error approving return:', error);
-            toast.error(`Failed to approve return: ${error.message}`);
-        } finally {
-            setProcessingIds(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(checkoutId);
-                return newSet;
-            });
-        }
-    };
-
-    const handleRejectReturn = async (checkoutId: string) => {
-        try {
-            setProcessingIds(prev => new Set(prev).add(checkoutId));
-
-            const { data: verifiedItems, error: itemsError } = await supabase
-                .from('checkout_items')
-                .select('equipment_id, quantity')
-                .eq('checkout_id', checkoutId);
-
-            if (itemsError) throw itemsError;
-
-            if (verifiedItems && verifiedItems.length > 0) {
-                for (const item of verifiedItems) {
-                    if (item.quantity > 0) {
-                        await updateEquipmentQuantity(item.equipment_id, -item.quantity);
-                    }
-                }
-            }
-
-            await supabase.from('checkouts').delete().eq('id', checkoutId);
-            
-            const checkout = checkouts.find(c => c.id === checkoutId);
-            if (checkout) {
-                if (activeTab === 'room' && checkout.booking_id) {
-                    await supabase
-                        .from('bookings')
-                        .update({ status: 'approved' })
-                        .eq('id', checkout.booking_id);
-                } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
-                    await supabase
-                        .from('lending_tool')
-                        .update({ status: 'borrow' })
-                        .eq('id', checkout.lendingTool_id);
-                }
-            }
-
-            toast.success('Return rejected and quantities reverted');
-            fetchCheckouts();
-            setShowDetailModal(false);
-            
-        } catch (error: any) {
-            console.error('❌ Error rejecting return:', error);
-            toast.error(`Failed to reject return: ${error.message}`);
-        } finally {
-            setProcessingIds(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(checkoutId);
-                return newSet;
-            });
-        }
-    };
-
-    const getVerificationProgress = (items: VerificationItem[]) => {
-        const totalItems = items.length;
-        const verifiedItems = items.filter(item => item.is_verified).length;
-        const mandatoryItems = items.filter(item => item.is_mandatory);
-        const verifiedMandatory = mandatoryItems.filter(item => item.is_verified).length;
-        
-        return {
-            total: totalItems,
-            verified: verifiedItems,
-            mandatory: mandatoryItems.length,
-            verifiedMandatory,
-            percentage: totalItems > 0 ? Math.round((verifiedItems / totalItems) * 100) : 0,
-            canApprove: mandatoryItems.length === verifiedMandatory
-        };
-    };
-
-    const getTotalQuantityGap = (items: VerificationItem[]) => {
-        return items.reduce((total, item) => {
-            const gap = Math.max(0, item.borrowed_quantity - item.returned_quantity);
-            return total + gap;
-        }, 0);
-    };
-
-    const getStatusConfig = (status: string) => {
-        switch (status) {
-            case 'returned':
-                return {
-                    icon: CheckCircle,
-                    label: 'Returned',
-                    className: 'bg-blue-100 text-blue-800 border-blue-200',
-                    description: 'Awaiting verification',
-                    actionable: true
-                };
-            case 'active':
-                return {
-                    icon: Clock,
-                    label: 'Active',
-                    className: 'bg-green-100 text-green-800 border-green-200',
-                    description: 'Currently borrowed',
-                    actionable: false
-                };
-            case 'overdue':
-                return {
-                    icon: AlertTriangle,
-                    label: 'Overdue',
-                    className: 'bg-red-100 text-red-800 border-red-200',
-                    description: 'Past expected return date',
-                    actionable: true
-                };
-            case 'pending':
-                return {
-                    icon: Timer,
-                    label: 'Pending',
-                    className: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-                    description: 'Waiting for approval',
-                    actionable: false
-                };
-            default:
-                return {
-                    icon: AlertCircleIcon,
-                    label: 'Unknown',
-                    className: 'bg-gray-100 text-gray-800 border-gray-200',
-                    description: 'Unknown status',
-                    actionable: false
-                };
-        }
-    };
-
-    const getStatusStats = () => {
-        return {
-            returned: checkouts.filter(c => c.status === 'returned').length,
-            active: checkouts.filter(c => c.status === 'active').length,
-            overdue: checkouts.filter(c => c.status === 'overdue').length,
-            pending: checkouts.filter(c => c.status === 'pending').length,
-            total: checkouts.length
-        };
-    };
-
-    // ===== ENHANCED FETCH CHECKOUTS WITH MULTI-STATUS SUPPORT =====
+    // ===== FIXED FETCH CHECKOUTS =====
     const fetchCheckouts = async () => {
         try {
             setLoading(true);
@@ -478,6 +234,7 @@ const ValidationQueue: React.FC = () => {
             let processedData: CheckoutWithDetails[] = [];
             
             if (activeTab === 'room') {
+                // ✅ PERBAIKAN: Pastikan equipment_quantities dimuat
                 const { data: checkoutData, error } = await supabase
                     .from('checkouts')
                     .select(`
@@ -494,12 +251,14 @@ const ValidationQueue: React.FC = () => {
                         )
                     `)
                     .eq('type', 'room')
+                    .eq('status', 'returned')
                     .order('created_at', { ascending: false });
 
                 if (error) throw error;
                 processedData = checkoutData || [];
                 
             } else {
+                // Equipment checkouts
                 const { data: checkoutData, error } = await supabase
                     .from('checkouts')
                     .select(`
@@ -512,6 +271,7 @@ const ValidationQueue: React.FC = () => {
                         )
                     `)
                     .eq('type', 'things')
+                    .eq('status', 'returned')
                     .order('created_at', { ascending: false });
 
                 if (error) throw error;
@@ -536,18 +296,6 @@ const ValidationQueue: React.FC = () => {
                 );
             }
 
-            // Calculate real-time overdue status
-            processedData = processedData.map(checkout => {
-                const expectedReturn = new Date(checkout.expected_return_date);
-                const now = new Date();
-                
-                if (checkout.status === 'active' && expectedReturn < now) {
-                    return { ...checkout, status: 'overdue' as const };
-                }
-                
-                return checkout;
-            });
-
             // Department filter for department admin
             if (profile?.role === 'department_admin' && profile.department_id) {
                 if (activeTab === 'room') {
@@ -557,7 +305,7 @@ const ValidationQueue: React.FC = () => {
                 }
             }
 
-            // Enhanced data processing
+            // ✅ PERBAIKAN UTAMA: Enhanced data processing dengan verification items
             const enhancedData = await Promise.all(
                 processedData.map(async (checkout) => {
                     const equipment_list = await fetchEquipmentList(checkout);
@@ -585,22 +333,273 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    // ===== ENHANCED FILTERS WITH STATUS =====
-    const filteredCheckouts = checkouts.filter(checkout => {
-        const searchLower = searchTerm.toLowerCase();
-        
-        const matchesStatus = statusFilter === 'all' || checkout.status === statusFilter;
-        
-        const matchesSearch = 
-            checkout.user?.full_name?.toLowerCase().includes(searchLower) ||
-            checkout.user?.identity_number?.toLowerCase().includes(searchLower) ||
-            (activeTab === 'room' && checkout.booking?.room?.name?.toLowerCase().includes(searchLower)) ||
-            (activeTab === 'equipment' && checkout.lendingTool?.equipment_details?.some(eq => 
-                eq.name.toLowerCase().includes(searchLower)
-            ));
-        
-        return matchesStatus && matchesSearch;
-    });
+    // ===== 🔑 FIXED UPDATE VERIFICATION ITEM WITH EQUIPMENT QUANTITY SYNC =====
+    const updateVerificationItem = async (
+        checkoutId: string, 
+        equipmentId: string, 
+        newReturnedQuantity: number, 
+        conditionNotes: string,
+        isVerified: boolean
+    ) => {
+        try {
+            console.log('🔄 updateVerificationItem called:', {
+                checkoutId,
+                equipmentId,
+                newReturnedQuantity,
+                isVerified
+            });
+
+            // ✅ STEP 1: Get current checkout_items data
+            const { data: currentCheckoutItems, error: fetchError } = await supabase
+                .from('checkout_items')
+                .select('quantity')
+                .eq('checkout_id', checkoutId)
+                .eq('equipment_id', equipmentId)
+                .maybeSingle();
+
+            if (fetchError) {
+                console.error('Error fetching current checkout items:', fetchError);
+                throw fetchError;
+            }
+
+            const currentReturnedQty = currentCheckoutItems?.quantity || 0;
+            console.log('📊 Current vs New quantity:', {
+                current: currentReturnedQty,
+                new: newReturnedQuantity,
+                difference: newReturnedQuantity - currentReturnedQty
+            });
+
+            // ✅ STEP 2: Update checkout_items (verified items)
+            if (isVerified && newReturnedQuantity > 0) {
+                // Save/update verification
+                const { error } = await supabase
+                    .from('checkout_items')
+                    .upsert({
+                        checkout_id: checkoutId,
+                        equipment_id: equipmentId,
+                        quantity: newReturnedQuantity,
+                        condition_notes: conditionNotes || null
+                    }, { 
+                        onConflict: 'checkout_id, equipment_id' 
+                    });
+
+                if (error) throw error;
+                console.log('✅ checkout_items updated successfully');
+                
+            } else {
+                // Remove verification
+                const { error } = await supabase
+                    .from('checkout_items')
+                    .delete()
+                    .match({ checkout_id: checkoutId, equipment_id: equipmentId });
+
+                if (error) throw error;
+                console.log('✅ checkout_items removed successfully');
+            }
+
+            // ✅ STEP 3: 🔑 CRITICAL - UPDATE EQUIPMENT QUANTITY BASED ON DIFFERENCE
+            const quantityDifference = newReturnedQuantity - currentReturnedQty;
+            
+            if (quantityDifference !== 0) {
+                console.log(`🔄 Equipment quantity change needed: ${quantityDifference > 0 ? '+' : ''}${quantityDifference}`);
+                
+                if (quantityDifference > 0) {
+                    // ✅ POSITIVE: User mengembalikan lebih banyak - tambah quantity
+                    await updateEquipmentQuantity(equipmentId, quantityDifference);
+                    console.log(`✅ Equipment ${equipmentId} quantity INCREASED by ${quantityDifference}`);
+                    
+                } else {
+                    // ✅ NEGATIVE: Admin mengurangi verifikasi - kurangi quantity
+                    await updateEquipmentQuantity(equipmentId, quantityDifference);
+                    console.log(`✅ Equipment ${equipmentId} quantity DECREASED by ${Math.abs(quantityDifference)}`);
+                }
+            } else {
+                console.log('📌 No quantity change needed (difference = 0)');
+            }
+
+            // ✅ STEP 4: Refresh verification items dengan data checkout yang lengkap
+            if (selectedCheckout) {
+                const newVerificationItems = await fetchVerificationItems(
+                    selectedCheckout.id, 
+                    selectedCheckout.equipment_list || [],
+                    selectedCheckout
+                );
+                setVerificationItems(newVerificationItems);
+                console.log('🔄 Verification items refreshed');
+            }
+            
+        } catch (error: any) {
+            console.error('❌ Error updating verification:', error);
+            toast.error(`Failed to update verification: ${error.message}`);
+        }
+    };
+
+    // ===== 🔑 FIXED UPDATE EQUIPMENT QUANTITY =====
+    const updateEquipmentQuantity = async (equipmentId: string, quantityChange: number) => {
+        try {
+            const quantityManager = new EquipmentQuantityManager(supabase);
+            
+            console.log(`🔄 ValidationQueue: Equipment ${equipmentId} change: ${quantityChange}`);
+            
+            if (quantityChange > 0) {
+                // ✅ POSITIVE: User mengembalikan barang - tambah quantity
+                await quantityManager.increaseQuantity(
+                    equipmentId,
+                    quantityChange,
+                    'ValidationQueue: User returned items'
+                );
+                
+                console.log(`✅ RETURN: Equipment ${equipmentId} +${quantityChange} (quantity increased)`);
+                
+            } else if (quantityChange < 0) {
+                // ✅ NEGATIVE: Admin membatalkan verifikasi - kurangi quantity
+                await quantityManager.decreaseQuantity(
+                    equipmentId,
+                    Math.abs(quantityChange),
+                    'ValidationQueue: Admin reverted verification'
+                );
+                
+                console.log(`✅ REVERT: Equipment ${equipmentId} ${quantityChange} (quantity decreased)`);
+            }
+            
+        } catch (error) {
+            console.error('❌ Error updating equipment quantity in ValidationQueue:', error);
+            throw error;
+        }
+    };
+
+    // ===== 🔑 FIXED APPROVE RETURN - AUTO UPDATE QUANTITIES =====
+    const handleApproveReturn = async (checkoutId: string) => {
+        try {
+            setProcessingIds(prev => new Set(prev).add(checkoutId));
+
+            console.log('🎯 APPROVE RETURN: Starting approval process for checkout:', checkoutId);
+
+            // ✅ STEP 1: Get all verified checkout_items for this checkout
+            const { data: verifiedItems, error: itemsError } = await supabase
+                .from('checkout_items')
+                .select('equipment_id, quantity')
+                .eq('checkout_id', checkoutId);
+
+            if (itemsError) throw itemsError;
+
+            console.log('🔄 APPROVE RETURN: Processing verified items:', verifiedItems);
+
+            // ✅ STEP 2: Update checkout status to approved/completed
+            const { error } = await supabase
+                .from('checkouts')
+                .update({ 
+                    status: 'active',
+                    approved_by: profile?.id,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', checkoutId);
+
+            if (error) throw error;
+
+            // ✅ STEP 3: Update related booking/lending status
+            const checkout = checkouts.find(c => c.id === checkoutId);
+            if (checkout) {
+                if (activeTab === 'room' && checkout.booking_id) {
+                    await supabase
+                        .from('bookings')
+                        .update({ status: 'completed' })
+                        .eq('id', checkout.booking_id);
+                        
+                    console.log('✅ APPROVE: Room booking marked as completed');
+                } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
+                    await supabase
+                        .from('lending_tool')
+                        .update({ status: 'completed' })
+                        .eq('id', checkout.lendingTool_id);
+                        
+                    console.log('✅ APPROVE: Lending tool marked as completed');
+                }
+            }
+
+            console.log('🎉 APPROVE RETURN COMPLETED: Status updated successfully');
+            toast.success('Return approved successfully! Equipment quantities already updated during verification.');
+            
+            fetchCheckouts();
+            setShowDetailModal(false);
+            
+        } catch (error: any) {
+            console.error('❌ Error approving return:', error);
+            toast.error(`Failed to approve return: ${error.message}`);
+        } finally {
+            setProcessingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(checkoutId);
+                return newSet;
+            });
+        }
+    };
+
+    // ===== REJECT RETURN =====
+    const handleRejectReturn = async (checkoutId: string) => {
+        try {
+            setProcessingIds(prev => new Set(prev).add(checkoutId));
+
+            console.log('🚫 REJECT RETURN: Starting rejection process for checkout:', checkoutId);
+
+            // ✅ STEP 1: Revert all verified equipment quantities
+            const { data: verifiedItems, error: itemsError } = await supabase
+                .from('checkout_items')
+                .select('equipment_id, quantity')
+                .eq('checkout_id', checkoutId);
+
+            if (itemsError) throw itemsError;
+
+            if (verifiedItems && verifiedItems.length > 0) {
+                for (const item of verifiedItems) {
+                    if (item.quantity > 0) {
+                        console.log(`📦 REJECT: Reverting ${item.quantity} of equipment ${item.equipment_id}`);
+                        // ✅ REVERT: Negative quantity to decrease equipment inventory
+                        await updateEquipmentQuantity(item.equipment_id, -item.quantity);
+                    }
+                }
+                console.log(`✅ REJECT: Successfully reverted quantities for ${verifiedItems.length} equipment items`);
+            }
+
+            // ✅ STEP 2: Delete checkout and revert status
+            await supabase.from('checkouts').delete().eq('id', checkoutId);
+            
+            const checkout = checkouts.find(c => c.id === checkoutId);
+            if (checkout) {
+                if (activeTab === 'room' && checkout.booking_id) {
+                    await supabase
+                        .from('bookings')
+                        .update({ status: 'approved' })
+                        .eq('id', checkout.booking_id);
+                        
+                    console.log('✅ REJECT: Room booking reverted to approved status');
+                } else if (activeTab === 'equipment' && checkout.lendingTool_id) {
+                    await supabase
+                        .from('lending_tool')
+                        .update({ status: 'borrow' })
+                        .eq('id', checkout.lendingTool_id);
+                        
+                    console.log('✅ REJECT: Lending tool reverted to borrow status');
+                }
+            }
+
+            console.log('🎉 REJECT RETURN COMPLETED: All quantities reverted and status changed');
+            toast.success('Return rejected and quantities reverted');
+            
+            fetchCheckouts();
+            setShowDetailModal(false);
+            
+        } catch (error: any) {
+            console.error('❌ Error rejecting return:', error);
+            toast.error(`Failed to reject return: ${error.message}`);
+        } finally {
+            setProcessingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(checkoutId);
+                return newSet;
+            });
+        }
+    };
 
     // ===== EFFECTS =====
     useEffect(() => {
@@ -611,6 +610,7 @@ const ValidationQueue: React.FC = () => {
 
     useEffect(() => {
         if (selectedCheckout) {
+            // ✅ PERBAIKAN: Re-fetch verification items dengan data checkout yang lengkap
             const refreshVerificationItems = async () => {
                 if (selectedCheckout.equipment_list) {
                     const newVerificationItems = await fetchVerificationItems(
@@ -623,12 +623,55 @@ const ValidationQueue: React.FC = () => {
             };
             
             if (selectedCheckout.verification_items && selectedCheckout.verification_items.length > 0) {
+                // Gunakan yang sudah ada
                 setVerificationItems(selectedCheckout.verification_items);
             } else {
+                // Re-fetch dengan data yang benar
                 refreshVerificationItems();
             }
         }
     }, [selectedCheckout]);
+
+    // ===== FILTERS =====
+    const filteredCheckouts = checkouts.filter(checkout => {
+        const searchLower = searchTerm.toLowerCase();
+        
+        const matchesSearch = 
+            checkout.user?.full_name?.toLowerCase().includes(searchLower) ||
+            checkout.user?.identity_number?.toLowerCase().includes(searchLower) ||
+            (activeTab === 'room' && checkout.booking?.room?.name?.toLowerCase().includes(searchLower)) ||
+            (activeTab === 'equipment' && checkout.lendingTool?.equipment_details?.some(eq => 
+                eq.name.toLowerCase().includes(searchLower)
+            ));
+        
+        return matchesSearch;
+    });
+
+    // ===== UTILITY FUNCTIONS =====
+    const getVerificationProgress = (items: VerificationItem[]) => {
+        const totalItems = items.length;
+        const verifiedItems = items.filter(item => item.is_verified).length;
+        const mandatoryItems = items.filter(item => item.is_mandatory);
+        const verifiedMandatory = mandatoryItems.filter(item => item.is_verified).length;
+        
+        return {
+            total: totalItems,
+            verified: verifiedItems,
+            mandatory: mandatoryItems.length,
+            verifiedMandatory,
+            percentage: totalItems > 0 ? Math.round((verifiedItems / totalItems) * 100) : 0,
+            canApprove: mandatoryItems.length === verifiedMandatory
+        };
+    };
+
+    const getTotalQuantityGap = (items: VerificationItem[]) => {
+        const totalGap = items.reduce((total, item) => {
+            const gap = Math.max(0, item.borrowed_quantity - item.returned_quantity);
+            return total + gap;
+        }, 0);
+        
+        return totalGap;
+    };
 
     // ===== ACCESS CONTROL =====
     if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
@@ -643,46 +686,28 @@ const ValidationQueue: React.FC = () => {
         );
     }
 
-    const statusStats = getStatusStats();
-
     return (
         <div className="space-y-6">
-            {/* ===== ENHANCED HEADER WITH STATUS OVERVIEW ===== */}
+            {/* ===== HEADER ===== */}
             <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl p-6 text-white">
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-3xl font-bold flex items-center space-x-3">
                             <Bell className="h-8 w-8" />
-                            <span>Equipment Management Queue</span>
+                            <span>Return Validation Queue</span>
                         </h1>
                         <p className="mt-2 opacity-90">
-                            Monitor and manage all equipment transactions and returns
+                            Verify and approve equipment returns from users
                         </p>
                     </div>
-                    
-                    {/* Status Overview */}
-                    <div className="hidden lg:grid grid-cols-4 gap-4 text-center">
-                        <div className="bg-white bg-opacity-20 rounded-lg p-3">
-                            <div className="text-2xl font-bold">{statusStats.returned}</div>
-                            <div className="text-xs opacity-80">Awaiting Verification</div>
-                        </div>
-                        <div className="bg-white bg-opacity-20 rounded-lg p-3">
-                            <div className="text-2xl font-bold">{statusStats.active}</div>
-                            <div className="text-xs opacity-80">Currently Borrowed</div>
-                        </div>
-                        <div className="bg-white bg-opacity-20 rounded-lg p-3">
-                            <div className="text-2xl font-bold text-red-200">{statusStats.overdue}</div>
-                            <div className="text-xs opacity-80">Overdue Items</div>
-                        </div>
-                        <div className="bg-white bg-opacity-20 rounded-lg p-3">
-                            <div className="text-2xl font-bold">{statusStats.pending}</div>
-                            <div className="text-xs opacity-80">Pending Approval</div>
-                        </div>
+                    <div className="hidden md:block text-right">
+                        <div className="text-2xl font-bold">{checkouts.length}</div>
+                        <div className="text-sm opacity-80">Pending Returns</div>
                     </div>
                 </div>
             </div>
 
-            {/* ===== ENHANCED TABS ===== */}
+            {/* ===== TABS ===== */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="flex border-b border-gray-200">
                     <button 
@@ -695,7 +720,7 @@ const ValidationQueue: React.FC = () => {
                     >
                         <div className="flex items-center justify-center space-x-2">
                             <Building className="h-5 w-5" />
-                            <span>Room Transactions</span>
+                            <span>Room Returns</span>
                             <span className="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded-full">
                                 {checkouts.filter(c => c.type === 'room').length}
                             </span>
@@ -711,7 +736,7 @@ const ValidationQueue: React.FC = () => {
                     >
                         <div className="flex items-center justify-center space-x-2">
                             <Package className="h-5 w-5" />
-                            <span>Equipment Transactions</span>
+                            <span>Equipment Returns</span>
                             <span className="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded-full">
                                 {checkouts.filter(c => c.type === 'things').length}
                             </span>
@@ -720,7 +745,7 @@ const ValidationQueue: React.FC = () => {
                 </div>
             </div>
 
-            {/* ===== ENHANCED SEARCH & FILTERS ===== */}
+           {/* ===== SEARCH & FILTERS ===== */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
                     <div className="relative w-full md:w-auto md:flex-1">
@@ -733,21 +758,7 @@ const ValidationQueue: React.FC = () => {
                             className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" 
                         />
                     </div>
-                    
                     <div className="flex items-center space-x-3">
-                        {/* Status Filter */}
-                        <select 
-                            value={statusFilter} 
-                            onChange={(e) => setStatusFilter(e.target.value as any)} 
-                            className="px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                        >
-                            <option value="all">All Status ({statusStats.total})</option>
-                            <option value="returned">Awaiting Verification ({statusStats.returned})</option>
-                            <option value="active">Currently Borrowed ({statusStats.active})</option>
-                            <option value="overdue">Overdue ({statusStats.overdue})</option>
-                            <option value="pending">Pending Approval ({statusStats.pending})</option>
-                        </select>
-                        
                         <button 
                             onClick={fetchCheckouts} 
                             disabled={loading} 
@@ -758,58 +769,27 @@ const ValidationQueue: React.FC = () => {
                         </button>
                     </div>
                 </div>
-                
-                {/* Quick Status Chips */}
-                <div className="mt-4 flex flex-wrap gap-2">
-                    {['all', 'returned', 'active', 'overdue', 'pending'].map((status) => {
-                        const count = status === 'all' ? statusStats.total : statusStats[status as keyof typeof statusStats];
-                        const isActive = statusFilter === status;
-                        
-                        return (
-                            <button
-                                key={status}
-                                onClick={() => setStatusFilter(status as any)}
-                                className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-                                    isActive 
-                                        ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' 
-                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                }`}
-                            >
-                                {status.charAt(0).toUpperCase() + status.slice(1)} ({count})
-                            </button>
-                        );
-                    })}
-                </div>
             </div>
 
-            {/* ===== ENHANCED CHECKOUT LIST ===== */}
+            {/* ===== CHECKOUT LIST ===== */}
             <div className="space-y-4">
                 {loading ? (
                     <div className="flex items-center justify-center h-64">
                         <div className="text-center">
                             <RefreshCw className="h-8 w-8 animate-spin text-indigo-600 mx-auto mb-4" />
-                            <p className="text-gray-600">Loading transactions...</p>
+                            <p className="text-gray-600">Loading returns...</p>
                         </div>
                     </div>
                 ) : filteredCheckouts.length === 0 ? (
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
-                        <Package className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                        <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                            {statusFilter === 'all' ? 'No Transactions Found' : `No ${statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)} Transactions`}
-                        </h3>
-                        <p className="text-gray-600">
-                            {statusFilter === 'all' 
-                                ? 'No equipment transactions in the system yet.'
-                                : `No ${statusFilter} transactions to display. Try changing the filter.`
-                            }
-                        </p>
+                        <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
+                        <h3 className="text-xl font-semibold text-gray-900 mb-2">All Caught Up!</h3>
+                        <p className="text-gray-600">No pending returns to validate.</p>
                     </div>
                 ) : (
                     filteredCheckouts.map((checkout) => {
                         const progress = getVerificationProgress(checkout.verification_items || []);
                         const quantityGap = getTotalQuantityGap(checkout.verification_items || []);
-                        const statusConfig = getStatusConfig(checkout.status);
-                        const StatusIcon = statusConfig.icon;
                         
                         return (
                             <div 
@@ -818,33 +798,25 @@ const ValidationQueue: React.FC = () => {
                             >
                                 <div className="flex items-start justify-between">
                                     <div className="flex-1">
-                                        {/* Enhanced Header with Status */}
-                                        <div className="flex items-center justify-between mb-4">
-                                            <div className="flex items-center space-x-4">
-                                                <div className="flex-shrink-0 h-12 w-12 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-lg flex items-center justify-center">
-                                                    {activeTab === 'room' ? (
-                                                        <Building className="h-6 w-6 text-white" />
-                                                    ) : (
-                                                        <Package className="h-6 w-6 text-white" />
-                                                    )}
-                                                </div>
-                                                <div>
-                                                    <h3 className="text-lg font-semibold text-gray-900">
-                                                        {activeTab === 'room' 
-                                                            ? `${checkout.booking?.room?.name} Transaction`
-                                                            : 'Equipment Transaction'
-                                                        }
-                                                    </h3>
-                                                    <p className="text-sm text-gray-600">
-                                                        Created on {format(new Date(checkout.checkout_date), 'MMM d, yyyy')}
-                                                    </p>
-                                                </div>
+                                        {/* Header */}
+                                        <div className="flex items-center space-x-4 mb-4">
+                                            <div className="flex-shrink-0 h-12 w-12 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-lg flex items-center justify-center">
+                                                {activeTab === 'room' ? (
+                                                    <Building className="h-6 w-6 text-white" />
+                                                ) : (
+                                                    <Package className="h-6 w-6 text-white" />
+                                                )}
                                             </div>
-                                            
-                                            {/* Status Badge */}
-                                            <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border ${statusConfig.className}`}>
-                                                <StatusIcon className="h-4 w-4" />
-                                                <span>{statusConfig.label}</span>
+                                            <div>
+                                                <h3 className="text-lg font-semibold text-gray-900">
+                                                    {activeTab === 'room' 
+                                                        ? `${checkout.booking?.room?.name} Return`
+                                                        : 'Equipment Return'
+                                                    }
+                                                </h3>
+                                                <p className="text-sm text-gray-600">
+                                                    Return requested on {format(new Date(checkout.checkout_date), 'MMM d, yyyy')}
+                                                </p>
                                             </div>
                                         </div>
 
@@ -879,99 +851,60 @@ const ValidationQueue: React.FC = () => {
                                             </div>
                                         </div>
 
-                                        {/* Conditional Progress Bar (only for returned status) */}
-                                        {checkout.status === 'returned' && (
-                                            <div className="mb-4">
-                                                <div className="flex justify-between items-center mb-2">
-                                                    <span className="text-sm font-medium text-gray-700">
-                                                        Verification Progress
-                                                    </span>
-                                                    <span className="text-sm text-gray-500">
-                                                        {progress.verified}/{progress.total} verified ({progress.percentage}%)
-                                                    </span>
-                                                </div>
-                                                <div className="w-full bg-gray-200 rounded-full h-2">
-                                                    <div 
-                                                        className={`h-2 rounded-full ${
-                                                            progress.percentage === 100 
-                                                                ? 'bg-green-500' 
-                                                                : progress.percentage > 50 
-                                                                    ? 'bg-blue-500' 
-                                                                    : 'bg-yellow-500'
-                                                        }`}
-                                                        style={{ width: `${progress.percentage}%` }}
-                                                    ></div>
-                                                </div>
+                                        {/* Progress Bar */}
+                                        <div className="mb-4">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="text-sm font-medium text-gray-700">
+                                                    Verification Progress
+                                                </span>
+                                                <span className="text-sm text-gray-500">
+                                                    {progress.verified}/{progress.total} verified ({progress.percentage}%)
+                                                </span>
                                             </div>
-                                        )}
+                                            <div className="w-full bg-gray-200 rounded-full h-2">
+                                                <div 
+                                                    className={`h-2 rounded-full ${
+                                                        progress.percentage === 100 
+                                                            ? 'bg-green-500' 
+                                                            : progress.percentage > 50 
+                                                                ? 'bg-blue-500' 
+                                                                : 'bg-yellow-500'
+                                                    }`}
+                                                    style={{ width: `${progress.percentage}%` }}
+                                                ></div>
+                                            </div>
+                                        </div>
 
-                                        {/* Status-specific Alerts */}
+                                        {/* Alerts */}
                                         <div className="space-y-2">
-                                            {checkout.status === 'returned' && (
-                                                <>
-                                                    {!progress.canApprove && (
-                                                        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                                                            <div className="flex items-center">
-                                                                <AlertTriangle className="h-4 w-4 text-red-600 mr-2" />
-                                                                <span className="text-sm font-medium text-red-800">
-                                                                    {progress.mandatory - progress.verifiedMandatory} mandatory items need verification
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    
-                                                    {quantityGap > 0 && (
-                                                        <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                                                            <div className="flex items-center">
-                                                                <Calculator className="h-4 w-4 text-orange-600 mr-2" />
-                                                                <span className="text-sm font-medium text-orange-800">
-                                                                    {quantityGap} items missing (quantity mismatch detected)
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    )}
-
-                                                    {progress.canApprove && quantityGap === 0 && (
-                                                        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                                                            <div className="flex items-center">
-                                                                <CheckCircle className="h-4 w-4 text-green-600 mr-2" />
-                                                                <span className="text-sm font-medium text-green-800">
-                                                                    Ready to approve - all items verified!
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </>
-                                            )}
-                                            
-                                            {checkout.status === 'overdue' && (
+                                            {!progress.canApprove && (
                                                 <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                                                     <div className="flex items-center">
                                                         <AlertTriangle className="h-4 w-4 text-red-600 mr-2" />
                                                         <span className="text-sm font-medium text-red-800">
-                                                            Overdue by {Math.ceil((new Date().getTime() - new Date(checkout.expected_return_date).getTime()) / (1000 * 60 * 60 * 24))} days
+                                                            {progress.mandatory - progress.verifiedMandatory} mandatory items need verification
                                                         </span>
                                                     </div>
                                                 </div>
                                             )}
                                             
-                                            {checkout.status === 'active' && (
+                                            {quantityGap > 0 && (
+                                                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                                                    <div className="flex items-center">
+                                                        <Calculator className="h-4 w-4 text-orange-600 mr-2" />
+                                                        <span className="text-sm font-medium text-orange-800">
+                                                            {quantityGap} items missing (quantity mismatch detected)
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {progress.canApprove && quantityGap === 0 && (
                                                 <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                                                     <div className="flex items-center">
                                                         <CheckCircle className="h-4 w-4 text-green-600 mr-2" />
                                                         <span className="text-sm font-medium text-green-800">
-                                                            Currently borrowed - due {format(new Date(checkout.expected_return_date), 'MMM d, yyyy')}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            )}
-                                            
-                                            {checkout.status === 'pending' && (
-                                                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                                                    <div className="flex items-center">
-                                                        <Timer className="h-4 w-4 text-yellow-600 mr-2" />
-                                                        <span className="text-sm font-medium text-yellow-800">
-                                                            Pending approval - waiting for admin action
+                                                            Ready to approve - all items verified!
                                                         </span>
                                                     </div>
                                                 </div>
@@ -979,73 +912,37 @@ const ValidationQueue: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    {/* Status-dependent Actions */}
+                                    {/* Actions */}
                                     <div className="flex items-center space-x-2 ml-4">
-                                        {/* View Details - Always available */}
                                         <button 
                                             onClick={() => {
                                                 setSelectedCheckout(checkout);
                                                 setShowDetailModal(true);
                                             }}
                                             className="p-2 bg-indigo-100 text-indigo-600 hover:bg-indigo-200 rounded-lg transition-colors"
-                                            title="View Details"
+                                            title="Verify Items"
                                         >
                                             <Eye className="h-4 w-4" />
                                         </button>
                                         
-                                        {/* Verification Actions - Only for 'returned' status */}
-                                        {checkout.status === 'returned' && (
-                                            <>
-                                                {progress.canApprove && quantityGap === 0 && (
-                                                    <button 
-                                                        onClick={() => handleApproveReturn(checkout.id)}
-                                                        disabled={processingIds.has(checkout.id)}
-                                                        className="p-2 bg-green-100 text-green-600 hover:bg-green-200 rounded-lg transition-colors disabled:opacity-50"
-                                                        title="Approve Return"
-                                                    >
-                                                        <Check className="h-4 w-4" />
-                                                    </button>
-                                                )}
-                                                
-                                                <button 
-                                                    onClick={() => setShowDeleteConfirm(checkout.id)}
-                                                    className="p-2 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg transition-colors"
-                                                    title="Reject Return"
-                                                >
-                                                    <X className="h-4 w-4" />
-                                                </button>
-                                            </>
-                                        )}
-                                        
-                                        {/* Override Actions - For overdue items */}
-                                        {checkout.status === 'overdue' && (
+                                        {progress.canApprove && quantityGap === 0 && (
                                             <button 
-                                                onClick={() => {
-                                                    toast.info('Manual return override feature coming soon');
-                                                }}
-                                                className="p-2 bg-orange-100 text-orange-600 hover:bg-orange-200 rounded-lg transition-colors"
-                                                title="Force Return"
+                                                onClick={() => handleApproveReturn(checkout.id)}
+                                                disabled={processingIds.has(checkout.id)}
+                                                className="p-2 bg-green-100 text-green-600 hover:bg-green-200 rounded-lg transition-colors disabled:opacity-50"
+                                                title="Approve Return"
                                             >
-                                                <Flag className="h-4 w-4" />
+                                                <Check className="h-4 w-4" />
                                             </button>
                                         )}
                                         
-                                        {/* Contact User - For active/overdue items */}
-                                        {(checkout.status === 'active' || checkout.status === 'overdue') && (
-                                            <button 
-                                                onClick={() => {
-                                                    if (checkout.user?.phone_number) {
-                                                        window.open(`tel:${checkout.user.phone_number}`, '_blank');
-                                                    } else {
-                                                        toast.error('No phone number available for this user');
-                                                    }
-                                                }}
-                                                className="p-2 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded-lg transition-colors"
-                                                title="Contact User"
-                                            >
-                                                <Phone className="h-4 w-4" />
-                                            </button>
-                                        )}
+                                        <button 
+                                            onClick={() => setShowDeleteConfirm(checkout.id)}
+                                            className="p-2 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg transition-colors"
+                                            title="Reject Return"
+                                        >
+                                            <X className="h-4 w-4" />
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -1054,37 +951,17 @@ const ValidationQueue: React.FC = () => {
                 )}
             </div>
 
-            {/* ===== ENHANCED VERIFICATION MODAL ===== */}
+            {/* ===== VERIFICATION MODAL ===== */}
             {showDetailModal && selectedCheckout && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden">
                         <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white">
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <h2 className="text-2xl font-bold">
-                                        {selectedCheckout.status === 'returned' ? 'Return Verification' : 'Transaction Details'}
-                                    </h2>
+                                    <h2 className="text-2xl font-bold">Return Verification</h2>
                                     <p className="mt-1 opacity-90">
-                                        {selectedCheckout.status === 'returned' 
-                                            ? `Verify returned items from ${selectedCheckout.user?.full_name}`
-                                            : `View transaction details for ${selectedCheckout.user?.full_name}`
-                                        }
+                                        Verify returned items from {selectedCheckout.user?.full_name}
                                     </p>
-                                    
-                                    {/* Status indicator in modal */}
-                                    <div className="mt-2">
-                                        {(() => {
-                                            const statusConfig = getStatusConfig(selectedCheckout.status);
-                                            const StatusIcon = statusConfig.icon;
-                                            return (
-                                                <div className="inline-flex items-center gap-2 px-3 py-1 bg-white bg-opacity-20 rounded-full text-sm">
-                                                    <StatusIcon className="h-4 w-4" />
-                                                    <span>{statusConfig.label}</span>
-                                                    <span className="opacity-75">• {statusConfig.description}</span>
-                                                </div>
-                                            );
-                                        })()}
-                                    </div>
                                 </div>
                                 <button 
                                     onClick={() => setShowDetailModal(false)}
@@ -1113,9 +990,6 @@ const ValidationQueue: React.FC = () => {
                                             <p className="text-sm text-indigo-600">
                                                 📞 {selectedCheckout.user?.phone_number || 'No phone'}
                                             </p>
-                                            <p className="text-sm text-indigo-600">
-                                                📧 {selectedCheckout.user?.email || 'No email'}
-                                            </p>
                                         </div>
                                     </div>
                                 </div>
@@ -1133,14 +1007,11 @@ const ValidationQueue: React.FC = () => {
                                             <h3 className="font-semibold text-purple-900">
                                                 {activeTab === 'room' 
                                                     ? selectedCheckout.booking?.room?.name
-                                                    : 'Equipment Transaction'
+                                                    : 'Equipment Lending'
                                                 }
                                             </h3>
                                             <p className="text-sm text-purple-600">
-                                                Created: {format(new Date(selectedCheckout.checkout_date), 'MMM d, yyyy')}
-                                            </p>
-                                            <p className="text-sm text-purple-600">
-                                                Expected Return: {format(new Date(selectedCheckout.expected_return_date), 'MMM d, yyyy')}
+                                                Expected: {format(new Date(selectedCheckout.expected_return_date), 'MMM d, yyyy')}
                                             </p>
                                             <p className="text-sm text-purple-600">
                                                 {activeTab === 'room' 
@@ -1153,25 +1024,22 @@ const ValidationQueue: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Equipment Section with Status-dependent UI */}
+                            {/* Equipment Verification Section */}
                             <div className="bg-gray-50 rounded-xl p-6">
                                 <div className="flex items-center justify-between mb-6">
                                     <h3 className="text-xl font-bold text-gray-900 flex items-center">
                                         <Package className="h-5 w-5 mr-2 text-indigo-600" />
-                                        {selectedCheckout.status === 'returned' ? 'Equipment Verification' : 'Equipment Details'}
+                                        Equipment Verification
                                     </h3>
                                     <div className="text-sm text-gray-600">
-                                        {selectedCheckout.status === 'returned' 
-                                            ? `${verificationItems.filter(item => item.is_verified).length}/${verificationItems.length} verified`
-                                            : `${verificationItems.length} items`
-                                        }
+                                        {verificationItems.filter(item => item.is_verified).length}/{verificationItems.length} verified
                                     </div>
                                 </div>
 
                                 {verificationItems.length === 0 ? (
                                     <div className="text-center py-8">
                                         <Package className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                                        <p className="text-gray-600">No equipment in this transaction</p>
+                                        <p className="text-gray-600">No equipment to verify</p>
                                     </div>
                                 ) : (
                                     <div className="space-y-4">
@@ -1179,33 +1047,25 @@ const ValidationQueue: React.FC = () => {
                                             <div 
                                                 key={item.equipment_id}
                                                 className={`border-2 rounded-xl p-4 transition-all duration-200 ${
-                                                    selectedCheckout.status === 'returned'
-                                                        ? item.is_verified 
-                                                            ? 'border-green-300 bg-green-50' 
-                                                            : item.is_mandatory 
-                                                                ? 'border-red-300 bg-red-50' 
-                                                                : 'border-gray-200 bg-white'
-                                                        : 'border-gray-200 bg-white'
+                                                    item.is_verified 
+                                                        ? 'border-green-300 bg-green-50' 
+                                                        : item.is_mandatory 
+                                                            ? 'border-red-300 bg-red-50' 
+                                                            : 'border-gray-200 bg-white'
                                                 }`}
                                             >
                                                 <div className="flex items-start justify-between">
                                                     <div className="flex-1">
                                                         <div className="flex items-center space-x-3 mb-3">
                                                             <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${
-                                                                selectedCheckout.status === 'returned'
-                                                                    ? item.is_verified 
-                                                                        ? 'bg-green-100' 
-                                                                        : 'bg-gray-100'
-                                                                    : 'bg-blue-100'
+                                                                item.is_verified 
+                                                                    ? 'bg-green-100' 
+                                                                    : 'bg-gray-100'
                                                             }`}>
-                                                                {selectedCheckout.status === 'returned' ? (
-                                                                    item.is_verified ? (
-                                                                        <CheckCircle className="h-5 w-5 text-green-600" />
-                                                                    ) : (
-                                                                        <Package className="h-5 w-5 text-gray-600" />
-                                                                    )
+                                                                {item.is_verified ? (
+                                                                    <CheckCircle className="h-5 w-5 text-green-600" />
                                                                 ) : (
-                                                                    <Package className="h-5 w-5 text-blue-600" />
+                                                                    <Package className="h-5 w-5 text-gray-600" />
                                                                 )}
                                                             </div>
                                                             <div className="flex-1">
@@ -1223,7 +1083,7 @@ const ValidationQueue: React.FC = () => {
                                                             </div>
                                                         </div>
 
-                                                        {/* Quantity Display with Status Context */}
+                                                        {/* ✅ ENHANCED Quantity Management */}
                                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                                                             <div className="text-center p-3 bg-blue-50 rounded-lg border-2 border-blue-200">
                                                                 <div className="text-xl font-bold text-blue-600">
@@ -1237,90 +1097,65 @@ const ValidationQueue: React.FC = () => {
                                                                 </div>
                                                             </div>
 
-                                                            {/* Interactive returned quantity only for 'returned' status */}
-                                                            {selectedCheckout.status === 'returned' ? (
-                                                                <div className="text-center p-3 bg-white rounded-lg border-2 border-gray-300">
-                                                                    <div className="flex items-center justify-center space-x-2">
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                const newQty = Math.max(0, item.returned_quantity - 1);
-                                                                                const newItems = [...verificationItems];
-                                                                                newItems[index].returned_quantity = newQty;
-                                                                                setVerificationItems(newItems);
-                                                                                updateVerificationItem(
-                                                                                    selectedCheckout.id,
-                                                                                    item.equipment_id,
-                                                                                    newQty,
-                                                                                    item.condition_notes || '',
-                                                                                    newQty > 0
-                                                                                );
-                                                                            }}
-                                                                            className="p-1 bg-gray-200 hover:bg-gray-300 rounded"
-                                                                        >
-                                                                            <Minus className="h-3 w-3" />
-                                                                        </button>
-                                                                        
-                                                                        <span className="text-xl font-bold text-gray-900 min-w-[3rem] text-center">
-                                                                            {item.returned_quantity}
-                                                                        </span>
-                                                                        
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                const newQty = Math.min(item.borrowed_quantity, item.returned_quantity + 1);
-                                                                                const newItems = [...verificationItems];
-                                                                                newItems[index].returned_quantity = newQty;
-                                                                                setVerificationItems(newItems);
-                                                                                updateVerificationItem(
-                                                                                    selectedCheckout.id,
-                                                                                    item.equipment_id,
-                                                                                    newQty,
-                                                                                    item.condition_notes || '',
-                                                                                    newQty > 0
-                                                                                );
-                                                                            }}
-                                                                            className="p-1 bg-indigo-200 hover:bg-indigo-300 rounded"
-                                                                        >
-                                                                            <Plus className="h-3 w-3" />
-                                                                        </button>
-                                                                    </div>
-                                                                    <div className="text-xs text-gray-600 font-medium mt-1">
-                                                                        RETURNED
-                                                                    </div>
+                                                            <div className="text-center p-3 bg-white rounded-lg border-2 border-gray-300">
+                                                                <div className="flex items-center justify-center space-x-2">
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            const newQty = Math.max(0, item.returned_quantity - 1);
+                                                                            const newItems = [...verificationItems];
+                                                                            newItems[index].returned_quantity = newQty;
+                                                                            setVerificationItems(newItems);
+                                                                            updateVerificationItem(
+                                                                                selectedCheckout.id,
+                                                                                item.equipment_id,
+                                                                                newQty,
+                                                                                item.condition_notes || '',
+                                                                                newQty > 0
+                                                                            );
+                                                                        }}
+                                                                        className="p-1 bg-gray-200 hover:bg-gray-300 rounded"
+                                                                    >
+                                                                        <Minus className="h-3 w-3" />
+                                                                    </button>
+                                                                    
+                                                                    <span className="text-xl font-bold text-gray-900 min-w-[3rem] text-center">
+                                                                        {item.returned_quantity}
+                                                                    </span>
+                                                                    
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            const newQty = Math.min(item.borrowed_quantity, item.returned_quantity + 1);
+                                                                            const newItems = [...verificationItems];
+                                                                            newItems[index].returned_quantity = newQty;
+                                                                            setVerificationItems(newItems);
+                                                                            updateVerificationItem(
+                                                                                selectedCheckout.id,
+                                                                                item.equipment_id,
+                                                                                newQty,
+                                                                                item.condition_notes || '',
+                                                                                newQty > 0
+                                                                            );
+                                                                        }}
+                                                                        className="p-1 bg-indigo-200 hover:bg-indigo-300 rounded"
+                                                                    >
+                                                                        <Plus className="h-3 w-3" />
+                                                                    </button>
                                                                 </div>
-                                                            ) : (
-                                                                <div className="text-center p-3 bg-gray-50 rounded-lg border-2 border-gray-200">
-                                                                    <div className="text-xl font-bold text-gray-600">
-                                                                        {selectedCheckout.status === 'active' ? 'Not Yet' : 'N/A'}
-                                                                    </div>
-                                                                    <div className="text-xs text-gray-600 font-medium">
-                                                                        RETURNED
-                                                                    </div>
-                                                                    <div className="text-xs text-gray-500 mt-1">
-                                                                        {item.equipment_unit}
-                                                                    </div>
+                                                                <div className="text-xs text-gray-600 font-medium mt-1">
+                                                                    RETURNED
                                                                 </div>
-                                                            )}
+                                                            </div>
 
                                                             <div className="text-center p-3 bg-red-50 rounded-lg border-2 border-red-200">
                                                                 <div className={`text-xl font-bold ${
-                                                                    selectedCheckout.status === 'returned'
-                                                                        ? item.borrowed_quantity - item.returned_quantity > 0 
-                                                                            ? 'text-red-600' 
-                                                                            : 'text-green-600'
-                                                                        : selectedCheckout.status === 'active'
-                                                                            ? 'text-orange-600'
-                                                                            : 'text-gray-600'
+                                                                    item.borrowed_quantity - item.returned_quantity > 0 
+                                                                        ? 'text-red-600' 
+                                                                        : 'text-green-600'
                                                                 }`}>
-                                                                    {selectedCheckout.status === 'returned' 
-                                                                        ? Math.max(0, item.borrowed_quantity - item.returned_quantity)
-                                                                        : selectedCheckout.status === 'active'
-                                                                            ? item.borrowed_quantity
-                                                                            : 'N/A'
-                                                                    }
+                                                                    {Math.max(0, item.borrowed_quantity - item.returned_quantity)}
                                                                 </div>
                                                                 <div className="text-xs text-red-600 font-medium">
-                                                                    {selectedCheckout.status === 'returned' ? 'MISSING' : 
-                                                                     selectedCheckout.status === 'active' ? 'IN USE' : 'STATUS'}
+                                                                    MISSING
                                                                 </div>
                                                                 <div className="text-xs text-gray-500 mt-1">
                                                                     {item.equipment_unit}
@@ -1328,76 +1163,82 @@ const ValidationQueue: React.FC = () => {
                                                             </div>
                                                         </div>
 
-                                                        {/* Verification controls only for 'returned' status */}
-                                                        {selectedCheckout.status === 'returned' && (
-                                                            <>
-                                                                {/* Condition Notes */}
-                                                                <div className="mb-3">
-                                                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                                        Condition Notes (Optional)
-                                                                    </label>
-                                                                  <textarea
-                                                                        value={item.condition_notes || ''}
-                                                                        onChange={(e) => {
-                                                                            const newNotes = e.target.value;
-                                                                            const newItems = [...verificationItems];
-                                                                            newItems[index].condition_notes = newNotes;
-                                                                            setVerificationItems(newItems);
-                                                                            
-                                                                            if (item.is_verified) {
-                                                                                updateVerificationItem(
-                                                                                    selectedCheckout.id,
-                                                                                    item.equipment_id,
-                                                                                    item.returned_quantity,
-                                                                                    newNotes,
-                                                                                    true
-                                                                                );
-                                                                            }
-                                                                        }}
-                                                                        placeholder="e.g., Good condition, minor scratches, working properly..."
-                                                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                                                                        rows={2}
-                                                                    />
-                                                                </div>
+                                                        {/* ✅ DEBUG INFO (dapat dihapus di production) */}
+                                                        <div className="mt-2 p-2 bg-yellow-50 rounded text-xs text-yellow-800 border border-yellow-200">
+                                                            <strong>🐛 Debug:</strong> {item.equipment_name} | 
+                                                            Borrowed: {item.borrowed_quantity} | 
+                                                            Returned: {item.returned_quantity} | 
+                                                            Gap: {item.borrowed_quantity - item.returned_quantity} |
+                                                            Verified: {item.is_verified ? '✅' : '❌'}
+                                                        </div>
 
-                                                                {/* Verification Toggle */}
-                                                                <div className="flex items-center justify-between">
-                                                                    <div className="flex items-center space-x-3">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={item.is_verified}
-                                                                            onChange={(e) => {
-                                                                                const isChecked = e.target.checked;
-                                                                                const newItems = [...verificationItems];
-                                                                                newItems[index].is_verified = isChecked;
-                                                                                
-                                                                                if (isChecked && item.returned_quantity === 0) {
-                                                                                    newItems[index].returned_quantity = item.borrowed_quantity;
-                                                                                }
-                                                                                
-                                                                                setVerificationItems(newItems);
-                                                                                
-                                                                                updateVerificationItem(
-                                                                                    selectedCheckout.id,
-                                                                                    item.equipment_id,
-                                                                                    isChecked ? newItems[index].returned_quantity : 0,
-                                                                                    item.condition_notes || '',
-                                                                                    isChecked
-                                                                                );
-                                                                            }}
-                                                                            className="h-5 w-5 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                                                                        />
-                                                                        <label className="text-sm font-medium text-gray-900">
-                                                                            I verify this item has been returned
-                                                                        </label>
-                                                                    </div>
+                                                        {/* Condition Notes */}
+                                                        <div className="mb-3">
+                                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                                Condition Notes (Optional)
+                                                            </label>
+                                                            <textarea
+                                                                value={item.condition_notes || ''}
+                                                                onChange={(e) => {
+                                                                    const newNotes = e.target.value;
+                                                                    const newItems = [...verificationItems];
+                                                                    newItems[index].condition_notes = newNotes;
+                                                                    setVerificationItems(newItems);
                                                                     
-                                                                    <div className="text-xs text-gray-500">
-                                                                        {item.equipment_unit}
-                                                                    </div>
-                                                                </div>
-                                                            </>
-                                                        )}
+                                                                    // Debounced update
+                                                                    if (item.is_verified) {
+                                                                        updateVerificationItem(
+                                                                            selectedCheckout.id,
+                                                                            item.equipment_id,
+                                                                            item.returned_quantity,
+                                                                            newNotes,
+                                                                            true
+                                                                        );
+                                                                    }
+                                                                }}
+                                                                placeholder="e.g., Good condition, minor scratches, working properly..."
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                                rows={2}
+                                                            />
+                                                        </div>
+
+                                                        {/* Verification Toggle */}
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center space-x-3">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={item.is_verified}
+                                                                    onChange={(e) => {
+                                                                        const isChecked = e.target.checked;
+                                                                        const newItems = [...verificationItems];
+                                                                        newItems[index].is_verified = isChecked;
+                                                                        
+                                                                        // Auto-set returned quantity to borrowed if checking
+                                                                        if (isChecked && item.returned_quantity === 0) {
+                                                                            newItems[index].returned_quantity = item.borrowed_quantity;
+                                                                        }
+                                                                        
+                                                                        setVerificationItems(newItems);
+                                                                        
+                                                                        updateVerificationItem(
+                                                                            selectedCheckout.id,
+                                                                            item.equipment_id,
+                                                                            isChecked ? newItems[index].returned_quantity : 0,
+                                                                            item.condition_notes || '',
+                                                                            isChecked
+                                                                        );
+                                                                    }}
+                                                                    className="h-5 w-5 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                                                                />
+                                                                <label className="text-sm font-medium text-gray-900">
+                                                                    I verify this item has been returned
+                                                                </label>
+                                                            </div>
+                                                            
+                                                            <div className="text-xs text-gray-500">
+                                                                {item.equipment_unit}
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1406,89 +1247,89 @@ const ValidationQueue: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* Summary & Actions only for 'returned' status */}
-                            {selectedCheckout.status === 'returned' && (
-                                <div className="mt-8 bg-white border border-gray-200 rounded-xl p-6">
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Verification Summary</h3>
+                            {/* Summary & Actions */}
+                            <div className="mt-8 bg-white border border-gray-200 rounded-xl p-6">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-4">Verification Summary</h3>
+                                
+                                {(() => {
+                                    const progress = getVerificationProgress(verificationItems);
+                                    const quantityGap = getTotalQuantityGap(verificationItems);
                                     
-                                    {(() => {
-                                        const progress = getVerificationProgress(verificationItems);
-                                        const quantityGap = getTotalQuantityGap(verificationItems);
-                                        
-                                        return (
-                                            <div className="space-y-4">
-                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                    <div className="text-center p-4 bg-blue-50 rounded-lg">
-                                                        <div className="text-2xl font-bold text-blue-600">{progress.verified}</div>
-                                                        <div className="text-sm text-blue-600">Items Verified</div>
-                                                        <div className="text-xs text-gray-500">out of {progress.total}</div>
-                                                    </div>
-                                                    
-                                                    <div className="text-center p-4 bg-green-50 rounded-lg">
-                                                        <div className="text-2xl font-bold text-green-600">{progress.verifiedMandatory}</div>
-                                                        <div className="text-sm text-green-600">Mandatory OK</div>
-                                                        <div className="text-xs text-gray-500">out of {progress.mandatory}</div>
-                                                    </div>
-                                                    
-                                                    <div className="text-center p-4 bg-red-50 rounded-lg">
-                                                        <div className="text-2xl font-bold text-red-600">{quantityGap}</div>
-                                                        <div className="text-sm text-red-600">Missing Items</div>
-                                                        <div className="text-xs text-gray-500">quantity gap</div>
-                                                    </div>
+                                    return (
+                                        <div className="space-y-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                <div className="text-center p-4 bg-blue-50 rounded-lg">
+                                                    <div className="text-2xl font-bold text-blue-600">{progress.verified}</div>
+                                                    <div className="text-sm text-blue-600">Items Verified</div>
+                                                    <div className="text-xs text-gray-500">out of {progress.total}</div>
                                                 </div>
-
-                                                {/* Action Buttons */}
-                                                <div className="flex justify-end space-x-4 pt-4 border-t">
-                                                    <button
-                                                        onClick={() => setShowReportModal(true)}
-                                                        className="flex items-center space-x-2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200 transition-colors"
-                                                    >
-                                                        <Flag className="h-4 w-4" />
-                                                        <span>Add Report</span>
-                                                    </button>
-
-                                                    <button
-                                                        onClick={() => handleRejectReturn(selectedCheckout.id)}
-                                                        disabled={processingIds.has(selectedCheckout.id)}
-                                                        className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
-                                                    >
-                                                        <X className="h-4 w-4" />
-                                                        <span>Reject Return</span>
-                                                    </button>
-
-                                                    <button
-                                                        onClick={() => handleApproveReturn(selectedCheckout.id)}
-                                                        disabled={!progress.canApprove || processingIds.has(selectedCheckout.id)}
-                                                        className="flex items-center space-x-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
-                                                    >
-                                                        {processingIds.has(selectedCheckout.id) ? (
-                                                            <RefreshCw className="h-4 w-4 animate-spin" />
-                                                        ) : (
-                                                            <CheckCircle className="h-4 w-4" />
-                                                        )}
-                                                        <span>Approve Return</span>
-                                                    </button>
+                                                
+                                                <div className="text-center p-4 bg-green-50 rounded-lg">
+                                                    <div className="text-2xl font-bold text-green-600">{progress.verifiedMandatory}</div>
+                                                    <div className="text-sm text-green-600">Mandatory OK</div>
+                                                    <div className="text-xs text-gray-500">out of {progress.mandatory}</div>
                                                 </div>
+                                                
+                                                <div className="text-center p-4 bg-red-50 rounded-lg">
+                                                    <div className="text-2xl font-bold text-red-600">{quantityGap}</div>
+                                                    <div className="text-sm text-red-600">Missing Items</div>
+                                                    <div className="text-xs text-gray-500">quantity gap</div>
+                                                </div>
+                                            </div>
 
-                                                {/* Approval Requirements */}
-                                                {!progress.canApprove && (
-                                                    <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                                                        <div className="flex items-center">
-                                                            <AlertTriangle className="h-5 w-5 text-red-600 mr-3" />
-                                                            <div>
-                                                                <p className="font-medium text-red-800">Cannot approve yet</p>
-                                                                <p className="text-sm text-red-600">
-                                                                    Please verify all {progress.mandatory - progress.verifiedMandatory} remaining mandatory items before approval.
-                                                                </p>
-                                                            </div>
+                                            {/* Action Buttons */}
+                                            <div className="flex justify-end space-x-4 pt-4 border-t">
+                                                <button
+                                                    onClick={() => {
+                                                        setShowReportModal(true);
+                                                    }}
+                                                    className="flex items-center space-x-2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200 transition-colors"
+                                                >
+                                                    <Flag className="h-4 w-4" />
+                                                    <span>Add Report</span>
+                                                </button>
+
+                                                <button
+                                                    onClick={() => handleRejectReturn(selectedCheckout.id)}
+                                                    disabled={processingIds.has(selectedCheckout.id)}
+                                                    className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                                                >
+                                                    <X className="h-4 w-4" />
+                                                    <span>Reject Return</span>
+                                                </button>
+
+                                                <button
+                                                    onClick={() => handleApproveReturn(selectedCheckout.id)}
+                                                    disabled={!progress.canApprove || processingIds.has(selectedCheckout.id)}
+                                                    className="flex items-center space-x-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                                                >
+                                                    {processingIds.has(selectedCheckout.id) ? (
+                                                        <RefreshCw className="h-4 w-4 animate-spin" />
+                                                    ) : (
+                                                        <CheckCircle className="h-4 w-4" />
+                                                    )}
+                                                    <span>Approve Return</span>
+                                                </button>
+                                            </div>
+
+                                            {/* Approval Requirements */}
+                                            {!progress.canApprove && (
+                                                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                                                    <div className="flex items-center">
+                                                        <AlertTriangle className="h-5 w-5 text-red-600 mr-3" />
+                                                        <div>
+                                                            <p className="font-medium text-red-800">Cannot approve yet</p>
+                                                            <p className="text-sm text-red-600">
+                                                                Please verify all {progress.mandatory - progress.verifiedMandatory} remaining mandatory items before approval.
+                                                            </p>
                                                         </div>
                                                     </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })()}
-                                </div>
-                            )}
+                                                </div>
+                                          )}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
                         </div>
                     </div>
                 </div>
