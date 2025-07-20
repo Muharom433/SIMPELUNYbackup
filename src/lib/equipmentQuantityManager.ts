@@ -80,19 +80,24 @@ class EquipmentQuantityManager {
         })
         .eq('id', change.equipment_id);
 
-      // Log the change
-      await this.supabase
-        .from('equipment_quantity_logs')
-        .insert({
-          equipment_id: change.equipment_id,
-          from_quantity: current,
-          to_quantity: newQuantity,
-          change_amount: change.change_amount,
-          transaction_type: change.transaction_type,
-          reference_id: change.reference_id,
-          reference_type: change.reference_type,
-          created_at: new Date().toISOString()
-        });
+      // Log the change for audit trail
+      try {
+        await this.supabase
+          .from('equipment_quantity_logs')
+          .insert({
+            equipment_id: change.equipment_id,
+            from_quantity: current,
+            to_quantity: newQuantity,
+            change_amount: change.change_amount,
+            transaction_type: change.transaction_type,
+            reference_id: change.reference_id,
+            reference_type: change.reference_type,
+            created_at: new Date().toISOString()
+          });
+      } catch (logError) {
+        console.warn('Failed to log quantity change:', logError);
+        // Don't fail the main operation if logging fails
+      }
     }
   }
 

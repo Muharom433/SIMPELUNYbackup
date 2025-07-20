@@ -43,6 +43,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { BookingWithDetails } from '../types';
 import { alert } from '../components/Alert/AlertHelper';
 import EquipmentQuantityManager from '../lib/equipmentQuantityManager';
+import EquipmentQuantityManager from '../lib/equipmentQuantityManager';
 import { format, isAfter, isBefore, parseISO } from 'date-fns';
 
 interface Booking {
@@ -136,6 +137,29 @@ const BookingManagement: React.FC = () => {
   const fetchBookings = async () => {
     try {
       setLoading(true);
+      const quantityManager = new EquipmentQuantityManager(supabase);
+
+      // Prepare equipment list
+      const equipmentList: Array<{id: string, quantity: number}> = [];
+      
+      if (booking.equipment_requested && booking.equipment_requested.length > 0) {
+        for (let i = 0; i < booking.equipment_requested.length; i++) {
+          const equipmentId = booking.equipment_requested[i];
+          const quantity = booking.equipment_quantities?.[i] || 1;
+          
+          equipmentList.push({ id: equipmentId, quantity });
+        }
+      }
+
+      // Validate before approve
+      if (newStatus === 'approved' && equipmentList.length > 0) {
+        const validation = await quantityManager.validateBorrowRequest(equipmentList);
+        
+        if (!validation.isValid) {
+          throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
+        }
+      }
+
       
       let query = supabase
         .from('bookings')
@@ -152,20 +176,13 @@ const BookingManagement: React.FC = () => {
               code
             )
           ),
-          room:rooms(
-            id,
-            name,
-            code,
-            capacity,
-            department:departments(
-              name
-            )
-          )
-        `);
-      
-      // Filter by department for department admins
-      if (profile?.role === 'department_admin' && profile.department_id) {
-        // Get rooms in this department first
+      // Handle equipment quantities
+      if (equipmentList.length > 0) {
+        if (newStatus === 'approved') {
+          await quantityManager.processBorrowing(equipmentList, bookingId, 'booking');
+        } else if (newStatus === 'rejected' && booking.status === 'approved') {
+          await quantityManager.processRestore(equipmentList, bookingId, 'booking');
+        }
       }
       
       query = query.order('created_at', { ascending: false });
@@ -323,14 +340,16 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
     const booking = bookings.find(b => b.id === bookingId);
     if (!booking) {
       throw new Error('Booking not found');
-    }
+      const quantityManager = new EquipmentQuantityManager(supabase);
 
-    const quantityManager = new EquipmentQuantityManager(supabase);
-
-    if (booking.status === 'approved' && booking.equipment_requested && booking.equipment_requested.length > 0) {
-      const equipmentList: Array<{id: string, quantity: number}> = [];
-      
-      for (let i = 0; i < booking.equipment_requested.length; i++) {
+      // If booking was approved, restore equipment quantities
+      if (booking.status === 'approved' && booking.equipment_requested && booking.equipment_requested.length > 0) {
+        const equipmentList: Array<{id: string, quantity: number}> = [];
+        
+        for (let i = 0; i < booking.equipment_requested.length; i++) {
+          const equipmentId = booking.equipment_requested[i];
+          const quantity = booking.equipment_quantities?.[i] || 1;
+          equipmentList.push({ id: equipmentId, quantity });
         const equipmentId = booking.equipment_requested[i];
         const quantity = booking.equipment_quantities?.[i] || 1;
         equipmentList.push({ id: equipmentId, quantity });
@@ -373,6 +392,8 @@ const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 're
             console.log(`✅ Equipment ${equipmentId} quantity restored: +${requestedQuantity} = ${newQuantity}`);
           }
         }
+
+        await quantityManager.processRestore(equipmentList, bookingId, 'booking');
       }
     }
 
