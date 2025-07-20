@@ -690,6 +690,11 @@ const ToolAdministration: React.FC = () => {
                 <label className="block text-sm font-semibold text-gray-700">
                     {getText('Room Location', 'Lokasi Ruangan')} 
                     {profile?.role === 'department_admin' && <span className="text-red-500 ml-1">*</span>}
+                    {profile?.role === 'super_admin' && (
+                        <span className="text-gray-500 text-xs ml-1">
+                            ({getText('Optional', 'Opsional')})
+                        </span>
+                    )}
                 </label>
                 <div className="relative">
                     <div className="relative">
@@ -701,14 +706,19 @@ const ToolAdministration: React.FC = () => {
                                 setShowRoomDropdown(true);
                             }}
                             onFocus={() => setShowRoomDropdown(true)}
-                            placeholder={getText('Search and select room...', 'Cari dan pilih ruangan...')}
+                            placeholder={
+                                profile?.role === 'super_admin' 
+                                    ? getText('Search room or leave blank...', 'Cari ruangan atau kosongkan...')
+                                    : getText('Search and select room...', 'Cari dan pilih ruangan...')
+                            }
                             className="w-full border-2 border-gray-200 rounded-lg p-3 pr-10 focus:border-blue-500 focus:ring-0 transition-colors"
                         />
-                        {selectedRoom && (
+                        {(selectedRoom || roomSearchTerm) && (
                             <button
                                 type="button"
                                 onClick={clearRoomSelection}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+                                className="absolute right-8 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+                                title={getText('Clear selection', 'Hapus pilihan')}
                             >
                                 <X className="h-4 w-4" />
                             </button>
@@ -725,6 +735,34 @@ const ToolAdministration: React.FC = () => {
                     {/* Room Dropdown */}
                     {showRoomDropdown && (
                         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                            {/* Option for No Room (Super Admin only) */}
+                            {profile?.role === 'super_admin' && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedRoom(null);
+                                        form.setValue('rooms_id', '');
+                                        setRoomSearchTerm('');
+                                        setShowRoomDropdown(false);
+                                    }}
+                                    className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 transition-colors"
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <div className="font-medium text-gray-600 italic">
+                                                {getText('No Room Assigned', 'Tidak Ada Ruangan')}
+                                            </div>
+                                            <div className="text-sm text-gray-500">
+                                                {getText('Equipment without specific location', 'Peralatan tanpa lokasi spesifik')}
+                                            </div>
+                                        </div>
+                                        {!selectedRoom && !roomSearchTerm && (
+                                            <CheckCircle className="h-5 w-5 text-green-600" />
+                                        )}
+                                    </div>
+                                </button>
+                            )}
+                            
                             {filteredRooms.length > 0 ? (
                                 filteredRooms.map((room) => (
                                     <button
@@ -752,12 +790,18 @@ const ToolAdministration: React.FC = () => {
                                         </div>
                                     </button>
                                 ))
+                            ) : roomSearchTerm ? (
+                                <div className="px-4 py-3 text-gray-500 text-center">
+                                    {getText('No rooms found matching search', 'Tidak ada ruangan yang cocok dengan pencarian')}
+                                    {profile?.role === 'department_admin' && (
+                                        <div className="text-xs mt-1">
+                                            {getText('Only rooms in your department are shown', 'Hanya ruangan di departemen Anda yang ditampilkan')}
+                                        </div>
+                                    )}
+                                </div>
                             ) : (
                                 <div className="px-4 py-3 text-gray-500 text-center">
-                                    {roomSearchTerm ? 
-                                        getText('No rooms found matching search', 'Tidak ada ruangan yang cocok dengan pencarian') :
-                                        getText('No rooms available', 'Tidak ada ruangan tersedia')
-                                    }
+                                    {getText('No rooms available', 'Tidak ada ruangan tersedia')}
                                     {profile?.role === 'department_admin' && (
                                         <div className="text-xs mt-1">
                                             {getText('Only rooms in your department are shown', 'Hanya ruangan di departemen Anda yang ditampilkan')}
@@ -770,7 +814,7 @@ const ToolAdministration: React.FC = () => {
                 </div>
                 
                 {/* Selected Room Display */}
-                {selectedRoom && (
+                {selectedRoom ? (
                     <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -797,6 +841,22 @@ const ToolAdministration: React.FC = () => {
                             </button>
                         </div>
                     </div>
+                ) : profile?.role === 'super_admin' && !roomSearchTerm ? (
+                    <div className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-gray-100 rounded-lg">
+                                <Package className="h-4 w-4 text-gray-600" />
+                            </div>
+                            <div>
+                                <div className="font-medium text-gray-700">
+                                    {getText('No Room Assigned', 'Tidak Ada Ruangan')}
+                                </div>
+                                <div className="text-sm text-gray-500">
+                                    {getText('Equipment will be created without specific location', 'Peralatan akan dibuat tanpa lokasi spesifik')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 )}
                 
                 {/* Validation Error */}
@@ -807,15 +867,22 @@ const ToolAdministration: React.FC = () => {
                     </p>
                 )}
                 
-                {/* Department Admin Help Text */}
-                {profile?.role === 'department_admin' && (
+                {/* Role-specific Help Text */}
+                {profile?.role === 'department_admin' ? (
                     <p className="text-xs text-gray-500">
                         {getText(
                             'You can only assign equipment to rooms in your department.',
                             'Anda hanya dapat menugaskan peralatan ke ruangan di departemen Anda.'
                         )}
                     </p>
-                )}
+                ) : profile?.role === 'super_admin' ? (
+                    <p className="text-xs text-gray-500">
+                        {getText(
+                            'You can assign equipment to any room or leave it unassigned.',
+                            'Anda dapat menugaskan peralatan ke ruangan mana pun atau membiarkannya tanpa penugasan.'
+                        )}
+                    </p>
+                ) : null}
             </div>
         );
     };
