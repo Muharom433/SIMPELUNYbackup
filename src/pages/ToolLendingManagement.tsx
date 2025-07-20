@@ -8,6 +8,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
+import EquipmentQuantityManager from '../lib/equipmentQuantityManager';
 import { Equipment, User as UserType } from '../types';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -303,10 +304,36 @@ const ToolLendingManagement: React.FC = () => {
         
         return matchesSearch && matchesStatus && matchesDate;
     });
+      const quantityManager = new EquipmentQuantityManager(supabase);
 
-    const getTotalItemsInRecord = (record: LendingRecord) => {
-        return record.qty.reduce((total, qty) => total + qty, 0);
-    };
+      if (recordToDelete.status === 'approved' || recordToDelete.status === 'borrow') {
+        const equipmentList: Array<{id: string, quantity: number}> = [];
+        
+        for (let i = 0; i < recordToDelete.id_equipment.length; i++) {
+          equipmentList.push({
+            id: recordToDelete.id_equipment[i],
+            quantity: recordToDelete.qty[i]
+          });
+        }
+
+        await quantityManager.processRestore(equipmentList, recordId, 'lending');
+      const equipmentList: Array<{id: string, quantity: number}> = [];
+      
+      for (let i = 0; i < record.id_equipment.length; i++) {
+        equipmentList.push({
+          id: record.id_equipment[i],
+          quantity: record.qty[i]
+        });
+      }
+
+      // Validate before approve
+      if (newStatus === 'approved') {
+        const validation = await quantityManager.validateBorrowRequest(equipmentList);
+        
+        if (!validation.isValid) {
+          throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
+        }
+      }
 
     const getUserDisplayName = (record: LendingRecord) => {
         return record.user?.full_name || record.user_info?.full_name || 'Unknown User';
@@ -318,16 +345,11 @@ const ToolLendingManagement: React.FC = () => {
     };
 
     // ✅ FUNGSI STATUS COLOR
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'pending': return 'bg-yellow-100 text-yellow-800';
-            case 'approved': return 'bg-green-100 text-green-800';
-            case 'rejected': return 'bg-red-100 text-red-800';
-            case 'borrow': return 'bg-blue-100 text-blue-800';
-            case 'completed': return 'bg-gray-100 text-gray-800';
-            default: return 'bg-gray-100 text-gray-800';
-        }
-    };
+      // Handle equipment quantities
+      if (newStatus === 'approved') {
+        await quantityManager.processBorrowing(equipmentList, recordId, 'lending');
+      } else if (newStatus === 'rejected' && (record.status === 'approved' || record.status === 'borrow')) {
+        await quantityManager.processRestore(equipmentList, recordId, 'lending');
 
     const getStatusIcon = (status: string) => {
         switch (status) {
