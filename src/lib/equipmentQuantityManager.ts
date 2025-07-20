@@ -1,11 +1,3 @@
-interface EquipmentQuantityChange {
-  equipment_id: string;
-  change_amount: number; // positive for return, negative for borrow
-  transaction_type: 'borrow' | 'return' | 'restore';
-  reference_id: string;
-  reference_type: 'booking' | 'lending';
-}
-
 class EquipmentQuantityManager {
   private supabase: any;
 
@@ -13,149 +5,131 @@ class EquipmentQuantityManager {
     this.supabase = supabaseClient;
   }
 
-  async getCurrentQuantity(equipmentId: string): Promise<{ current: number, original: number }> {
-    const { data: equipment, error } = await this.supabase
-      .from('equipment')
-      .select('quantity, original_quantity')
-      .eq('id', equipmentId)
-      .single();
-
-    if (error) throw error;
-    
-    // Set original_quantity if not exists
-    if (equipment.original_quantity === null || equipment.original_quantity === undefined) {
-      await this.supabase
+  // SIMPLE BORROW: Tambah ke active_borrows, update currently_borrowed
+  async borrowEquipment(equipmentId: string, userId: string, quantity: number, refType: string, refId: string) {
+    try {
+      // Check current availability
+      const { data: equipment, error: eqError } = await this.supabase
         .from('equipment')
-        .update({ original_quantity: equipment.quantity })
-        .eq('id', equipmentId);
-      
-      return {
-        current: equipment.quantity,
-        original: equipment.quantity
-      };
-    }
+        .select('quantity, currently_borrowed')
+        .eq('id', equipmentId)
+        .single();
 
-    return {
-      current: equipment.quantity,
-      original: equipment.original_quantity
-    };
+      if (eqError) throw eqError;
+
+      const available = equipment.quantity - equipment.currently_borrowed;
+      if (quantity > available) {
+        throw new Error(`Only ${available} available, requested ${quantity}`);
+      }
+
+      // Add to active_borrows
+      const { error: borrowError } = await this.supabase
+        .from('active_borrows')
+        .insert({
+          equipment_id: equipmentId,
+          user_id: userId,
+          quantity,
+          reference_type: refType,
+          reference_id: refId
+        });
+
+      if (borrowError) throw borrowError;
+
+      // Update currently_borrowed
+      const { error: updateError } = await this.supabase
+        .from('equipment')
+        .update({ 
+          currently_borrowed: equipment.currently_borrowed + quantity,
+          is_available: (available - quantity) > 0
+        })
+        .eq('id', equipmentId);
+
+      if (updateError) throw updateError;
+
+      console.log(`✅ Borrowed ${quantity} of equipment ${equipmentId}`);
+    } catch (error) {
+      console.error('Error borrowing equipment:', error);
+      throw error;
+    }
   }
 
-  async updateQuantity(changes: EquipmentQuantityChange[]): Promise<void> {
-    for (const change of changes) {
-      const { current, original } = await this.getCurrentQuantity(change.equipment_id);
-      
-      let newQuantity = current + change.change_amount;
+  // SIMPLE RETURN: Remove dari active_borrows, update currently_borrowed
+  async returnEquipment(equipmentId: string, userId: string, quantity: number, refType: string, refId: string) {
+    try {
+      // Find active borrow
+      const { data: borrow, error: borrowError } = await this.supabase
+        .from('active_borrows')
+        .select('*')
+        .eq('equipment_id', equipmentId)
+        .eq('user_id', userId)
+        .eq('reference_type', refType)
+        .eq('reference_id', refId)
+        .eq('status', 'active')
+        .maybeSingle();
 
-      // CRITICAL: Enforce boundaries
-      if (change.transaction_type === 'borrow') {
-        if (change.change_amount > 0) {
-          throw new Error(`Borrow amount must be negative, got: ${change.change_amount}`);
-        }
-        newQuantity = Math.max(0, current + change.change_amount);
-        
-        if (newQuantity < 0) {
-          throw new Error(`Cannot borrow more than available. Available: ${current}, Requested: ${Math.abs(change.change_amount)}`);
-        }
-      } else if (change.transaction_type === 'return') {
-        if (change.change_amount < 0) {
-          throw new Error(`Return amount must be positive, got: ${change.change_amount}`);
-        }
-        newQuantity = Math.min(original, current + change.change_amount);
-        
-        if (newQuantity > original) {
-          console.warn(`Return would exceed original. Capping at ${original}`);
-          newQuantity = original;
-        }
-      } else if (change.transaction_type === 'restore') {
-        newQuantity = Math.min(original, Math.max(0, current + change.change_amount));
+      if (borrowError) throw borrowError;
+      if (!borrow) {
+        console.warn(`No active borrow found for equipment ${equipmentId}`);
+        return; // Don't throw error, just return
       }
+
+      // Update or delete borrow record
+      if (quantity >= borrow.quantity) {
+        await this.supabase.from('active_borrows').delete().eq('id', borrow.id);
+      } else {
+        await this.supabase
+          .from('active_borrows')
+          .update({ quantity: borrow.quantity - quantity })
+          .eq('id', borrow.id);
+      }
+
+      // Update equipment
+      const { data: equipment } = await this.supabase
+        .from('equipment')
+        .select('quantity, currently_borrowed')
+        .eq('id', equipmentId)
+        .single();
 
       await this.supabase
         .from('equipment')
         .update({ 
-          quantity: newQuantity,
-          is_available: newQuantity > 0,
-          updated_at: new Date().toISOString()
+          currently_borrowed: Math.max(0, equipment.currently_borrowed - quantity),
+          is_available: true
         })
-        .eq('id', change.equipment_id);
+        .eq('id', equipmentId);
 
-      // Log the change for audit trail
-      try {
+      console.log(`✅ Returned ${quantity} of equipment ${equipmentId}`);
+    } catch (error) {
+      console.error('Error returning equipment:', error);
+      throw error;
+    }
+  }
+
+  // LEGACY SUPPORT: Keep old updateQuantity method for existing code
+  async updateQuantity(changes: Array<any>) {
+    for (const change of changes) {
+      if (change.transaction_type === 'return' && change.change_amount > 0) {
+        // This is a return operation from validation queue
+        // We'll implement a simple version that just updates the equipment quantity
+        const { data: equipment } = await this.supabase
+          .from('equipment')
+          .select('quantity')
+          .eq('id', change.equipment_id)
+          .single();
+
+        const newQuantity = equipment.quantity + change.change_amount;
+
         await this.supabase
-          .from('equipment_quantity_logs')
-          .insert({
-            equipment_id: change.equipment_id,
-            from_quantity: current,
-            to_quantity: newQuantity,
-            change_amount: change.change_amount,
-            transaction_type: change.transaction_type,
-            reference_id: change.reference_id,
-            reference_type: change.reference_type,
-            created_at: new Date().toISOString()
-          });
-      } catch (logError) {
-        console.warn('Failed to log quantity change:', logError);
-        // Don't fail the main operation if logging fails
+          .from('equipment')
+          .update({ 
+            quantity: newQuantity,
+            is_available: newQuantity > 0
+          })
+          .eq('id', change.equipment_id);
+
+        console.log(`✅ Updated equipment ${change.equipment_id} quantity: +${change.change_amount}`);
       }
     }
-  }
-
-  async validateBorrowRequest(equipmentList: Array<{id: string, quantity: number}>): Promise<{ isValid: boolean, errors: string[] }> {
-    const errors: string[] = [];
-
-    for (const item of equipmentList) {
-      const { current } = await this.getCurrentQuantity(item.id);
-      
-      if (item.quantity <= 0) {
-        errors.push(`Invalid quantity for equipment ${item.id}: ${item.quantity}`);
-      }
-      
-      if (item.quantity > current) {
-        errors.push(`Insufficient quantity for equipment ${item.id}. Available: ${current}, Requested: ${item.quantity}`);
-      }
-    }
-
-    return {
-      isValid: errors.length === 0,
-      errors
-    };
-  }
-
-  async processBorrowing(equipmentList: Array<{id: string, quantity: number}>, referenceId: string, referenceType: 'booking' | 'lending'): Promise<void> {
-    const changes: EquipmentQuantityChange[] = equipmentList.map(item => ({
-      equipment_id: item.id,
-      change_amount: -item.quantity, // Negative for borrowing
-      transaction_type: 'borrow',
-      reference_id: referenceId,
-      reference_type: referenceType
-    }));
-
-    await this.updateQuantity(changes);
-  }
-
-  async processReturn(equipmentList: Array<{id: string, quantity: number}>, referenceId: string, referenceType: 'booking' | 'lending'): Promise<void> {
-    const changes: EquipmentQuantityChange[] = equipmentList.map(item => ({
-      equipment_id: item.id,
-      change_amount: item.quantity, // Positive for returning
-      transaction_type: 'return',
-      reference_id: referenceId,
-      reference_type: referenceType
-    }));
-
-    await this.updateQuantity(changes);
-  }
-
-  async processRestore(equipmentList: Array<{id: string, quantity: number}>, referenceId: string, referenceType: 'booking' | 'lending'): Promise<void> {
-    const changes: EquipmentQuantityChange[] = equipmentList.map(item => ({
-      equipment_id: item.id,
-      change_amount: item.quantity,
-      transaction_type: 'restore',
-      reference_id: referenceId,
-      reference_type: referenceType
-    }));
-
-    await this.updateQuantity(changes);
   }
 }
 
