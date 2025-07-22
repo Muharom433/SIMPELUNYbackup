@@ -160,36 +160,64 @@ const CheckOut: React.FC = () => {
     try {
       setLoading(true);
       
-      console.log('Fetching approved bookings and borrowed tools...');
+      console.log('Fetching approved bookings and borrowed tools that have NOT been checked out...');
       
-      // Fetch approved bookings
-      const { data: bookingsData, error: bookingsError } = await supabase
+      // ✅ STEP 1: Get all checkout records untuk filter out yang sudah di-checkout
+      const { data: existingCheckouts, error: checkoutError } = await supabase
+        .from('checkouts')
+        .select('booking_id, lendingTool_id');
+
+      if (checkoutError) {
+        console.error('Error fetching existing checkouts:', checkoutError);
+        throw checkoutError;
+      }
+
+      const checkedOutBookingIds = existingCheckouts?.filter(c => c.booking_id).map(c => c.booking_id) || [];
+      const checkedOutLendingIds = existingCheckouts?.filter(c => c.lendingTool_id).map(c => c.lendingTool_id) || [];
+
+      console.log('Already checked out booking IDs:', checkedOutBookingIds);
+      console.log('Already checked out lending IDs:', checkedOutLendingIds);
+
+      // ✅ STEP 2: Fetch approved bookings yang BELUM di-checkout
+      let bookingsQuery = supabase
         .from('bookings')
         .select('*')
         .eq('status', 'approved')
         .order('created_at', { ascending: false });
+
+      if (checkedOutBookingIds.length > 0) {
+        bookingsQuery = bookingsQuery.not('id', 'in', `(${checkedOutBookingIds.join(',')})`);
+      }
+
+      const { data: bookingsData, error: bookingsError } = await bookingsQuery;
 
       if (bookingsError) {
         console.error('Error fetching approved bookings:', bookingsError);
         throw bookingsError;
       }
 
-      // ✅ PERBAIKAN: Fetch lending tools dengan status 'borrow' (sudah disetujui dan sedang dipinjam)
-      const { data: lendingToolsData, error: lendingToolsError } = await supabase
+      // ✅ STEP 3: Fetch lending tools dengan status 'borrow' yang BELUM di-checkout
+      let lendingQuery = supabase
         .from('lending_tool')
         .select('*')
         .eq('status', 'borrow')
         .order('created_at', { ascending: false });
+
+      if (checkedOutLendingIds.length > 0) {
+        lendingQuery = lendingQuery.not('id', 'in', `(${checkedOutLendingIds.join(',')})`);
+      }
+
+      const { data: lendingToolsData, error: lendingToolsError } = await lendingQuery;
 
       if (lendingToolsError) {
         console.error('Error fetching lending tools:', lendingToolsError);
         throw lendingToolsError;
       }
 
-      console.log('Approved bookings found:', bookingsData?.length || 0);
-      console.log('Borrowed tools found:', lendingToolsData?.length || 0);
+      console.log('Available bookings (not checked out):', bookingsData?.length || 0);
+      console.log('Available borrowed tools (not checked out):', lendingToolsData?.length || 0);
 
-      // Process bookings
+      // Process bookings (existing code remains same)
       const bookingsWithDetails = await Promise.all(
         (bookingsData || []).map(async (booking) => {
           let user = null;
@@ -254,7 +282,7 @@ const CheckOut: React.FC = () => {
         })
       );
 
-      // Process lending tools
+      // Process lending tools (existing code remains same)
       const lendingToolsWithDetails = await Promise.all(
         (lendingToolsData || []).map(async (lendingTool) => {
           let user = null;
@@ -307,7 +335,7 @@ const CheckOut: React.FC = () => {
 
       // Combine both types of records
       const combinedRecords = [...bookingsWithDetails, ...lendingToolsWithDetails];
-      console.log('Combined records:', combinedRecords.length, combinedRecords);
+      console.log('✅ Available records for checkout (not yet checked out):', combinedRecords.length);
       setAllRecords(combinedRecords);
 
     } catch (error) {
