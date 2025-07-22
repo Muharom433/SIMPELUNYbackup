@@ -193,7 +193,7 @@ const BookingManagement: React.FC = () => {
       throw new Error('Booking not found');
     }
 
-    console.log('📋 FIXED: Updating booking status:', {
+    console.log('📋 SIMPLE: Updating booking status:', {
       bookingId: booking.id,
       currentStatus: booking.status,
       newStatus,
@@ -201,68 +201,40 @@ const BookingManagement: React.FC = () => {
       equipment_quantities: booking.equipment_quantities
     });
 
-    // ✅ CRITICAL FIX: Manual equipment list building instead of using helper
+    // ✅ SIMPLE: Direct equipment updates
     if (booking.equipment_requested && booking.equipment_requested.length > 0) {
-      const quantityManager = new EquipmentQuantityManager(supabase);
-      
-      // ✅ BUILD EQUIPMENT LIST MANUALLY dengan validasi
-      const equipmentList = [];
       
       for (let i = 0; i < booking.equipment_requested.length; i++) {
         const equipmentId = booking.equipment_requested[i];
-        const quantity = booking.equipment_quantities && booking.equipment_quantities[i] 
-          ? booking.equipment_quantities[i] 
-          : 1;
-
-        // ✅ VALIDATE equipment exists before adding to list
-        console.log(`🔍 Validating equipment ${i + 1}/${booking.equipment_requested.length}:`, {
-          equipmentId,
-          quantity,
-          index: i
-        });
-
-        // Quick existence check
-        const { data: equipmentExists, error: checkError } = await supabase
-          .from('equipment')
-          .select('id, name, quantity')
-          .eq('id', equipmentId)
-          .single();
-
-        if (checkError || !equipmentExists) {
-          console.error(`❌ Equipment ${equipmentId} not found:`, checkError);
-          throw new Error(`Equipment with ID ${equipmentId} not found in database. Please refresh the page and try again.`);
-        }
-
-        console.log(`✅ Equipment validated:`, {
-          id: equipmentExists.id,
-          name: equipmentExists.name,
-          availableQuantity: equipmentExists.quantity,
-          requestedQuantity: quantity
-        });
-
-        equipmentList.push({
-          id: equipmentId,
-          quantity: quantity
-        });
-      }
-
-      console.log('✅ Final validated equipment list:', equipmentList);
-
-      if (newStatus === 'approved') {
-        // ✅ APPROVED: Decrease equipment quantities (reserve items)
-        console.log('✅ APPROVING: Decreasing equipment quantities for reservation');
-        await quantityManager.bulkDecreaseQuantity(
-          equipmentList, 
-          `Booking approved: ${booking.id} - ${booking.purpose}`
-        );
-      } else if (newStatus === 'rejected') {
-        // ✅ REJECTED: If previously approved, restore quantities
-        if (booking.status === 'approved') {
-          console.log('✅ REJECTING: Restoring equipment quantities from previous approval');
-          await quantityManager.bulkIncreaseQuantity(
-            equipmentList, 
-            `Booking rejected: ${booking.id} - restoring reserved items`
-          );
+        const quantity = booking.equipment_quantities?.[i] || 1;
+        
+        if (newStatus === 'approved') {
+          // ✅ APPROVED: Kurangi quantity
+          console.log(`📉 Decreasing ${equipmentId} by ${quantity}`);
+          
+          const { error } = await supabase.rpc('decrease_equipment_quantity', {
+            equipment_id: equipmentId,
+            decrease_by: quantity
+          });
+          
+          if (error) {
+            console.error(`❌ Failed to decrease ${equipmentId}:`, error);
+            throw new Error(`Failed to update equipment ${equipmentId}: ${error.message}`);
+          }
+          
+        } else if (newStatus === 'rejected' && booking.status === 'approved') {
+          // ✅ REJECTED (from approved): Tambah quantity kembali
+          console.log(`📈 Increasing ${equipmentId} by ${quantity}`);
+          
+          const { error } = await supabase.rpc('increase_equipment_quantity', {
+            equipment_id: equipmentId,
+            increase_by: quantity
+          });
+          
+          if (error) {
+            console.error(`❌ Failed to increase ${equipmentId}:`, error);
+            throw new Error(`Failed to restore equipment ${equipmentId}: ${error.message}`);
+          }
         }
       }
     }
@@ -278,20 +250,14 @@ const BookingManagement: React.FC = () => {
 
     if (bookingError) throw bookingError;
     
-    console.log('✅ FIXED: Booking status updated successfully');
+    console.log('✅ SIMPLE: Booking status updated successfully');
     
-    // Success notification
-    const statusText = newStatus === 'approved' 
-      ? getText('approved', 'disetujui') 
-      : getText('rejected', 'ditolak');
-    
+    const statusText = newStatus === 'approved' ? getText('approved', 'disetujui') : getText('rejected', 'ditolak');
     alert.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
     
-    // Refresh data
     await fetchBookings();
     await fetchAllEquipment();
     
-    // Close modal if open
     if (selectedBooking?.id === bookingId) {
       setShowDetailModal(false);
     }
