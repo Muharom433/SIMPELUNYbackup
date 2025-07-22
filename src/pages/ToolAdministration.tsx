@@ -291,7 +291,7 @@ const ToolAdministration: React.FC = () => {
             const { data: bookingData, error: bookingError } = await supabase
                 .from('bookings')
                 .select('*, user:users(id, full_name, identity_number, email, phone_number)')
-                .in('status', ['approved', 'completed']) // ✅ TERMASUK yang sudah completed
+                .in('status', 'approved') // ✅ TERMASUK yang sudah completed
                 .contains('equipment_requested', [equipmentId])
                 .order('created_at', { ascending: false });
 
