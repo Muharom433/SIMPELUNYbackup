@@ -403,13 +403,13 @@ const CheckOut: React.FC = () => {
         // Handle lending tool checkout
         const lendingTool = selectedRecord as LendingToolWithDetails;
         
-        // Create checkout record for lending tool
+        // ✅ PERBAIKAN: Create checkout record dengan status 'returned' untuk verifikasi admin
         const checkoutData = {
           user_id: lendingTool.id_user,
           lendingTool_id: lendingTool.id,
           checkout_date: new Date().toISOString(),
           expected_return_date: lendingTool.date,
-          status: 'returned',
+          status: 'returned', // User claim sudah return, tunggu admin verify
           actual_return_date: new Date().toISOString(),
           condition_on_checkout: 'good',
           condition_on_return: 'good',
@@ -426,75 +426,31 @@ const CheckOut: React.FC = () => {
           throw checkoutError;
         }
 
-        console.log('Checkout record created successfully for lending tool');
+        console.log('✅ Checkout record created successfully for lending tool - WAITING FOR ADMIN VERIFICATION');
 
-        // ✅ PERBAIKAN: Update status menjadi 'completed' dan restore equipment quantities
-        const { error: lendingUpdateError } = await supabase
-          .from('lending_tool')
-          .update({ 
-            status: 'completed',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', lendingTool.id);
+        // ✅ PERBAIKAN: TIDAK mengubah status lending_tool - biarkan tetap 'borrow'
+        // Status akan diubah oleh ValidationQueue setelah admin approve
+        console.log('✅ Lending tool status remains "borrow" - waiting for admin approval in ValidationQueue');
 
-        if (lendingUpdateError) {
-          console.error('Error updating lending tool status:', lendingUpdateError);
-          throw lendingUpdateError;
-        }
-
-        console.log('Lending tool status updated to completed');
-
-        // ✅ TAMBAH: Restore equipment quantities
-        for (let i = 0; i < lendingTool.id_equipment.length; i++) {
-          const equipmentId = lendingTool.id_equipment[i];
-          const quantity = lendingTool.qty[i];
-          
-          // Get current equipment data
-          const { data: equipment, error: equipmentFetchError } = await supabase
-            .from('equipment')
-            .select('quantity')
-            .eq('id', equipmentId)
-            .single();
-
-          if (equipmentFetchError) {
-            console.error('Error fetching equipment:', equipmentFetchError);
-            continue;
-          }
-
-          if (equipment) {
-            const newQuantity = equipment.quantity + quantity;
-
-            const { error: equipmentUpdateError } = await supabase
-              .from('equipment')
-              .update({ 
-                quantity: newQuantity,
-                is_available: newQuantity > 0
-              })
-              .eq('id', equipmentId);
-
-            if (equipmentUpdateError) {
-              console.error('Error updating equipment:', equipmentUpdateError);
-            } else {
-              console.log(`Equipment ${equipmentId} quantity restored: +${quantity} = ${newQuantity}`);
-            }
-          }
-        }
+        // ❌ HAPUS: Tidak update equipment quantities - akan dilakukan ValidationQueue
+        console.log('✅ Equipment quantities NOT changed - will be handled by ValidationQueue after admin approval');
 
       } else {
-        // Handle booking checkout (existing logic)
+        // Handle booking checkout
         const booking = selectedRecord as BookingWithDetails;
         
-        // Create checkout record for booking
+        // ✅ Create checkout record dengan status 'returned' untuk verifikasi admin
         const checkoutData = {
           user_id: booking.user_id,
           booking_id: booking.id,
           checkout_date: new Date().toISOString(),
           expected_return_date: booking.end_time,
-          status: 'returned',
+          status: 'returned', // User claim sudah return, tunggu admin verify
           actual_return_date: new Date().toISOString(),
           condition_on_checkout: 'good',
           condition_on_return: 'good',
           total_items: booking.equipment_requested?.length || 0,
+          type: 'room'
         };
 
         const { error: checkoutError } = await supabase
@@ -506,55 +462,14 @@ const CheckOut: React.FC = () => {
           throw checkoutError;
         }
 
-        console.log('Checkout record created successfully for booking');
+        console.log('✅ Checkout record created successfully for booking - WAITING FOR ADMIN VERIFICATION');
 
-        // Update booking status to completed
-        const { error: bookingUpdateError } = await supabase
-          .from('bookings')
-          .update({ 
-            status: 'completed',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', booking.id);
+        // ✅ PERBAIKAN: TIDAK mengubah status booking - biarkan tetap 'approved'  
+        // Status akan diubah oleh ValidationQueue setelah admin approve
+        console.log('✅ Booking status remains "approved" - waiting for admin approval in ValidationQueue');
 
-        if (bookingUpdateError) {
-          console.error('Error updating booking status:', bookingUpdateError);
-          alert.error(getText('Checkout completed but failed to update booking status', 'Checkout selesai tapi gagal memperbarui status pemesanan'));
-        } else {
-          console.log('Booking status updated to completed');
-        }
-
-        // ✅ TAMBAH: Restore equipment quantities for booking if any
-        if (booking.equipment_requested && booking.equipment_requested.length > 0) {
-          for (const equipmentId of booking.equipment_requested) {
-            const { data: equipment, error: equipmentFetchError } = await supabase
-              .from('equipment')
-              .select('quantity')
-              .eq('id', equipmentId)
-              .single();
-
-            if (equipmentFetchError) {
-              console.error('Error fetching equipment:', equipmentFetchError);
-              continue;
-            }
-
-            if (equipment) {
-              const newQuantity = equipment.quantity + 1; // Assuming 1 item per equipment for bookings
-
-              const { error: equipmentUpdateError } = await supabase
-                .from('equipment')
-                .update({ 
-                  quantity: newQuantity,
-                  is_available: newQuantity > 0
-                })
-                .eq('id', equipmentId);
-
-              if (equipmentUpdateError) {
-                console.error('Error updating equipment:', equipmentUpdateError);
-              }
-            }
-          }
-        }
+        // ❌ HAPUS: Tidak update equipment quantities - akan dilakukan ValidationQueue
+        console.log('✅ Equipment quantities NOT changed - will be handled by ValidationQueue after admin approval');
       }
 
       // If there are issues, create a report
@@ -591,13 +506,13 @@ const CheckOut: React.FC = () => {
 
         if (reportError) {
           console.error('Error creating report:', reportError);
-          alert.error(getText('Checkout completed but failed to submit report', 'Checkout selesai tapi gagal mengirim laporan'));
+          alert.error(getText('Return submitted but failed to submit report', 'Pengembalian berhasil tapi gagal mengirim laporan'));
         } else {
           console.log('Issue report created successfully');
-          alert.success(getText('Checkout completed and issue reported successfully!', 'Checkout selesai dan masalah berhasil dilaporkan!'));
+          alert.success(getText('Return submitted and issue reported successfully! Waiting for admin verification.', 'Pengembalian berhasil dikirim dan masalah berhasil dilaporkan! Menunggu verifikasi admin.'));
         }
       } else {
-        alert.success(getText('Checkout completed successfully!', 'Checkout berhasil diselesaikan!'));
+        alert.success(getText('Return submitted successfully! Waiting for admin verification.', 'Pengembalian berhasil dikirim! Menunggu verifikasi admin.'));
       }
 
       // Reset form and refresh data
