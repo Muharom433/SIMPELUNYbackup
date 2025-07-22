@@ -14,7 +14,6 @@
     "@hookform/resolvers": "^3.3.2",
     "@supabase/supabase-js": "^2.39.0",
     "@types/papaparse": "^5.3.14",
-    "caniuse-lite": "^1.0.30001727",
     "date-fns": "^3.0.6",
     "date-fns-tz": "^3.2.0",
     "i18next": "^25.2.1",
