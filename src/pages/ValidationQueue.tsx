@@ -356,111 +356,110 @@ const ValidationQueue: React.FC = () => {
         }
     }, [activeTab, statusFilter, profile]);
 
-    // ✅ FIXED ValidationQueue.tsx - updateVerificationItem function only
+    // ✅ ENHANCED updateVerificationItem function with +/- controls
+    const updateVerificationItem = async (
+        checkoutId: string, 
+        equipmentId: string, 
+        newReturnedQuantity: number, 
+        conditionNotes: string,
+        isVerified: boolean
+    ) => {
+        try {
+            console.log('🔧 ValidationQueue: updateVerificationItem called', {
+                checkoutId,
+                equipmentId,
+                newReturnedQuantity,
+                isVerified
+            });
 
-const updateVerificationItem = async (
-    checkoutId: string, 
-    equipmentId: string, 
-    newReturnedQuantity: number, 
-    conditionNotes: string,
-    isVerified: boolean
-) => {
-    try {
-        console.log('🔧 ValidationQueue: updateVerificationItem called', {
-            checkoutId,
-            equipmentId,
-            newReturnedQuantity,
-            isVerified
-        });
-
-        // ✅ STEP 1: Get current checkout_items data
-        const { data: currentCheckoutItems, error: fetchError } = await supabase
-            .from('checkout_items')
-            .select('quantity')
-            .eq('checkout_id', checkoutId)
-            .eq('equipment_id', equipmentId)
-            .maybeSingle();
-
-        if (fetchError) {
-            console.error('Error fetching current checkout items:', fetchError);
-            throw fetchError;
-        }
-
-        const currentReturnedQty = currentCheckoutItems?.quantity || 0;
-        console.log('📊 Current vs New quantity:', { currentReturnedQty, newReturnedQuantity });
-
-        // ✅ STEP 2: Update checkout_items (verified items)
-        if (isVerified && newReturnedQuantity > 0) {
-            // Save/update verification
-            const { error } = await supabase
+            // ✅ STEP 1: Get current checkout_items data
+            const { data: currentCheckoutItems, error: fetchError } = await supabase
                 .from('checkout_items')
-                .upsert({
-                    checkout_id: checkoutId,
-                    equipment_id: equipmentId,
-                    quantity: newReturnedQuantity,
-                    condition_notes: conditionNotes || null
-                }, { 
-                    onConflict: 'checkout_id, equipment_id' 
-                });
+                .select('quantity')
+                .eq('checkout_id', checkoutId)
+                .eq('equipment_id', equipmentId)
+                .maybeSingle();
 
-            if (error) throw error;
-            
-        } else {
-            // Remove verification
-            const { error } = await supabase
-                .from('checkout_items')
-                .delete()
-                .match({ checkout_id: checkoutId, equipment_id: equipmentId });
+            if (fetchError) {
+                console.error('Error fetching current checkout items:', fetchError);
+                throw fetchError;
+            }
 
-            if (error) throw error;
-        }
+            const currentReturnedQty = currentCheckoutItems?.quantity || 0;
+            console.log('📊 Current vs New quantity:', { currentReturnedQty, newReturnedQuantity });
 
-        // ✅ STEP 3: 🔑 UPDATE EQUIPMENT QUANTITY BASED ON ACTUAL DIFFERENCE
-        const quantityDifference = newReturnedQuantity - currentReturnedQty;
-        
-        console.log('📈 Quantity difference calculated:', { quantityDifference });
-        
-        // ✅ ONLY update equipment quantity if there's an actual difference
-        if (quantityDifference !== 0) {
-            const quantityManager = new EquipmentQuantityManager(supabase);
-            
-            if (quantityDifference > 0) {
-                // ✅ POSITIVE: User returned more items - increase equipment quantity
-                console.log(`✅ INCREASING equipment ${equipmentId} by ${quantityDifference}`);
-                await quantityManager.increaseQuantity(
-                    equipmentId,
-                    quantityDifference,
-                    `ValidationQueue: User returned ${quantityDifference} items`
-                );
+            // ✅ STEP 2: Update checkout_items (verified items)
+            if (isVerified && newReturnedQuantity > 0) {
+                // Save/update verification
+                const { error } = await supabase
+                    .from('checkout_items')
+                    .upsert({
+                        checkout_id: checkoutId,
+                        equipment_id: equipmentId,
+                        quantity: newReturnedQuantity,
+                        condition_notes: conditionNotes || null
+                    }, { 
+                        onConflict: 'checkout_id, equipment_id' 
+                    });
+
+                if (error) throw error;
                 
             } else {
-                // ✅ NEGATIVE: Admin reduced verification - decrease equipment quantity
-                console.log(`⬇️ DECREASING equipment ${equipmentId} by ${Math.abs(quantityDifference)}`);
-                await quantityManager.decreaseQuantity(
-                    equipmentId,
-                    Math.abs(quantityDifference),
-                    `ValidationQueue: Admin reduced verification by ${Math.abs(quantityDifference)}`
-                );
-            }
-        } else {
-            console.log('ℹ️ No quantity change needed');
-        }
+                // Remove verification
+                const { error } = await supabase
+                    .from('checkout_items')
+                    .delete()
+                    .match({ checkout_id: checkoutId, equipment_id: equipmentId });
 
-        // ✅ STEP 4: Refresh verification items
-        if (selectedCheckout) {
-            const newVerificationItems = await fetchVerificationItems(
-                selectedCheckout.id, 
-                selectedCheckout.equipment_list || [],
-                selectedCheckout
-            );
-            setVerificationItems(newVerificationItems);
+                if (error) throw error;
+            }
+
+            // ✅ STEP 3: UPDATE EQUIPMENT QUANTITY BASED ON ACTUAL DIFFERENCE
+            const quantityDifference = newReturnedQuantity - currentReturnedQty;
+            
+            console.log('📈 Quantity difference calculated:', { quantityDifference });
+            
+            // ✅ ONLY update equipment quantity if there's an actual difference
+            if (quantityDifference !== 0) {
+                const quantityManager = new EquipmentQuantityManager(supabase);
+                
+                if (quantityDifference > 0) {
+                    // ✅ POSITIVE: User returned more items - increase equipment quantity
+                    console.log(`✅ INCREASING equipment ${equipmentId} by ${quantityDifference}`);
+                    await quantityManager.increaseQuantity(
+                        equipmentId,
+                        quantityDifference,
+                        `ValidationQueue: User returned ${quantityDifference} items`
+                    );
+                    
+                } else {
+                    // ✅ NEGATIVE: Admin reduced verification - decrease equipment quantity
+                    console.log(`⬇️ DECREASING equipment ${equipmentId} by ${Math.abs(quantityDifference)}`);
+                    await quantityManager.decreaseQuantity(
+                        equipmentId,
+                        Math.abs(quantityDifference),
+                        `ValidationQueue: Admin reduced verification by ${Math.abs(quantityDifference)}`
+                    );
+                }
+            } else {
+                console.log('ℹ️ No quantity change needed');
+            }
+            
+        } catch (error: any) {
+            console.error('❌ Error updating verification:', error);
+            toast.error(`Gagal memperbarui verifikasi: ${error.message}`);
+            
+            // Revert UI state on error
+            if (selectedCheckout) {
+                const newVerificationItems = await fetchVerificationItems(
+                    selectedCheckout.id, 
+                    selectedCheckout.equipment_list || [],
+                    selectedCheckout
+                );
+                setVerificationItems(newVerificationItems);
+            }
         }
-        
-    } catch (error: any) {
-        console.error('❌ Error updating verification:', error);
-        toast.error(`Gagal memperbarui verifikasi: ${error.message}`);
-    }
-};
+    };
 
     // ===== 🔑 FIXED UPDATE EQUIPMENT QUANTITY =====
     const updateEquipmentQuantity = async (equipmentId: string, quantityChange: number) => {
@@ -1198,7 +1197,7 @@ const updateVerificationItem = async (
                                 </div>
                             </div>
 
-                            {/* Equipment Verification Section */}
+                            {/* ✅ ENHANCED Equipment Verification Section with +/- Controls */}
                             <div className="bg-gray-50 rounded-xl p-6">
                                 <div className="flex items-center justify-between mb-6">
                                     <h3 className="text-xl font-bold text-gray-900 flex items-center">
@@ -1234,6 +1233,7 @@ const updateVerificationItem = async (
                                             >
                                                 <div className="flex items-start justify-between">
                                                     <div className="flex-1">
+                                                        {/* Equipment Header */}
                                                         <div className="flex items-center space-x-3 mb-3">
                                                             <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${
                                                                 selectedCheckout.status === 'returned'
@@ -1263,8 +1263,9 @@ const updateVerificationItem = async (
                                                             </div>
                                                         </div>
 
-                                                        {/* Quantity Display */}
+                                                        {/* ✅ QUANTITY DISPLAY WITH +/- CONTROLS */}
                                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                                            {/* BORROWED (READONLY) */}
                                                             <div className="text-center p-3 bg-blue-50 rounded-lg border-2 border-blue-200">
                                                                 <div className="text-xl font-bold text-blue-600">
                                                                     {item.borrowed_quantity}
@@ -1277,14 +1278,16 @@ const updateVerificationItem = async (
                                                                 </div>
                                                             </div>
 
+                                                            {/* RETURNED (WITH +/- CONTROLS) */}
                                                             {selectedCheckout.status === 'returned' ? (
                                                                 <div className="text-center p-3 bg-white rounded-lg border-2 border-gray-300">
-                                                                    <div className="flex items-center justify-center space-x-2">
+                                                                    <div className="flex items-center justify-center space-x-2 mb-2">
                                                                         <button
                                                                             onClick={() => {
                                                                                 const newQty = Math.max(0, item.returned_quantity - 1);
                                                                                 const newItems = [...verificationItems];
                                                                                 newItems[index].returned_quantity = newQty;
+                                                                                newItems[index].is_verified = newQty > 0;
                                                                                 setVerificationItems(newItems);
                                                                                 updateVerificationItem(
                                                                                     selectedCheckout.id,
@@ -1294,7 +1297,9 @@ const updateVerificationItem = async (
                                                                                     newQty > 0
                                                                                 );
                                                                             }}
-                                                                            className="p-1 bg-gray-200 hover:bg-gray-300 rounded"
+                                                                            disabled={item.returned_quantity <= 0}
+                                                                            className="p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                                            title="Kurangi jumlah dikembalikan"
                                                                         >
                                                                             <Minus className="h-3 w-3" />
                                                                         </button>
@@ -1308,6 +1313,7 @@ const updateVerificationItem = async (
                                                                                 const newQty = Math.min(item.borrowed_quantity, item.returned_quantity + 1);
                                                                                 const newItems = [...verificationItems];
                                                                                 newItems[index].returned_quantity = newQty;
+                                                                                newItems[index].is_verified = newQty > 0;
                                                                                 setVerificationItems(newItems);
                                                                                 updateVerificationItem(
                                                                                     selectedCheckout.id,
@@ -1317,13 +1323,18 @@ const updateVerificationItem = async (
                                                                                     newQty > 0
                                                                                 );
                                                                             }}
-                                                                            className="p-1 bg-indigo-200 hover:bg-indigo-300 rounded"
+                                                                            disabled={item.returned_quantity >= item.borrowed_quantity}
+                                                                            className="p-1 bg-green-100 hover:bg-green-200 text-green-600 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                                            title="Tambah jumlah dikembalikan"
                                                                         >
                                                                             <Plus className="h-3 w-3" />
-                                                                        </button>
+                                                                          </button>
                                                                     </div>
-                                                                    <div className="text-xs text-gray-600 font-medium mt-1">
+                                                                    <div className="text-xs text-gray-600 font-medium">
                                                                         DIKEMBALIKAN
+                                                                    </div>
+                                                                    <div className="text-xs text-gray-500 mt-1">
+                                                                        Max: {item.borrowed_quantity} {item.equipment_unit}
                                                                     </div>
                                                                 </div>
                                                             ) : (
@@ -1340,6 +1351,7 @@ const updateVerificationItem = async (
                                                                 </div>
                                                             )}
 
+                                                            {/* MISSING (CALCULATED) */}
                                                             <div className="text-center p-3 bg-red-50 rounded-lg border-2 border-red-200">
                                                                 <div className={`text-xl font-bold ${
                                                                     item.borrowed_quantity - item.returned_quantity > 0 
@@ -1357,7 +1369,56 @@ const updateVerificationItem = async (
                                                             </div>
                                                         </div>
 
-                                                        {/* Condition Notes - Only for returned status */}
+                                                        {/* ✅ QUICK ACTION BUTTONS - Only for returned status */}
+                                                        {selectedCheckout.status === 'returned' && (
+                                                            <div className="flex items-center space-x-2 mb-4">
+                                                                <button
+                                                                    onClick={() => {
+                                                                        // Set semua dikembalikan
+                                                                        const newItems = [...verificationItems];
+                                                                        newItems[index].returned_quantity = item.borrowed_quantity;
+                                                                        newItems[index].is_verified = true;
+                                                                        setVerificationItems(newItems);
+                                                                        updateVerificationItem(
+                                                                            selectedCheckout.id,
+                                                                            item.equipment_id,
+                                                                            item.borrowed_quantity,
+                                                                            item.condition_notes || '',
+                                                                            true
+                                                                        );
+                                                                    }}
+                                                                    disabled={item.returned_quantity === item.borrowed_quantity}
+                                                                    className="flex items-center space-x-1 px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs font-medium"
+                                                                >
+                                                                    <CheckCircle className="h-3 w-3" />
+                                                                    <span>Semua Kembali</span>
+                                                                </button>
+                                                                
+                                                                <button
+                                                                    onClick={() => {
+                                                                        // Reset ke 0
+                                                                        const newItems = [...verificationItems];
+                                                                        newItems[index].returned_quantity = 0;
+                                                                        newItems[index].is_verified = false;
+                                                                        setVerificationItems(newItems);
+                                                                        updateVerificationItem(
+                                                                            selectedCheckout.id,
+                                                                            item.equipment_id,
+                                                                            0,
+                                                                            item.condition_notes || '',
+                                                                            false
+                                                                        );
+                                                                    }}
+                                                                    disabled={item.returned_quantity === 0}
+                                                                    className="flex items-center space-x-1 px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs font-medium"
+                                                                >
+                                                                    <XCircle className="h-3 w-3" />
+                                                                    <span>Reset</span>
+                                                                </button>
+                                                            </div>
+                                                        )}
+
+                                                        {/* CONDITION NOTES */}
                                                         {selectedCheckout.status === 'returned' && (
                                                             <div className="mb-3">
                                                                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1371,8 +1432,9 @@ const updateVerificationItem = async (
                                                                         newItems[index].condition_notes = newNotes;
                                                                         setVerificationItems(newItems);
                                                                     }}
-                                                                    onBlur={() => { // Update on blur to avoid too many requests
-                                                                        if (item.is_verified) {
+                                                                    onBlur={() => {
+                                                                        // Update on blur to avoid too many requests
+                                                                        if (item.is_verified && item.returned_quantity > 0) {
                                                                             updateVerificationItem(
                                                                                 selectedCheckout.id,
                                                                                 item.equipment_id,
@@ -1401,7 +1463,7 @@ const updateVerificationItem = async (
                                                             </div>
                                                         )}
 
-                                                        {/* Verification Toggle - Only for returned status */}
+                                                        {/* VERIFICATION CHECKBOX - Only for returned status */}
                                                         {selectedCheckout.status === 'returned' && (
                                                             <div className="flex items-center justify-between">
                                                                 <div className="flex items-center space-x-3">
@@ -1413,8 +1475,11 @@ const updateVerificationItem = async (
                                                                             const newItems = [...verificationItems];
                                                                             newItems[index].is_verified = isChecked;
                                                                             
+                                                                            // Auto-set returned quantity when verified
                                                                             if (isChecked && newItems[index].returned_quantity === 0) {
                                                                                 newItems[index].returned_quantity = item.borrowed_quantity;
+                                                                            } else if (!isChecked) {
+                                                                                newItems[index].returned_quantity = 0;
                                                                             }
                                                                             
                                                                             setVerificationItems(newItems);
@@ -1432,6 +1497,23 @@ const updateVerificationItem = async (
                                                                     <label className="text-sm font-medium text-gray-900">
                                                                         Saya verifikasi barang ini telah dikembalikan
                                                                     </label>
+                                                                </div>
+                                                                
+                                                                {/* Verification Status Indicator */}
+                                                                <div className="flex items-center space-x-2">
+                                                                    {item.returned_quantity === item.borrowed_quantity ? (
+                                                                        <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full font-medium">
+                                                                            ✅ Lengkap
+                                                                        </span>
+                                                                    ) : item.returned_quantity > 0 ? (
+                                                                        <span className="text-xs px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full font-medium">
+                                                                            ⚠️ Sebagian
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-full font-medium">
+                                                                            ❌ Belum
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         )}
@@ -1452,6 +1534,16 @@ const updateVerificationItem = async (
                                                                     <span className="text-sm font-medium text-gray-900">
                                                                         {item.is_verified ? 'Terverifikasi' : 'Belum Diverifikasi'}
                                                                     </span>
+                                                                </div>
+                                                                
+                                                                {/* Status for view-only */}
+                                                                <div className="text-right">
+                                                                    <div className="text-sm text-gray-600">
+                                                                        {item.returned_quantity}/{item.borrowed_quantity} {item.equipment_unit}
+                                                                    </div>
+                                                                    <div className="text-xs text-gray-500">
+                                                                        {item.returned_quantity === item.borrowed_quantity ? 'Lengkap' : 'Sebagian/Belum'}
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                         )}
