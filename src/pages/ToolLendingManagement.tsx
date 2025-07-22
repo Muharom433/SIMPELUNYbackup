@@ -149,7 +149,7 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
     const record = lendingRecords.find(r => r.id === recordId);
     if (!record) throw new Error("Lending record not found");
 
-    console.log('🔧 SIMPLIFIED: Updating lending status (triggers will handle equipment):', {
+    console.log('🔧 FIXED: Updating lending status with equipment management:', {
       recordId: record.id,
       currentStatus: record.status,
       newStatus,
@@ -157,7 +157,140 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
       qty: record.qty
     });
 
-    // ✅ SIMPLE: Just update record status - triggers handle the rest!
+    // ✅ ADD: Equipment quantity management (same as BookingManagement)
+    if (record.id_equipment && record.id_equipment.length > 0) {
+      const validEquipmentList = [];
+      const invalidEquipment = [];
+      
+      for (let i = 0; i < record.id_equipment.length; i++) {
+        const equipmentId = record.id_equipment[i];
+        const quantity = record.qty?.[i] || 1;
+        
+        console.log(`🔍 Validating equipment ${i + 1}/${record.id_equipment.length}:`, {
+          equipmentId,
+          quantity,
+          index: i
+        });
+
+        // ✅ CHECK: Does equipment exist and has sufficient quantity?
+        const { data: equipment, error: checkError } = await supabase
+          .from('equipment')
+          .select('id, name, quantity')
+          .eq('id', equipmentId)
+          .single();
+
+        if (checkError || !equipment) {
+          console.warn(`⚠️ Equipment ${equipmentId} not found - will be skipped`);
+          invalidEquipment.push({ equipmentId, index: i, reason: 'not_found' });
+          continue; // Skip missing equipment
+        }
+
+        // For approval, check sufficient quantity
+        if (newStatus === 'approved' && equipment.quantity < quantity) {
+          console.warn(`⚠️ Equipment ${equipmentId} insufficient quantity: need ${quantity}, available ${equipment.quantity}`);
+          invalidEquipment.push({ 
+            equipmentId, 
+            index: i, 
+            reason: 'insufficient', 
+            available: equipment.quantity, 
+            needed: quantity 
+          });
+          continue; // Skip insufficient equipment
+        }
+
+        console.log(`✅ Equipment validated:`, {
+          id: equipment.id,
+          name: equipment.name,
+          availableQuantity: equipment.quantity,
+          requestedQuantity: quantity
+        });
+
+        validEquipmentList.push({
+          id: equipmentId,
+          quantity: quantity,
+          currentQuantity: equipment.quantity,
+          name: equipment.name
+        });
+      }
+
+      // ✅ REPORT: Invalid equipment found
+      if (invalidEquipment.length > 0) {
+        console.warn('⚠️ Invalid equipment found:', invalidEquipment);
+        
+        const notFoundCount = invalidEquipment.filter(eq => eq.reason === 'not_found').length;
+        const insufficientCount = invalidEquipment.filter(eq => eq.reason === 'insufficient').length;
+        
+        let warningMessage = '';
+        if (notFoundCount > 0) {
+          warningMessage += `${notFoundCount} equipment not found in database. `;
+        }
+        if (insufficientCount > 0) {
+          warningMessage += `${insufficientCount} equipment has insufficient quantity. `;
+        }
+        
+        // ✅ OPTION 1: Skip invalid equipment and continue with valid ones
+        if (validEquipmentList.length > 0) {
+          warningMessage += `Continuing with ${validEquipmentList.length} valid equipment.`;
+          toast.warning(warningMessage);
+        } else {
+          // ✅ OPTION 2: No valid equipment, cannot proceed with equipment updates
+          warningMessage += 'No valid equipment to process.';
+          toast.warning(warningMessage);
+          
+          // Still update record status but skip equipment updates
+          console.log('ℹ️ Proceeding with status update only (no equipment changes)');
+        }
+      }
+
+      // ✅ PROCESS: Only valid equipment
+      if (validEquipmentList.length > 0) {
+        console.log('✅ Processing valid equipment list:', validEquipmentList);
+
+        for (const equipmentItem of validEquipmentList) {
+          if (newStatus === 'approved') {
+            // ✅ APPROVED: Decrease quantity
+            console.log(`📉 Decreasing ${equipmentItem.id} by ${equipmentItem.quantity}`);
+            
+            const newQuantity = equipmentItem.currentQuantity - equipmentItem.quantity;
+            const { error: updateError } = await supabase
+              .from('equipment')
+              .update({ 
+                quantity: newQuantity,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', equipmentItem.id);
+              
+            if (updateError) {
+              console.error(`❌ Failed to update ${equipmentItem.id}:`, updateError);
+              // Continue with other equipment instead of failing completely
+            } else {
+              console.log(`✅ ${equipmentItem.name}: ${equipmentItem.currentQuantity} → ${newQuantity}`);
+            }
+            
+          } else if (newStatus === 'rejected' && (record.status === 'approved' || record.status === 'borrow')) {
+            // ✅ REJECTED: Restore quantity
+            console.log(`📈 Restoring ${equipmentItem.id} by ${equipmentItem.quantity}`);
+            
+            const newQuantity = equipmentItem.currentQuantity + equipmentItem.quantity;
+            const { error: updateError } = await supabase
+              .from('equipment')
+              .update({ 
+                quantity: newQuantity,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', equipmentItem.id);
+              
+            if (updateError) {
+              console.error(`❌ Failed to restore ${equipmentItem.id}:`, updateError);
+            } else {
+              console.log(`✅ ${equipmentItem.name}: ${equipmentItem.currentQuantity} → ${newQuantity}`);
+            }
+          }
+        }
+      }
+    }
+
+    // ✅ UPDATE LENDING STATUS (always proceed with this)
     let finalStatus = newStatus;
     if (newStatus === 'approved') {
       finalStatus = 'borrow'; // Change to 'borrow' when approved
@@ -173,7 +306,7 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
 
     if (recordError) throw recordError;
     
-    console.log('✅ SIMPLIFIED: Lending status updated, triggers processed equipment automatically');
+    console.log('✅ FIXED: Lending status updated successfully');
     
     // Success notification
     const statusText = newStatus === 'approved' 
