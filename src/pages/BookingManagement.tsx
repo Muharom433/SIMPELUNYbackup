@@ -284,52 +284,24 @@ const BookingManagement: React.FC = () => {
       throw new Error('Booking not found');
     }
 
-    console.log('🗑️ Deleting booking:', {
-      id: booking.id,
-      status: booking.status,
-      equipment_requested: booking.equipment_requested,
-      equipment_quantities: booking.equipment_quantities
-    });
-
-    // ✅ RESTORE EQUIPMENT QUANTITIES if booking was approved
+    // ✅ SIMPLE: Restore quantities if booking was approved
     if (booking.status === 'approved' && booking.equipment_requested && booking.equipment_requested.length > 0) {
-      const quantityManager = new EquipmentQuantityManager(supabase);
-      
-      // ✅ BUILD EQUIPMENT LIST MANUALLY dengan validasi
-      const equipmentList = [];
       
       for (let i = 0; i < booking.equipment_requested.length; i++) {
         const equipmentId = booking.equipment_requested[i];
-        const quantity = booking.equipment_quantities && booking.equipment_quantities[i] 
-          ? booking.equipment_quantities[i] 
-          : 1;
-
-        // ✅ VALIDATE equipment exists
-        const { data: equipmentExists, error: checkError } = await supabase
-          .from('equipment')
-          .select('id, name, quantity')
-          .eq('id', equipmentId)
-          .single();
-
-        if (checkError || !equipmentExists) {
-          console.warn(`⚠️ Equipment ${equipmentId} not found during delete - skipping restoration`);
-          continue; // Skip non-existent equipment instead of throwing error
-        }
-
-        equipmentList.push({
-          id: equipmentId,
-          quantity: quantity
-        });
-      }
-      
-      if (equipmentList.length > 0) {
-        // ✅ RESTORE: Return reserved quantities to available inventory
-        await quantityManager.bulkIncreaseQuantity(
-          equipmentList, 
-          `Approved booking deleted: ${booking.id} - restoring reserved items`
-        );
+        const quantity = booking.equipment_quantities?.[i] || 1;
         
-        console.log(`✅ Equipment quantities restored after booking deletion`);
+        console.log(`📈 Restoring ${equipmentId} by ${quantity} (booking deleted)`);
+        
+        const { error } = await supabase.rpc('increase_equipment_quantity', {
+          equipment_id: equipmentId,
+          increase_by: quantity
+        });
+        
+        if (error) {
+          console.warn(`⚠️ Failed to restore ${equipmentId}:`, error);
+          // Don't throw error for delete operation
+        }
       }
     }
 
