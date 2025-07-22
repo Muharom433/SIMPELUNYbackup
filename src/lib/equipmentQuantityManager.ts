@@ -1,312 +1,283 @@
-// ✅ ENHANCED EquipmentQuantityManager dengan manual quantity updates
-
 class EquipmentQuantityManager {
-    private supabase: any;
+    constructor(private supabase: any) {}
 
-    constructor(supabaseClient: any) {
-        this.supabase = supabaseClient;
-    }
-
-    // ✅ CORE: Manual increase quantity (return items)
-    async increaseQuantity(equipmentId: string, quantity: number, reason?: string): Promise<void> {
-        if (quantity <= 0) {
-            console.warn('⚠️ EquipmentQuantityManager: Invalid quantity', { equipmentId, quantity });
-            return;
-        }
-
-        try {
-            console.log('📈 EquipmentQuantityManager: INCREASING quantity', {
-                equipmentId,
-                quantity,
-                reason: reason || 'No reason provided'
-            });
-
-            // Get current equipment data
-            const { data: currentEquipment, error: fetchError } = await this.supabase
-                .from('equipment')
-                .select('id, name, code, quantity, currently_borrowed')
-                .eq('id', equipmentId)
-                .single();
-
-            if (fetchError) throw fetchError;
-            if (!currentEquipment) throw new Error(`Equipment ${equipmentId} not found`);
-
-            console.log('📊 Current state BEFORE increase:', {
-                name: currentEquipment.name,
-                code: currentEquipment.code,
-                total_quantity: currentEquipment.quantity,
-                currently_borrowed: currentEquipment.currently_borrowed || 0,
-                available: currentEquipment.quantity - (currentEquipment.currently_borrowed || 0)
-            });
-
-            // ✅ DECREASE currently_borrowed (increases available)
-            const newCurrentlyBorrowed = Math.max(0, (currentEquipment.currently_borrowed || 0) - quantity);
-
-            const { error: updateError } = await this.supabase
-                .from('equipment')
-                .update({
-                    currently_borrowed: newCurrentlyBorrowed,
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', equipmentId);
-
-            if (updateError) throw updateError;
-
-            console.log('✅ Successfully INCREASED available quantity:', {
-                equipmentId,
-                name: currentEquipment.name,
-                code: currentEquipment.code,
-                change: `+${quantity}`,
-                old_currently_borrowed: currentEquipment.currently_borrowed || 0,
-                new_currently_borrowed: newCurrentlyBorrowed,
-                old_available: currentEquipment.quantity - (currentEquipment.currently_borrowed || 0),
-                new_available: currentEquipment.quantity - newCurrentlyBorrowed,
-                reason
-            });
-
-        } catch (error) {
-            console.error('❌ Error increasing quantity:', {
-                equipmentId,
-                quantity,
-                reason,
-                error
-            });
-            throw error;
-        }
-    }
-
-    // ✅ CORE: Manual decrease quantity (borrow items)
-    async decreaseQuantity(equipmentId: string, quantity: number, reason?: string): Promise<void> {
-        if (quantity <= 0) {
-            console.warn('⚠️ EquipmentQuantityManager: Invalid quantity', { equipmentId, quantity });
-            return;
-        }
-
-        try {
-            console.log('📉 EquipmentQuantityManager: DECREASING quantity', {
-                equipmentId,
-                quantity,
-                reason: reason || 'No reason provided'
-            });
-
-            // Get current equipment data
-            const { data: currentEquipment, error: fetchError } = await this.supabase
-                .from('equipment')
-                .select('id, name, code, quantity, currently_borrowed')
-                .eq('id', equipmentId)
-                .single();
-
-            if (fetchError) throw fetchError;
-            if (!currentEquipment) throw new Error(`Equipment ${equipmentId} not found`);
-
-            console.log('📊 Current state BEFORE decrease:', {
-                name: currentEquipment.name,
-                code: currentEquipment.code,
-                total_quantity: currentEquipment.quantity,
-                currently_borrowed: currentEquipment.currently_borrowed || 0,
-                available: currentEquipment.quantity - (currentEquipment.currently_borrowed || 0)
-            });
-
-            // ✅ VALIDATION: Check availability
-            const currentlyBorrowed = currentEquipment.currently_borrowed || 0;
-            const availableQuantity = currentEquipment.quantity - currentlyBorrowed;
-            
-            if (availableQuantity < quantity) {
-                const errorMsg = `Insufficient quantity for ${currentEquipment.name} (${currentEquipment.code}). Available: ${availableQuantity}, Requested: ${quantity}`;
-                console.error('❌ Insufficient quantity:', {
-                    equipmentId,
-                    name: currentEquipment.name,
-                    code: currentEquipment.code,
-                    total: currentEquipment.quantity,
-                    currently_borrowed: currentlyBorrowed,
-                    available: availableQuantity,
-                    requested: quantity
-                });
-                throw new Error(errorMsg);
-            }
-
-            // ✅ INCREASE currently_borrowed (decreases available)
-            const newCurrentlyBorrowed = currentlyBorrowed + quantity;
-
-            const { error: updateError } = await this.supabase
-                .from('equipment')
-                .update({
-                    currently_borrowed: newCurrentlyBorrowed,
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', equipmentId);
-
-            if (updateError) throw updateError;
-
-            console.log('✅ Successfully DECREASED available quantity:', {
-                equipmentId,
-                name: currentEquipment.name,
-                code: currentEquipment.code,
-                change: `-${quantity}`,
-                old_currently_borrowed: currentlyBorrowed,
-                new_currently_borrowed: newCurrentlyBorrowed,
-                old_available: availableQuantity,
-                new_available: currentEquipment.quantity - newCurrentlyBorrowed,
-                reason
-            });
-
-        } catch (error) {
-            console.error('❌ Error decreasing quantity:', {
-                equipmentId,
-                quantity,
-                reason,
-                error
-            });
-            throw error;
-        }
-    }
-
-    // ✅ BULK: Process multiple equipment (for bookings)
-    async bulkIncreaseQuantity(equipmentList: Array<{id: string, quantity: number}>, reason?: string): Promise<void> {
-        console.log('📈 EquipmentQuantityManager: BULK INCREASE started', {
-            equipmentCount: equipmentList.length,
-            totalQuantity: equipmentList.reduce((sum, item) => sum + item.quantity, 0),
+    // ✅ ENHANCED: Bulk decrease dengan better error handling dan debugging
+    async bulkDecreaseQuantity(equipmentList: Array<{id: string, quantity: number}>, reason: string = '') {
+        console.log('🔄 BULK DECREASE: Starting bulk operation', {
             equipmentList,
-            reason
+            reason,
+            totalItems: equipmentList.length
         });
 
-        for (const item of equipmentList) {
-            await this.increaseQuantity(item.id, item.quantity, `${reason} (bulk operation)`);
-        }
+        const results = [];
+        const errors = [];
 
-        console.log('✅ EquipmentQuantityManager: BULK INCREASE completed');
-    }
-
-    async bulkDecreaseQuantity(equipmentList: Array<{id: string, quantity: number}>, reason?: string): Promise<void> {
-        console.log('📉 EquipmentQuantityManager: BULK DECREASE started', {
-            equipmentCount: equipmentList.length,
-            totalQuantity: equipmentList.reduce((sum, item) => sum + item.quantity, 0),
-            equipmentList,
-            reason
-        });
-
-        // ✅ First validate ALL equipment quantities
-        const validation = await this.validateQuantityAvailable(equipmentList);
-        if (!validation.isValid) {
-            throw new Error(`Bulk validation failed: ${validation.errors.join(', ')}`);
-        }
-
-        // ✅ Then process all equipment
-        for (const item of equipmentList) {
-            await this.decreaseQuantity(item.id, item.quantity, `${reason} (bulk operation)`);
-        }
-
-        console.log('✅ EquipmentQuantityManager: BULK DECREASE completed');
-    }
-
-    // ✅ VALIDATION: Check if quantities are available
-    async validateQuantityAvailable(equipmentList: Array<{id: string, quantity: number}>): Promise<{isValid: boolean, errors: string[]}> {
-        console.log('🔍 Validating equipment quantities:', equipmentList);
-        
-        const errors: string[] = [];
-        
         for (const item of equipmentList) {
             try {
-                const { data: equipment } = await this.supabase
+                console.log(`📦 Processing equipment: ${item.id} (quantity: ${item.quantity})`);
+                
+                // ✅ STEP 1: Verify equipment exists with detailed logging
+                const { data: equipment, error: fetchError } = await this.supabase
                     .from('equipment')
-                    .select('id, name, code, quantity, currently_borrowed')
+                    .select('id, name, code, quantity, unit')
                     .eq('id', item.id)
                     .single();
 
-                if (!equipment) {
-                    errors.push(`Equipment ${item.id} not found`);
-                    continue;
+                if (fetchError) {
+                    console.error(`❌ Database error fetching equipment ${item.id}:`, fetchError);
+                    throw new Error(`Database error for equipment ${item.id}: ${fetchError.message}`);
                 }
 
-                const available = equipment.quantity - (equipment.currently_borrowed || 0);
-                if (available < item.quantity) {
-                    errors.push(`${equipment.name} (${equipment.code}): Available ${available}, Requested ${item.quantity}`);
+                if (!equipment) {
+                    console.error(`❌ Equipment not found in database: ${item.id}`);
+                    console.log('🔍 Attempting to search equipment with partial match...');
+                    
+                    // ✅ DEBUGGING: Try to find equipment with partial UUID match
+                    const { data: similarEquipment } = await this.supabase
+                        .from('equipment')
+                        .select('id, name, code')
+                        .ilike('id', `%${item.id.slice(-8)}%`)
+                        .limit(5);
+                        
+                    console.log('🔍 Similar equipment found:', similarEquipment);
+                    
+                    throw new Error(`Equipment with ID ${item.id} not found in database`);
                 }
+
+                console.log(`✅ Equipment found:`, {
+                    id: equipment.id,
+                    name: equipment.name,
+                    code: equipment.code,
+                    currentQuantity: equipment.quantity,
+                    requestedDecrease: item.quantity
+                });
+
+                // ✅ STEP 2: Validate sufficient quantity
+                if (equipment.quantity < item.quantity) {
+                    const errorMsg = `Insufficient quantity for ${equipment.name || equipment.id}. Available: ${equipment.quantity}, Requested: ${item.quantity}`;
+                    console.error(`❌ ${errorMsg}`);
+                    throw new Error(errorMsg);
+                }
+
+                // ✅ STEP 3: Update quantity
+                const newQuantity = equipment.quantity - item.quantity;
+                console.log(`📊 Updating quantity: ${equipment.quantity} - ${item.quantity} = ${newQuantity}`);
+
+                const { error: updateError } = await this.supabase
+                    .from('equipment')
+                    .update({ 
+                        quantity: newQuantity,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', item.id);
+
+                if (updateError) {
+                    console.error(`❌ Update error for equipment ${item.id}:`, updateError);
+                    throw updateError;
+                }
+
+                console.log(`✅ Successfully decreased quantity for ${equipment.name}: ${equipment.quantity} → ${newQuantity}`);
+                
+                results.push({
+                    equipment_id: item.id,
+                    equipment_name: equipment.name,
+                    old_quantity: equipment.quantity,
+                    new_quantity: newQuantity,
+                    change: -item.quantity,
+                    success: true
+                });
+
             } catch (error) {
-                errors.push(`Error checking ${item.id}: ${error}`);
+                console.error(`❌ Error processing equipment ${item.id}:`, error);
+                errors.push({
+                    equipment_id: item.id,
+                    error: error.message,
+                    success: false
+                });
             }
         }
 
-        const result = {
-            isValid: errors.length === 0,
-            errors
-        };
+        // ✅ SUMMARY LOGGING
+        console.log('📋 BULK DECREASE SUMMARY:', {
+            total: equipmentList.length,
+            successful: results.length,
+            failed: errors.length,
+            reason
+        });
 
-        console.log('🔍 Validation result:', result);
-        return result;
+        if (errors.length > 0) {
+            console.error('❌ BULK VALIDATION ERRORS:', errors);
+            throw new Error(`Bulk validation failed: ${errors.map(e => e.error).join(', ')}`);
+        }
+
+        return results;
     }
 
-    // ✅ UTILITY: Build equipment list from booking data
-    static buildEquipmentListFromBooking(booking: any): Array<{id: string, quantity: number}> {
-        const equipmentList: Array<{id: string, quantity: number}> = [];
-        
-        if (booking.equipment_requested && booking.equipment_requested.length > 0) {
-            for (let i = 0; i < booking.equipment_requested.length; i++) {
-                const equipmentId = booking.equipment_requested[i];
-                const quantity = booking.equipment_quantities && booking.equipment_quantities[i] 
-                    ? booking.equipment_quantities[i] 
-                    : 1;
+    // ✅ ENHANCED: Bulk increase dengan debugging yang sama
+    async bulkIncreaseQuantity(equipmentList: Array<{id: string, quantity: number}>, reason: string = '') {
+        console.log('🔄 BULK INCREASE: Starting bulk operation', {
+            equipmentList,
+            reason,
+            totalItems: equipmentList.length
+        });
+
+        const results = [];
+        const errors = [];
+
+        for (const item of equipmentList) {
+            try {
+                console.log(`📦 Processing equipment: ${item.id} (quantity: +${item.quantity})`);
                 
-                equipmentList.push({ id: equipmentId, quantity });
+                // ✅ STEP 1: Verify equipment exists
+                const { data: equipment, error: fetchError } = await this.supabase
+                    .from('equipment')
+                    .select('id, name, code, quantity, unit')
+                    .eq('id', item.id)
+                    .single();
+
+                if (fetchError) {
+                    console.error(`❌ Database error fetching equipment ${item.id}:`, fetchError);
+                    throw new Error(`Database error for equipment ${item.id}: ${fetchError.message}`);
+                }
+
+                if (!equipment) {
+                    console.error(`❌ Equipment not found in database: ${item.id}`);
+                    throw new Error(`Equipment with ID ${item.id} not found in database`);
+                }
+
+                console.log(`✅ Equipment found:`, {
+                    id: equipment.id,
+                    name: equipment.name,
+                    code: equipment.code,
+                    currentQuantity: equipment.quantity,
+                    requestedIncrease: item.quantity
+                });
+
+                // ✅ STEP 2: Update quantity
+                const newQuantity = equipment.quantity + item.quantity;
+                console.log(`📊 Updating quantity: ${equipment.quantity} + ${item.quantity} = ${newQuantity}`);
+
+                const { error: updateError } = await this.supabase
+                    .from('equipment')
+                    .update({ 
+                        quantity: newQuantity,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', item.id);
+
+                if (updateError) {
+                    console.error(`❌ Update error for equipment ${item.id}:`, updateError);
+                    throw updateError;
+                }
+
+                console.log(`✅ Successfully increased quantity for ${equipment.name}: ${equipment.quantity} → ${newQuantity}`);
+                
+                results.push({
+                    equipment_id: item.id,
+                    equipment_name: equipment.name,
+                    old_quantity: equipment.quantity,
+                    new_quantity: newQuantity,
+                    change: +item.quantity,
+                    success: true
+                });
+
+            } catch (error) {
+                console.error(`❌ Error processing equipment ${item.id}:`, error);
+                errors.push({
+                    equipment_id: item.id,
+                    error: error.message,
+                    success: false
+                });
             }
         }
 
-        console.log('🔧 Built equipment list from booking:', {
+        // ✅ SUMMARY LOGGING
+        console.log('📋 BULK INCREASE SUMMARY:', {
+            total: equipmentList.length,
+            successful: results.length,
+            failed: errors.length,
+            reason
+        });
+
+        if (errors.length > 0) {
+            console.error('❌ BULK VALIDATION ERRORS:', errors);
+            throw new Error(`Bulk validation failed: ${errors.map(e => e.error).join(', ')}`);
+        }
+
+        return results;
+    }
+
+    // ✅ ENHANCED: buildEquipmentListFromBooking dengan debugging
+    static buildEquipmentListFromBooking(booking: any): Array<{id: string, quantity: number}> {
+        console.log('🏗️ Building equipment list from booking:', {
             bookingId: booking.id,
-            equipmentList,
             equipment_requested: booking.equipment_requested,
             equipment_quantities: booking.equipment_quantities
         });
 
-        return equipmentList;
-    }
-
-    // ✅ UTILITY: Build equipment list from lending data
-    static buildEquipmentListFromLending(lending: any): Array<{id: string, quantity: number}> {
-        const equipmentList: Array<{id: string, quantity: number}> = [];
-        
-        if (lending.id_equipment && lending.id_equipment.length > 0) {
-            for (let i = 0; i < lending.id_equipment.length; i++) {
-                const equipmentId = lending.id_equipment[i];
-                const quantity = lending.qty && lending.qty[i] 
-                    ? lending.qty[i] 
-                    : 1;
-                
-                equipmentList.push({ id: equipmentId, quantity });
-            }
+        if (!booking.equipment_requested || booking.equipment_requested.length === 0) {
+            console.log('ℹ️ No equipment requested in booking');
+            return [];
         }
 
-        console.log('🔧 Built equipment list from lending:', {
-            lendingId: lending.id,
-            equipmentList,
-            id_equipment: lending.id_equipment,
-            qty: lending.qty
+        const equipmentList = booking.equipment_requested.map((equipmentId: string, index: number) => {
+            const quantity = booking.equipment_quantities?.[index] || 1;
+            
+            console.log(`📋 Equipment ${index + 1}:`, {
+                id: equipmentId,
+                quantity: quantity,
+                index: index
+            });
+
+            return {
+                id: equipmentId,
+                quantity: quantity
+            };
         });
 
+        console.log('✅ Final equipment list:', equipmentList);
         return equipmentList;
     }
 
-    // ✅ DEBUG: Get equipment current state
-    async getEquipmentState(equipmentId: string): Promise<any> {
+    // ✅ NEW: Debug function untuk investigasi equipment
+    async debugEquipment(equipmentId: string) {
+        console.log(`🔍 DEBUGGING EQUIPMENT: ${equipmentId}`);
+        
         try {
-            const { data: equipment, error } = await this.supabase
+            // Test 1: Direct query dengan exact ID
+            const { data: exactMatch, error: exactError } = await this.supabase
                 .from('equipment')
-                .select('id, name, code, quantity, currently_borrowed, updated_at')
+                .select('*')
                 .eq('id', equipmentId)
                 .single();
 
-            if (error) throw error;
+            console.log('🎯 Exact match result:', { exactMatch, exactError });
 
-            const state = {
-                ...equipment,
-                available: equipment.quantity - (equipment.currently_borrowed || 0)
+            // Test 2: Query dengan partial ID untuk cek typo
+            const { data: partialMatches, error: partialError } = await this.supabase
+                .from('equipment')
+                .select('id, name, code')
+                .ilike('id', `%${equipmentId.slice(-12)}%`);
+
+            console.log('🔍 Partial matches:', { partialMatches, partialError });
+
+            // Test 3: Query semua equipment untuk cek struktur data
+            const { data: allEquipment, error: allError } = await this.supabase
+                .from('equipment')
+                .select('id, name, code')
+                .limit(5);
+
+            console.log('📊 Sample equipment records:', { allEquipment, allError });
+
+            return {
+                exactMatch,
+                partialMatches,
+                allEquipment
             };
 
-            console.log('📊 Equipment state:', state);
-            return state;
         } catch (error) {
-            console.error('❌ Error getting equipment state:', error);
-            return null;
+            console.error('❌ Debug error:', error);
+            return { error };
         }
     }
 }
