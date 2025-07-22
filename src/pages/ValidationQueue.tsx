@@ -22,6 +22,20 @@ interface Equipment {
     is_mandatory: boolean;
 }
 
+interface ViolationReport {
+    id: string;
+    title: string;
+    description: string;
+    severity: 'minor' | 'major' | 'critical';
+    violation_type: ViolationType;
+    status: string;
+    created_at: string;
+    reported_by: string;
+    reporter?: {
+        full_name: string;
+    };
+}
+
 interface CheckoutWithDetails {
     id: string;
     user_id: string;
@@ -33,6 +47,7 @@ interface CheckoutWithDetails {
     type: 'room' | 'things';
     created_at: string;
     has_violations?: boolean;
+    violation_reports?: ViolationReport[];
     user?: {
         id: string;
         full_name: string;
@@ -82,14 +97,112 @@ interface VerificationItem {
     equipment_unit?: string;
     borrowed_quantity: number;
     returned_quantity: number;
-    original_returned_quantity: number; // ✅ ADDED: Track original value from DB
+    original_returned_quantity: number;
     is_verified: boolean;
     condition_notes?: string;
     is_mandatory: boolean;
 }
 
-// ✅ Tipe untuk data laporan yang sesuai dengan constraint database
 type ViolationType = 'late_return' | 'damage' | 'loss' | 'misuse' | 'other';
+
+// ✅ VIOLATION REPORTS DISPLAY COMPONENT
+const ViolationReportsDisplay: React.FC<{
+    reports: ViolationReport[];
+    compact?: boolean;
+}> = ({ reports, compact = false }) => {
+    if (!reports || reports.length === 0) return null;
+
+    const getSeverityColor = (severity: string) => {
+        switch (severity) {
+            case 'critical': return 'bg-red-100 text-red-800 border-red-200';
+            case 'major': return 'bg-orange-100 text-orange-800 border-orange-200';
+            case 'minor': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+            default: return 'bg-gray-100 text-gray-800 border-gray-200';
+        }
+    };
+
+    const getViolationTypeIcon = (type: string) => {
+        switch (type) {
+            case 'damage': return '🔧';
+            case 'loss': return '❌';
+            case 'late_return': return '⏰';
+            case 'misuse': return '⚠️';
+            default: return '📝';
+        }
+    };
+
+    if (compact) {
+        // Compact view for card
+        return (
+            <div className="mt-3 space-y-2">
+                <div className="flex items-center space-x-2">
+                    <Flag className="h-4 w-4 text-red-500" />
+                    <span className="text-sm font-medium text-red-700">
+                        {reports.length} Laporan Aktif
+                    </span>
+                </div>
+                {reports.slice(0, 2).map((report) => (
+                    <div key={report.id} className={`p-2 rounded-lg border text-xs ${getSeverityColor(report.severity)}`}>
+                        <div className="flex items-start space-x-2">
+                            <span>{getViolationTypeIcon(report.violation_type)}</span>
+                            <div className="flex-1 min-w-0">
+                                <p className="font-medium truncate">{report.title}</p>
+                                <p className="text-xs opacity-75 truncate">{report.description}</p>
+                                <p className="text-xs opacity-60 mt-1">
+                                    {format(new Date(report.created_at), 'MMM d, HH:mm')} • {report.reporter?.full_name}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+                {reports.length > 2 && (
+                    <div className="text-xs text-gray-500 text-center">
+                        +{reports.length - 2} laporan lainnya
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    // Full view for modal
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between">
+                <h4 className="font-semibold text-gray-900 flex items-center">
+                    <Flag className="h-5 w-5 mr-2 text-red-500" />
+                    Laporan Pelanggaran ({reports.length})
+                </h4>
+            </div>
+            
+            <div className="space-y-3 max-h-60 overflow-y-auto">
+                {reports.map((report) => (
+                    <div key={report.id} className={`p-4 rounded-lg border-2 ${getSeverityColor(report.severity)}`}>
+                        <div className="flex items-start justify-between mb-2">
+                            <div className="flex items-center space-x-2">
+                                <span className="text-lg">{getViolationTypeIcon(report.violation_type)}</span>
+                                <div>
+                                    <h5 className="font-medium">{report.title}</h5>
+                                    <div className="flex items-center space-x-2 text-xs opacity-75">
+                                        <span className="capitalize">{report.violation_type.replace('_', ' ')}</span>
+                                        <span>•</span>
+                                        <span className="capitalize">{report.severity}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <p className="text-sm mb-2">{report.description}</p>
+                        
+                        <div className="flex items-center justify-between text-xs opacity-60">
+                            <span>Dilaporkan oleh: {report.reporter?.full_name || 'Unknown'}</span>
+                            <span>{format(new Date(report.created_at), 'MMM d, yyyy HH:mm')}</span>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
 
 const ValidationQueue: React.FC = () => {
     const { profile } = useAuth();
@@ -104,17 +217,15 @@ const ValidationQueue: React.FC = () => {
     const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
     const [verificationItems, setVerificationItems] = useState<VerificationItem[]>([]);
     const [showReportModal, setShowReportModal] = useState(false);
-    const [reportCheckoutId, setReportCheckoutId] = useState<string | null>(null); // ✅ ADDED: Track which checkout to report
+    const [reportCheckoutId, setReportCheckoutId] = useState<string | null>(null);
     
-    // ✅ State untuk report disesuaikan dengan constraint baru
     const [reportData, setReportData] = useState({
         title: '',
         description: '',
         severity: 'minor' as 'minor' | 'major' | 'critical',
-        violation_type: 'damage' as ViolationType // Nilai default yang valid
+        violation_type: 'damage' as ViolationType
     });
     
-    // ✅ ADDED: Status filter state
     const [statusFilter, setStatusFilter] = useState<'all' | 'returned' | 'active' | 'overdue' | 'pending'>('returned');
 
     // ===== FETCH EQUIPMENT LIST FOR CHECKOUT =====
@@ -144,7 +255,7 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    // ===== ✅ UPDATED: FETCH VERIFICATION ITEMS WITH ORIGINAL VALUES =====
+    // ===== FETCH VERIFICATION ITEMS WITH ORIGINAL VALUES =====
     const fetchVerificationItems = async (
         checkoutId: string, 
         equipmentList: Equipment[], 
@@ -207,7 +318,7 @@ const ValidationQueue: React.FC = () => {
                     equipment_unit: equipment.unit || 'pcs',
                     borrowed_quantity: borrowedQty,
                     returned_quantity: returnedQty,
-                    original_returned_quantity: returnedQty, // ✅ TRACK ORIGINAL VALUE
+                    original_returned_quantity: returnedQty,
                     is_verified: !!checkoutItem,
                     condition_notes: checkoutItem?.condition_notes || '',
                     is_mandatory: equipment.is_mandatory
@@ -222,7 +333,7 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    // ===== ✅ ENHANCED FETCH CHECKOUTS WITH VIOLATION CHECK =====
+    // ===== ENHANCED FETCH CHECKOUTS WITH VIOLATION REPORTS =====
     const fetchCheckouts = useCallback(async () => {
         try {
             setLoading(true);
@@ -311,7 +422,7 @@ const ValidationQueue: React.FC = () => {
                 }
             }
 
-            // ✅ CHECK FOR VIOLATIONS AND MARK CHECKOUTS
+            // ✅ ENHANCED: Fetch violation reports with details
             const enhancedData = await Promise.all(
                 processedData.map(async (checkout) => {
                     const equipment_list = await fetchEquipmentList(checkout);
@@ -321,12 +432,23 @@ const ValidationQueue: React.FC = () => {
                         checkout
                     );
 
-                    // ✅ CHECK FOR VIOLATIONS
+                    // ✅ FETCH VIOLATION REPORTS WITH DETAILS
                     const { data: violations, error: violationError } = await supabase
                         .from('checkout_violations')
-                        .select('id, severity, status')
+                        .select(`
+                            id, 
+                            title, 
+                            description, 
+                            severity, 
+                            violation_type, 
+                            status,
+                            created_at,
+                            reported_by,
+                            reporter:users!checkout_violations_reported_by_fkey(full_name)
+                        `)
                         .eq('checkout_id', checkout.id)
-                        .eq('status', 'active');
+                        .eq('status', 'active')
+                        .order('created_at', { ascending: false });
 
                     if (violationError) {
                         console.error('Error checking violations:', violationError);
@@ -338,7 +460,8 @@ const ValidationQueue: React.FC = () => {
                         ...checkout,
                         equipment_list,
                         verification_items,
-                        has_violations
+                        has_violations,
+                        violation_reports: violations || []
                     };
                 })
             );
@@ -353,7 +476,7 @@ const ValidationQueue: React.FC = () => {
         }
     }, [activeTab, statusFilter, profile]);
 
-    // ===== ✅ NEW: SIMPLE UPDATE VERIFICATION ITEM WITHOUT EQUIPMENT QUANTITY UPDATE =====
+    // ===== UPDATE VERIFICATION ITEM (LOCAL ONLY) =====
     const updateVerificationItem = async (
         checkoutId: string, 
         equipmentId: string, 
@@ -368,10 +491,6 @@ const ValidationQueue: React.FC = () => {
                 newReturnedQuantity,
                 isVerified
             });
-
-            // ✅ ONLY UPDATE LOCAL STATE - NO DATABASE WRITE UNTIL APPROVE
-            // Update only the UI for immediate feedback
-            // The actual DB update will happen in handleApproveReturn
             
         } catch (error: any) {
             console.error('❌ Error updating verification:', error);
@@ -379,14 +498,13 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    // ===== ✅ FIXED APPROVE RETURN - BATCH UPDATE QUANTITIES =====
+    // ===== APPROVE RETURN - BATCH UPDATE QUANTITIES =====
     const handleApproveReturn = async (checkoutId: string) => {
         try {
             setProcessingIds(prev => new Set(prev).add(checkoutId));
 
             console.log('🔥 Starting approval process for checkout:', checkoutId);
 
-            // ✅ STEP 1: BATCH UPDATE CHECKOUT_ITEMS AND EQUIPMENT QUANTITIES
             const quantityManager = new EquipmentQuantityManager(supabase);
             
             for (const item of verificationItems) {
@@ -398,7 +516,7 @@ const ValidationQueue: React.FC = () => {
                     difference: quantityDifference
                 });
 
-                // ✅ UPDATE CHECKOUT_ITEMS
+                // UPDATE CHECKOUT_ITEMS
                 if (item.is_verified && item.returned_quantity > 0) {
                     await supabase
                         .from('checkout_items')
@@ -417,7 +535,7 @@ const ValidationQueue: React.FC = () => {
                         .match({ checkout_id: checkoutId, equipment_id: item.equipment_id });
                 }
 
-                // ✅ UPDATE EQUIPMENT QUANTITY BASED ON DIFFERENCE ONLY
+                // UPDATE EQUIPMENT QUANTITY BASED ON DIFFERENCE ONLY
                 if (quantityDifference !== 0) {
                     if (quantityDifference > 0) {
                         console.log(`✅ INCREASING equipment ${item.equipment_id} by ${quantityDifference}`);
@@ -438,7 +556,7 @@ const ValidationQueue: React.FC = () => {
                 }
             }
 
-            // ✅ STEP 2: Update checkout status to approved/completed
+            // Update checkout status to approved/completed
             const { error } = await supabase
                 .from('checkouts')
                 .update({ 
@@ -450,7 +568,7 @@ const ValidationQueue: React.FC = () => {
 
             if (error) throw error;
 
-            // ✅ STEP 3: Update related booking/lending status
+            // Update related booking/lending status
             const checkout = checkouts.find(c => c.id === checkoutId);
             if (checkout) {
                 if (activeTab === 'room' && checkout.booking_id) {
@@ -468,7 +586,7 @@ const ValidationQueue: React.FC = () => {
 
             toast.success('Pengembalian disetujui! Kuantitas barang telah diperbarui.');
             
-            fetchCheckouts();
+            await fetchCheckouts();
             setShowDetailModal(false);
             
         } catch (error: any) {
@@ -488,7 +606,6 @@ const ValidationQueue: React.FC = () => {
         try {
             setProcessingIds(prev => new Set(prev).add(checkoutId));
 
-            // ✅ STEP 1: Delete checkout and revert status (no need to revert quantities as they weren't updated yet)
             await supabase.from('checkouts').delete().eq('id', checkoutId);
             
             const checkout = checkouts.find(c => c.id === checkoutId);
@@ -508,7 +625,7 @@ const ValidationQueue: React.FC = () => {
 
             toast.success('Pengembalian ditolak.');
             
-            fetchCheckouts();
+            await fetchCheckouts();
             setShowDetailModal(false);
             setShowDeleteConfirm(null);
             
@@ -524,12 +641,11 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    // ===== ✅ DELETE CHECKOUT WITH CASCADE DELETE =====
+    // ===== DELETE CHECKOUT WITH CASCADE DELETE =====
     const handleDeleteCheckout = async (checkoutId: string) => {
         try {
             setProcessingIds(prev => new Set(prev).add(checkoutId));
 
-            // ✅ STEP 1: Delete related checkout_items first (foreign key)
             const { error: itemsError } = await supabase
                 .from('checkout_items')
                 .delete()
@@ -540,7 +656,6 @@ const ValidationQueue: React.FC = () => {
                 throw itemsError;
             }
 
-            // ✅ STEP 2: Delete related checkout_violations (foreign key)
             const { error: violationsError } = await supabase
                 .from('checkout_violations')
                 .delete()
@@ -551,7 +666,6 @@ const ValidationQueue: React.FC = () => {
                 throw violationsError;
             }
 
-            // ✅ STEP 3: Finally delete the checkout
             const { error: checkoutError } = await supabase
                 .from('checkouts')
                 .delete()
@@ -564,7 +678,7 @@ const ValidationQueue: React.FC = () => {
 
             toast.success('Checkout berhasil dihapus permanen.');
             
-            fetchCheckouts();
+            await fetchCheckouts();
             setShowDetailModal(false);
             
         } catch (error: any) {
@@ -579,7 +693,7 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    // ===== ✅ UPDATED: ADD REPORT FOR ANY CHECKOUT =====
+    // ===== ADD REPORT FOR ANY CHECKOUT =====
     const handleAddReport = async () => {
         if (!reportData.description.trim() || !reportCheckoutId) {
             toast.error('Deskripsi wajib diisi.');
@@ -593,7 +707,6 @@ const ValidationQueue: React.FC = () => {
                 return;
             }
 
-            // ✅ Add report to checkout_violations
             const { error } = await supabase
                 .from('checkout_violations')
                 .insert({
@@ -612,9 +725,24 @@ const ValidationQueue: React.FC = () => {
             toast.success('Laporan berhasil ditambahkan.');
             setShowReportModal(false);
             setReportCheckoutId(null);
-            // Reset state setelah berhasil
-            setReportData({ title: '', description: '', severity: 'minor', violation_type: 'damage' });
-            fetchCheckouts(); // Refresh data untuk menampilkan flag pelanggaran
+            
+            setReportData({ 
+                title: '', 
+                description: '', 
+                severity: 'minor', 
+                violation_type: 'damage' 
+            });
+            
+            // ✅ REFRESH DATA TO SHOW NEW REPORT
+            await fetchCheckouts();
+            
+            // ✅ UPDATE SELECTED CHECKOUT IF MODAL IS OPEN
+            if (selectedCheckout?.id === reportCheckoutId) {
+                const updatedCheckout = checkouts.find(c => c.id === reportCheckoutId);
+                if (updatedCheckout) {
+                    setSelectedCheckout(updatedCheckout);
+                }
+            }
             
         } catch (error: any) {
             console.error('Error adding report:', error);
@@ -691,7 +819,7 @@ const ValidationQueue: React.FC = () => {
         return totalGap;
     };
 
-    // ===== ✅ GET STATUS BADGE =====
+    // ===== GET STATUS BADGE =====
     const getStatusBadge = (status: string) => {
         const statusConfig = {
             'returned': { color: 'bg-blue-100 text-blue-800', icon: '📦', label: 'Dikembalikan' },
@@ -782,7 +910,7 @@ const ValidationQueue: React.FC = () => {
                 </div>
             </div>
 
-            {/* ===== ✅ ENHANCED SEARCH & FILTERS ===== */}
+            {/* ===== ENHANCED SEARCH & FILTERS ===== */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
                     <div className="relative w-full lg:flex-1">
@@ -796,7 +924,6 @@ const ValidationQueue: React.FC = () => {
                         />
                     </div>
                     
-                    {/* ✅ ADDED: Status Filter */}
                     <div className="flex items-center space-x-3">
                         <div className="flex items-center space-x-2">
                             <Filter className="h-4 w-4 text-gray-500" />
@@ -882,13 +1009,11 @@ const ValidationQueue: React.FC = () => {
                                                                 : 'Equipment Return'
                                                             }
                                                         </h3>
-                                                        {/* ✅ Status Badge */}
                                                         {getStatusBadge(checkout.status)}
-                                                        {/* ✅ Violation Flag */}
                                                         {checkout.has_violations && (
                                                             <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
                                                                 <Flag className="h-3 w-3 mr-1" />
-                                                                Ada Laporan
+                                                                {checkout.violation_reports?.length || 0} Laporan
                                                             </span>
                                                         )}
                                                     </div>
@@ -929,7 +1054,7 @@ const ValidationQueue: React.FC = () => {
                                                 </div>
                                             </div>
 
-                                            {/* ✅ ENHANCED: Show progress only for 'returned' status */}
+                                            {/* Show progress only for 'returned' status */}
                                             {checkout.status === 'returned' && (
                                                 <>
                                                     {/* Progress Bar */}
@@ -993,11 +1118,18 @@ const ValidationQueue: React.FC = () => {
                                                     </div>
                                                 </>
                                             )}
+
+                                            {/* ✅ VIOLATION REPORTS DISPLAY */}
+                                            {checkout.violation_reports && checkout.violation_reports.length > 0 && (
+                                                <ViolationReportsDisplay 
+                                                    reports={checkout.violation_reports} 
+                                                    compact={true} 
+                                                />
+                                            )}
                                         </div>
 
-                                        {/* ✅ UPDATED Actions - MOVED REPORT TO CARD, REMOVED APPROVE/REJECT */}
+                                        {/* Actions */}
                                         <div className="flex items-center space-x-2 ml-4">
-                                            {/* View Detail Button */}
                                             <button 
                                                 onClick={() => {
                                                     setSelectedCheckout(checkout);
@@ -1009,7 +1141,6 @@ const ValidationQueue: React.FC = () => {
                                                 <Eye className="h-4 w-4" />
                                             </button>
                                             
-                                            {/* ✅ MOVED: Report button to card for easy access */}
                                             <button 
                                                 onClick={() => {
                                                     setReportCheckoutId(checkout.id);
@@ -1021,7 +1152,6 @@ const ValidationQueue: React.FC = () => {
                                                 <Flag className="h-4 w-4" />
                                             </button>
 
-                                            {/* ✅ Delete button for all statuses */}
                                             <button 
                                                 onClick={() => {
                                                     if (window.confirm('Anda yakin ingin menghapus checkout ini secara permanen? Aksi ini tidak dapat dibatalkan.')) {
@@ -1043,7 +1173,7 @@ const ValidationQueue: React.FC = () => {
                 )}
             </div>
 
-            {/* ===== ✅ UPDATED VERIFICATION MODAL WITH APPROVE/REJECT INSIDE ===== */}
+            {/* ===== ✅ UPDATED VERIFICATION MODAL WITH REPORT BUTTON ===== */}
             {showDetailModal && selectedCheckout && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden">
@@ -1060,12 +1190,27 @@ const ValidationQueue: React.FC = () => {
                                         }
                                     </p>
                                 </div>
-                                <button 
-                                    onClick={() => setShowDetailModal(false)}
-                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
-                                >
-                                    <X className="h-6 w-6" />
-                                </button>
+                                <div className="flex items-center space-x-2">
+                                    {/* ✅ ADD REPORT BUTTON IN MODAL HEADER */}
+                                    <button 
+                                        onClick={() => {
+                                            setReportCheckoutId(selectedCheckout.id);
+                                            setShowReportModal(true);
+                                        }}
+                                        className="flex items-center space-x-2 px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
+                                        title="Tambah Laporan"
+                                    >
+                                        <Flag className="h-4 w-4" />
+                                        <span>Laporan</span>
+                                    </button>
+                                    
+                                    <button 
+                                        onClick={() => setShowDetailModal(false)}
+                                        className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                                    >
+                                        <X className="h-6 w-6" />
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -1118,7 +1263,17 @@ const ValidationQueue: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* ✅ ENHANCED Equipment Verification Section with LOCAL +/- Controls */}
+                            {/* ✅ VIOLATION REPORTS SECTION IN MODAL */}
+                            {selectedCheckout.violation_reports && selectedCheckout.violation_reports.length > 0 && (
+                                <div className="mb-8 bg-red-50 border border-red-200 rounded-xl p-6">
+                                    <ViolationReportsDisplay 
+                                        reports={selectedCheckout.violation_reports} 
+                                        compact={false} 
+                                    />
+                                </div>
+                            )}
+
+                            {/* Equipment Verification Section */}
                             <div className="bg-gray-50 rounded-xl p-6">
                                 <div className="flex items-center justify-between mb-6">
                                     <h3 className="text-xl font-bold text-gray-900 flex items-center">
@@ -1184,7 +1339,7 @@ const ValidationQueue: React.FC = () => {
                                                             </div>
                                                         </div>
 
-                                                        {/* ✅ QUANTITY DISPLAY WITH LOCAL +/- CONTROLS */}
+                                                        {/* Quantity Display with Local +/- Controls */}
                                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                                                             {/* BORROWED (READONLY) */}
                                                             <div className="text-center p-3 bg-blue-50 rounded-lg border-2 border-blue-200">
@@ -1210,7 +1365,6 @@ const ValidationQueue: React.FC = () => {
                                                                                 newItems[index].returned_quantity = newQty;
                                                                                 newItems[index].is_verified = newQty > 0;
                                                                                 setVerificationItems(newItems);
-                                                                                // ✅ NO DB UPDATE - JUST LOCAL STATE
                                                                             }}
                                                                             disabled={item.returned_quantity <= 0}
                                                                             className="p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -1230,7 +1384,6 @@ const ValidationQueue: React.FC = () => {
                                                                                 newItems[index].returned_quantity = newQty;
                                                                                 newItems[index].is_verified = newQty > 0;
                                                                                 setVerificationItems(newItems);
-                                                                                // ✅ NO DB UPDATE - JUST LOCAL STATE
                                                                             }}
                                                                             disabled={item.returned_quantity >= item.borrowed_quantity}
                                                                             className="p-1 bg-green-100 hover:bg-green-200 text-green-600 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -1278,17 +1431,15 @@ const ValidationQueue: React.FC = () => {
                                                             </div>
                                                         </div>
 
-                                                        {/* ✅ QUICK ACTION BUTTONS - Only for returned status */}
+                                                        {/* Quick Action Buttons - Only for returned status */}
                                                         {selectedCheckout.status === 'returned' && (
                                                             <div className="flex items-center space-x-2 mb-4">
                                                                 <button
                                                                     onClick={() => {
-                                                                        // Set semua dikembalikan
                                                                         const newItems = [...verificationItems];
                                                                         newItems[index].returned_quantity = item.borrowed_quantity;
                                                                         newItems[index].is_verified = true;
                                                                         setVerificationItems(newItems);
-                                                                        // ✅ NO DB UPDATE - JUST LOCAL STATE
                                                                     }}
                                                                     disabled={item.returned_quantity === item.borrowed_quantity}
                                                                     className="flex items-center space-x-1 px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs font-medium"
@@ -1298,12 +1449,10 @@ const ValidationQueue: React.FC = () => {
                                                                 </button>
                                                                 
                                                                 <button onClick={() => {
-                                                                        // Reset ke 0
                                                                         const newItems = [...verificationItems];
                                                                         newItems[index].returned_quantity = 0;
                                                                         newItems[index].is_verified = false;
                                                                         setVerificationItems(newItems);
-                                                                        // ✅ NO DB UPDATE - JUST LOCAL STATE
                                                                     }}
                                                                     disabled={item.returned_quantity === 0}
                                                                     className="flex items-center space-x-1 px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs font-medium"
@@ -1314,7 +1463,7 @@ const ValidationQueue: React.FC = () => {
                                                             </div>
                                                         )}
 
-                                                        {/* CONDITION NOTES */}
+                                                        {/* Condition Notes */}
                                                         {selectedCheckout.status === 'returned' && (
                                                             <div className="mb-3">
                                                                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1327,7 +1476,6 @@ const ValidationQueue: React.FC = () => {
                                                                         const newItems = [...verificationItems];
                                                                         newItems[index].condition_notes = newNotes;
                                                                         setVerificationItems(newItems);
-                                                                        // ✅ NO DB UPDATE - JUST LOCAL STATE
                                                                     }}
                                                                     placeholder="Contoh: Kondisi baik, ada goresan kecil..."
                                                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
@@ -1348,7 +1496,7 @@ const ValidationQueue: React.FC = () => {
                                                             </div>
                                                         )}
 
-                                                        {/* VERIFICATION CHECKBOX - Only for returned status */}
+                                                        {/* Verification Checkbox - Only for returned status */}
                                                         {selectedCheckout.status === 'returned' && (
                                                             <div className="flex items-center justify-between">
                                                                 <div className="flex items-center space-x-3">
@@ -1360,7 +1508,6 @@ const ValidationQueue: React.FC = () => {
                                                                             const newItems = [...verificationItems];
                                                                             newItems[index].is_verified = isChecked;
                                                                             
-                                                                            // Auto-set returned quantity when verified
                                                                             if (isChecked && newItems[index].returned_quantity === 0) {
                                                                                 newItems[index].returned_quantity = item.borrowed_quantity;
                                                                             } else if (!isChecked) {
@@ -1368,7 +1515,6 @@ const ValidationQueue: React.FC = () => {
                                                                             }
                                                                             
                                                                             setVerificationItems(newItems);
-                                                                            // ✅ NO DB UPDATE - JUST LOCAL STATE
                                                                         }}
                                                                         className="h-5 w-5 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                                                                     />
@@ -1377,7 +1523,6 @@ const ValidationQueue: React.FC = () => {
                                                                     </label>
                                                                 </div>
                                                                 
-                                                                {/* Verification Status Indicator */}
                                                                 <div className="flex items-center space-x-2">
                                                                     {item.returned_quantity === item.borrowed_quantity ? (
                                                                         <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full font-medium">
@@ -1414,7 +1559,6 @@ const ValidationQueue: React.FC = () => {
                                                                     </span>
                                                                 </div>
                                                                 
-                                                                {/* Status for view-only */}
                                                                 <div className="text-right">
                                                                     <div className="text-sm text-gray-600">
                                                                         {item.returned_quantity}/{item.borrowed_quantity} {item.equipment_unit}
@@ -1433,7 +1577,7 @@ const ValidationQueue: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* ✅ UPDATED: Summary & Actions INSIDE MODAL - Only for returned status */}
+                            {/* Summary & Actions - Only for returned status */}
                             {selectedCheckout.status === 'returned' && (
                                 <div className="mt-8 bg-white border border-gray-200 rounded-xl p-6">
                                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Ringkasan Verifikasi</h3>
@@ -1464,7 +1608,7 @@ const ValidationQueue: React.FC = () => {
                                                     </div>
                                                 </div>
 
-                                                {/* ✅ MOVED: Action Buttons INSIDE MODAL */}
+                                                {/* Action Buttons INSIDE MODAL */}
                                                 <div className="flex justify-end space-x-4 pt-4 border-t">
                                                     <button
                                                         onClick={() => handleRejectReturn(selectedCheckout.id)}
@@ -1504,7 +1648,7 @@ const ValidationQueue: React.FC = () => {
                                                     </div>
                                                 )}
 
-                                                {/* ✅ ADDED: Changes Warning */}
+                                                {/* Changes Warning */}
                                                 {verificationItems.some(item => item.returned_quantity !== item.original_returned_quantity) && (
                                                     <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                                                         <div className="flex items-center">
@@ -1524,7 +1668,7 @@ const ValidationQueue: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* ✅ Summary for non-returned status */}
+                            {/* Summary for non-returned status */}
                             {selectedCheckout.status !== 'returned' && (
                                 <div className="mt-8 bg-white border border-gray-200 rounded-xl p-6">
                                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Ringkasan Checkout</h3>
@@ -1586,7 +1730,7 @@ const ValidationQueue: React.FC = () => {
                                 </p>
                             </div>
 
-                            {/* ✅ Violation Type Selector */}
+                            {/* Violation Type Selector */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
                                     Jenis Pelanggaran *
