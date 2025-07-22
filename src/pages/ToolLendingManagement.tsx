@@ -349,30 +349,53 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
       qty: recordToDelete.qty
     });
 
-    // ✅ SIMPLE: Restore equipment quantities if the record was approved/borrow
+    // ✅ RESTORE EQUIPMENT QUANTITIES if the record was approved/borrow
     if (recordToDelete.status === 'approved' || recordToDelete.status === 'borrow') {
-      const quantityManager = new EquipmentQuantityManager(supabase);
-      
-      // Build equipment list
-      const equipmentList: Array<{id: string, quantity: number}> = [];
       
       for (let i = 0; i < recordToDelete.id_equipment.length; i++) {
         const equipmentId = recordToDelete.id_equipment[i];
-        const quantity = recordToDelete.qty && recordToDelete.qty[i] ? recordToDelete.qty[i] : 1;
+        const quantity = recordToDelete.qty?.[i] || 1;
         
-        equipmentList.push({ id: equipmentId, quantity });
-      }
+        console.log(`📈 Restoring ${equipmentId} by ${quantity} (lending deleted)`);
+        
+        try {
+          // Get current equipment data
+          const { data: equipment, error: equipmentError } = await supabase
+            .from('equipment')
+            .select('id, name, quantity')
+            .eq('id', equipmentId)
+            .single();
 
-      // ✅ RESTORE: Tambahkan kembali quantity
-      await quantityManager.bulkIncreaseQuantity(
-        equipmentList, 
-        `Tool lending deleted: ${recordToDelete.id}`
-      );
+          if (equipmentError || !equipment) {
+            console.warn(`⚠️ Equipment ${equipmentId} not found for restoration`);
+            continue;
+          }
+
+          // Restore quantity
+          const newQuantity = equipment.quantity + quantity;
+          const { error: updateError } = await supabase
+            .from('equipment')
+            .update({ 
+              quantity: newQuantity,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', equipmentId);
+
+          if (updateError) {
+            console.warn(`⚠️ Failed to restore equipment ${equipmentId}:`, updateError);
+          } else {
+            console.log(`✅ Restored ${equipment.name}: ${equipment.quantity} → ${newQuantity}`);
+          }
+        } catch (error) {
+          console.warn(`⚠️ Error restoring equipment ${equipmentId}:`, error);
+          // Don't fail delete operation for this
+        }
+      }
       
       console.log(`✅ Equipment quantities restored after lending deletion`);
     }
     
-    // ✅ Delete the lending record
+    // ✅ DELETE THE LENDING RECORD
     const { error } = await supabase
       .from('lending_tool')
       .delete()
@@ -396,7 +419,6 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
     });
   }
 };
-
     const filteredRecords = lendingRecords.filter(record => {
         const userName = record.user?.full_name || record.user_info?.full_name || '';
         const userIdentity = record.user?.identity_number || record.user_info?.identity_number || '';
