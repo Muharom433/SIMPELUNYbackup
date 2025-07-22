@@ -282,7 +282,7 @@ const ToolAdministration: React.FC = () => {
                 .from('lending_tool')
                 .select('*')
                 .contains('id_equipment', [equipmentId])
-                .in('status', ['borrow', 'completed']) // ✅ TERMASUK yang sudah completed
+                .in('status', 'borrow') // ✅ TERMASUK yang sudah completed
                 .order('created_at', { ascending: false });
 
             if (lendingError) throw lendingError;
