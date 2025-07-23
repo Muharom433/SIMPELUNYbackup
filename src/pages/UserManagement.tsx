@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -51,6 +51,13 @@ interface User {
   study_program_id?: string;
   created_at: string;
   updated_at: string;
+  department?: {
+    name: string;
+  };
+  study_program?: {
+    name: string;
+    code: string;
+  };
 }
 
 interface Department {
@@ -91,10 +98,16 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
 
   const selectedOption = options.find(option => option.id === value);
   
-  const filteredOptions = options.filter(option =>
-    option.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (option.code && option.code.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // PERBAIKAN: Memoize filtered options untuk performance
+  const filteredOptions = useMemo(() => {
+    if (!searchTerm.trim()) return options;
+    
+    const searchLower = searchTerm.toLowerCase().trim();
+    return options.filter(option =>
+      (option.name?.toLowerCase() || '').includes(searchLower) ||
+      (option.code?.toLowerCase() || '').includes(searchLower)
+    );
+  }, [options, searchTerm]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -111,6 +124,10 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
   const handleSelect = (optionId: string) => {
     onChange(optionId);
     setIsOpen(false);
+    setSearchTerm('');
+  };
+
+  const handleClearSearch = () => {
     setSearchTerm('');
   };
 
@@ -143,9 +160,18 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
                 placeholder={searchPlaceholder}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 pr-3 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full pl-8 pr-8 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                 autoFocus
               />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={handleClearSearch}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
             </div>
           </div>
           <div className="max-h-48 overflow-y-auto">
@@ -160,7 +186,7 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
             )}
             {filteredOptions.length === 0 ? (
               <div className="px-3 py-2 text-sm text-gray-500 text-center">
-                {emptyMessage}
+                {searchTerm ? `No results for "${searchTerm}"` : emptyMessage}
               </div>
             ) : (
               filteredOptions.map((option) => (
@@ -434,6 +460,11 @@ const UserManagement: React.FC = () => {
     }
   };
 
+  // PERBAIKAN: Clear search function
+  const handleClearSearch = () => {
+    setSearchTerm('');
+  };
+
   const getRoleIcon = (role: string) => {
     switch (role) {
       case 'super_admin': return Shield;
@@ -450,6 +481,16 @@ const UserManagement: React.FC = () => {
       case 'lecturer': return getText('Lecturer', 'Dosen');
       case 'student': return getText('Student', 'Mahasiswa');
       default: return role;
+    }
+  };
+
+  const getRoleBadgeColor = (role: string) => {
+    switch (role) {
+      case 'super_admin': return 'bg-red-100 text-red-800';
+      case 'department_admin': return 'bg-blue-100 text-blue-800';
+      case 'lecturer': return 'bg-purple-100 text-purple-800';
+      case 'student': return 'bg-green-100 text-green-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -473,13 +514,34 @@ const UserManagement: React.FC = () => {
     );
   }
 
-  const filteredUsers = users.filter(user => 
-    user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.identity_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (user.phone_number && user.phone_number.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // PERBAIKAN: Filtered users dengan null safety dan useMemo untuk performance
+  const filteredUsers = useMemo(() => {
+    if (!users || users.length === 0) return [];
+    
+    return users.filter(user => {
+      // Safe string operations dengan null checking
+      const searchLower = searchTerm.toLowerCase().trim();
+      
+      // Jika search term kosong, tampilkan semua user
+      if (!searchLower) {
+        return true;
+      }
+      
+      // Search matching dengan null safety
+      const matchesSearch = 
+        (user.full_name?.toLowerCase() || '').includes(searchLower) ||
+        (user.username?.toLowerCase() || '').includes(searchLower) ||
+        (user.email?.toLowerCase() || '').includes(searchLower) ||
+        (user.identity_number?.toLowerCase() || '').includes(searchLower) ||
+        (user.phone_number?.toLowerCase() || '').includes(searchLower) ||
+        (user.role?.toLowerCase() || '').includes(searchLower) ||
+        (user.department?.name?.toLowerCase() || '').includes(searchLower) ||
+        (user.study_program?.name?.toLowerCase() || '').includes(searchLower) ||
+        (user.study_program?.code?.toLowerCase() || '').includes(searchLower);
+      
+      return matchesSearch;
+    });
+  }, [users, searchTerm]);
 
   return (
     <div className="space-y-6">
@@ -500,6 +562,11 @@ const UserManagement: React.FC = () => {
             <div className="text-sm opacity-80">
               {getText('Total Users', 'Total Pengguna')}
             </div>
+            {searchTerm && (
+              <div className="text-sm opacity-80 mt-1">
+                {filteredUsers.length} {getText('filtered', 'terfilter')}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -508,21 +575,32 @@ const UserManagement: React.FC = () => {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
           <div className="flex flex-col sm:flex-row gap-4 flex-1">
+            {/* PERBAIKAN: Enhanced search input dengan clear button */}
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
                 type="text"
-                placeholder={getText('Search users...', 'Cari pengguna...')}
+                placeholder={getText('Search users by name, username, email, ID, phone...', 'Cari pengguna berdasarkan nama, username, email, ID, telepon...')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
+              {searchTerm && (
+                <button
+                  onClick={handleClearSearch}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 hover:text-gray-600"
+                  title={getText('Clear search', 'Hapus pencarian')}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
             </div>
           </div>
           <div className="flex items-center space-x-2">
             <button
               onClick={() => fetchUsers()}
               className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors duration-200"
+              title={getText('Refresh', 'Muat Ulang')}
             >
               <RefreshCw className="h-5 w-5" />
             </button>
@@ -548,6 +626,13 @@ const UserManagement: React.FC = () => {
             </button>
           </div>
         </div>
+        
+        {/* Search Results Info */}
+        {searchTerm && (
+          <div className="mt-4 text-sm text-gray-600">
+            {getText('Showing', 'Menampilkan')} {filteredUsers.length} {getText('of', 'dari')} {users.length} {getText('users for', 'pengguna untuk')} "{searchTerm}"
+          </div>
+        )}
       </div>
 
       {/* Users Table */}
@@ -594,8 +679,13 @@ const UserManagement: React.FC = () => {
                     <div className="text-gray-500">
                       <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                       <p className="text-lg font-medium mb-2">
-                        {getText('No users found', 'Tidak ada pengguna ditemukan')}
+                        {searchTerm ? getText('No users found', 'Tidak ada pengguna ditemukan') : getText('No users available', 'Tidak ada pengguna tersedia')}
                       </p>
+                      {searchTerm && (
+                        <p className="text-sm">
+                          {getText('Try adjusting your search term', 'Coba sesuaikan kata pencarian Anda')}
+                        </p>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -615,15 +705,24 @@ const UserManagement: React.FC = () => {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {getRoleDisplayName(user.role)}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getRoleBadgeColor(user.role)}`}>
+                          {getRoleDisplayName(user.role)}
+                        </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">{user.email || '-'}</div>
                         <div className="text-sm text-gray-500">{user.phone_number || '-'}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {(user as any).department?.name || 'N/A'}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {user.department?.name || 'N/A'}
+                        </div>
+                        {user.study_program && (
+                          <div className="text-xs text-gray-500">
+                            {user.study_program.name} ({user.study_program.code})
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {format(new Date(user.created_at), 'MMM d, yyyy')}
