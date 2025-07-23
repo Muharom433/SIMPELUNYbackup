@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { LanguageProvider } from './contexts/LanguageContext';
 import Layout from './components/Layout/Layout';
 import AuthForm from './components/Auth/AuthForm';
@@ -22,7 +22,7 @@ import ToolLending from './pages/ToolLending';
 import ToolLendingManagement from './pages/ToolLendingManagement';
 import Reports from './pages/Reports';
 import SystemSettings from './pages/SystemSettings';
-import Profile from './pages/Profile'; // No longer needs user prop
+import Profile from './pages/Profile';
 import { useAuth } from './hooks/useAuth';
 
 function App() {
@@ -43,6 +43,7 @@ function App() {
 
   return (
     <LanguageProvider>
+      {/* PERBAIKAN: Ganti BrowserRouter dengan HashRouter */}
       <Router>
         <Routes>
           <Route path="/auth" element={<AuthForm />} />
@@ -54,7 +55,7 @@ function App() {
             
             {/* Public/Student Routes */}
             <Route path="tools" element={<ToolLending />} />
-            <Route path="profile" element={<Profile />} /> {/* No props needed */}
+            <Route path="profile" element={<Profile />} />
             <Route path="exams" element={<ExamManagement />} />
             <Route path="session-schedule" element={<SessionSchedule />} />
             
