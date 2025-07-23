@@ -277,7 +277,7 @@ const ToolAdministration: React.FC = () => {
         try {
             setLoadingLending(true);
             
-            // ✅ CORRECT: Fetch lending dengan status "borrow" (approved lending)
+            // ✅ SHOW ALL: Fetch lending dengan status "borrow" (approved lending)
             const { data: lendingData, error: lendingError } = await supabase
                 .from('lending_tool')
                 .select('*')
@@ -287,7 +287,7 @@ const ToolAdministration: React.FC = () => {
 
             if (lendingError) throw lendingError;
 
-            // ✅ CORRECT: Fetch booking dengan status "approved"
+            // ✅ SHOW ALL: Fetch booking dengan status "approved"
             const { data: bookingData, error: bookingError } = await supabase
                 .from('bookings')
                 .select('*, user:users(id, full_name, identity_number, email, phone_number)')
@@ -331,7 +331,7 @@ const ToolAdministration: React.FC = () => {
                             if (userData) lendingDetail.user = userData;
                         }
 
-                        // ✅ KUNCI: Cari checkout yang COMPLETED (status = 'active')
+                        // ✅ SHOW ALL: Cari checkout (termasuk yang sudah active)
                         const { data: checkoutData } = await supabase
                             .from('checkouts')
                             .select(`
@@ -340,7 +340,7 @@ const ToolAdministration: React.FC = () => {
                             `)
                             .eq('lendingTool_id', lending.id)
                             .eq('checkout_items.equipment_id', equipmentId)
-                            .eq('status', 'active') // ✅ Checkout yang sudah approved/completed
+                            .in('status', ['active', 'returned']) // ✅ Include active and returned
                             .order('created_at', { ascending: false })
                             .limit(1);
 
@@ -362,8 +362,8 @@ const ToolAdministration: React.FC = () => {
                             }
                         }
 
-                        // ✅ RETURN: Only if there's missing quantity
-                        return lendingDetail.missing_quantity > 0 ? lendingDetail : null;
+                        // ✅ SHOW ALL: Only hide if status is 'returned' or no gap
+                        return (lendingDetail.missing_quantity > 0 && lendingDetail.checkout?.status !== 'returned') ? lendingDetail : null;
                     })
                 );
                 
@@ -398,7 +398,7 @@ const ToolAdministration: React.FC = () => {
                             }
                         };
 
-                        // ✅ KUNCI: Cari checkout yang COMPLETED (status = 'active')
+                        // ✅ SHOW ALL: Cari checkout (termasuk yang sudah active)
                         const { data: checkoutData } = await supabase
                             .from('checkouts')
                             .select(`
@@ -407,7 +407,7 @@ const ToolAdministration: React.FC = () => {
                             `)
                             .eq('booking_id', booking.id)
                             .eq('checkout_items.equipment_id', equipmentId)
-                            .eq('status', 'active') // ✅ Checkout yang sudah approved/completed
+                            .in('status', ['active', 'returned']) // ✅ Include active and returned
                             .order('created_at', { ascending: false })
                             .limit(1);
 
@@ -422,26 +422,26 @@ const ToolAdministration: React.FC = () => {
                             }
                         }
 
-                        // ✅ RETURN: Only if there's missing quantity
-                        return lendingDetail.missing_quantity > 0 ? lendingDetail : null;
+                        // ✅ SHOW ALL: Only hide if status is 'returned' or no gap
+                        return (lendingDetail.missing_quantity > 0 && lendingDetail.checkout?.status !== 'returned') ? lendingDetail : null;
                     })
                 );
 
                 allLendingDetails = [...allLendingDetails, ...bookingLendings.filter(Boolean)];
             }
 
-            // ✅ FINAL RESULT: Only records with missing quantities
-            console.log(`🔍 Equipment ${equipmentId} Missing Analysis:`);
-            console.log(`📊 Found ${allLendingDetails.length} records with missing items`);
+            // ✅ FINAL RESULT: Records with missing quantities (including active checkouts)
+            console.log(`🔍 Equipment ${equipmentId} Gap Analysis:`);
+            console.log(`📊 Found ${allLendingDetails.length} records with quantity gaps`);
             allLendingDetails.forEach(detail => {
-                console.log(`👤 ${detail.user?.full_name}: ${detail.borrowed_quantity} borrowed - ${detail.returned_quantity} returned = ${detail.missing_quantity} missing (${detail.source})`);
+                console.log(`👤 ${detail.user?.full_name}: ${detail.borrowed_quantity} borrowed - ${detail.returned_quantity} returned = ${detail.missing_quantity} missing (${detail.source}) [${detail.checkout?.status}]`);
             });
             
             setLendingDetails(allLendingDetails);
             
         } catch (error) {
-            console.error('❌ Error fetching missing equipment:', error);
-            toast.error(getText('Failed to load missing equipment data', 'Gagal memuat data barang hilang'));
+            console.error('❌ Error fetching quantity gaps:', error);
+            toast.error(getText('Failed to load quantity gap data', 'Gagal memuat data kesenjangan jumlah'));
             setLendingDetails([]);
         } finally {
             setLoadingLending(false);
@@ -460,7 +460,7 @@ const ToolAdministration: React.FC = () => {
                 schema: 'public',
                 table: 'checkouts'
             }, (payload) => {
-                console.log('🔄 Checkout updated, refreshing missing data...', payload);
+                console.log('🔄 Checkout updated, refreshing gap data...', payload);
                 fetchLendingDetails(selectedEquipment.id);
             })
             .subscribe();
@@ -473,7 +473,7 @@ const ToolAdministration: React.FC = () => {
                 schema: 'public',
                 table: 'checkout_items'
             }, (payload) => {
-                console.log('🔄 Checkout items updated, refreshing missing data...', payload);
+                console.log('🔄 Checkout items updated, refreshing gap data...', payload);
                 fetchLendingDetails(selectedEquipment.id);
             })
             .subscribe();
@@ -483,6 +483,34 @@ const ToolAdministration: React.FC = () => {
             checkoutItemsSubscription.unsubscribe();
         };
     }, [selectedEquipment?.id]);
+
+    // ✅ ADD: Function to mark checkout as completed
+    const handleMarkAsCompleted = async (checkoutId: string, equipmentId: string) => {
+        try {
+            console.log('✅ Marking checkout as completed:', checkoutId);
+            
+            // Update checkout status to 'returned'
+            const { error } = await supabase
+                .from('checkouts')
+                .update({ 
+                    status: 'returned',
+                    actual_return_date: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', checkoutId);
+
+            if (error) throw error;
+
+            toast.success(getText('Checkout marked as completed! ✅', 'Checkout berhasil ditandai selesai! ✅'));
+            
+            // Refresh the lending details to remove the completed item
+            fetchLendingDetails(equipmentId);
+            
+        } catch (error: any) {
+            console.error('❌ Error marking checkout as completed:', error);
+            toast.error(error.message || getText('Failed to mark as completed', 'Gagal menandai sebagai selesai'));
+        }
+    };
 
     const handleSubmit = async (data: EquipmentForm) => {
         try {
@@ -674,7 +702,7 @@ const ToolAdministration: React.FC = () => {
                     icon: AlertCircle,
                     label: getText('UNKNOWN', 'TIDAK DIKETAHUI'),
                     className: 'bg-gray-100 text-gray-700 border border-gray-200'
-                };
+                  };
         }
     };
 
@@ -924,7 +952,7 @@ const ToolAdministration: React.FC = () => {
                 <div className="bg-gray-50 rounded-lg p-8 text-center">
                     <RefreshCw className="h-8 w-8 animate-spin text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-600">
-                        {getText('Checking approved transactions vs completed returns...', 'Mengecek transaksi approved vs pengembalian selesai...')}
+                        {getText('Checking quantity gaps in approved transactions...', 'Mengecek kesenjangan jumlah pada transaksi yang disetujui...')}
                     </p>
                 </div>
             );
@@ -935,16 +963,16 @@ const ToolAdministration: React.FC = () => {
                 <div className="bg-green-50 rounded-lg p-8 text-center border border-green-200">
                     <CheckCircle className="h-16 w-16 text-green-400 mx-auto mb-4" />
                     <h4 className="text-lg font-medium text-green-800 mb-2">
-                        {getText('✅ No Missing Items!', '✅ Tidak Ada Barang Hilang!')}
+                        {getText('✅ No Quantity Gaps!', '✅ Tidak Ada Kesenjangan Jumlah!')}
                     </h4>
                     <p className="text-green-600">
                         {getText(
-                            'All approved borrowing has matching return quantities.',
-                            'Semua peminjaman yang disetujui memiliki jumlah pengembalian yang sesuai.'
+                            'All approved transactions have matching return quantities or are marked as completed.',
+                            'Semua transaksi yang disetujui memiliki jumlah pengembalian yang sesuai atau sudah ditandai selesai.'
                         )}
                     </p>
                     <p className="text-green-500 text-sm mt-2">
-                        📊 Approved Borrowing ↔️ Completed Returns ✅
+                        📊 Approved ↔️ Returned/Completed ✅
                     </p>
                 </div>
             );
@@ -952,20 +980,20 @@ const ToolAdministration: React.FC = () => {
 
         return (
             <div className="space-y-4">
-                {/* MISSING HEADER dengan penjelasan */}
+                {/* GAP HEADER dengan penjelasan */}
                 <div className="bg-red-50 rounded-lg p-4 border border-red-200">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center">
                             <AlertTriangle className="h-6 w-6 text-red-600 mr-3" />
                             <div>
                                 <h4 className="text-lg font-semibold text-red-800">
-                                    🚨 MISSING ITEMS DETECTED
+                                    🚨 QUANTITY GAPS DETECTED
                                 </h4>
                                 <p className="text-sm text-red-600">
-                                    Approved borrowing vs Completed checkout items
+                                    Showing all quantity gaps (including approved checkouts)
                                 </p>
                                 <p className="text-xs text-red-500 mt-1">
-                                    📋 Status: approved/borrow → ✅ Status: checkout active
+                                    📋 Status: approved/borrow → ✅ Status: active (with gaps) → ✅ Mark as completed
                                 </p>
                             </div>
                         </div>
@@ -973,12 +1001,12 @@ const ToolAdministration: React.FC = () => {
                             <div className="text-3xl font-bold text-red-800">
                                 {lendingDetails.reduce((total, detail) => total + detail.missing_quantity, 0)}
                             </div>
-                            <div className="text-sm text-red-600">Missing Items</div>
+                            <div className="text-sm text-red-600">Total Missing Items</div>
                         </div>
                     </div>
                 </div>
 
-                {/* MISSING ITEMS LIST */}
+                {/* QUANTITY GAPS LIST */}
                 <div className="space-y-3">
                     {lendingDetails.map((detail) => (
                         <div key={detail.id} className="border-l-4 border-red-500 bg-red-50 rounded-lg p-4 shadow-sm">
@@ -1013,8 +1041,15 @@ const ToolAdministration: React.FC = () => {
                                                     {detail.source === 'booking' ? '📋 APPROVED' : '🔧 BORROW'}
                                                 </span>
                                                 {detail.checkout && (
-                                                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                                        ✅ CHECKOUT: {detail.checkout.status.toUpperCase()}
+                                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                                        detail.checkout.status === 'active' 
+                                                            ? 'bg-yellow-100 text-yellow-800' 
+                                                            : 'bg-green-100 text-green-800'
+                                                    }`}>
+                                                        {detail.checkout.status === 'active' 
+                                                            ? '⏳ CHECKOUT: ACTIVE' 
+                                                            : '✅ CHECKOUT: RETURNED'
+                                                        }
                                                     </span>
                                                 )}
                                             </div>
@@ -1023,9 +1058,9 @@ const ToolAdministration: React.FC = () => {
                                 </div>
                                 
                                 <div className="text-right space-y-2">
-                                    {/* MISSING CALCULATION CARD */}
+                                    {/* QUANTITY GAP CALCULATION CARD */}
                                     <div className="bg-white rounded-lg p-3 border border-red-200">
-                                        <div className="text-xs text-gray-600 mb-2 font-medium">MISSING CALCULATION</div>
+                                        <div className="text-xs text-gray-600 mb-2 font-medium">QUANTITY GAP CALCULATION</div>
                                         
                                         <div className="space-y-1">
                                             <div className="flex items-center justify-between text-sm">
@@ -1040,7 +1075,7 @@ const ToolAdministration: React.FC = () => {
                                             
                                             <div className="border-t border-gray-200 pt-1">
                                                 <div className="flex items-center justify-between text-sm">
-                                                    <span className="text-red-600 font-medium">🚨 Missing:</span>
+                                                    <span className="text-red-600 font-medium">🚨 Gap:</span>
                                                     <span className="font-bold text-red-600 text-lg">
                                                         {detail.missing_quantity}
                                                     </span>
@@ -1056,23 +1091,46 @@ const ToolAdministration: React.FC = () => {
                                 </div>
                             </div>
                             
-                            {/* STATUS EXPLANATION */}
+                            {/* STATUS EXPLANATION dengan tombol action */}
                             <div className="mt-4 p-3 bg-red-100 border border-red-200 rounded-md">
-                                <div className="flex items-center">
-                                    <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
-                                    <span className="text-sm font-medium text-red-800">
-                                        <strong>Gap Found:</strong> {detail.missing_quantity} {selectedEquipment?.unit} missing
-                                        {detail.checkout ? (
-                                            <span className="ml-2 text-red-700">
-                                                (Checkout completed but quantity doesn't match!)
-                                            </span>
-                                        ) : (
-                                            <span className="ml-2 text-red-700">
-                                                (No checkout record found - items never returned!)
-                                            </span>
-                                        )}
-                                    </span>
+                                <div className="flex items-start justify-between">
+                                    <div className="flex items-center flex-1">
+                                        <AlertTriangle className="h-5 w-5 text-red-600 mr-2 flex-shrink-0" />
+                                        <span className="text-sm font-medium text-red-800">
+                                            <strong>Gap Found:</strong> {detail.missing_quantity} {selectedEquipment?.unit} missing
+                                            {detail.checkout ? (
+                                                <span className="ml-2 text-red-700">
+                                                    (Checkout {detail.checkout.status} but quantity doesn't match!)
+                                                </span>
+                                            ) : (
+                                                <span className="ml-2 text-red-700">
+                                                    (No checkout record found - items never returned!)
+                                                </span>
+                                            )}
+                                        </span>
+                                    </div>
+                                    
+                                    {/* ✅ ADD: Complete button untuk checkout yang active */}
+                                    {detail.checkout && detail.checkout.status === 'active' && (
+                                        <button
+                                            onClick={() => handleMarkAsCompleted(detail.checkout!.id, selectedEquipment!.id)}
+                                            className="ml-3 px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors flex-shrink-0"
+                                            title={getText('Mark this checkout as completed', 'Tandai checkout ini sebagai selesai')}
+                                        >
+                                            ✅ {getText('Mark Completed', 'Tandai Selesai')}
+                                        </button>
+                                    )}
                                 </div>
+                                
+                                {/* ✅ ADD: Explanation text */}
+                                {detail.checkout && detail.checkout.status === 'active' && (
+                                    <div className="mt-2 text-xs text-red-600">
+                                        {getText(
+                                            'Click "Mark Completed" if the quantity gap is acceptable and you want to close this case.',
+                                            'Klik "Tandai Selesai" jika kesenjangan jumlah dapat diterima dan ingin menutup kasus ini.'
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     ))}
@@ -1140,8 +1198,7 @@ const ToolAdministration: React.FC = () => {
             </div>
         );
     }
-
-    return (
+  return (
         <div className="space-y-8">
             {/* Header Section */}
             <div className="bg-gradient-to-br from-blue-500 via-purple-500 to-indigo-600 rounded-xl p-6 text-white">
@@ -1220,8 +1277,8 @@ const ToolAdministration: React.FC = () => {
 
                         <select 
                             value={roomFilter} 
-                            onChange={(e) => setRoomFilter(e.target.value)} 
-                            className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 appearance-none bg-white text-sm"
+                            onChange={(e) => setRoomFilter(e.target.value)}
+                          className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 appearance-none bg-white text-sm"
                         >
                             <option value="all">{getText('All Locations', 'Semua Lokasi')}</option>
                             {availableRoomsForFilter.map(room => (
@@ -1280,7 +1337,8 @@ const ToolAdministration: React.FC = () => {
                     </div>
                 )}
             </div>
-          {/* Equipment Grid */}
+
+            {/* Equipment Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {loading && (
                     Array.from({ length: 8 }).map((_, index) => (
@@ -1393,7 +1451,7 @@ const ToolAdministration: React.FC = () => {
                                     <button 
                                         onClick={() => handleViewDetails(eq)} 
                                         className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium transition-colors text-sm"
-                                        title={getText('View Details & Lending', 'Lihat Detail & Peminjaman')}
+                                        title={getText('View Details & Gap Analysis', 'Lihat Detail & Analisis Kesenjangan')}
                                     >
                                         <Eye className="h-4 w-4" />
                                         <span>{getText('View', 'Lihat')}</span>
@@ -1642,8 +1700,7 @@ const ToolAdministration: React.FC = () => {
                     </div>
                 </div>
             )}
-            
-            {/* Equipment Detail Modal with Enhanced Lending Tracking */}
+          {/* Equipment Detail Modal with Enhanced Quantity Gap Tracking */}
             {selectedEquipment && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col overflow-hidden">
@@ -1763,7 +1820,7 @@ const ToolAdministration: React.FC = () => {
                                                     {getText('Quantity', 'Jumlah')}
                                                 </span>
                                                 <div className="flex items-center gap-2">
-                                                    <Package className="h-4 w-4 text-gray-600" />
+                                                  <Package className="h-4 w-4 text-gray-600" />
                                                     <span className="font-bold text-lg text-gray-900">
                                                         {selectedEquipment.quantity} {selectedEquipment.unit}
                                                     </span>
@@ -1817,12 +1874,12 @@ const ToolAdministration: React.FC = () => {
                                     </div>
                                 </div>
 
-                                {/* Enhanced Missing Items Tracking */}
+                                {/* Enhanced Quantity Gap Tracking */}
                                 <div className="lg:col-span-2 space-y-6">
                                     <div>
                                         <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
                                             <AlertTriangle className="h-5 w-5 text-red-600" />
-                                            {getText('Missing Equipment Tracking', 'Pelacakan Peralatan Hilang')}
+                                            {getText('Quantity Gap Analysis', 'Analisis Kesenjangan Jumlah')}
                                             {loadingLending && <RefreshCw className="h-4 w-4 animate-spin text-gray-400" />}
                                         </h3>
                                         
