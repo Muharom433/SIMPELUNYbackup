@@ -72,7 +72,7 @@ interface StudyProgram {
   department_id: string;
 }
 
-// Searchable Dropdown Component
+// Searchable Dropdown Component - Moved outside to avoid re-creation
 interface SearchableDropdownProps {
   options: { id: string; name: string; code?: string }[];
   value: string;
@@ -83,7 +83,7 @@ interface SearchableDropdownProps {
   emptyMessage?: string;
 }
 
-const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
+const SearchableDropdown: React.FC<SearchableDropdownProps> = React.memo(({
   options,
   value,
   onChange,
@@ -96,9 +96,10 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const selectedOption = options.find(option => option.id === value);
+  const selectedOption = useMemo(() => {
+    return options.find(option => option.id === value);
+  }, [options, value]);
   
-  // PERBAIKAN: Memoize filtered options untuk performance
   const filteredOptions = useMemo(() => {
     if (!searchTerm.trim()) return options;
     
@@ -208,11 +209,16 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
       )}
     </div>
   );
-};
+});
+
+SearchableDropdown.displayName = 'SearchableDropdown';
 
 const UserManagement: React.FC = () => {
+  // PERBAIKAN: Semua hooks diletakkan di atas sebelum any conditional logic
   const { profile } = useAuth();
   const { getText } = useLanguage();
+  
+  // State hooks - semua diletakkan berurutan tanpa kondisional
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [studyPrograms, setStudyPrograms] = useState<StudyProgram[]>([]);
@@ -222,6 +228,7 @@ const UserManagement: React.FC = () => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
+  // Form hook
   const form = useForm<UserForm>({
     resolver: zodResolver(userSchema),
     defaultValues: {
@@ -229,29 +236,72 @@ const UserManagement: React.FC = () => {
     },
   });
 
+  // Form watch hooks
   const watchRole = form.watch('role');
   const watchDepartmentId = form.watch('department_id');
 
-  useEffect(() => {
-    if (profile) {
-      fetchUsers();
-      fetchDepartments();
-      fetchStudyPrograms();
-    }
-  }, [profile]);
+  // useMemo hooks - PERBAIKAN: Dipindahkan ke atas sebelum any early returns
+  const filteredUsers = useMemo(() => {
+    if (!users || users.length === 0) return [];
+    
+    return users.filter(user => {
+      const searchLower = searchTerm.toLowerCase().trim();
+      
+      if (!searchLower) {
+        return true;
+      }
+      
+      const matchesSearch = 
+        (user.full_name?.toLowerCase() || '').includes(searchLower) ||
+        (user.username?.toLowerCase() || '').includes(searchLower) ||
+        (user.email?.toLowerCase() || '').includes(searchLower) ||
+        (user.identity_number?.toLowerCase() || '').includes(searchLower) ||
+        (user.phone_number?.toLowerCase() || '').includes(searchLower) ||
+        (user.role?.toLowerCase() || '').includes(searchLower) ||
+        (user.department?.name?.toLowerCase() || '').includes(searchLower) ||
+        (user.study_program?.name?.toLowerCase() || '').includes(searchLower) ||
+        (user.study_program?.code?.toLowerCase() || '').includes(searchLower);
+      
+      return matchesSearch;
+    });
+  }, [users, searchTerm]);
 
-  // Fetch study programs when department changes
-  useEffect(() => {
-    if (watchDepartmentId) {
-      fetchStudyProgramsByDepartment(watchDepartmentId);
-    } else if (profile?.role === 'super_admin') {
-      // Reset study programs when no department selected for super admin
-      setStudyPrograms([]);
-      form.setValue('study_program_id', '');
+  // Helper functions - menggunakan useCallback untuk performance
+  const getRoleIcon = React.useCallback((role: string) => {
+    switch (role) {
+      case 'super_admin': return Shield;
+      case 'department_admin': return Building;
+      case 'student': return BookOpen;
+      default: return User;
     }
-  }, [watchDepartmentId]);
+  }, []);
 
-  const fetchUsers = async () => {
+  const getRoleDisplayName = React.useCallback((role: string) => {
+    switch (role) {
+      case 'super_admin': return getText('Super Admin', 'Super Admin');
+      case 'department_admin': return getText('Department Admin', 'Admin Departemen');
+      case 'lecturer': return getText('Lecturer', 'Dosen');
+      case 'student': return getText('Student', 'Mahasiswa');
+      default: return role;
+    }
+  }, [getText]);
+
+  const getRoleBadgeColor = React.useCallback((role: string) => {
+    switch (role) {
+      case 'super_admin': return 'bg-red-100 text-red-800';
+      case 'department_admin': return 'bg-blue-100 text-blue-800';
+      case 'lecturer': return 'bg-purple-100 text-purple-800';
+      case 'student': return 'bg-green-100 text-green-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  }, []);
+
+  const handleClearSearch = React.useCallback(() => {
+    setSearchTerm('');
+  }, []);
+
+  // API functions
+  const fetchUsers = React.useCallback(async () => {
     try {
       setLoading(true);
       let query = supabase.from('users').select(`
@@ -278,9 +328,9 @@ const UserManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [profile, getText]);
 
-  const fetchDepartments = async () => {
+  const fetchDepartments = React.useCallback(async () => {
     try {
       let query = supabase.from('departments').select('id, name');
       
@@ -295,19 +345,16 @@ const UserManagement: React.FC = () => {
       console.error('Error fetching departments:', error);
       alert.error(getText('Failed to load departments', 'Gagal memuat departemen'));
     }
-  };
+  }, [profile, getText]);
 
-  const fetchStudyPrograms = async () => {
+  const fetchStudyPrograms = React.useCallback(async () => {
     try {
       let query = supabase.from('study_programs').select('*');
       
-      // For department admin, always filter by their department
       if (profile?.role === 'department_admin' && profile.department_id) {
         query = query.eq('department_id', profile.department_id);
-      }
-      // For super admin, don't load all study programs initially
-      else if (profile?.role === 'super_admin') {
-        return; // Don't load all study programs initially
+      } else if (profile?.role === 'super_admin') {
+        return;
       }
       
       const { data, error } = await query;
@@ -317,10 +364,9 @@ const UserManagement: React.FC = () => {
       console.error('Error fetching study programs:', error);
       alert.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
     }
-  };
+  }, [profile, getText]);
 
-  // Fetch study programs by department
-  const fetchStudyProgramsByDepartment = async (departmentId: string) => {
+  const fetchStudyProgramsByDepartment = React.useCallback(async (departmentId: string) => {
     try {
       const { data, error } = await supabase
         .from('study_programs')
@@ -330,7 +376,6 @@ const UserManagement: React.FC = () => {
       if (error) throw error;
       setStudyPrograms(data || []);
       
-      // Reset study program selection if current selection is not in the new department
       const currentStudyProgramId = form.getValues('study_program_id');
       const isCurrentProgramInDepartment = data?.some(program => program.id === currentStudyProgramId);
       if (!isCurrentProgramInDepartment) {
@@ -340,16 +385,52 @@ const UserManagement: React.FC = () => {
       console.error('Error fetching study programs by department:', error);
       alert.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
     }
-  };
+  }, [form, getText]);
+
+  // useEffect hooks - semua diletakkan berurutan
+  useEffect(() => {
+    if (profile) {
+      fetchUsers();
+      fetchDepartments();
+      fetchStudyPrograms();
+    }
+  }, [profile, fetchUsers, fetchDepartments, fetchStudyPrograms]);
+
+  useEffect(() => {
+    if (watchDepartmentId) {
+      fetchStudyProgramsByDepartment(watchDepartmentId);
+    } else if (profile?.role === 'super_admin') {
+      setStudyPrograms([]);
+      form.setValue('study_program_id', '');
+    }
+  }, [watchDepartmentId, profile, fetchStudyProgramsByDepartment, form]);
+
+  // PERBAIKAN: Early return AFTER all hooks
+  if (!profile || (profile.role !== 'super_admin' && profile.role !== 'department_admin')) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            {getText('Access Denied', 'Akses Ditolak')}
+          </h3>
+          <p className="text-gray-600">
+            {getText("You don't have permission to access user management.", 'Anda tidak memiliki izin untuk mengakses manajemen pengguna.')}
+          </p>
+          <p className="text-sm text-gray-500 mt-2">
+            {getText('Current role:', 'Peran saat ini:')} {profile?.role || 'undefined'}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const handleSubmit = async (data: UserForm) => {
     try {
       setLoading(true);
 
-      // Set department_id for department admin
       if (profile?.role === 'department_admin' && profile.department_id) {
         data.department_id = profile.department_id;
-        // Department admin can only create lecturers and students
         if (!['lecturer', 'student'].includes(data.role)) {
           data.role = 'student';
         }
@@ -367,7 +448,6 @@ const UserManagement: React.FC = () => {
       };
 
       if (editingUser) {
-        // Update existing user
         const updateData: any = { ...userData };
         if (data.password) {
           updateData.password = data.password;
@@ -381,7 +461,6 @@ const UserManagement: React.FC = () => {
         if (error) throw error;
         alert.success(getText('User updated successfully', 'Pengguna berhasil diperbarui'));
       } else {
-        // Create new user
         if (!data.password) {
           alert.error(getText('Password is required for new users', 'Password diperlukan untuk pengguna baru'));
           return;
@@ -432,7 +511,6 @@ const UserManagement: React.FC = () => {
       study_program_id: user.study_program_id || undefined,
     });
     
-    // Load study programs for the user's department
     if (user.department_id) {
       fetchStudyProgramsByDepartment(user.department_id);
     }
@@ -459,89 +537,6 @@ const UserManagement: React.FC = () => {
       setLoading(false);
     }
   };
-
-  // PERBAIKAN: Clear search function
-  const handleClearSearch = () => {
-    setSearchTerm('');
-  };
-
-  const getRoleIcon = (role: string) => {
-    switch (role) {
-      case 'super_admin': return Shield;
-      case 'department_admin': return Building;
-      case 'student': return BookOpen;
-      default: return User;
-    }
-  };
-
-  const getRoleDisplayName = (role: string) => {
-    switch (role) {
-      case 'super_admin': return getText('Super Admin', 'Super Admin');
-      case 'department_admin': return getText('Department Admin', 'Admin Departemen');
-      case 'lecturer': return getText('Lecturer', 'Dosen');
-      case 'student': return getText('Student', 'Mahasiswa');
-      default: return role;
-    }
-  };
-
-  const getRoleBadgeColor = (role: string) => {
-    switch (role) {
-      case 'super_admin': return 'bg-red-100 text-red-800';
-      case 'department_admin': return 'bg-blue-100 text-blue-800';
-      case 'lecturer': return 'bg-purple-100 text-purple-800';
-      case 'student': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  // Check if user has permission
-  if (!profile || (profile.role !== 'super_admin' && profile.role !== 'department_admin')) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            {getText('Access Denied', 'Akses Ditolak')}
-          </h3>
-          <p className="text-gray-600">
-            {getText("You don't have permission to access user management.", 'Anda tidak memiliki izin untuk mengakses manajemen pengguna.')}
-          </p>
-          <p className="text-sm text-gray-500 mt-2">
-            {getText('Current role:', 'Peran saat ini:')} {profile?.role || 'undefined'}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // PERBAIKAN: Filtered users dengan null safety dan useMemo untuk performance
-  const filteredUsers = useMemo(() => {
-    if (!users || users.length === 0) return [];
-    
-    return users.filter(user => {
-      // Safe string operations dengan null checking
-      const searchLower = searchTerm.toLowerCase().trim();
-      
-      // Jika search term kosong, tampilkan semua user
-      if (!searchLower) {
-        return true;
-      }
-      
-      // Search matching dengan null safety
-      const matchesSearch = 
-        (user.full_name?.toLowerCase() || '').includes(searchLower) ||
-        (user.username?.toLowerCase() || '').includes(searchLower) ||
-        (user.email?.toLowerCase() || '').includes(searchLower) ||
-        (user.identity_number?.toLowerCase() || '').includes(searchLower) ||
-        (user.phone_number?.toLowerCase() || '').includes(searchLower) ||
-        (user.role?.toLowerCase() || '').includes(searchLower) ||
-        (user.department?.name?.toLowerCase() || '').includes(searchLower) ||
-        (user.study_program?.name?.toLowerCase() || '').includes(searchLower) ||
-        (user.study_program?.code?.toLowerCase() || '').includes(searchLower);
-      
-      return matchesSearch;
-    });
-  }, [users, searchTerm]);
 
   return (
     <div className="space-y-6">
@@ -575,7 +570,6 @@ const UserManagement: React.FC = () => {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
           <div className="flex flex-col sm:flex-row gap-4 flex-1">
-            {/* PERBAIKAN: Enhanced search input dengan clear button */}
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
@@ -611,11 +605,10 @@ const UserManagement: React.FC = () => {
                   role: 'student',
                   department_id: profile?.role === 'department_admin' ? profile.department_id : ''
                 });
-                // Load study programs for department admin
                 if (profile?.role === 'department_admin' && profile.department_id) {
                   fetchStudyProgramsByDepartment(profile.department_id);
                 } else {
-                  setStudyPrograms([]); // Clear study programs for super admin
+                  setStudyPrograms([]);
                 }
                 setShowModal(true);
               }}
@@ -627,7 +620,6 @@ const UserManagement: React.FC = () => {
           </div>
         </div>
         
-        {/* Search Results Info */}
         {searchTerm && (
           <div className="mt-4 text-sm text-gray-600">
             {getText('Showing', 'Menampilkan')} {filteredUsers.length} {getText('of', 'dari')} {users.length} {getText('users for', 'pengguna untuk')} "{searchTerm}"
@@ -888,7 +880,7 @@ const UserManagement: React.FC = () => {
                       value={form.watch('department_id') || ''}
                       onChange={(value) => {
                         form.setValue('department_id', value);
-                        form.setValue('study_program_id', ''); // Reset study program when department changes
+                        form.setValue('study_program_id', '');
                       }}
                       placeholder={getText('Select Department (Optional)', 'Pilih Departemen (Opsional)')}
                       searchPlaceholder={getText('Search departments...', 'Cari departemen...')}
@@ -918,7 +910,7 @@ const UserManagement: React.FC = () => {
                   </div>
                 )}
 
-                {/* Study program selection - show when department is selected OR for department admin */}
+                {/* Study program selection */}
                 {((profile?.role === 'super_admin' && watchDepartmentId) || profile?.role === 'department_admin') && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
