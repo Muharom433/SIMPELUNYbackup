@@ -57,7 +57,7 @@ interface LendingDetail {
   borrowed_quantity: number;
   returned_quantity: number;
   missing_quantity: number;
-  status: 'active' | 'returned' | 'overdue';
+  status: 'active' | 'returned' | 'overdue' | 'approved' | 'borrow';
   created_at: string;
   user?: UserType;
   checkout?: {
@@ -277,21 +277,21 @@ const ToolAdministration: React.FC = () => {
         try {
             setLoadingLending(true);
             
-            // ✅ FETCH SEMUA LENDING (Termasuk yang completed/returned)
+            // ✅ CORRECT: Fetch lending dengan status "borrow" (approved lending)
             const { data: lendingData, error: lendingError } = await supabase
                 .from('lending_tool')
                 .select('*')
                 .contains('id_equipment', [equipmentId])
-                .in('status', 'borrow') // ✅ TERMASUK yang sudah completed
+                .eq('status', 'borrow') // ✅ Status borrow = approved lending
                 .order('created_at', { ascending: false });
 
             if (lendingError) throw lendingError;
 
-            // ✅ FETCH SEMUA BOOKINGS (Termasuk yang completed)  
+            // ✅ CORRECT: Fetch booking dengan status "approved"
             const { data: bookingData, error: bookingError } = await supabase
                 .from('bookings')
                 .select('*, user:users(id, full_name, identity_number, email, phone_number)')
-                .in('status', 'approved') // ✅ TERMASUK yang sudah completed
+                .eq('status', 'approved') // ✅ Status approved booking
                 .contains('equipment_requested', [equipmentId])
                 .order('created_at', { ascending: false });
 
@@ -299,7 +299,7 @@ const ToolAdministration: React.FC = () => {
 
             let allLendingDetails: LendingDetail[] = [];
 
-            // ✅ PROCESS LENDING TOOLS - CEK QUANTITY GAP
+            // ✅ PROCESS APPROVED LENDING TOOLS (status: borrow)
             if (lendingData && lendingData.length > 0) {
                 const detailedLendings = await Promise.all(
                     lendingData.map(async (lending) => {
@@ -313,14 +313,14 @@ const ToolAdministration: React.FC = () => {
                             id: lending.id,
                             date: lending.date,
                             borrowed_quantity: borrowedQty,
-                            returned_quantity: 0,
-                            missing_quantity: borrowedQty, // Default: semua missing
-                            status: lending.status, // Keep original status
+                            returned_quantity: 0, // Default: nothing returned
+                            missing_quantity: borrowedQty, // Default: all missing
+                            status: lending.status,
                             created_at: lending.created_at,
                             source: 'lending_tool'
                         };
 
-                        // Fetch user
+                        // Fetch user info
                         if (lending.id_user) {
                             const { data: userData } = await supabase
                                 .from('users')
@@ -331,7 +331,7 @@ const ToolAdministration: React.FC = () => {
                             if (userData) lendingDetail.user = userData;
                         }
 
-                        // ✅ KUNCI: CEK ACTUAL RETURN QUANTITY dari checkout_items
+                        // ✅ KUNCI: Cari checkout yang COMPLETED (status = 'active')
                         const { data: checkoutData } = await supabase
                             .from('checkouts')
                             .select(`
@@ -340,6 +340,7 @@ const ToolAdministration: React.FC = () => {
                             `)
                             .eq('lendingTool_id', lending.id)
                             .eq('checkout_items.equipment_id', equipmentId)
+                            .eq('status', 'active') // ✅ Checkout yang sudah approved/completed
                             .order('created_at', { ascending: false })
                             .limit(1);
 
@@ -348,6 +349,7 @@ const ToolAdministration: React.FC = () => {
                             const returnedItem = checkout.checkout_items?.[0];
                             
                             if (returnedItem && returnedItem.quantity >= 0) {
+                                // ✅ CALCULATION: borrowed - returned = missing
                                 lendingDetail.returned_quantity = returnedItem.quantity;
                                 lendingDetail.missing_quantity = borrowedQty - returnedItem.quantity;
                                 
@@ -360,8 +362,7 @@ const ToolAdministration: React.FC = () => {
                             }
                         }
 
-                        // ✅ CRITICAL: Hanya return jika ADA QUANTITY GAP
-                        // Tidak peduli status completed/returned, yang penting ada gap!
+                        // ✅ RETURN: Only if there's missing quantity
                         return lendingDetail.missing_quantity > 0 ? lendingDetail : null;
                     })
                 );
@@ -369,7 +370,7 @@ const ToolAdministration: React.FC = () => {
                 allLendingDetails = [...allLendingDetails, ...detailedLendings.filter(Boolean)];
             }
 
-            // ✅ PROCESS BOOKINGS - CEK QUANTITY GAP
+            // ✅ PROCESS APPROVED BOOKINGS (status: approved)
             if (bookingData && bookingData.length > 0) {
                 const bookingLendings = await Promise.all(
                     bookingData.map(async (booking) => {
@@ -383,9 +384,9 @@ const ToolAdministration: React.FC = () => {
                             id: `booking-${booking.id}`,
                             date: booking.start_time,
                             borrowed_quantity: borrowedQty,
-                            returned_quantity: 0,
-                            missing_quantity: borrowedQty, // Default: semua missing
-                            status: booking.status, // Keep original status
+                            returned_quantity: 0, // Default: nothing returned
+                            missing_quantity: borrowedQty, // Default: all missing
+                            status: booking.status,
                             created_at: booking.created_at,
                             source: 'booking',
                             user: booking.user,
@@ -397,7 +398,7 @@ const ToolAdministration: React.FC = () => {
                             }
                         };
 
-                        // ✅ KUNCI: CEK ACTUAL RETURN QUANTITY dari checkout_items
+                        // ✅ KUNCI: Cari checkout yang COMPLETED (status = 'active')
                         const { data: checkoutData } = await supabase
                             .from('checkouts')
                             .select(`
@@ -406,6 +407,7 @@ const ToolAdministration: React.FC = () => {
                             `)
                             .eq('booking_id', booking.id)
                             .eq('checkout_items.equipment_id', equipmentId)
+                            .eq('status', 'active') // ✅ Checkout yang sudah approved/completed
                             .order('created_at', { ascending: false })
                             .limit(1);
 
@@ -414,13 +416,13 @@ const ToolAdministration: React.FC = () => {
                             const returnedItem = checkout.checkout_items?.[0];
                             
                             if (returnedItem && returnedItem.quantity >= 0) {
+                                // ✅ CALCULATION: borrowed - returned = missing
                                 lendingDetail.returned_quantity = returnedItem.quantity;
                                 lendingDetail.missing_quantity = borrowedQty - returnedItem.quantity;
                             }
                         }
 
-                        // ✅ CRITICAL: Hanya return jika ADA QUANTITY GAP
-                        // Meskipun status completed, tetap cek apakah ada kesenjangan
+                        // ✅ RETURN: Only if there's missing quantity
                         return lendingDetail.missing_quantity > 0 ? lendingDetail : null;
                     })
                 );
@@ -428,32 +430,59 @@ const ToolAdministration: React.FC = () => {
                 allLendingDetails = [...allLendingDetails, ...bookingLendings.filter(Boolean)];
             }
 
-            // ✅ FINAL FILTER: HANYA yang ada QUANTITY GAP (terlepas dari status)
-            const quantityGapOnly = allLendingDetails.filter(detail => 
-                detail && detail.missing_quantity > 0
-            );
+            // ✅ FINAL RESULT: Only records with missing quantities
+            console.log(`🔍 Equipment ${equipmentId} Missing Analysis:`);
+            console.log(`📊 Found ${allLendingDetails.length} records with missing items`);
+            allLendingDetails.forEach(detail => {
+                console.log(`👤 ${detail.user?.full_name}: ${detail.borrowed_quantity} borrowed - ${detail.returned_quantity} returned = ${detail.missing_quantity} missing (${detail.source})`);
+            });
             
-            console.log(`🚨 Equipment ${equipmentId}: Found ${quantityGapOnly.length} records with quantity gaps`);
-            console.log('Quantity gaps details:', quantityGapOnly.map(d => ({
-                id: d.id,
-                user: d.user?.full_name,
-                borrowed: d.borrowed_quantity,
-                returned: d.returned_quantity,
-                missing: d.missing_quantity,
-                status: d.status,
-                source: d.source
-            })));
-            
-            setLendingDetails(quantityGapOnly);
+            setLendingDetails(allLendingDetails);
             
         } catch (error) {
-            console.error('Error detecting quantity gaps:', error);
-            toast.error(getText('Failed to detect quantity gaps', 'Gagal mendeteksi kesenjangan jumlah'));
+            console.error('❌ Error fetching missing equipment:', error);
+            toast.error(getText('Failed to load missing equipment data', 'Gagal memuat data barang hilang'));
             setLendingDetails([]);
         } finally {
             setLoadingLending(false);
         }
     };
+
+    // ✅ REAL-TIME UPDATE: Auto-refresh setelah validation queue approval
+    useEffect(() => {
+        if (!selectedEquipment) return;
+
+        // Subscribe ke perubahan checkout status
+        const checkoutSubscription = supabase
+            .channel('missing_tracker_checkouts')
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'checkouts'
+            }, (payload) => {
+                console.log('🔄 Checkout updated, refreshing missing data...', payload);
+                fetchLendingDetails(selectedEquipment.id);
+            })
+            .subscribe();
+
+        // Subscribe ke perubahan checkout_items
+        const checkoutItemsSubscription = supabase
+            .channel('missing_tracker_items')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'checkout_items'
+            }, (payload) => {
+                console.log('🔄 Checkout items updated, refreshing missing data...', payload);
+                fetchLendingDetails(selectedEquipment.id);
+            })
+            .subscribe();
+
+        return () => {
+            checkoutSubscription.unsubscribe();
+            checkoutItemsSubscription.unsubscribe();
+        };
+    }, [selectedEquipment?.id]);
 
     const handleSubmit = async (data: EquipmentForm) => {
         try {
@@ -895,7 +924,7 @@ const ToolAdministration: React.FC = () => {
                 <div className="bg-gray-50 rounded-lg p-8 text-center">
                     <RefreshCw className="h-8 w-8 animate-spin text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-600">
-                        {getText('Analyzing quantity gaps...', 'Menganalisis kesenjangan jumlah...')}
+                        {getText('Checking approved transactions vs completed returns...', 'Mengecek transaksi approved vs pengembalian selesai...')}
                     </p>
                 </div>
             );
@@ -906,13 +935,16 @@ const ToolAdministration: React.FC = () => {
                 <div className="bg-green-50 rounded-lg p-8 text-center border border-green-200">
                     <CheckCircle className="h-16 w-16 text-green-400 mx-auto mb-4" />
                     <h4 className="text-lg font-medium text-green-800 mb-2">
-                        {getText('✅ No Quantity Gaps Found!', '✅ Tidak Ada Kesenjangan Jumlah!')}
+                        {getText('✅ No Missing Items!', '✅ Tidak Ada Barang Hilang!')}
                     </h4>
                     <p className="text-green-600">
                         {getText(
-                            'All borrowed quantities match returned quantities. No discrepancies detected.',
-                            'Semua jumlah pinjaman sesuai dengan pengembalian. Tidak ada perbedaan yang terdeteksi.'
+                            'All approved borrowing has matching return quantities.',
+                            'Semua peminjaman yang disetujui memiliki jumlah pengembalian yang sesuai.'
                         )}
+                    </p>
+                    <p className="text-green-500 text-sm mt-2">
+                        📊 Approved Borrowing ↔️ Completed Returns ✅
                     </p>
                 </div>
             );
@@ -920,35 +952,36 @@ const ToolAdministration: React.FC = () => {
 
         return (
             <div className="space-y-4">
-                {/* ⚠️ QUANTITY GAP HEADER */}
+                {/* MISSING HEADER dengan penjelasan */}
                 <div className="bg-red-50 rounded-lg p-4 border border-red-200">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center">
                             <AlertTriangle className="h-6 w-6 text-red-600 mr-3" />
                             <div>
                                 <h4 className="text-lg font-semibold text-red-800">
-                                    {getText('📊 QUANTITY MISMATCH DETECTED', '📊 KESENJANGAN JUMLAH TERDETEKSI')}
+                                    🚨 MISSING ITEMS DETECTED
                                 </h4>
                                 <p className="text-sm text-red-600">
-                                    {getText('Borrowed vs Returned quantity does not match', 'Jumlah pinjam vs kembali tidak cocok')}
+                                    Approved borrowing vs Completed checkout items
+                                </p>
+                                <p className="text-xs text-red-500 mt-1">
+                                    📋 Status: approved/borrow → ✅ Status: checkout active
                                 </p>
                             </div>
                         </div>
                         <div className="text-right">
-                            <div className="text-2xl font-bold text-red-800">
+                            <div className="text-3xl font-bold text-red-800">
                                 {lendingDetails.reduce((total, detail) => total + detail.missing_quantity, 0)}
                             </div>
-                            <div className="text-sm text-red-600">
-                                {getText('Gap Items', 'Item Gap')}
-                            </div>
+                            <div className="text-sm text-red-600">Missing Items</div>
                         </div>
                     </div>
                 </div>
 
-                {/* 📊 QUANTITY GAP LIST */}
+                {/* MISSING ITEMS LIST */}
                 <div className="space-y-3">
                     {lendingDetails.map((detail) => (
-                        <div key={detail.id} className="border-l-4 border-orange-500 bg-orange-50 rounded-lg p-4 shadow-sm">
+                        <div key={detail.id} className="border-l-4 border-red-500 bg-red-50 rounded-lg p-4 shadow-sm">
                             <div className="flex items-start justify-between">
                                 <div className="flex items-start space-x-4">
                                     <div className={`flex-shrink-0 h-12 w-12 rounded-full flex items-center justify-center ${
@@ -959,7 +992,7 @@ const ToolAdministration: React.FC = () => {
                                         {detail.source === 'booking' ? (
                                             <Building className="h-6 w-6 text-white" />
                                         ) : (
-                                            <User className="h-6 w-6 text-white" />
+                                            <Wrench className="h-6 w-6 text-white" />
                                         )}
                                     </div>
                                     <div className="flex-1">
@@ -968,73 +1001,74 @@ const ToolAdministration: React.FC = () => {
                                         </h4>
                                         <div className="space-y-1 mt-2">
                                             <div className="flex items-center text-sm text-gray-600">
-                                                <CreditCard className="h-4 w-4 mr-2" />
+                                                <Hash className="h-4 w-4 mr-2" />
                                                 ID: {detail.user?.identity_number || 'N/A'}
                                             </div>
                                             <div className="flex items-center text-sm text-gray-600">
-                                                <Phone className="h-4 w-4 mr-2" />
-                                                {detail.user?.phone_number || getText('No phone', 'Tidak ada telepon')}
-                                            </div>
-                                            <div className="flex items-center text-sm text-gray-600">
                                                 <Calendar className="h-4 w-4 mr-2" />
-                                                {getText('Date', 'Tanggal')}: {format(new Date(detail.date), 'MMM d, yyyy')}
+                                                Date: {format(new Date(detail.date), 'MMM d, yyyy')}
                                             </div>
-                                            <div className="flex items-center text-sm">
-                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                                    detail.status === 'completed' 
-                                                        ? 'bg-blue-100 text-blue-800' 
-                                                        : detail.status === 'borrow'
-                                                        ? 'bg-yellow-100 text-yellow-800'
-                                                        : 'bg-green-100 text-green-800'
-                                                }`}>
-                                                    Status: {detail.status.toUpperCase()}
+                                            <div className="flex items-center text-sm space-x-2">
+                                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                    {detail.source === 'booking' ? '📋 APPROVED' : '🔧 BORROW'}
                                                 </span>
+                                                {detail.checkout && (
+                                                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                        ✅ CHECKOUT: {detail.checkout.status.toUpperCase()}
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                                 
                                 <div className="text-right space-y-2">
-                                    {/* 📊 QUANTITY COMPARISON */}
-                                    <div className="bg-white rounded-lg p-3 border border-orange-200">
-                                        <div className="text-xs text-gray-600 mb-2 font-medium">QUANTITY ANALYSIS</div>
+                                    {/* MISSING CALCULATION CARD */}
+                                    <div className="bg-white rounded-lg p-3 border border-red-200">
+                                        <div className="text-xs text-gray-600 mb-2 font-medium">MISSING CALCULATION</div>
                                         
-                                        <div className="flex items-center justify-between text-sm">
-                                            <span className="text-gray-600">Borrowed:</span>
-                                            <span className="font-bold text-blue-600">{detail.borrowed_quantity}</span>
-                                        </div>
-                                        
-                                        <div className="flex items-center justify-between text-sm">
-                                            <span className="text-gray-600">Returned:</span>
-                                            <span className="font-bold text-green-600">{detail.returned_quantity}</span>
-                                        </div>
-                                        
-                                        <div className="border-t border-gray-200 mt-2 pt-2">
+                                        <div className="space-y-1">
                                             <div className="flex items-center justify-between text-sm">
-                                                <span className="text-gray-600 font-medium">Gap:</span>
-                                                <span className="font-bold text-red-600 text-lg">
-                                                    -{detail.missing_quantity}
-                                                </span>
+                                                <span className="text-blue-600">📋 Borrowed:</span>
+                                                <span className="font-bold text-blue-600">{detail.borrowed_quantity}</span>
+                                            </div>
+                                            
+                                            <div className="flex items-center justify-between text-sm">
+                                                <span className="text-green-600">✅ Returned:</span>
+                                                <span className="font-bold text-green-600">{detail.returned_quantity}</span>
+                                            </div>
+                                            
+                                            <div className="border-t border-gray-200 pt-1">
+                                                <div className="flex items-center justify-between text-sm">
+                                                    <span className="text-red-600 font-medium">🚨 Missing:</span>
+                                                    <span className="font-bold text-red-600 text-lg">
+                                                        {detail.missing_quantity}
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* Mathematical Expression */}
-                                    <div className="text-xs text-orange-700 bg-orange-100 px-2 py-1 rounded">
+                                    {/* Mathematical equation */}
+                                    <div className="text-xs text-red-700 bg-red-100 px-2 py-1 rounded text-center">
                                         {detail.borrowed_quantity} - {detail.returned_quantity} = <strong>{detail.missing_quantity}</strong>
                                     </div>
                                 </div>
                             </div>
                             
-                            {/* 📊 QUANTITY GAP WARNING */}
-                            <div className="mt-4 p-3 bg-orange-100 border border-orange-200 rounded-md">
+                            {/* STATUS EXPLANATION */}
+                            <div className="mt-4 p-3 bg-red-100 border border-red-200 rounded-md">
                                 <div className="flex items-center">
-                                    <AlertTriangle className="h-5 w-5 text-orange-600 mr-2" />
-                                    <span className="text-sm font-medium text-orange-800">
-                                        <strong>Quantity Mismatch:</strong> {detail.missing_quantity} {selectedEquipment.unit} {getText('are unaccounted for', 'tidak dapat dipertanggungjawabkan')}
-                                        {detail.status === 'completed' && (
+                                    <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
+                                    <span className="text-sm font-medium text-red-800">
+                                        <strong>Gap Found:</strong> {detail.missing_quantity} {selectedEquipment?.unit} missing
+                                        {detail.checkout ? (
                                             <span className="ml-2 text-red-700">
-                                                ({getText('Despite completed status!', 'Meskipun status completed!')})
+                                                (Checkout completed but quantity doesn't match!)
+                                            </span>
+                                        ) : (
+                                            <span className="ml-2 text-red-700">
+                                                (No checkout record found - items never returned!)
                                             </span>
                                         )}
                                     </span>
@@ -1246,8 +1280,7 @@ const ToolAdministration: React.FC = () => {
                     </div>
                 )}
             </div>
-
-            {/* Equipment Grid */}
+          {/* Equipment Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {loading && (
                     Array.from({ length: 8 }).map((_, index) => (
