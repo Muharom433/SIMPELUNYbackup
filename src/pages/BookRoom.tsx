@@ -7,7 +7,7 @@ import {
   GraduationCap, ChevronDown, Search, Eye, X, Upload, FileText, Download,
   Loader2, CheckCircle, AlertTriangle, Zap, Star, ArrowRight, Plus, Minus,
   RefreshCw, Filter, Grid, List, SortAsc, SortDesc, MoreHorizontal, Info,
-  BookOpen, Award, Target, TrendingUp, Activity, BarChart3, PieChart
+  BookOpen, Award, Target, TrendingUp, Activity, BarChart3, PieChart, ChevronUp
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { enUS, id } from 'date-fns/locale';
@@ -185,14 +185,26 @@ const BookRoom = () => {
     fetchRoomData(targetBookingDate, true);
   }, []);
 
+  // ✅ FIXED: Improved dropdown refs and states
   const identityInputRef = useRef(null);
   const fullNameInputRef = useRef(null);
   const phoneInputRef = useRef(null);
   const studyProgramDisplayRef = useRef(null);
-  const [identitySearchResults, setIdentitySearchResults] = useState([]);
-  const [identitySearchLoading, setIdentitySearchLoading] = useState(false);
+  const identityDropdownRef = useRef(null);
+  const studyProgramDropdownRef = useRef(null);
 
+  // ✅ FIXED: Better state management
+  const [identitySearchLoading, setIdentitySearchLoading] = useState(false);
+  const [isIdentityDropdownOpen, setIsIdentityDropdownOpen] = useState(false);
+  const [isStudyProgramDropdownOpen, setIsStudyProgramDropdownOpen] = useState(false);
   const [useManualEndTime, setUseManualEndTime] = useState(false);
+
+  // ✅ Room selection states
+  const [isRoomDropdownOpen, setIsRoomDropdownOpen] = useState(false);
+  const [roomSearchTerm, setRoomSearchTerm] = useState('');
+  const roomDisplayRef = useRef(null);
+  const roomDropdownRef = useRef(null);
+  const roomSearchInputRef = useRef(null);
 
   const bookingDuration = useMemo(() => {
     if (!watchStartDateTime || !watchEndDateTime) return null;
@@ -341,12 +353,75 @@ const BookRoom = () => {
     });
   }, [rooms, searchTerm, filterStatus, showInUse, sortBy, sortOrder, getOptimizedRoomStatus]);
 
+  // ✅ FIXED: Improved Room Selection with SessionSchedule pattern
+  const filteredRooms = useMemo(() => {
+    if (!roomSearchTerm.trim()) return filteredAndSortedRooms;
+    
+    const searchLower = roomSearchTerm.toLowerCase();
+    return filteredAndSortedRooms.filter(room => 
+      room.name.toLowerCase().includes(searchLower) ||
+      room.code.toLowerCase().includes(searchLower) ||
+      room.department?.name?.toLowerCase().includes(searchLower)
+    );
+  }, [roomSearchTerm, filteredAndSortedRooms]);
+
+  // ✅ FIXED: Room dropdown functions
+  const showRoomDropdown = useCallback(() => {
+    setIsRoomDropdownOpen(true);
+    setRoomSearchTerm('');
+    
+    setTimeout(() => {
+      if (roomSearchInputRef.current) {
+        roomSearchInputRef.current.focus();
+      }
+    }, 100);
+  }, []);
+
+  const hideRoomDropdown = useCallback(() => {
+    setIsRoomDropdownOpen(false);
+    setRoomSearchTerm('');
+  }, []);
+
+  const handleRoomSelect = useCallback((room) => {
+    setSelectedRoom(room);
+    fetchEquipmentForRoom(room.id);
+    
+    if (roomDisplayRef.current) {
+      roomDisplayRef.current.value = `${room.name} (${room.code})`;
+    }
+    
+    hideRoomDropdown();
+  }, []);
+
+  // ✅ FIXED: Click outside handling for room dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (roomDropdownRef.current && !roomDropdownRef.current.contains(event.target)) {
+        hideRoomDropdown();
+      }
+    };
+
+    if (isRoomDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isRoomDropdownOpen, hideRoomDropdown]);
+
+  // ✅ FIXED: Identity dropdown functions using SessionSchedule pattern
   const showIdentityDropdown = useCallback((searchTerm) => {
     if (!searchTerm.trim()) {
-      hideIdentityDropdown();
+      setIsIdentityDropdownOpen(false);
       return;
     }
+    
     setIdentitySearchLoading(true);
+    setIsIdentityDropdownOpen(true);
+    
     supabase
       .from('users')
       .select(`id, full_name, identity_number, email, phone_number, study_program_id, study_program:study_programs(id, name, code)`)
@@ -356,20 +431,24 @@ const BookRoom = () => {
         setIdentitySearchLoading(false);
         if (error) {
           console.error('Error searching users:', error);
-          hideIdentityDropdown();
+          setIsIdentityDropdownOpen(false);
           return;
         }
         const filteredUsers = Array.isArray(data) ? data : [];
         if (filteredUsers.length === 0) {
-          hideIdentityDropdown();
+          setIsIdentityDropdownOpen(false);
           return;
         }
+        
+        // Create dropdown content (keeping the existing structure but using React state)
         const dropdownHTML = `<div class="absolute z-[9999] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">${filteredUsers.map(user => `<div class="identity-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150" data-user-id="${user.id}" data-user-nim="${user.identity_number}" data-user-name="${user.full_name}" data-user-email="${user.email || ''}" data-user-phone="${user.phone_number || ''}" data-program-id="${user.study_program_id || ''}"><div class="font-semibold text-gray-800">${user.identity_number}</div><div class="text-sm text-gray-600">${user.full_name}</div>${user.study_program ? `<div class="text-xs text-gray-500">${user.study_program.name}</div>` : ''}</div>`).join('')}</div>`;
+        
         const dropdownContainer = document.querySelector('#identity-dropdown');
         if (dropdownContainer) {
           dropdownContainer.innerHTML = dropdownHTML;
           dropdownContainer.style.display = 'block';
           dropdownContainer.querySelectorAll('.identity-dropdown-item').forEach(item => {
+            // ✅ FIXED: Add mousedown preventDefault
             item.addEventListener('mousedown', (e) => e.preventDefault());
             item.addEventListener('click', (e) => {
               const target = e.currentTarget;
@@ -377,12 +456,15 @@ const BookRoom = () => {
               const userName = target.dataset.userName;
               const userPhone = target.dataset.userPhone;
               const programId = target.dataset.programId;
+              
               if (identityInputRef.current) identityInputRef.current.value = userNim || '';
               if (fullNameInputRef.current) fullNameInputRef.current.value = userName || '';
               if (phoneInputRef.current) phoneInputRef.current.value = userPhone || '';
+              
               form.setValue('identity_number', userNim || '');
               form.setValue('full_name', userName || '');
               form.setValue('phone_number', userPhone || '');
+              
               if (programId) {
                 form.setValue('study_program_id', programId);
                 const program = studyPrograms.find(p => p.id === programId);
@@ -390,7 +472,8 @@ const BookRoom = () => {
                   studyProgramDisplayRef.current.value = `${program.name} (${program.code})`;
                 }
               }
-              hideIdentityDropdown();
+              
+              setIsIdentityDropdownOpen(false);
               identityInputRef.current?.focus();
             });
           });
@@ -399,20 +482,27 @@ const BookRoom = () => {
   }, [form, studyPrograms]);
 
   const hideIdentityDropdown = useCallback(() => {
+    setIsIdentityDropdownOpen(false);
     const dropdownContainer = document.querySelector('#identity-dropdown');
     if (dropdownContainer) {
       dropdownContainer.style.display = 'none';
     }
   }, []);
 
+  // ✅ FIXED: Study program dropdown functions
   const showStudyProgramDropdown = useCallback(() => {
+    setIsStudyProgramDropdownOpen(true);
+    
     const dropdownHTML = `<div class="absolute z-[9999] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden"><div class="p-3 border-b border-gray-100"><input type="text" placeholder="${getText("Search programs...", "Cari program studi...")}" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" id="program-search-input" autocomplete="off"/></div><div class="max-h-60 overflow-y-auto" id="program-list">${studyPrograms.map(program => `<div class="program-dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150" data-program-id="${program.id}" data-program-name="${program.name}" data-program-code="${program.code || ''}"><div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div></div>`).join('')}</div></div>`;
+    
     const dropdownContainer = document.querySelector('#study-program-dropdown');
     if (dropdownContainer) {
       dropdownContainer.innerHTML = dropdownHTML;
       dropdownContainer.style.display = 'block';
+      
       const searchInput = dropdownContainer.querySelector('#program-search-input');
       const programList = dropdownContainer.querySelector('#program-list');
+      
       if (searchInput) {
         searchInput.focus();
         searchInput.addEventListener('input', (e) => {
@@ -430,14 +520,18 @@ const BookRoom = () => {
 
   const addStudyProgramListeners = useCallback(() => {
     document.querySelectorAll('.program-dropdown-item').forEach(item => {
+      // ✅ FIXED: Add mousedown preventDefault
+      item.addEventListener('mousedown', (e) => e.preventDefault());
       item.addEventListener('click', (e) => {
         const target = e.currentTarget;
         const programId = target.dataset.programId;
         const programName = target.dataset.programName;
         const programCode = target.dataset.programCode;
+        
         if (studyProgramDisplayRef.current) {
           studyProgramDisplayRef.current.value = `${programName} (${programCode})`;
         }
+        
         form.setValue('study_program_id', programId || '', { shouldValidate: true });
         hideStudyProgramDropdown();
       });
@@ -445,11 +539,52 @@ const BookRoom = () => {
   }, [form]);
 
   const hideStudyProgramDropdown = useCallback(() => {
+    setIsStudyProgramDropdownOpen(false);
     const dropdownContainer = document.querySelector('#study-program-dropdown');
     if (dropdownContainer) {
       dropdownContainer.style.display = 'none';
     }
   }, []);
+
+  // ✅ FIXED: Click outside handling for identity dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      const identityDropdown = document.querySelector('#identity-dropdown');
+      if (identityDropdown && !identityDropdown.contains(event.target) && !identityInputRef.current?.contains(event.target)) {
+        hideIdentityDropdown();
+      }
+    };
+
+    if (isIdentityDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isIdentityDropdownOpen, hideIdentityDropdown]);
+
+  // ✅ FIXED: Click outside handling for study program dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      const programDropdown = document.querySelector('#study-program-dropdown');
+      if (programDropdown && !programDropdown.contains(event.target) && !studyProgramDisplayRef.current?.contains(event.target)) {
+        hideStudyProgramDropdown();
+      }
+    };
+
+    if (isStudyProgramDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isStudyProgramDropdownOpen, hideStudyProgramDropdown]);
 
   const fetchStudyPrograms = async () => {
     try {
@@ -492,6 +627,7 @@ const BookRoom = () => {
       // Add mandatory equipment (avoid duplicates)
       const updatedEquipment = [...new Set([...safeCurrentEquipment, ...mandatoryIds])];
       
+      // Set quantities for mandatory equipment (always 1)
       // Set quantities for mandatory equipment (always 1)
       const updatedQuantities = { ...currentQuantities };
       mandatoryEquipment.forEach(eq => {
@@ -568,11 +704,6 @@ const BookRoom = () => {
     handleQuantityChange(equipmentId, currentQty - 1);
   };
 
-  const handleRoomSelect = (room) => {
-    setSelectedRoom(room);
-    fetchEquipmentForRoom(room.id);
-  };
-
   const handleFileUpload = (event) => {
     const files = event.target.files;
     if (!files) return;
@@ -604,89 +735,90 @@ const BookRoom = () => {
 
   // Enhanced submit function with proper equipment handling
   const onSubmit = async (data) => {
-  if (!selectedRoom) {
-    alert.error(getText('Please select a room', 'Silakan pilih ruangan'));
-    return;
-  }
-  
-  setLoading(true);
-  try {
-    const roomStatus = getOptimizedRoomStatus(selectedRoom);
-    if (roomStatus.status === 'In Use' && selectedRoom.currentBooking) {
-      await supabase.from('bookings').update({ status: 'completed' }).eq('id', selectedRoom.currentBooking.id);
+    if (!selectedRoom) {
+      alert.error(getText('Please select a room', 'Silakan pilih ruangan'));
+      return;
     }
-
-    const startTimeUTC = new Date(data.start_datetime + '+07:00').toISOString();
-    const endTimeUTC = new Date(data.end_datetime + '+07:00').toISOString();
-
-    const equipmentRequested = Array.isArray(data.equipment_requested) ? data.equipment_requested : [];
-    const equipmentQuantitiesObj = data.equipment_quantities || {};
     
-    // ✅ FIX: Convert to simple array of numbers (quantities only)
-    // This assumes equipment_quantities column is bigint[] or integer[]
-    const equipmentQuantities = equipmentRequested.map(equipmentId => 
-      equipmentQuantitiesObj[equipmentId] || 1
-    );
+    setLoading(true);
+    try {
+      const roomStatus = getOptimizedRoomStatus(selectedRoom);
+      if (roomStatus.status === 'In Use' && selectedRoom.currentBooking) {
+        await supabase.from('bookings').update({ status: 'completed' }).eq('id', selectedRoom.currentBooking.id);
+      }
 
-    const attachments = Array.isArray(data.attachments) ? data.attachments : [];
+      const startTimeUTC = new Date(data.start_datetime + '+07:00').toISOString();
+      const endTimeUTC = new Date(data.end_datetime + '+07:00').toISOString();
 
-    const bookingData = {
-      start_time: startTimeUTC,
-      end_time: endTimeUTC,
-      purpose: data.purpose,
-      sks: data.sks,
-      class_type: data.class_type,
-      room_id: selectedRoom.id,
-      equipment_requested: equipmentRequested,
-      equipment_quantities: equipmentQuantities, // Now sending [2, 1, 3] instead of objects
-      notes: data.notes || '',
-      attachments: attachments,
-      status: 'pending',
-      user_info: {
-        full_name: data.full_name,
-        identity_number: data.identity_number,
-        phone_number: data.phone_number,
-        study_program_id: data.study_program_id,
-      },
-    };
+      const equipmentRequested = Array.isArray(data.equipment_requested) ? data.equipment_requested : [];
+      const equipmentQuantitiesObj = data.equipment_quantities || {};
+      
+      // ✅ FIX: Convert to simple array of numbers (quantities only)
+      // This assumes equipment_quantities column is bigint[] or integer[]
+      const equipmentQuantities = equipmentRequested.map(equipmentId => 
+        equipmentQuantitiesObj[equipmentId] || 1
+      );
 
-    console.log('✅ Equipment data format:');
-    console.log('equipment_requested:', equipmentRequested);
-    console.log('equipment_quantities:', equipmentQuantities);
+      const attachments = Array.isArray(data.attachments) ? data.attachments : [];
 
-    const { error } = await supabase.from('bookings').insert(bookingData);
-    if (error) throw error;
+      const bookingData = {
+        start_time: startTimeUTC,
+        end_time: endTimeUTC,
+        purpose: data.purpose,
+        sks: data.sks,
+        class_type: data.class_type,
+        room_id: selectedRoom.id,
+        equipment_requested: equipmentRequested,
+        equipment_quantities: equipmentQuantities, // Now sending [2, 1, 3] instead of objects
+        notes: data.notes || '',
+        attachments: attachments,
+        status: 'pending',
+        user_info: {
+          full_name: data.full_name,
+          identity_number: data.identity_number,
+          phone_number: data.phone_number,
+          study_program_id: data.study_program_id,
+        },
+      };
 
-    alert.success(getText('Booking submitted successfully!', 'Pemesanan berhasil diajukan!'));
+      console.log('✅ Equipment data format:');
+      console.log('equipment_requested:', equipmentRequested);
+      console.log('equipment_quantities:', equipmentQuantities);
 
-    // Reset form...
-    form.reset({
-      start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
-      end_datetime: format(addMinutes(new Date(), 120), "yyyy-MM-dd'T'HH:mm"),
-      sks: 2,
-      class_type: 'theory',
-      purpose: 'Class/Lecture',
-      equipment_requested: [],
-      equipment_quantities: {},
-      attachments: [],
-      notes: '',
-    });
-    
-    setSelectedRoom(null);
-    setAvailableEquipment([]);
-    if (identityInputRef.current) identityInputRef.current.value = '';
-    if (fullNameInputRef.current) fullNameInputRef.current.value = '';
-    if (phoneInputRef.current) phoneInputRef.current.value = '';
-    if (studyProgramDisplayRef.current) studyProgramDisplayRef.current.value = '';
-    fetchRoomData(targetBookingDate, true);
-    
-  } catch (error) {
-    console.error('Error submitting booking:', error);
-    alert.error(error.message || getText('Failed to submit booking', 'Gagal mengajukan pemesanan'));
-  } finally {
-    setLoading(false);
-  }
-};
+      const { error } = await supabase.from('bookings').insert(bookingData);
+      if (error) throw error;
+
+      alert.success(getText('Booking submitted successfully!', 'Pemesanan berhasil diajukan!'));
+
+      // Reset form...
+      form.reset({
+        start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+        end_datetime: format(addMinutes(new Date(), 120), "yyyy-MM-dd'T'HH:mm"),
+        sks: 2,
+        class_type: 'theory',
+        purpose: 'Class/Lecture',
+        equipment_requested: [],
+        equipment_quantities: {},
+        attachments: [],
+        notes: '',
+      });
+      
+      setSelectedRoom(null);
+      setAvailableEquipment([]);
+      if (identityInputRef.current) identityInputRef.current.value = '';
+      if (fullNameInputRef.current) fullNameInputRef.current.value = '';
+      if (phoneInputRef.current) phoneInputRef.current.value = '';
+      if (studyProgramDisplayRef.current) studyProgramDisplayRef.current.value = '';
+      if (roomDisplayRef.current) roomDisplayRef.current.value = '';
+      fetchRoomData(targetBookingDate, true);
+      
+    } catch (error) {
+      console.error('Error submitting booking:', error);
+      alert.error(error.message || getText('Failed to submit booking', 'Gagal mengajukan pemesanan'));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Calculate total equipment items for display
   const getTotalEquipmentItems = () => {
@@ -914,6 +1046,9 @@ const BookRoom = () => {
                             // Clear equipment selections when room is deselected
                             form.setValue('equipment_requested', []);
                             form.setValue('equipment_quantities', {});
+                            if (roomDisplayRef.current) {
+                              roomDisplayRef.current.value = '';
+                            }
                           }}
                           className="text-green-600 hover:text-green-800"
                         >
@@ -932,7 +1067,217 @@ const BookRoom = () => {
                     </div>
                   )}
 
-                  {/* Room Search */}
+                  {/* ✅ FIXED: Improved Room Selection Dropdown */}
+                  <div className="relative mb-4" ref={roomDropdownRef}>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {getText('Select Room', 'Pilih Ruangan')} *
+                    </label>
+                    
+                    <div className="relative">
+                      <input
+                        ref={roomDisplayRef}
+                        type="text"
+                        readOnly
+                        placeholder={getText("Click to select room...", "Klik untuk pilih ruangan...")}
+                        value={selectedRoom ? `${selectedRoom.name} (${selectedRoom.code})` : ''}
+                        onClick={showRoomDropdown}
+                        onFocus={showRoomDropdown}
+                        className="w-full px-4 py-3 pr-10 bg-white border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer transition-all duration-200 hover:border-gray-300"
+                      />
+                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
+                        {isRoomDropdownOpen ? (
+                          <ChevronUp className="h-5 w-5 text-gray-400" />
+                        ) : (
+                          <ChevronDown className="h-5 w-5 text-gray-400" />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ✅ FIXED: Room Dropdown Content */}
+                    {isRoomDropdownOpen && (
+                      <div className="absolute z-[9999] w-full mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-96 overflow-hidden">
+                        {/* Search Input */}
+                        <div className="p-4 border-b border-gray-200 bg-gray-50">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                            <input
+                              ref={roomSearchInputRef}
+                              type="text"
+                              placeholder={getText("Search rooms...", "Cari ruangan...")}
+                              value={roomSearchTerm}
+                              onChange={(e) => setRoomSearchTerm(e.target.value)}
+                              className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                              autoComplete="off"
+                            />
+                          </div>
+                          
+                          {/* Quick Stats */}
+                          <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                            <span>{getText('Available rooms', 'Ruangan tersedia')}: {filteredRooms.length}</span>
+                            <div className="flex items-center space-x-3">
+                              <label className="flex items-center space-x-1 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={showInUse}
+                                  onChange={(e) => setShowInUse(e.target.checked)}
+                                  className="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                />
+                                <span>{getText('Show in-use', 'Tampilkan terpakai')}</span>
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Rooms List */}
+                        <div className="max-h-80 overflow-y-auto">
+                          {filteredRooms.length === 0 ? (
+                            <div className="p-6 text-center">
+                              <Building className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                              <p className="text-gray-600 text-sm">
+                                {roomSearchTerm ? 
+                                  getText('No rooms match your search', 'Tidak ada ruangan yang cocok') :
+                                  getText('No rooms available', 'Tidak ada ruangan tersedia')
+                                }
+                              </p>
+                              {roomSearchTerm && (
+                                <button
+                                  onClick={() => setRoomSearchTerm('')}
+                                  className="mt-2 text-blue-600 hover:text-blue-800 text-sm underline"
+                                >
+                                  {getText('Clear search', 'Hapus pencarian')}
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="divide-y divide-gray-100">
+                              {filteredRooms.map((room) => {
+                                const roomStatus = getOptimizedRoomStatus(room);
+                                const canSelect = roomStatus.status !== 'Conflict' && 
+                                                roomStatus.status !== 'In Use' && 
+                                                roomStatus.status !== 'Unavailable';
+                                
+                                return (
+                                  <div
+                                    key={room.id}
+                                    onClick={() => canSelect && handleRoomSelect(room)}
+                                    onMouseDown={(e) => e.preventDefault()} // ✅ Prevent blur
+                                    className={`p-4 transition-all duration-200 ${
+                                      canSelect 
+                                        ? 'cursor-pointer hover:bg-blue-50 hover:border-l-4 hover:border-blue-500' 
+                                        : 'opacity-60 cursor-not-allowed bg-gray-50'
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex-1">
+                                        <div className="flex items-center space-x-3">
+                                          <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${
+                                            canSelect ? 'bg-blue-100' : 'bg-gray-100'
+                                          }`}>
+                                            <Building className={`h-5 w-5 ${
+                                              canSelect ? 'text-blue-600' : 'text-gray-400'
+                                            }`} />
+                                          </div>
+                                          
+                                          <div className="flex-1 min-w-0">
+                                            <h4 className="font-semibold text-gray-900 truncate">
+                                              {room.name}
+                                            </h4>
+                                            <div className="flex items-center space-x-3 mt-1">
+                                              <span className="text-sm text-gray-600 font-mono">
+                                                {room.code}
+                                              </span>
+                                              <span className="text-sm text-gray-500">
+                                                {room.capacity} seats
+                                              </span>
+                                              {room.department?.name && (
+                                                <span className="text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded-full">
+                                                  {room.department.name}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Status Badge */}
+                                      <div className="ml-3 flex flex-col items-end space-y-2">
+                                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${roomStatus.color}`}>
+                                          {getText(roomStatus.status, roomStatus.status)}
+                                        </span>
+                                        
+                                        {/* Action Buttons */}
+                                        <div className="flex items-center space-x-1">
+                                          {(roomStatus.status === 'Scheduled' || 
+                                            roomStatus.status === 'In Use' || 
+                                            roomStatus.status === 'Conflict') && (
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setScheduleModalRoom(room);
+                                                setShowScheduleModal(true);
+                                                hideRoomDropdown();
+                                              }}
+                                              className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded transition-colors"
+                                              title={getText('View schedule', 'Lihat jadwal')}
+                                            >
+                                              <Eye className="h-4 w-4" />
+                                            </button>
+                                          )}
+                                          
+                                          {canSelect && (
+                                            <div className="p-1 text-green-600">
+                                              <CheckCircle className="h-4 w-4" />
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Conflict/Status Details */}
+                                    {roomStatus.status === 'Conflict' && (
+                                      <div className="mt-3 p-2 bg-orange-50 border border-orange-200 rounded-lg">
+                                       <p className="text-xs text-orange-800 flex items-center">
+                                          <AlertTriangle className="h-3 w-3 mr-1" />
+                                          {roomStatus.reason}
+                                        </p>
+                                      </div>
+                                    )}
+                                    
+                                    {roomStatus.status === 'Scheduled' && roomStatus.scheduleCount && (
+                                      <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                        <p className="text-xs text-yellow-800 flex items-center">
+                                          <Calendar className="h-3 w-3 mr-1" />
+                                          {roomStatus.scheduleCount} {getText('activities scheduled', 'kegiatan terjadwal')}
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Footer Actions */}
+                        <div className="p-3 border-t border-gray-200 bg-gray-50">
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>
+                              {getText('Use ↑↓ arrows to navigate, Enter to select, Esc to close', 
+                                       'Gunakan ↑↓ untuk navigasi, Enter untuk pilih, Esc untuk tutup')}
+                            </span>
+                            <button
+                              onClick={hideRoomDropdown}
+                              className="text-gray-600 hover:text-gray-800 p-1 hover:bg-gray-100 rounded transition-colors"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Room Search (fallback for mobile) */}
                   <div className="relative mb-4">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <input
@@ -958,7 +1303,7 @@ const BookRoom = () => {
                     </label>
                   </div>
 
-                  {/* Room List */}
+                  {/* Room List (fallback for mobile) */}
                   <div className="space-y-3 max-h-80 overflow-y-auto">
                     {roomsLoading && filteredAndSortedRooms.length === 0 ? (
                       <div className="flex items-center justify-center h-32">
@@ -1174,6 +1519,7 @@ const BookRoom = () => {
                   </div>
 
                   <div className="space-y-4">
+                    {/* ✅ FIXED: Identity Number Input */}
                     <div className="relative">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         {getText('Identity Number (NIM/NIP)', 'Nomor Identitas (NIM/NIP)')} *
@@ -1182,14 +1528,14 @@ const BookRoom = () => {
                         {...form.register('identity_number')}
                         ref={identityInputRef}
                         type="text"
-                       placeholder={getText("Enter your ID", "Masukkan ID Anda")}
+                        placeholder={getText("Enter your ID", "Masukkan ID Anda")}
                         onChange={(e) => {
                           const value = e.target.value;
                           form.setValue('identity_number', value, { shouldValidate: true });
                           showIdentityDropdown(value);
                         }}
                         onFocus={(e) => showIdentityDropdown(e.target.value)}
-                        onBlur={() => setTimeout(() => hideIdentityDropdown(), 200)}
+                        onBlur={() => setTimeout(() => hideIdentityDropdown(), 300)} // ✅ Increased delay
                         className="w-full px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                         autoComplete="off"
                       />
@@ -1236,6 +1582,7 @@ const BookRoom = () => {
                       )}
                     </div>
 
+                    {/* ✅ FIXED: Study Program Dropdown */}
                     <div className="relative">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         {getText('Study Program', 'Program Studi')} *
@@ -1246,7 +1593,7 @@ const BookRoom = () => {
                         placeholder={getText("Select study program", "Pilih program studi")}
                         onClick={showStudyProgramDropdown}
                         onFocus={showStudyProgramDropdown}
-                        onBlur={() => setTimeout(hideStudyProgramDropdown, 200)}
+                        onBlur={() => setTimeout(hideStudyProgramDropdown, 300)} // ✅ Increased delay
                         className="w-full px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer"
                         readOnly
                       />
@@ -1391,7 +1738,6 @@ const BookRoom = () => {
           </div>
         </form>
       </div>
-
       {/* SCHEDULE MODAL */}
       {showScheduleModal && scheduleModalRoom && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1599,21 +1945,54 @@ const BookRoom = () => {
         </div>
       )}
 
-      {/* Cleanup effect */}
+      {/* ✅ FIXED: Enhanced Cleanup Effect */}
       {React.useEffect(() => {
         return () => {
+          // Cleanup identity dropdown
           const identityDropdown = document.querySelector('#identity-dropdown');
-          const studyProgramDropdown = document.querySelector('#study-program-dropdown');
           if (identityDropdown) {
             identityDropdown.innerHTML = '';
             identityDropdown.style.display = 'none';
           }
+          
+          // Cleanup study program dropdown
+          const studyProgramDropdown = document.querySelector('#study-program-dropdown');
           if (studyProgramDropdown) {
             studyProgramDropdown.innerHTML = '';
             studyProgramDropdown.style.display = 'none';
           }
+          
+          // ✅ Reset all state
+          setIsIdentityDropdownOpen(false);
+          setIsStudyProgramDropdownOpen(false);
+          setIsRoomDropdownOpen(false);
+          setRoomSearchTerm('');
+          setSearchTerm('');
         };
       }, [])}
+
+      {/* ✅ FIXED: Keyboard Navigation */}
+      {React.useEffect(() => {
+        const handleKeyDown = (e) => {
+          // ESC to close dropdowns
+          if (e.key === 'Escape') {
+            if (isRoomDropdownOpen) {
+              hideRoomDropdown();
+            }
+            if (isIdentityDropdownOpen) {
+              hideIdentityDropdown();
+            }
+            if (isStudyProgramDropdownOpen) {
+              hideStudyProgramDropdown();
+            }
+          }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+          document.removeEventListener('keydown', handleKeyDown);
+        };
+      }, [isRoomDropdownOpen, isIdentityDropdownOpen, isStudyProgramDropdownOpen, hideRoomDropdown, hideIdentityDropdown, hideStudyProgramDropdown])}
     </div>
   );
 };
