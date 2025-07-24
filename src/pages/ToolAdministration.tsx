@@ -273,45 +273,133 @@ const ToolAdministration: React.FC = () => {
         }
     };
 
-    const fetchLendingDetails = async (equipmentId: string) => {
+    
+// ✅ SUPER DEBUG VERSION - Let's find out why gaps aren't showing
+const fetchLendingDetails = async (equipmentId: string) => {
     try {
         setLoadingLending(true);
         
-        console.log('🔍 COMPREHENSIVE GAP ANALYSIS for equipment:', equipmentId);
+        console.log('🔍 SUPER DEBUG GAP ANALYSIS for equipment:', equipmentId);
+        console.log('🔍 Equipment ID type:', typeof equipmentId, equipmentId);
+
+        // ✅ STEP 0: Debug - Check what's in the tables first
+        console.log('📊 DEBUG: Checking all tables for this equipment...');
         
-        // ✅ STEP 1: Fetch ALL lending_tool dengan status "borrow" 
+        // Check all lending_tool records
+        const { data: allLendings, error: allLendingsError } = await supabase
+            .from('lending_tool')
+            .select('*')
+            .contains('id_equipment', [equipmentId]);
+        
+        console.log('📋 ALL lending_tool records with this equipment:', {
+            equipmentId,
+            count: allLendings?.length || 0,
+            records: allLendings
+        });
+
+        // Check all bookings
+        const { data: allBookings, error: allBookingsError } = await supabase
+            .from('bookings')
+            .select('*')
+            .contains('equipment_requested', [equipmentId]);
+        
+        console.log('📅 ALL bookings with this equipment:', {
+            equipmentId,
+            count: allBookings?.length || 0,
+            records: allBookings
+        });
+
+        // Check all checkouts related to this equipment
+        const { data: allCheckouts, error: allCheckoutsError } = await supabase
+            .from('checkouts')
+            .select(`
+                *,
+                checkout_items!inner(equipment_id, quantity)
+            `)
+            .eq('checkout_items.equipment_id', equipmentId);
+        
+        console.log('🔍 ALL checkouts with this equipment:', {
+            equipmentId,
+            count: allCheckouts?.length || 0,
+            records: allCheckouts
+        });
+
+        // Check checkout_items directly
+        const { data: allCheckoutItems, error: itemsError } = await supabase
+            .from('checkout_items')
+            .select('*')
+            .eq('equipment_id', equipmentId);
+        
+        console.log('📦 ALL checkout_items for this equipment:', {
+            equipmentId,
+            count: allCheckoutItems?.length || 0,
+            records: allCheckoutItems
+        });
+
+        // ✅ STEP 1: Get ALL lending_tool records (not just 'borrow')
         const { data: lendingData, error: lendingError } = await supabase
             .from('lending_tool')
             .select('*')
             .contains('id_equipment', [equipmentId])
-            .eq('status', 'borrow')
             .order('created_at', { ascending: false });
+
+        console.log('📋 Lending data query result:', {
+            error: lendingError,
+            count: lendingData?.length || 0,
+            data: lendingData
+        });
 
         if (lendingError) throw lendingError;
 
-        // ✅ STEP 2: Fetch ALL approved bookings
+        // ✅ STEP 2: Get ALL bookings (not just 'approved')
         const { data: bookingData, error: bookingError } = await supabase
             .from('bookings')
             .select('*, user:users(id, full_name, identity_number, email, phone_number)')
-            .eq('status', 'approved')
             .contains('equipment_requested', [equipmentId])
             .order('created_at', { ascending: false });
+
+        console.log('📅 Booking data query result:', {
+            error: bookingError,
+            count: bookingData?.length || 0,
+            data: bookingData
+        });
 
         if (bookingError) throw bookingError;
 
         let allGapDetails: LendingDetail[] = [];
 
-        // ✅ STEP 3: Process LENDING TOOLS
+        // ✅ STEP 3: Process ALL lending tools (regardless of status)
         if (lendingData && lendingData.length > 0) {
-            console.log('📋 Processing lending tools:', lendingData.length);
+            console.log('📋 Processing ALL lending tools:', lendingData.length);
             
             const detailedLendings = await Promise.all(
-                lendingData.map(async (lending) => {
+                lendingData.map(async (lending, lendingIndex) => {
+                    console.log(`🔍 Processing lending ${lendingIndex + 1}/${lendingData.length}:`, {
+                        lending_id: lending.id,
+                        status: lending.status,
+                        id_equipment: lending.id_equipment,
+                        qty: lending.qty
+                    });
+
                     const equipmentIndex = lending.id_equipment.findIndex((id: string) => id === equipmentId);
-                    if (equipmentIndex === -1) return null;
+                    console.log(`🎯 Equipment index in lending ${lending.id}:`, {
+                        equipmentId,
+                        id_equipment: lending.id_equipment,
+                        found_index: equipmentIndex
+                    });
+
+                    if (equipmentIndex === -1) {
+                        console.log(`❌ Equipment ${equipmentId} not found in lending ${lending.id}`);
+                        return null;
+                    }
 
                     const borrowedQty = lending.qty[equipmentIndex] || 0;
-                    if (borrowedQty === 0) return null;
+                    console.log(`📊 Borrowed quantity for lending ${lending.id}:`, borrowedQty);
+
+                    if (borrowedQty === 0) {
+                        console.log(`❌ Zero borrowed quantity for lending ${lending.id}`);
+                        return null;
+                    }
 
                     // Default values
                     let lendingDetail: LendingDetail = {
@@ -333,11 +421,16 @@ const ToolAdministration: React.FC = () => {
                             .eq('id', lending.id_user)
                             .single();
                         
-                        if (userData) lendingDetail.user = userData;
+                        if (userData) {
+                            lendingDetail.user = userData;
+                            console.log(`👤 User found for lending ${lending.id}:`, userData.full_name);
+                        }
                     }
 
-                    // ✅ COMPREHENSIVE CHECKOUT CHECK - ALL STATUSES EXCEPT COMPLETED
-                    const { data: checkoutData } = await supabase
+                    // ✅ SUPER COMPREHENSIVE CHECKOUT CHECK - ALL STATUSES
+                    console.log(`🔍 Looking for checkouts for lending ${lending.id}...`);
+                    
+                    const { data: checkoutData, error: checkoutError } = await supabase
                         .from('checkouts')
                         .select(`
                             id, status, checkout_date, expected_return_date, actual_return_date,
@@ -345,39 +438,54 @@ const ToolAdministration: React.FC = () => {
                         `)
                         .eq('lendingTool_id', lending.id)
                         .eq('checkout_items.equipment_id', equipmentId)
-                        .neq('status', 'completed') // ✅ EXCLUDE ONLY COMPLETED
-                        .order('created_at', { ascending: false })
-                        .limit(1);
+                        .order('created_at', { ascending: false });
 
-                    console.log(`🔍 Checkout search for lending ${lending.id}:`, {
-                        lendingTool_id: lending.id,
-                        equipment_id: equipmentId,
-                        checkouts_found: checkoutData?.length || 0
+                    console.log(`🔍 Checkout query result for lending ${lending.id}:`, {
+                        error: checkoutError,
+                        count: checkoutData?.length || 0,
+                        data: checkoutData
                     });
 
                     if (checkoutData && checkoutData.length > 0) {
-                        const checkout = checkoutData[0];
-                        const returnedItem = checkout.checkout_items?.[0];
-                        
-                        console.log(`💡 FOUND CHECKOUT for lending ${lending.id}:`, {
-                            checkout_id: checkout.id,
-                            status: checkout.status,
-                            borrowed: borrowedQty,
-                            returned: returnedItem?.quantity || 0,
-                            gap: borrowedQty - (returnedItem?.quantity || 0)
-                        });
-                        
-                        if (returnedItem) {
-                            const returnedQty = returnedItem.quantity || 0;
-                            lendingDetail.returned_quantity = returnedQty;
-                            lendingDetail.missing_quantity = borrowedQty - returnedQty;
+                        // Process ALL checkouts, not just the first one
+                        for (const checkout of checkoutData) {
+                            console.log(`💡 Processing checkout ${checkout.id}:`, {
+                                status: checkout.status,
+                                checkout_items: checkout.checkout_items
+                            });
+
+                            const returnedItem = checkout.checkout_items?.[0];
                             
-                            lendingDetail.checkout = {
-                                id: checkout.id,
-                                checkout_date: checkout.checkout_date,
-                                expected_return_date: checkout.expected_return_date,
-                                status: checkout.status
-                            };
+                            if (returnedItem) {
+                                const returnedQty = returnedItem.quantity || 0;
+                                console.log(`📦 Returned quantity for checkout ${checkout.id}:`, returnedQty);
+                                
+                                // Update with the latest return info
+                                lendingDetail.returned_quantity = returnedQty;
+                                lendingDetail.missing_quantity = borrowedQty - returnedQty;
+                                
+                                lendingDetail.checkout = {
+                                    id: checkout.id,
+                                    checkout_date: checkout.checkout_date,
+                                    expected_return_date: checkout.expected_return_date,
+                                    status: checkout.status
+                                };
+
+                                console.log(`📊 Gap calculation for checkout ${checkout.id}:`, {
+                                    borrowed: borrowedQty,
+                                    returned: returnedQty,
+                                    missing: borrowedQty - returnedQty,
+                                    status: checkout.status
+                                });
+
+                                // ✅ ONLY EXCLUDE IF STATUS IS COMPLETED
+                                if (checkout.status === 'completed') {
+                                    console.log(`✅ Checkout ${checkout.id} is completed, skipping...`);
+                                    continue;
+                                }
+
+                                break; // Use the first non-completed checkout
+                            }
                         }
                     } else {
                         console.log(`❌ NO CHECKOUT found for lending ${lending.id} with equipment ${equipmentId}`);
@@ -385,9 +493,19 @@ const ToolAdministration: React.FC = () => {
                         lendingDetail.missing_quantity = borrowedQty;
                     }
 
-                    // ✅ SHOW ALL GAPS - ANY STATUS EXCEPT COMPLETED
-                    if (lendingDetail.missing_quantity > 0) {
-                        console.log(`🚨 GAP DETECTED (${lendingDetail.checkout?.status || 'no_checkout'}):`, {
+                    // ✅ SHOW ALL GAPS - REGARDLESS OF STATUS (except completed)
+                    const shouldShow = lendingDetail.missing_quantity > 0 && 
+                                     (!lendingDetail.checkout || lendingDetail.checkout.status !== 'completed');
+
+                    console.log(`🤔 Should show lending ${lending.id}?`, {
+                        missing_quantity: lendingDetail.missing_quantity,
+                        checkout_status: lendingDetail.checkout?.status || 'none',
+                        should_show: shouldShow
+                    });
+
+                    if (shouldShow) {
+                        console.log(`🚨 GAP DETECTED - ADDING TO LIST:`, {
+                            lending_id: lending.id,
                             user: lendingDetail.user?.full_name,
                             borrowed: lendingDetail.borrowed_quantity,
                             returned: lendingDetail.returned_quantity,
@@ -395,26 +513,51 @@ const ToolAdministration: React.FC = () => {
                             checkout_status: lendingDetail.checkout?.status || 'none'
                         });
                         return lendingDetail;
+                    } else {
+                        console.log(`✅ No gap or completed - not showing lending ${lending.id}`);
                     }
                     
                     return null;
                 })
             );
             
-            allGapDetails = [...allGapDetails, ...detailedLendings.filter(Boolean)];
+            const validLendings = detailedLendings.filter(Boolean);
+            console.log(`📋 Valid lending gaps found: ${validLendings.length}`);
+            allGapDetails = [...allGapDetails, ...validLendings];
         }
 
-        // ✅ STEP 4: Process APPROVED BOOKINGS (same comprehensive logic)
+        // ✅ STEP 4: Process ALL bookings (regardless of status)
         if (bookingData && bookingData.length > 0) {
-            console.log('📅 Processing approved bookings:', bookingData.length);
+            console.log('📅 Processing ALL bookings:', bookingData.length);
             
             const bookingGaps = await Promise.all(
-                bookingData.map(async (booking) => {
+                bookingData.map(async (booking, bookingIndex) => {
+                    console.log(`🔍 Processing booking ${bookingIndex + 1}/${bookingData.length}:`, {
+                        booking_id: booking.id,
+                        status: booking.status,
+                        equipment_requested: booking.equipment_requested,
+                        equipment_quantities: booking.equipment_quantities
+                    });
+
                     const equipmentIndex = booking.equipment_requested?.findIndex(id => id === equipmentId);
-                    if (equipmentIndex === -1) return null;
+                    console.log(`🎯 Equipment index in booking ${booking.id}:`, {
+                        equipmentId,
+                        equipment_requested: booking.equipment_requested,
+                        found_index: equipmentIndex
+                    });
+
+                    if (equipmentIndex === -1) {
+                        console.log(`❌ Equipment ${equipmentId} not found in booking ${booking.id}`);
+                        return null;
+                    }
 
                     const borrowedQty = booking.equipment_quantities?.[equipmentIndex] || 1;
-                    if (borrowedQty === 0) return null;
+                    console.log(`📊 Borrowed quantity for booking ${booking.id}:`, borrowedQty);
+
+                    if (borrowedQty === 0) {
+                        console.log(`❌ Zero borrowed quantity for booking ${booking.id}`);
+                        return null;
+                    }
 
                     let lendingDetail: LendingDetail = {
                         id: `booking-${booking.id}`,
@@ -429,7 +572,9 @@ const ToolAdministration: React.FC = () => {
                     };
 
                     // ✅ COMPREHENSIVE CHECKOUT CHECK FOR BOOKINGS
-                    const { data: checkoutData } = await supabase
+                    console.log(`🔍 Looking for checkouts for booking ${booking.id}...`);
+                    
+                    const { data: checkoutData, error: checkoutError } = await supabase
                         .from('checkouts')
                         .select(`
                             id, status, checkout_date, expected_return_date,
@@ -437,39 +582,52 @@ const ToolAdministration: React.FC = () => {
                         `)
                         .eq('booking_id', booking.id)
                         .eq('checkout_items.equipment_id', equipmentId)
-                        .neq('status', 'completed') // ✅ EXCLUDE ONLY COMPLETED
-                        .order('created_at', { ascending: false })
-                        .limit(1);
+                        .order('created_at', { ascending: false });
 
-                    console.log(`🔍 Checkout search for booking ${booking.id}:`, {
-                        booking_id: booking.id,
-                        equipment_id: equipmentId,
-                        checkouts_found: checkoutData?.length || 0
+                    console.log(`🔍 Checkout query result for booking ${booking.id}:`, {
+                        error: checkoutError,
+                        count: checkoutData?.length || 0,
+                        data: checkoutData
                     });
 
                     if (checkoutData && checkoutData.length > 0) {
-                        const checkout = checkoutData[0];
-                        const returnedItem = checkout.checkout_items?.[0];
-                        
-                        console.log(`💡 FOUND CHECKOUT for booking ${booking.id}:`, {
-                            checkout_id: checkout.id,
-                            status: checkout.status,
-                            borrowed: borrowedQty,
-                            returned: returnedItem?.quantity || 0,
-                            gap: borrowedQty - (returnedItem?.quantity || 0)
-                        });
-                        
-                        if (returnedItem) {
-                            const returnedQty = returnedItem.quantity || 0;
-                            lendingDetail.returned_quantity = returnedQty;
-                            lendingDetail.missing_quantity = borrowedQty - returnedQty;
+                        for (const checkout of checkoutData) {
+                            console.log(`💡 Processing checkout ${checkout.id} for booking:`, {
+                                status: checkout.status,
+                                checkout_items: checkout.checkout_items
+                            });
+
+                            const returnedItem = checkout.checkout_items?.[0];
                             
-                            lendingDetail.checkout = {
-                                id: checkout.id,
-                                checkout_date: checkout.checkout_date,
-                                expected_return_date: checkout.expected_return_date,
-                                status: checkout.status
-                            };
+                            if (returnedItem) {
+                                const returnedQty = returnedItem.quantity || 0;
+                                console.log(`📦 Returned quantity for checkout ${checkout.id}:`, returnedQty);
+                                
+                                lendingDetail.returned_quantity = returnedQty;
+                                lendingDetail.missing_quantity = borrowedQty - returnedQty;
+                                
+                                lendingDetail.checkout = {
+                                    id: checkout.id,
+                                    checkout_date: checkout.checkout_date,
+                                    expected_return_date: checkout.expected_return_date,
+                                    status: checkout.status
+                                };
+
+                                console.log(`📊 Gap calculation for booking checkout ${checkout.id}:`, {
+                                    borrowed: borrowedQty,
+                                    returned: returnedQty,
+                                    missing: borrowedQty - returnedQty,
+                                    status: checkout.status
+                                });
+
+                                // ✅ ONLY EXCLUDE IF STATUS IS COMPLETED
+                                if (checkout.status === 'completed') {
+                                    console.log(`✅ Checkout ${checkout.id} is completed, skipping...`);
+                                    continue;
+                                }
+
+                                break; // Use the first non-completed checkout
+                            }
                         }
                     } else {
                         console.log(`❌ NO CHECKOUT found for booking ${booking.id} with equipment ${equipmentId}`);
@@ -477,9 +635,19 @@ const ToolAdministration: React.FC = () => {
                         lendingDetail.missing_quantity = borrowedQty;
                     }
 
-                    // ✅ SHOW ALL GAPS - ANY STATUS EXCEPT COMPLETED
-                    if (lendingDetail.missing_quantity > 0) {
-                        console.log(`🚨 BOOKING GAP DETECTED (${lendingDetail.checkout?.status || 'no_checkout'}):`, {
+                    // ✅ SHOW ALL GAPS - REGARDLESS OF STATUS (except completed)
+                    const shouldShow = lendingDetail.missing_quantity > 0 && 
+                                     (!lendingDetail.checkout || lendingDetail.checkout.status !== 'completed');
+
+                    console.log(`🤔 Should show booking ${booking.id}?`, {
+                        missing_quantity: lendingDetail.missing_quantity,
+                        checkout_status: lendingDetail.checkout?.status || 'none',
+                        should_show: shouldShow
+                    });
+
+                    if (shouldShow) {
+                        console.log(`🚨 BOOKING GAP DETECTED - ADDING TO LIST:`, {
+                            booking_id: booking.id,
                             user: lendingDetail.user?.full_name,
                             borrowed: lendingDetail.borrowed_quantity,
                             returned: lendingDetail.returned_quantity,
@@ -487,34 +655,50 @@ const ToolAdministration: React.FC = () => {
                             checkout_status: lendingDetail.checkout?.status || 'none'
                         });
                         return lendingDetail;
+                    } else {
+                        console.log(`✅ No gap or completed - not showing booking ${booking.id}`);
                     }
                     
                     return null;
                 })
             );
 
-            allGapDetails = [...allGapDetails, ...bookingGaps.filter(Boolean)];
+            const validBookings = bookingGaps.filter(Boolean);
+            console.log(`📅 Valid booking gaps found: ${validBookings.length}`);
+            allGapDetails = [...allGapDetails, ...validBookings];
         }
 
-        // ✅ FINAL RESULT: All records with quantity gaps (any status except completed)
-        console.log(`📊 COMPREHENSIVE GAP ANALYSIS SUMMARY for equipment ${equipmentId}:`);
+        // ✅ FINAL RESULT: All records with quantity gaps
+        console.log(`🎯 FINAL COMPREHENSIVE GAP ANALYSIS for equipment ${equipmentId}:`);
         console.log(`📋 Total gaps found: ${allGapDetails.length}`);
-        console.log(`🔍 Status breakdown:`, {
-            active: allGapDetails.filter(d => d.checkout?.status === 'active').length,
-            returned: allGapDetails.filter(d => d.checkout?.status === 'returned').length,
-            pending: allGapDetails.filter(d => d.checkout?.status === 'pending').length,
-            overdue: allGapDetails.filter(d => d.checkout?.status === 'overdue').length,
-            no_checkout: allGapDetails.filter(d => !d.checkout).length
-        });
+        console.log(`🔍 Final gap details:`, allGapDetails);
 
-        allGapDetails.forEach(detail => {
-            console.log(`👤 ${detail.user?.full_name}: ${detail.borrowed_quantity} borrowed - ${detail.returned_quantity} returned = ${detail.missing_quantity} missing (${detail.source}) [${detail.checkout?.status || 'no_checkout'}]`);
-        });
+        if (allGapDetails.length > 0) {
+            console.log(`🔍 Status breakdown:`, {
+                active: allGapDetails.filter(d => d.checkout?.status === 'active').length,
+                returned: allGapDetails.filter(d => d.checkout?.status === 'returned').length,
+                pending: allGapDetails.filter(d => d.checkout?.status === 'pending').length,
+                overdue: allGapDetails.filter(d => d.checkout?.status === 'overdue').length,
+                no_checkout: allGapDetails.filter(d => !d.checkout).length,
+                other: allGapDetails.filter(d => d.checkout && !['active', 'returned', 'pending', 'overdue'].includes(d.checkout.status)).length
+            });
+
+            allGapDetails.forEach((detail, index) => {
+                console.log(`📋 Gap ${index + 1}: ${detail.user?.full_name}: ${detail.borrowed_quantity} borrowed - ${detail.returned_quantity} returned = ${detail.missing_quantity} missing (${detail.source}) [${detail.checkout?.status || 'no_checkout'}]`);
+            });
+        } else {
+            console.log(`❓ WHY NO GAPS FOUND? Let's check:
+                - Are there any lending/booking records? ${(lendingData?.length || 0) + (bookingData?.length || 0)}
+                - Are there any checkouts? ${allCheckouts?.length || 0}
+                - Are there any checkout_items? ${allCheckoutItems?.length || 0}
+                - Equipment ID format correct? ${equipmentId}
+            `);
+        }
         
         setLendingDetails(allGapDetails);
         
     } catch (error) {
-        console.error('❌ Error in comprehensive gap analysis:', error);
+        console.error('❌ Error in super debug gap analysis:', error);
         toast.error(getText('Failed to load quantity gap analysis', 'Gagal memuat analisis kesenjangan kuantitas'));
         setLendingDetails([]);
     } finally {
