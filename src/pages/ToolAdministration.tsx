@@ -274,215 +274,253 @@ const ToolAdministration: React.FC = () => {
     };
 
     const fetchLendingDetails = async (equipmentId: string) => {
-        try {
-            setLoadingLending(true);
+    try {
+        setLoadingLending(true);
+        
+        console.log('🔍 COMPREHENSIVE GAP ANALYSIS for equipment:', equipmentId);
+        
+        // ✅ STEP 1: Fetch ALL lending_tool dengan status "borrow" 
+        const { data: lendingData, error: lendingError } = await supabase
+            .from('lending_tool')
+            .select('*')
+            .contains('id_equipment', [equipmentId])
+            .eq('status', 'borrow')
+            .order('created_at', { ascending: false });
+
+        if (lendingError) throw lendingError;
+
+        // ✅ STEP 2: Fetch ALL approved bookings
+        const { data: bookingData, error: bookingError } = await supabase
+            .from('bookings')
+            .select('*, user:users(id, full_name, identity_number, email, phone_number)')
+            .eq('status', 'approved')
+            .contains('equipment_requested', [equipmentId])
+            .order('created_at', { ascending: false });
+
+        if (bookingError) throw bookingError;
+
+        let allGapDetails: LendingDetail[] = [];
+
+        // ✅ STEP 3: Process LENDING TOOLS
+        if (lendingData && lendingData.length > 0) {
+            console.log('📋 Processing lending tools:', lendingData.length);
             
-            console.log('🔍 Fetching ALL lending data for equipment:', equipmentId);
-            
-            // ✅ STEP 1: Fetch ALL lending_tool dengan status "borrow" (approved lending)
-            const { data: lendingData, error: lendingError } = await supabase
-                .from('lending_tool')
-                .select('*')
-                .contains('id_equipment', [equipmentId])
-                .eq('status', 'borrow') // Status borrow = approved lending
-                .order('created_at', { ascending: false });
+            const detailedLendings = await Promise.all(
+                lendingData.map(async (lending) => {
+                    const equipmentIndex = lending.id_equipment.findIndex((id: string) => id === equipmentId);
+                    if (equipmentIndex === -1) return null;
 
-            if (lendingError) throw lendingError;
+                    const borrowedQty = lending.qty[equipmentIndex] || 0;
+                    if (borrowedQty === 0) return null;
 
-            // ✅ STEP 2: Fetch ALL approved bookings
-            const { data: bookingData, error: bookingError } = await supabase
-                .from('bookings')
-                .select('*, user:users(id, full_name, identity_number, email, phone_number)')
-                .eq('status', 'approved')
-                .contains('equipment_requested', [equipmentId])
-                .order('created_at', { ascending: false });
+                    // Default values
+                    let lendingDetail: LendingDetail = {
+                        id: lending.id,
+                        date: lending.date,
+                        borrowed_quantity: borrowedQty,
+                        returned_quantity: 0,
+                        missing_quantity: borrowedQty,
+                        status: lending.status,
+                        created_at: lending.created_at,
+                        source: 'lending_tool'
+                    };
 
-            if (bookingError) throw bookingError;
-
-            let allLendingDetails: LendingDetail[] = [];
-
-            // ✅ STEP 3: Process LENDING TOOLS
-            if (lendingData && lendingData.length > 0) {
-                console.log('📋 Processing lending tools:', lendingData.length);
-                
-                const detailedLendings = await Promise.all(
-                    lendingData.map(async (lending) => {
-                        const equipmentIndex = lending.id_equipment.findIndex((id: string) => id === equipmentId);
-                        if (equipmentIndex === -1) return null;
-
-                        const borrowedQty = lending.qty[equipmentIndex] || 0;
-                        if (borrowedQty === 0) return null;
-
-                        // Default values
-                        let lendingDetail: LendingDetail = {
-                            id: lending.id,
-                            date: lending.date,
-                            borrowed_quantity: borrowedQty,
-                            returned_quantity: 0,
-                            missing_quantity: borrowedQty, // Initially all missing
-                            status: lending.status,
-                            created_at: lending.created_at,
-                            source: 'lending_tool'
-                        };
-
-                        // Fetch user info
-                        if (lending.id_user) {
-                            const { data: userData } = await supabase
-                                .from('users')
-                                .select('id, full_name, identity_number, email, phone_number')
-                                .eq('id', lending.id_user)
-                                .single();
-                            
-                            if (userData) lendingDetail.user = userData;
-                        }
-
-                        // ✅ STEP 4: Check checkout status (INCLUDING active ones)
-                        const { data: checkoutData } = await supabase
-                            .from('checkouts')
-                            .select(`
-                                id, status, checkout_date, expected_return_date, actual_return_date,
-                                checkout_items!inner(equipment_id, quantity)
-                            `)
-                            .eq('lendingTool_id', lending.id)
-                            .eq('checkout_items.equipment_id', equipmentId)
-                            .in('status', ['active', 'returned', 'completed']) // Include all checkout statuses
-                            .order('created_at', { ascending: false })
-                            .limit(1);
-
-                        if (checkoutData && checkoutData.length > 0) {
-                            const checkout = checkoutData[0];
-                            const returnedItem = checkout.checkout_items?.[0];
-                            
-                            console.log(`🔄 Checkout found for lending ${lending.id}:`, {
-                                checkout_id: checkout.id,
-                                status: checkout.status, // active, returned, atau completed
-                                borrowed: borrowedQty,
-                                returned: returnedItem?.quantity || 0
-                            });
-                            
-                            if (returnedItem) {
-                                const returnedQty = returnedItem.quantity || 0;
-                                lendingDetail.returned_quantity = returnedQty;
-                                lendingDetail.missing_quantity = borrowedQty - returnedQty;
-                                
-                                lendingDetail.checkout = {
-                                    id: checkout.id,
-                                    checkout_date: checkout.checkout_date,
-                                    expected_return_date: checkout.expected_return_date,
-                                    status: checkout.status
-                                };
-                            }
-                        }
-
-                        // ✅ SHOW ONLY IF THERE'S A GAP AND NOT COMPLETED
-                        if (lendingDetail.missing_quantity > 0 && lendingDetail.checkout?.status !== 'completed') {
-                            console.log(`🚨 GAP DETECTED:`, {
-                                user: lendingDetail.user?.full_name,
-                                borrowed: lendingDetail.borrowed_quantity,
-                                returned: lendingDetail.returned_quantity,
-                                missing: lendingDetail.missing_quantity,
-                                checkout_status: lendingDetail.checkout?.status
-                            });
-                            return lendingDetail;
-                        }
+                    // Fetch user info
+                    if (lending.id_user) {
+                        const { data: userData } = await supabase
+                            .from('users')
+                            .select('id, full_name, identity_number, email, phone_number')
+                            .eq('id', lending.id_user)
+                            .single();
                         
-                        return null;
-                    })
-                );
-                
-                allLendingDetails = [...allLendingDetails, ...detailedLendings.filter(Boolean)];
-            }
+                        if (userData) lendingDetail.user = userData;
+                    }
 
-            // ✅ STEP 5: Process APPROVED BOOKINGS (same logic)
-            if (bookingData && bookingData.length > 0) {
-                console.log('📅 Processing approved bookings:', bookingData.length);
-                
-                const bookingLendings = await Promise.all(
-                    bookingData.map(async (booking) => {
-                        const equipmentIndex = booking.equipment_requested?.findIndex(id => id === equipmentId);
-                        if (equipmentIndex === -1) return null;
+                    // ✅ COMPREHENSIVE CHECKOUT CHECK - ALL STATUSES EXCEPT COMPLETED
+                    const { data: checkoutData } = await supabase
+                        .from('checkouts')
+                        .select(`
+                            id, status, checkout_date, expected_return_date, actual_return_date,
+                            checkout_items!inner(equipment_id, quantity)
+                        `)
+                        .eq('lendingTool_id', lending.id)
+                        .eq('checkout_items.equipment_id', equipmentId)
+                        .neq('status', 'completed') // ✅ EXCLUDE ONLY COMPLETED
+                        .order('created_at', { ascending: false })
+                        .limit(1);
 
-                        const borrowedQty = booking.equipment_quantities?.[equipmentIndex] || 1;
-                        if (borrowedQty === 0) return null;
+                    console.log(`🔍 Checkout search for lending ${lending.id}:`, {
+                        lendingTool_id: lending.id,
+                        equipment_id: equipmentId,
+                        checkouts_found: checkoutData?.length || 0
+                    });
 
-                        let lendingDetail: LendingDetail = {
-                            id: `booking-${booking.id}`,
-                            date: booking.start_time,
-                            borrowed_quantity: borrowedQty,
-                            returned_quantity: 0,
-                            missing_quantity: borrowedQty,
-                            status: booking.status,
-                            created_at: booking.created_at,
-                            source: 'booking',
-                            user: booking.user,
-                            checkout: {
-                                id: `booking-checkout-${booking.id}`,
-                                checkout_date: booking.start_time,
-                                expected_return_date: booking.end_time,
-                                status: booking.status
-                            }
-                        };
-
-                        // Check for actual checkout
-                        const { data: checkoutData } = await supabase
-                            .from('checkouts')
-                            .select(`
-                                id, status, checkout_date, expected_return_date,
-                                checkout_items!inner(equipment_id, quantity)
-                            `)
-                            .eq('booking_id', booking.id)
-                            .eq('checkout_items.equipment_id', equipmentId)
-                            .in('status', ['active', 'returned', 'completed']) // Include all checkout statuses
-                            .order('created_at', { ascending: false })
-                            .limit(1);
-
-                        if (checkoutData && checkoutData.length > 0) {
-                            const checkout = checkoutData[0];
-                            const returnedItem = checkout.checkout_items?.[0];
-                            
-                            if (returnedItem) {
-                                const returnedQty = returnedItem.quantity || 0;
-                                lendingDetail.returned_quantity = returnedQty;
-                                lendingDetail.missing_quantity = borrowedQty - returnedQty;
-                                
-                                lendingDetail.checkout = {
-                                    id: checkout.id,
-                                    checkout_date: checkout.checkout_date,
-                                    expected_return_date: checkout.expected_return_date,
-                                    status: checkout.status
-                                };
-                            }
-                        }
-
-                        // Show if there's a gap and not completed
-                        if (lendingDetail.missing_quantity > 0 && lendingDetail.checkout?.status !== 'completed') {
-                            return lendingDetail;
-                        }
+                    if (checkoutData && checkoutData.length > 0) {
+                        const checkout = checkoutData[0];
+                        const returnedItem = checkout.checkout_items?.[0];
                         
-                        return null;
-                    })
-                );
+                        console.log(`💡 FOUND CHECKOUT for lending ${lending.id}:`, {
+                            checkout_id: checkout.id,
+                            status: checkout.status,
+                            borrowed: borrowedQty,
+                            returned: returnedItem?.quantity || 0,
+                            gap: borrowedQty - (returnedItem?.quantity || 0)
+                        });
+                        
+                        if (returnedItem) {
+                            const returnedQty = returnedItem.quantity || 0;
+                            lendingDetail.returned_quantity = returnedQty;
+                            lendingDetail.missing_quantity = borrowedQty - returnedQty;
+                            
+                            lendingDetail.checkout = {
+                                id: checkout.id,
+                                checkout_date: checkout.checkout_date,
+                                expected_return_date: checkout.expected_return_date,
+                                status: checkout.status
+                            };
+                        }
+                    } else {
+                        console.log(`❌ NO CHECKOUT found for lending ${lending.id} with equipment ${equipmentId}`);
+                        // No checkout = all items missing
+                        lendingDetail.missing_quantity = borrowedQty;
+                    }
 
-                allLendingDetails = [...allLendingDetails, ...bookingLendings.filter(Boolean)];
-            }
-
-            // ✅ FINAL RESULT: All records with gaps
-            console.log(`📊 FINAL GAPS SUMMARY for equipment ${equipmentId}:`);
-            console.log(`📋 Total gaps found: ${allLendingDetails.length}`);
-            allLendingDetails.forEach(detail => {
-                console.log(`👤 ${detail.user?.full_name}: ${detail.borrowed_quantity} borrowed - ${detail.returned_quantity} returned = ${detail.missing_quantity} missing (${detail.source}) [${detail.checkout?.status || 'no_checkout'}]`);
-            });
+                    // ✅ SHOW ALL GAPS - ANY STATUS EXCEPT COMPLETED
+                    if (lendingDetail.missing_quantity > 0) {
+                        console.log(`🚨 GAP DETECTED (${lendingDetail.checkout?.status || 'no_checkout'}):`, {
+                            user: lendingDetail.user?.full_name,
+                            borrowed: lendingDetail.borrowed_quantity,
+                            returned: lendingDetail.returned_quantity,
+                            missing: lendingDetail.missing_quantity,
+                            checkout_status: lendingDetail.checkout?.status || 'none'
+                        });
+                        return lendingDetail;
+                    }
+                    
+                    return null;
+                })
+            );
             
-            setLendingDetails(allLendingDetails);
-            
-        } catch (error) {
-            console.error('❌ Error fetching lending details:', error);
-            toast.error(getText('Failed to load lending details', 'Gagal memuat detail peminjaman'));
-            setLendingDetails([]);
-        } finally {
-            setLoadingLending(false);
+            allGapDetails = [...allGapDetails, ...detailedLendings.filter(Boolean)];
         }
-    };
+
+        // ✅ STEP 4: Process APPROVED BOOKINGS (same comprehensive logic)
+        if (bookingData && bookingData.length > 0) {
+            console.log('📅 Processing approved bookings:', bookingData.length);
+            
+            const bookingGaps = await Promise.all(
+                bookingData.map(async (booking) => {
+                    const equipmentIndex = booking.equipment_requested?.findIndex(id => id === equipmentId);
+                    if (equipmentIndex === -1) return null;
+
+                    const borrowedQty = booking.equipment_quantities?.[equipmentIndex] || 1;
+                    if (borrowedQty === 0) return null;
+
+                    let lendingDetail: LendingDetail = {
+                        id: `booking-${booking.id}`,
+                        date: booking.start_time,
+                        borrowed_quantity: borrowedQty,
+                        returned_quantity: 0,
+                        missing_quantity: borrowedQty,
+                        status: booking.status,
+                        created_at: booking.created_at,
+                        source: 'booking',
+                        user: booking.user
+                    };
+
+                    // ✅ COMPREHENSIVE CHECKOUT CHECK FOR BOOKINGS
+                    const { data: checkoutData } = await supabase
+                        .from('checkouts')
+                        .select(`
+                            id, status, checkout_date, expected_return_date,
+                            checkout_items!inner(equipment_id, quantity)
+                        `)
+                        .eq('booking_id', booking.id)
+                        .eq('checkout_items.equipment_id', equipmentId)
+                        .neq('status', 'completed') // ✅ EXCLUDE ONLY COMPLETED
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+
+                    console.log(`🔍 Checkout search for booking ${booking.id}:`, {
+                        booking_id: booking.id,
+                        equipment_id: equipmentId,
+                        checkouts_found: checkoutData?.length || 0
+                    });
+
+                    if (checkoutData && checkoutData.length > 0) {
+                        const checkout = checkoutData[0];
+                        const returnedItem = checkout.checkout_items?.[0];
+                        
+                        console.log(`💡 FOUND CHECKOUT for booking ${booking.id}:`, {
+                            checkout_id: checkout.id,
+                            status: checkout.status,
+                            borrowed: borrowedQty,
+                            returned: returnedItem?.quantity || 0,
+                            gap: borrowedQty - (returnedItem?.quantity || 0)
+                        });
+                        
+                        if (returnedItem) {
+                            const returnedQty = returnedItem.quantity || 0;
+                            lendingDetail.returned_quantity = returnedQty;
+                            lendingDetail.missing_quantity = borrowedQty - returnedQty;
+                            
+                            lendingDetail.checkout = {
+                                id: checkout.id,
+                                checkout_date: checkout.checkout_date,
+                                expected_return_date: checkout.expected_return_date,
+                                status: checkout.status
+                            };
+                        }
+                    } else {
+                        console.log(`❌ NO CHECKOUT found for booking ${booking.id} with equipment ${equipmentId}`);
+                        // No checkout = all items missing
+                        lendingDetail.missing_quantity = borrowedQty;
+                    }
+
+                    // ✅ SHOW ALL GAPS - ANY STATUS EXCEPT COMPLETED
+                    if (lendingDetail.missing_quantity > 0) {
+                        console.log(`🚨 BOOKING GAP DETECTED (${lendingDetail.checkout?.status || 'no_checkout'}):`, {
+                            user: lendingDetail.user?.full_name,
+                            borrowed: lendingDetail.borrowed_quantity,
+                            returned: lendingDetail.returned_quantity,
+                            missing: lendingDetail.missing_quantity,
+                            checkout_status: lendingDetail.checkout?.status || 'none'
+                        });
+                        return lendingDetail;
+                    }
+                    
+                    return null;
+                })
+            );
+
+            allGapDetails = [...allGapDetails, ...bookingGaps.filter(Boolean)];
+        }
+
+        // ✅ FINAL RESULT: All records with quantity gaps (any status except completed)
+        console.log(`📊 COMPREHENSIVE GAP ANALYSIS SUMMARY for equipment ${equipmentId}:`);
+        console.log(`📋 Total gaps found: ${allGapDetails.length}`);
+        console.log(`🔍 Status breakdown:`, {
+            active: allGapDetails.filter(d => d.checkout?.status === 'active').length,
+            returned: allGapDetails.filter(d => d.checkout?.status === 'returned').length,
+            pending: allGapDetails.filter(d => d.checkout?.status === 'pending').length,
+            overdue: allGapDetails.filter(d => d.checkout?.status === 'overdue').length,
+            no_checkout: allGapDetails.filter(d => !d.checkout).length
+        });
+
+        allGapDetails.forEach(detail => {
+            console.log(`👤 ${detail.user?.full_name}: ${detail.borrowed_quantity} borrowed - ${detail.returned_quantity} returned = ${detail.missing_quantity} missing (${detail.source}) [${detail.checkout?.status || 'no_checkout'}]`);
+        });
+        
+        setLendingDetails(allGapDetails);
+        
+    } catch (error) {
+        console.error('❌ Error in comprehensive gap analysis:', error);
+        toast.error(getText('Failed to load quantity gap analysis', 'Gagal memuat analisis kesenjangan kuantitas'));
+        setLendingDetails([]);
+    } finally {
+        setLoadingLending(false);
+    }
+};
 
     // ✅ Real-time update: Auto-refresh after validation queue approval
     useEffect(() => {
