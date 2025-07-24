@@ -1022,199 +1022,253 @@ const ToolAdministration: React.FC = () => {
 
     // ✅ UPDATED: Enhanced rendering function for quantity gaps
     const renderQuantityGapDisplay = () => {
-        if (loadingLending) {
-            return (
-                <div className="bg-gray-50 rounded-lg p-8 text-center">
-                    <RefreshCw className="h-8 w-8 animate-spin text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-600">
-                        {getText('Analyzing quantity gaps...', 'Menganalisis kesenjangan kuantitas...')}
-                    </p>
-                </div>
-            );
-        }
-
-        if (lendingDetails.length === 0) {
-            return (
-                <div className="bg-green-50 rounded-lg p-8 text-center border border-green-200">
-                    <CheckCircle className="h-16 w-16 text-green-400 mx-auto mb-4" />
-                    <h4 className="text-lg font-medium text-green-800 mb-2">
-                        {getText('✅ No Outstanding Gaps!', '✅ Tidak Ada Kesenjangan!')}
-                    </h4>
-                    <p className="text-green-600">
-                        {getText(
-                            'All approved lending/booking transactions have been resolved or completed.',
-                            'Semua transaksi peminjaman/booking yang disetujui telah diselesaikan.'
-                        )}
-                    </p>
-                </div>
-            );
-        }
-
+    if (loadingLending) {
         return (
-            <div className="space-y-4">
-                {/* Header dengan total missing */}
-                <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                            <AlertTriangle className="h-6 w-6 text-red-600 mr-3" />
-                            <div>
-                                <h4 className="text-lg font-semibold text-red-800">
-                                    🚨 QUANTITY GAPS DETECTED
-                                </h4>
-                                <p className="text-sm text-red-600">
-                                    {getText(
-                                        'These approved transactions still have quantity gaps',
-                                        'Transaksi yang disetujui ini masih memiliki kesenjangan kuantitas'
-                                    )}
-                                </p>
-                            </div>
-                        </div>
-                        <div className="text-right">
-                            <div className="text-3xl font-bold text-red-800">
-                                {lendingDetails.reduce((total, detail) => total + detail.missing_quantity, 0)}
-                            </div>
-                            <div className="text-sm text-red-600">
-                                {getText('Total Missing', 'Total Hilang')}
+            <div className="bg-gray-50 rounded-lg p-8 text-center">
+                <RefreshCw className="h-8 w-8 animate-spin text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600">
+                    {getText('Analyzing all quantity gaps...', 'Menganalisis semua kesenjangan kuantitas...')}
+                </p>
+                <p className="text-sm text-gray-500 mt-2">
+                    Checking active, returned, pending, and overdue checkouts...
+                </p>
+            </div>
+        );
+    }
+
+    if (lendingDetails.length === 0) {
+        return (
+            <div className="bg-green-50 rounded-lg p-8 text-center border border-green-200">
+                <CheckCircle className="h-16 w-16 text-green-400 mx-auto mb-4" />
+                <h4 className="text-lg font-medium text-green-800 mb-2">
+                    {getText('✅ No Quantity Gaps Found!', '✅ Tidak Ada Kesenjangan Kuantitas!')}
+                </h4>
+                <p className="text-green-600">
+                    {getText(
+                        'All transactions have matching quantities or are completed.',
+                        'Semua transaksi memiliki kuantitas yang sesuai atau sudah diselesaikan.'
+                    )}
+                </p>
+                <div className="mt-3 text-sm text-green-600 bg-green-100 rounded-lg p-3">
+                    <strong>Checked statuses:</strong> active, returned, pending, overdue<br/>
+                    <strong>Excluded:</strong> completed checkouts
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-4">
+            {/* Enhanced Header */}
+            <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                        <AlertTriangle className="h-6 w-6 text-red-600 mr-3" />
+                        <div>
+                            <h4 className="text-lg font-semibold text-red-800">
+                                🚨 QUANTITY GAPS DETECTED
+                            </h4>
+                            <p className="text-sm text-red-600">
+                                {getText(
+                                    'Found quantity gaps in active, returned, pending, or overdue checkouts',
+                                    'Ditemukan kesenjangan kuantitas pada checkout aktif, dikembalikan, tertunda, atau terlambat'
+                                )}
+                            </p>
+                            <div className="mt-2 flex items-center space-x-4 text-xs">
+                                {['active', 'returned', 'pending', 'overdue', 'no_checkout'].map(status => {
+                                    const count = status === 'no_checkout' 
+                                        ? lendingDetails.filter(d => !d.checkout).length
+                                        : lendingDetails.filter(d => d.checkout?.status === status).length;
+                                    if (count === 0) return null;
+                                    
+                                    return (
+                                        <span key={status} className="px-2 py-1 bg-red-100 text-red-700 rounded">
+                                            {status.replace('_', ' ')}: {count}
+                                        </span>
+                                    );
+                                })}
                             </div>
                         </div>
                     </div>
+                    <div className="text-right">
+                        <div className="text-3xl font-bold text-red-800">
+                            {lendingDetails.reduce((total, detail) => total + detail.missing_quantity, 0)}
+                        </div>
+                        <div className="text-sm text-red-600">
+                            {getText('Total Missing', 'Total Hilang')}
+                        </div>
+                    </div>
                 </div>
+            </div>
 
-                {/* Gap Cards */}
-                <div className="space-y-3">
-                    {lendingDetails.map((detail) => (
-                        <div key={detail.id} className="border-l-4 border-red-500 bg-red-50 rounded-lg p-4 shadow-sm">
-                            <div className="flex items-start justify-between">
-                                <div className="flex items-start space-x-4">
-                                    <div className={`flex-shrink-0 h-12 w-12 rounded-full flex items-center justify-center ${
-                                        detail.source === 'booking' 
-                                            ? 'bg-gradient-to-r from-purple-500 to-indigo-500' 
-                                            : 'bg-gradient-to-r from-orange-500 to-red-500'
-                                    }`}>
-                                        {detail.source === 'booking' ? (
-                                            <Building className="h-6 w-6 text-white" />
-                                        ) : (
-                                            <Wrench className="h-6 w-6 text-white" />
-                                        )}
-                                    </div>
-                                    <div className="flex-1">
-                                        <h4 className="font-semibold text-gray-900">
-                                            {detail.user?.full_name || getText('Unknown User', 'Pengguna Tidak Dikenal')}
-                                        </h4>
-                                        <div className="space-y-1 mt-2">
-                                            <div className="flex items-center text-sm text-gray-600">
-                                                <Hash className="h-4 w-4 mr-2" />
-                                                ID: {detail.user?.identity_number || 'N/A'}
-                                            </div>
-                                            <div className="flex items-center text-sm text-gray-600">
-                                                <Calendar className="h-4 w-4 mr-2" />
-                                                Date: {format(new Date(detail.date), 'MMM d, yyyy')}
-                                            </div>
-                                            <div className="flex items-center text-sm space-x-2">
-                                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                                    {detail.source === 'booking' ? '📋 BOOKING' : '🔧 LENDING'}
-                                                </span>
-                                                {detail.checkout && (
-                                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                                        detail.checkout.status === 'active' 
-                                                            ? 'bg-yellow-100 text-yellow-800' 
-                                                            : detail.checkout.status === 'returned'
-                                                            ? 'bg-blue-100 text-blue-800'
-                                                            : detail.checkout.status === 'completed'
-                                                            ? 'bg-green-100 text-green-800'
-                                                            : 'bg-gray-100 text-gray-800'
-                                                    }`}>
-                                                        {detail.checkout.status === 'active' && '⏳ ACTIVE'}
-                                                        {detail.checkout.status === 'returned' && '🔄 RETURNED'}
-                                                        {detail.checkout.status === 'completed' && '✅ COMPLETED'}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
+            {/* Gap Cards with Enhanced Status Display */}
+            <div className="space-y-3">
+                {lendingDetails.map((detail) => (
+                    <div key={detail.id} className="border-l-4 border-red-500 bg-red-50 rounded-lg p-4 shadow-sm">
+                        <div className="flex items-start justify-between">
+                            <div className="flex items-start space-x-4">
+                                <div className={`flex-shrink-0 h-12 w-12 rounded-full flex items-center justify-center ${
+                                    detail.source === 'booking' 
+                                        ? 'bg-gradient-to-r from-purple-500 to-indigo-500' 
+                                        : 'bg-gradient-to-r from-orange-500 to-red-500'
+                                }`}>
+                                    {detail.source === 'booking' ? (
+                                        <Building className="h-6 w-6 text-white" />
+                                    ) : (
+                                        <Wrench className="h-6 w-6 text-white" />
+                                    )}
                                 </div>
-                                
-                                {/* Quantity calculation card */}
-                                <div className="text-right space-y-2">
-                                    <div className="bg-white rounded-lg p-3 border border-red-200">
-                                        <div className="text-xs text-gray-600 mb-2 font-medium">
-                                            {getText('QUANTITY GAP', 'KESENJANGAN KUANTITAS')}
+                                <div className="flex-1">
+                                    <h4 className="font-semibold text-gray-900">
+                                        {detail.user?.full_name || getText('Unknown User', 'Pengguna Tidak Dikenal')}
+                                    </h4>
+                                    <div className="space-y-1 mt-2">
+                                        <div className="flex items-center text-sm text-gray-600">
+                                            <Hash className="h-4 w-4 mr-2" />
+                                            ID: {detail.user?.identity_number || 'N/A'}
                                         </div>
-                                        
-                                        <div className="space-y-1">
-                                            <div className="flex items-center justify-between text-sm">
-                                                <span className="text-blue-600">📋 {getText('Borrowed', 'Dipinjam')}:</span>
-                                                <span className="font-bold text-blue-600">{detail.borrowed_quantity}</span>
-                                            </div>
-                                            
-                                            <div className="flex items-center justify-between text-sm">
-                                                <span className="text-green-600">✅ {getText('Returned', 'Dikembalikan')}:</span>
-                                                <span className="font-bold text-green-600">{detail.returned_quantity}</span>
-                                            </div>
-                                            
-                                            <div className="border-t border-gray-200 pt-1">
-                                                <div className="flex items-center justify-between text-sm">
-                                                    <span className="text-red-600 font-medium">🚨 {getText('Missing', 'Hilang')}:</span>
-                                                    <span className="font-bold text-red-600 text-lg">
-                                                        {detail.missing_quantity}
-                                                    </span>
-                                                </div>
-                                            </div>
+                                        <div className="flex items-center text-sm text-gray-600">
+                                            <Calendar className="h-4 w-4 mr-2" />
+                                            Date: {format(new Date(detail.date), 'MMM d, yyyy')}
                                         </div>
-                                    </div>
-
-                                    <div className="text-xs text-red-700 bg-red-100 px-2 py-1 rounded text-center">
-                                        {detail.borrowed_quantity} - {detail.returned_quantity} = <strong>{detail.missing_quantity}</strong>
+                                        <div className="flex items-center text-sm space-x-2">
+                                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                {detail.source === 'booking' ? '📋 BOOKING' : '🔧 LENDING'}
+                                            </span>
+                                            
+                                            {/* Enhanced Checkout Status Display */}
+                                            {detail.checkout ? (
+                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                                    detail.checkout.status === 'active' 
+                                                        ? 'bg-yellow-100 text-yellow-800' 
+                                                        : detail.checkout.status === 'returned'
+                                                        ? 'bg-blue-100 text-blue-800'
+                                                        : detail.checkout.status === 'pending'
+                                                        ? 'bg-purple-100 text-purple-800'
+                                                        : detail.checkout.status === 'overdue'
+                                                        ? 'bg-red-100 text-red-800'
+                                                        : 'bg-gray-100 text-gray-800'
+                                                }`}>
+                                                    {detail.checkout.status === 'active' && '⏳ ACTIVE'}
+                                                    {detail.checkout.status === 'returned' && '🔄 RETURNED'}
+                                                    {detail.checkout.status === 'pending' && '⏸️ PENDING'}
+                                                    {detail.checkout.status === 'overdue' && '⚠️ OVERDUE'}
+                                                </span>
+                                            ) : (
+                                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                                    ❌ NO CHECKOUT
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                             
-                            {/* Action area */}
-                            <div className="mt-4 p-3 bg-red-100 border border-red-200 rounded-md">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center">
-                                        <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
-                                        <span className="text-sm font-medium text-red-800">
-                                            <strong>{getText('Gap Found:', 'Kesenjangan Ditemukan:')}</strong> {detail.missing_quantity} {selectedEquipment?.unit} {getText('missing', 'hilang')}
-                                            {detail.checkout?.status === 'active' && (
-                                                <span className="ml-2 text-red-700">
-                                                    ({getText('Checkout active but quantity gap remains', 'Checkout aktif tapi kesenjangan kuantitas masih ada')})
-                                                </span>
-                                            )}
-                                            {detail.checkout?.status === 'returned' && (
-                                                <span className="ml-2 text-red-700">
-                                                    ({getText('Checkout returned but quantity gap remains', 'Checkout dikembalikan tapi kesenjangan kuantitas masih ada')})
-                                                </span>
-                                            )}
-                                        </span>
+                            {/* Quantity calculation card */}
+                            <div className="text-right space-y-2">
+                                <div className="bg-white rounded-lg p-3 border border-red-200">
+                                    <div className="text-xs text-gray-600 mb-2 font-medium">
+                                        {getText('QUANTITY GAP', 'KESENJANGAN KUANTITAS')}
                                     </div>
                                     
-                                    {/* Complete button - show for any checkout that's not completed */}
-                                    {detail.checkout && detail.checkout.status !== 'completed' && (
-                                        <button
-                                            onClick={() => handleMarkAsCompleted(detail.checkout!.id, selectedEquipment!.id)}
-                                            className="ml-3 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 transition-colors"
-                                            title={getText('Mark this case as completed', 'Tandai kasus ini sebagai selesai')}
-                                        >
-                                            ✅ {getText('Mark Completed', 'Tandai Selesai')}
-                                        </button>
-                                    )}
+                                    <div className="space-y-1">
+                                        <div className="flex items-center justify-between text-sm">
+                                            <span className="text-blue-600">📋 {getText('Borrowed', 'Dipinjam')}:</span>
+                                            <span className="font-bold text-blue-600">{detail.borrowed_quantity}</span>
+                                        </div>
+                                        
+                                        <div className="flex items-center justify-between text-sm">
+                                            <span className="text-green-600">✅ {getText('Returned', 'Dikembalikan')}:</span>
+                                            <span className="font-bold text-green-600">{detail.returned_quantity}</span>
+                                        </div>
+                                        
+                                        <div className="border-t border-gray-200 pt-1">
+                                            <div className="flex items-center justify-between text-sm">
+                                                <span className="text-red-600 font-medium">🚨 {getText('Missing', 'Hilang')}:</span>
+                                                <span className="font-bold text-red-600 text-lg">
+                                                    {detail.missing_quantity}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                                
-                                {/* Help text */}
-                                <div className="mt-2 text-xs text-red-600">
-                                    {getText(
-                                        'Click "Mark Completed" to close this case if the gap is acceptable or resolved offline.',
-                                        'Klik "Tandai Selesai" untuk menutup kasus ini jika kesenjangan dapat diterima atau diselesaikan secara offline.'
-                                    )}
+
+                                <div className="text-xs text-red-700 bg-red-100 px-2 py-1 rounded text-center">
+                                    {detail.borrowed_quantity} - {detail.returned_quantity} = <strong>{detail.missing_quantity}</strong>
                                 </div>
                             </div>
                         </div>
-                    ))}
-                </div>
+                        
+                        {/* Enhanced Action area */}
+                        <div className="mt-4 p-3 bg-red-100 border border-red-200 rounded-md">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center">
+                                    <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
+                                    <span className="text-sm font-medium text-red-800">
+                                        <strong>{getText('Gap Found:', 'Kesenjangan Ditemukan:')}</strong> {detail.missing_quantity} {selectedEquipment?.unit} {getText('missing', 'hilang')}
+                                        
+                                        {/* Enhanced status explanations */}
+                                        {detail.checkout?.status === 'active' && (
+                                            <span className="ml-2 text-red-700">
+                                                ({getText('Active checkout with quantity gap', 'Checkout aktif dengan kesenjangan kuantitas')})
+                                            </span>
+                                        )}
+                                        {detail.checkout?.status === 'returned' && (
+                                            <span className="ml-2 text-red-700">
+                                                ({getText('Returned checkout with quantity gap', 'Checkout dikembalikan dengan kesenjangan kuantitas')})
+                                            </span>
+                                        )}
+                                        {detail.checkout?.status === 'pending' && (
+                                            <span className="ml-2 text-red-700">
+                                                ({getText('Pending checkout with quantity gap', 'Checkout tertunda dengan kesenjangan kuantitas')})
+                                            </span>
+                                        )}
+                                        {detail.checkout?.status === 'overdue' && (
+                                            <span className="ml-2 text-red-700">
+                                                ({getText('Overdue checkout with quantity gap', 'Checkout terlambat dengan kesenjangan kuantitas')})
+                                            </span>
+                                        )}
+                                        {!detail.checkout && (
+                                            <span className="ml-2 text-red-700">
+                                                ({getText('No checkout record - all items missing', 'Tidak ada record checkout - semua barang hilang')})
+                                            </span>
+                                        )}
+                                    </span>
+                                </div>
+                                
+                                {/* Complete button - show for any checkout that exists */}
+                                {detail.checkout && (
+                                    <button
+                                        onClick={() => handleMarkAsCompleted(detail.checkout!.id, selectedEquipment!.id)}
+                                        className="ml-3 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 transition-colors"
+                                        title={getText('Mark this case as completed', 'Tandai kasus ini sebagai selesai')}
+                                    >
+                                        ✅ {getText('Mark Completed', 'Tandai Selesai')}
+                                    </button>
+                                )}
+                            </div>
+                            
+                            {/* Help text */}
+                            <div className="mt-2 text-xs text-red-600">
+                                {detail.checkout ? (
+                                    getText(
+                                        'Click "Mark Completed" to close this case if the gap is acceptable or resolved offline.',
+                                        'Klik "Tandai Selesai" untuk menutup kasus ini jika kesenjangan dapat diterima atau diselesaikan secara offline.'
+                                    )
+                                ) : (
+                                    getText(
+                                        'No checkout record found. This indicates items were never returned through the system.',
+                                        'Tidak ada record checkout ditemukan. Ini menunjukkan barang tidak pernah dikembalikan melalui sistem.'
+                                    )
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                ))}
             </div>
-        );
-    };
+        </div>
+    );
+};
 
     // Show loading state while profile is being loaded
     if (!profile) {
