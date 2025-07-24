@@ -560,31 +560,31 @@ const ToolAdministration: React.FC = () => {
 
     // ✅ NEW FUNCTION: Mark checkout as completed
     const handleMarkAsCompleted = async (checkoutId: string, equipmentId: string) => {
-        try {
-            console.log('✅ Marking checkout as completed:', checkoutId);
-            
-            // Update checkout status dari 'active' atau 'returned' ke 'completed'
-            const { error } = await supabase
-                .from('checkouts')
-                .update({ 
-                    status: 'completed',
-                    actual_return_date: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', checkoutId);
+    try {
+        console.log('✅ Marking checkout as completed:', checkoutId);
+        
+        // Update checkout status to 'completed'
+        const { error } = await supabase
+            .from('checkouts')
+            .update({ 
+                status: 'completed',
+                actual_return_date: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', checkoutId);
 
-            if (error) throw error;
+        if (error) throw error;
 
-            toast.success(getText('✅ Checkout marked as completed!', '✅ Checkout berhasil ditandai selesai!'));
-            
-            // Refresh the lending details
-            fetchLendingDetails(equipmentId);
-            
-        } catch (error: any) {
-            console.error('❌ Error marking checkout as completed:', error);
-            toast.error(error.message || getText('Failed to mark as completed', 'Gagal menandai sebagai selesai'));
-        }
-    };
+        toast.success(getText('✅ Checkout marked as completed!', '✅ Checkout berhasil ditandai selesai!'));
+        
+        // Refresh the gap analysis
+        fetchLendingDetails(equipmentId);
+        
+    } catch (error: any) {
+        console.error('❌ Error marking checkout as completed:', error);
+        toast.error(error.message || getText('Failed to mark as completed', 'Gagal menandai sebagai selesai'));
+    }
+};
 
     const handleSubmit = async (data: EquipmentForm) => {
         try {
