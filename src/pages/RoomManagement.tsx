@@ -14,23 +14,23 @@ import { useRoomData } from '../hooks/useRoomData';
 import { useRealTimeRoomUpdates } from '../hooks/useRealTimeRoomUpdates';
 import { usePerformanceMonitor } from '../hooks/usePerformanceMonitor';
 import { EnhancedRoomStatus } from '../stores/roomStore';
-import { useLanguage } from '../contexts/LanguageContext'; // ✅ NEW: Import language context
-import { alert } from '../components/Alert/AlertHelper'; // ✅ NEW: Import Sweet Alert
+import { useLanguage } from '../contexts/LanguageContext';
+import { alert } from '../components/Alert/AlertHelper'; // Still importing for success/error alerts
 
 // ========================
 // TIMEZONE UTILITY FUNCTIONS
 // ========================
 const convertLocalToUTC = (localDateTimeString: string) => {
-  const localDate = new Date(localDateTimeString);
-  return localDate.toISOString();
+    const localDate = new Date(localDateTimeString);
+    return localDate.toISOString();
 };
 
 const convertUTCToLocal = (utcTimeString: string) => {
-  return new Date(utcTimeString);
+    return new Date(utcTimeString);
 };
 
 const getLocalDateString = (date = new Date()) => {
-  return format(date, 'yyyy-MM-dd');
+    return format(date, 'yyyy-MM-dd');
 };
 
 const roomSchema = z.object({
@@ -72,9 +72,8 @@ interface CombinedSchedule {
 
 const RoomManagement: React.FC = () => {
     const { profile } = useAuth();
-    const { getText } = useLanguage(); // ✅ NEW: Use language hook
+    const { getText } = useLanguage();
     
-    // ✅ NEW: Use optimized room data hook
     const [targetDate, setTargetDate] = useState(getLocalDateString());
     const [searchStartTime, setSearchStartTime] = useState('07:30');
     const [searchEndTime, setSearchEndTime] = useState('17:00');
@@ -82,11 +81,9 @@ const RoomManagement: React.FC = () => {
     
     const { rooms: optimizedRooms, loading: roomsLoading, error: roomsError, fetchRoomData, cacheStats } = useRoomData(targetDate);
     
-    // ✅ NEW: Real-time updates
     useRealTimeRoomUpdates(targetDate);
     usePerformanceMonitor();
     
-    // Legacy states (keeping for compatibility)
     const [allRooms, setAllRooms] = useState<EnhancedRoomStatus[]>([]);
     const [displayedRooms, setDisplayedRooms] = useState<EnhancedRoomStatus[]>([]);
     const [departments, setDepartments] = useState<Department[]>([]);
@@ -96,11 +93,9 @@ const RoomManagement: React.FC = () => {
     const [editingRoom, setEditingRoom] = useState<EnhancedRoomStatus | null>(null);
     const [showRoomDetail, setShowRoomDetail] = useState<EnhancedRoomStatus | null>(null);
     
-    // Schedule states
     const [combinedSchedules, setCombinedSchedules] = useState<CombinedSchedule[]>([]);
     const [loadingSchedules, setLoadingSchedules] = useState(false);
     
-    // Equipment and users states
     const [selectedRoomEquipment, setSelectedRoomEquipment] = useState<Equipment[]>([]);
     const [loadingEquipment, setLoadingEquipment] = useState(false);
     const [roomUsers, setRoomUsers] = useState<RoomUser[]>([]);
@@ -115,14 +110,21 @@ const RoomManagement: React.FC = () => {
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [showAvailabilitySearch, setShowAvailabilitySearch] = useState(false);
     
-    // Room name autocomplete states
     const [roomNameSuggestions, setRoomNameSuggestions] = useState<string[]>([]);
     const [roomNameInput, setRoomNameInput] = useState('');
     const [showRoomSuggestions, setShowRoomSuggestions] = useState(false);
     const [filteredRoomSuggestions, setFilteredRoomSuggestions] = useState<string[]>([]);
     
-    const [showUnassignModal, setShowUnassignModal] = useState(false);
-    const [userToUnassign, setUserToUnassign] = useState<{id: string, name: string} | null>(null);
+    // NEW: State for custom confirmation modal
+    const [showCustomConfirmModal, setShowCustomConfirmModal] = useState(false);
+    const [customConfirmModalContent, setCustomConfirmModalContent] = useState<{
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        onCancel: () => void;
+    } | null>(null);
+    const confirmPromiseResolve = useRef<((value: boolean) => void) | null>(null);
+
 
     // Refs untuk dropdown manual DOM manipulation
     const userDropdownRef = useRef<HTMLDivElement>(null);
@@ -130,7 +132,6 @@ const RoomManagement: React.FC = () => {
 
     const form = useForm<RoomForm>({ resolver: zodResolver(roomSchema) });
 
-    // ✅ NEW: Optimized room status logic with timezone handling (from BookRoom)
     const getOptimizedRoomStatus = useCallback((room: EnhancedRoomStatus) => {
         // 1. Check if room is disabled
         if (!room.is_available) {
@@ -199,9 +200,9 @@ const RoomManagement: React.FC = () => {
                 reason: getText('Room has scheduled activities', 'Ruangan memiliki aktivitas terjadwal'),
                 color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
                 scheduleCount: (room.scheduleDetails?.lectures?.length || 0) + 
-                            (room.scheduleDetails?.exams?.length || 0) + 
-                            (room.scheduleDetails?.sessions?.length || 0) + 
-                            (room.targetDateBookings?.length || 0)
+                                (room.scheduleDetails?.exams?.length || 0) + 
+                                (room.scheduleDetails?.sessions?.length || 0) + 
+                                (room.targetDateBookings?.length || 0)
             };
         }
 
@@ -213,7 +214,6 @@ const RoomManagement: React.FC = () => {
         };
     }, [targetDate, searchStartTime, searchEndTime, isSearchMode, getText]);
 
-    // ✅ NEW: Availability search function (from BookRoom)
     const findAvailableRooms = async () => {
         if (!searchStartTime || !searchEndTime) { 
             alert.error(getText('Please complete all search filters.', 'Mohon lengkapi semua filter pencarian.')); 
@@ -244,7 +244,6 @@ const RoomManagement: React.FC = () => {
         }
     };
 
-    // ✅ NEW: Reset to today's view
     const handleBackToToday = () => {
         setIsSearchMode(false);
         const today = getLocalDateString();
@@ -253,7 +252,6 @@ const RoomManagement: React.FC = () => {
         alert.success(getText('Switched back to today\'s room status!', 'Kembali ke status ruangan hari ini!'));
     };
 
-    // ✅ Sync optimized rooms with legacy state
     useEffect(() => {
         if (optimizedRooms && optimizedRooms.length > 0) {
             setAllRooms(optimizedRooms);
@@ -261,7 +259,6 @@ const RoomManagement: React.FC = () => {
         }
     }, [optimizedRooms]);
 
-    // ✅ Initial data fetch
     useEffect(() => {
         if (profile) {
             fetchRoomData(targetDate, true);
@@ -271,7 +268,6 @@ const RoomManagement: React.FC = () => {
         }
     }, [profile, fetchRoomData, targetDate]);
 
-    // ✅ Enhanced filtered and sorted rooms with optimized status
     const filteredAndSortedRooms = useMemo(() => {
         if (!Array.isArray(displayedRooms)) return [];
         
@@ -298,7 +294,6 @@ const RoomManagement: React.FC = () => {
         });
     }, [displayedRooms, searchTerm, filterStatus, showInUse, getOptimizedRoomStatus]);
 
-    // Enhanced fetch schedules for room detail modal
     const fetchSchedulesForRoom = async (roomName: string, roomId: string) => { 
         setLoadingSchedules(true); 
         try { 
@@ -447,7 +442,6 @@ const RoomManagement: React.FC = () => {
         } 
     };
 
-    // Fetch room suggestions from lecture_schedules
     const fetchRoomSuggestions = async () => {
         try {
             const { data, error } = await supabase
@@ -464,7 +458,6 @@ const RoomManagement: React.FC = () => {
         }
     };
 
-    // Filter room suggestions based on input
     useEffect(() => {
         if (roomNameInput.length >= 1) {
             const filtered = roomNameSuggestions.filter(room => 
@@ -478,13 +471,11 @@ const RoomManagement: React.FC = () => {
         }
     }, [roomNameInput, roomNameSuggestions]);
 
-    // Handle room name input change
     const handleRoomNameChange = (value: string) => {
         setRoomNameInput(value);
         form.setValue('name', value);
     };
 
-    // Handle room name selection from dropdown
     const handleRoomNameSelect = (roomName: string) => {
         setRoomNameInput(roomName);
         form.setValue('name', roomName);
@@ -513,7 +504,6 @@ const RoomManagement: React.FC = () => {
         } 
     };
 
-    // Fetch ALL users (semua role) untuk assignment dropdown
     const fetchAllUsers = async () => {
         try {
             const { data, error } = await supabase
@@ -534,7 +524,6 @@ const RoomManagement: React.FC = () => {
         }
     };
 
-    // Manual DOM manipulation untuk user dropdown dengan search internal (SEMUA ROLE)
     const showUserDropdown = () => {
         const dropdownHTML = `
             <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
@@ -587,11 +576,9 @@ const RoomManagement: React.FC = () => {
             const searchInput = userDropdownRef.current.querySelector('#user-search-input');
             const userList = userDropdownRef.current.querySelector('#user-list');
             
-            // Focus pada search input
             if (searchInput) {
                 (searchInput as HTMLInputElement).focus();
                 
-                // Real-time search tanpa delay
                 searchInput.addEventListener('input', (e) => {
                     const searchTerm = (e.target as HTMLInputElement).value.toLowerCase();
                     
@@ -626,13 +613,11 @@ const RoomManagement: React.FC = () => {
                             </div>
                         `).join('');
                         
-                        // Re-add click listeners after re-rendering
                         addUserListeners();
                     }
                 });
             }
             
-            // Add initial click listeners
             addUserListeners();
         }
     };
@@ -656,12 +641,10 @@ const RoomManagement: React.FC = () => {
                 
                 setSelectedUser(user);
                 
-                // Set display value
                 if (userDisplayRef.current) {
                     userDisplayRef.current.value = userName || '';
                 }
                 
-                // Hide dropdown
                 hideUserDropdown();
             });
         });
@@ -673,7 +656,6 @@ const RoomManagement: React.FC = () => {
         }
     };
 
-    // Function untuk mendapatkan warna berdasarkan role
     const getRoleColor = (role: string) => {
         switch (role) {
             case 'student': return 'from-blue-500 to-indigo-500';
@@ -698,7 +680,6 @@ const RoomManagement: React.FC = () => {
         }
     };
 
-    // Fetch assigned users for room
     const fetchRoomUsers = async (roomId: string) => {
         setLoadingRoomUsers(true);
         try {
@@ -727,7 +708,6 @@ const RoomManagement: React.FC = () => {
         }
     };
 
-    // Assign user to room
     const handleAssignUser = async () => {
         if (!selectedUser || !showRoomDetail) return;
         
@@ -783,7 +763,6 @@ const RoomManagement: React.FC = () => {
             
             if (error) throw error;
             
-            // Update local state
             if (showRoomDetail) {
                 setShowRoomDetail({
                     ...showRoomDetail,
@@ -791,7 +770,6 @@ const RoomManagement: React.FC = () => {
                 });
             }
             
-            // Force refresh room data
             await fetchRoomData(targetDate, true);
             
             alert.success(getText(
@@ -804,34 +782,78 @@ const RoomManagement: React.FC = () => {
         }
     };
 
-    // Unassign user from room
-    const handleUnassignUser = async (roomUserId: string, userName: string) => {
-        setUserToUnassign({id: roomUserId, name: userName});
-        setShowUnassignModal(true);
+    // NEW: Function to show custom confirmation modal
+    const showConfirmationModal = useCallback((title: string, message: string): Promise<boolean> => {
+        return new Promise((resolve) => {
+            setCustomConfirmModalContent({
+                title,
+                message,
+                onConfirm: () => {
+                    resolve(true);
+                    setShowCustomConfirmModal(false);
+                    setCustomConfirmModalContent(null);
+                },
+                onCancel: () => {
+                    resolve(false);
+                    setShowCustomConfirmModal(false);
+                    setCustomConfirmModalContent(null);
+                },
+            });
+            setShowCustomConfirmModal(true);
+        });
+    }, []);
+
+
+    const handleDelete = async (roomId: string) => { 
+        // Use custom confirmation modal
+        const confirmed = await showConfirmationModal(
+            getText('Are you sure you want to delete this room?', 'Apakah Anda yakin ingin menghapus ruangan ini?'),
+            getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')
+        );
+        
+        if (!confirmed) return;
+        
+        try { 
+            const { error } = await supabase.from('rooms').delete().eq('id', roomId); 
+            if (error) throw error; 
+            alert.success(getText('Room deleted successfully!', 'Ruangan berhasil dihapus!')); 
+            await fetchRoomData(targetDate, true);
+        } catch (error: any) { 
+            console.error('Error deleting room:', error); 
+            alert.error(error.message || getText('Failed to delete room', 'Gagal menghapus ruangan')); 
+        } 
     };
 
-    const confirmUnassignUser = async () => {
-        if (!userToUnassign) return;
-        
+    // Unassign user from room (updated to use custom confirm)
+    const handleUnassignUser = async (roomUserId: string, userName: string) => {
+        const confirmed = await showConfirmationModal(
+            getText('Confirm Removal', 'Konfirmasi Penghapusan'),
+            getText(
+                `Are you sure you want to remove ${userName} from this room? This action cannot be undone. The user will lose access to this room.`,
+                `Apakah Anda yakin ingin menghapus ${userName} dari ruangan ini? Tindakan ini tidak dapat dibatalkan. Pengguna akan kehilangan akses ke ruangan ini.`
+            )
+        );
+
+        if (!confirmed) return;
+
         try {
             const { error } = await supabase
                 .from('room_users')
                 .delete()
-                .eq('id', userToUnassign.id);
+                .eq('id', roomUserId);
             
             if (error) throw error;
             
             alert.success(getText(
-                `${userToUnassign.name} removed from room successfully`,
-                `${userToUnassign.name} berhasil dihapus dari ruangan`
+                `${userName} removed from room successfully`,
+                `${userName} berhasil dihapus dari ruangan`
             ));
-            fetchRoomUsers(showRoomDetail!.id);
+            if (showRoomDetail) { // Ensure showRoomDetail is not null before fetching
+                fetchRoomUsers(showRoomDetail.id);
+            }
         } catch (error) {
             console.error('Error unassigning user:', error);
             alert.error(getText('Failed to remove user from room', 'Gagal menghapus pengguna dari ruangan'));
-        } finally {
-            setShowUnassignModal(false);
-            setUserToUnassign(null);
         }
     };
     
@@ -886,25 +908,6 @@ const RoomManagement: React.FC = () => {
         setShowForm(true); 
     };
 
-    const handleDelete = async (roomId: string) => { 
-        const confirmed = await alert.confirm(
-            getText('Are you sure you want to delete this room?', 'Apakah Anda yakin ingin menghapus ruangan ini?'),
-            getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')
-        );
-        
-        if (!confirmed) return;
-        
-        try { 
-            const { error } = await supabase.from('rooms').delete().eq('id', roomId); 
-            if (error) throw error; 
-            alert.success(getText('Room deleted successfully!', 'Ruangan berhasil dihapus!')); 
-            await fetchRoomData(targetDate, true);
-        } catch (error: any) { 
-            console.error('Error deleting room:', error); 
-            alert.error(error.message || getText('Failed to delete room', 'Gagal menghapus ruangan')); 
-        } 
-    };
-
     const handleAddNewRoom = () => {
         setEditingRoom(null);
         setRoomNameInput('');
@@ -912,7 +915,6 @@ const RoomManagement: React.FC = () => {
         setShowForm(true);
     };
 
-    // ✅ NEW: Enhanced status color function
     const getStatusColor = (status: string) => { 
         switch (status) { 
             case 'In Use': return 'bg-red-100 text-red-800 border-red-200'; 
@@ -924,7 +926,6 @@ const RoomManagement: React.FC = () => {
         } 
     };
 
-    // Component untuk menampilkan combined schedules dalam satu section
     const CombinedScheduleSection = () => {
         const titleText = isSearchMode ? 
             getText(`Schedule for ${format(new Date(targetDate), 'EEEE, MMMM d, yyyy')}`, `Jadwal untuk ${format(new Date(targetDate), 'EEEE, d MMMM yyyy')}`) :
@@ -976,9 +977,9 @@ const RoomManagement: React.FC = () => {
                                                 <div className="flex items-center space-x-2">
                                                     <span className={`text-xs font-medium ${schedule.color} bg-white px-2 py-1 rounded-full uppercase tracking-wide`}>
                                                         {schedule.type === 'lecture' ? getText('Lecture', 'Kuliah') : 
-                                                         schedule.type === 'exam' ? getText('Exam', 'UAS') :
-                                                         schedule.type === 'session' ? getText('Session', 'Sidang') :
-                                                         getText('Booking', 'Booking')}
+                                                           schedule.type === 'exam' ? getText('Exam', 'UAS') :
+                                                           schedule.type === 'session' ? getText('Session', 'Sidang') :
+                                                           getText('Booking', 'Booking')}
                                                     </span>
                                                     <span className="font-semibold text-gray-900 text-lg">
                                                         {schedule.end_time ? 
@@ -1032,7 +1033,6 @@ const RoomManagement: React.FC = () => {
         );
     };
 
-    // User Search Dropdown Component dengan manual DOM (SEMUA ROLE)
     const UserSearchDropdown = () => (
         <div className="relative">
             <label className="block text-sm font-medium text-gray-700 mb-2">{getText('Search and Select User', 'Cari dan Pilih Pengguna')}</label>
@@ -1121,7 +1121,6 @@ const RoomManagement: React.FC = () => {
             </div>
             
             <div className="bg-white rounded-xl shadow-sm border p-6">
-                {/* ✅ NEW: Enhanced Search Section */}
                 <div className="space-y-4">
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-medium text-gray-900 flex items-center space-x-2">
@@ -1233,7 +1232,7 @@ const RoomManagement: React.FC = () => {
                                 <input
                                     type="checkbox"
                                     checked={showInUse}
-                                  onChange={(e) => setShowInUse(e.target.checked)}
+                                    onChange={(e) => setShowInUse(e.target.checked)}
                                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                                 />
                                 <span className="text-sm text-gray-700">{getText('Show In Use', 'Tampilkan Sedang Digunakan')}</span>
@@ -1280,7 +1279,6 @@ const RoomManagement: React.FC = () => {
                                                 <span>{room.department?.name || getText('General', 'Umum')}</span>
                                             </div>
                                             
-                                            {/* ✅ NEW: Enhanced status details */}
                                             {roomStatus.status === 'Conflict' && (
                                                 <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded text-xs text-orange-700">
                                                     <AlertTriangle className="h-3 w-3 inline mr-1" />
@@ -1460,7 +1458,7 @@ const RoomManagement: React.FC = () => {
                                                             </button>
                                                         ))}
                                                         <div className="border-t border-gray-200 px-3 py-2 text-xs text-gray-500 bg-gray-50">
-                                                            💡 {getText('Select from existing rooms or type a new name', 'Pilih dari ruangan yang ada atau ketik nama baru')}
+                                                            � {getText('Select from existing rooms or type a new name', 'Pilih dari ruangan yang ada atau ketik nama baru')}
                                                         </div>
                                                     </>
                                                 ) : roomNameInput.length >= 1 ? (
@@ -1715,7 +1713,7 @@ const RoomManagement: React.FC = () => {
                                 
                                 {/* Right Column - Enhanced Schedule Display */}
                                 <div className="lg:col-span-2">
-                                  <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">
                                         {getText(
                                             `Complete Schedule for ${format(new Date(targetDate), 'EEEE, MMMM d, yyyy')}`,
                                             `Jadwal Lengkap untuk ${format(new Date(targetDate), 'EEEE, d MMMM yyyy')}`
@@ -1786,20 +1784,17 @@ const RoomManagement: React.FC = () => {
                 </div>
             )}
 
-            {/* Unassign Confirmation Modal */}
-            {showUnassignModal && userToUnassign && (
+            {/* NEW: Custom Confirmation Modal */}
+            {showCustomConfirmModal && customConfirmModalContent && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001] p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
                         <div className="p-6">
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-lg font-semibold text-gray-900">
-                                    {getText('Confirm Removal', 'Konfirmasi Penghapusan')}
+                                    {customConfirmModalContent.title}
                                 </h3>
                                 <button
-                                    onClick={() => {
-                                        setShowUnassignModal(false);
-                                        setUserToUnassign(null);
-                                    }}
+                                    onClick={customConfirmModalContent.onCancel}
                                     className="text-gray-400 hover:text-gray-600 transition-colors"
                                 >
                                     <X className="h-6 w-6" />
@@ -1807,22 +1802,16 @@ const RoomManagement: React.FC = () => {
                             </div>
                             
                             <div className="mb-6">
-                                <div className="flex items-center space-x-3 p-4 bg-red-50 rounded-lg border border-red-200">
-                                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                                        <UserMinus className="h-5 w-5 text-red-600" />
+                                <div className="flex items-start space-x-3 p-4 bg-red-50 rounded-lg border border-red-200">
+                                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                                        <AlertTriangle className="h-5 w-5 text-red-600" />
                                     </div>
                                     <div>
-                                        <p className="text-sm text-gray-900">
-                                            {getText(
-                                                `Are you sure you want to remove ${userToUnassign.name} from this room?`,
-                                                `Apakah Anda yakin ingin menghapus ${userToUnassign.name} dari ruangan ini?`
-                                            )}
+                                        <p className="text-sm text-gray-900 font-medium">
+                                            {customConfirmModalContent.message}
                                         </p>
                                         <p className="text-xs text-gray-600 mt-1">
-                                            {getText(
-                                                'This action cannot be undone. The user will lose access to this room.',
-                                                'Tindakan ini tidak dapat dibatalkan. Pengguna akan kehilangan akses ke ruangan ini.'
-                                            )}
+                                            {getText('This action cannot be undone.', 'Tindakan ini tidak dapat dibatalkan.')}
                                         </p>
                                     </div>
                                 </div>
@@ -1830,19 +1819,16 @@ const RoomManagement: React.FC = () => {
 
                             <div className="flex space-x-3">
                                 <button
-                                    onClick={() => {
-                                        setShowUnassignModal(false);
-                                        setUserToUnassign(null);
-                                    }}
+                                    onClick={customConfirmModalContent.onCancel}
                                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                                 >
                                     {getText('Cancel', 'Batal')}
                                 </button>
                                 <button
-                                    onClick={confirmUnassignUser}
+                                    onClick={customConfirmModalContent.onConfirm}
                                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
                                 >
-                                    {getText('Remove User', 'Hapus Pengguna')}
+                                    {getText('Confirm', 'Konfirmasi')}
                                 </button>
                             </div>
                         </div>
@@ -1854,3 +1840,4 @@ const RoomManagement: React.FC = () => {
 };
 
 export default RoomManagement;
+�
