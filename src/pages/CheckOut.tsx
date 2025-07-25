@@ -52,6 +52,7 @@ interface BookingWithDetails {
   class_type: string;
   status: string;
   equipment_requested: string[];
+  equipment_quantities: number[];
   notes?: string;
   user_info?: {
     full_name: string;
@@ -106,6 +107,7 @@ type CombinedRecord = BookingWithDetails | LendingToolWithDetails;
 const CheckOut: React.FC = () => {
   const { getText } = useLanguage();
   const [allRecords, setAllRecords] = useState<CombinedRecord[]>([]);
+  const [allEquipment, setAllEquipment] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showRecordDropdown, setShowRecordDropdown] = useState(false);
@@ -129,6 +131,7 @@ const CheckOut: React.FC = () => {
 
   useEffect(() => {
     fetchAllRecords();
+    fetchAllEquipment();
   }, []);
 
   useEffect(() => {
@@ -154,6 +157,21 @@ const CheckOut: React.FC = () => {
       setAttachments([]);
     }
   }, [watchHasIssues, form]);
+
+  // ✅ Fetch equipment data
+  const fetchAllEquipment = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('equipment')
+        .select('id, name, code, category, quantity, unit')
+        .order('name');
+      
+      if (error) throw error;
+      setAllEquipment(data || []);
+    } catch (error) {
+      console.error('Error fetching equipment:', error);
+    }
+  };
 
   // ✅ PERBAIKAN: fetchAllRecords untuk approved dan borrow status
   const fetchAllRecords = async () => {
@@ -344,6 +362,14 @@ const CheckOut: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // ✅ Refresh both data sources
+  const refreshData = async () => {
+    await Promise.all([
+      fetchAllRecords(),
+      fetchAllEquipment()
+    ]);
   };
 
   const handleRecordSelect = (record: CombinedRecord, event?: React.MouseEvent) => {
@@ -555,7 +581,7 @@ const CheckOut: React.FC = () => {
       setSearchTerm('');
       
       // Refresh the records list
-      await fetchAllRecords();
+      await refreshData();
 
     } catch (error: any) {
       console.error('Error processing checkout:', error);
@@ -722,7 +748,7 @@ const CheckOut: React.FC = () => {
                         </p>
                         {allRecords.length === 0 && (
                           <button
-                            onClick={fetchAllRecords}
+                            onClick={refreshData}
                             className="mt-4 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors duration-200 flex items-center space-x-2"
                           >
                             <RefreshCw className="h-4 w-4" />
@@ -945,51 +971,153 @@ const CheckOut: React.FC = () => {
                       </div>
                     </div>
                     
-                    {/* Equipment/Items Display */}
-                    {selectedRecord.record_type === 'booking' ? (
-                      (selectedRecord as BookingWithDetails).equipment_requested && (selectedRecord as BookingWithDetails).equipment_requested.length > 0 && (
-                        <div>
-                          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide mb-3 block">
-                            {getText('Requested Equipment', 'Peralatan yang Diminta')}
-                          </span>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {(selectedRecord as BookingWithDetails).equipment_requested.map((item, index) => (
-                              <div key={index} className="flex items-center p-3 bg-white/60 rounded-xl border border-emerald-200/50">
-                                <div className="h-8 w-8 bg-emerald-100 rounded-lg flex items-center justify-center mr-3">
-                                  <Zap className="h-4 w-4 text-emerald-600" />
-                                </div>
-                                <div className="font-medium text-emerald-900">{item}</div>
+                    {/* ✅ IMPROVED Equipment/Items Display */}
+                    {selectedRecord && (
+                      <>
+                        {selectedRecord.record_type === 'booking' ? (
+                          // ✅ BOOKING EQUIPMENT DISPLAY
+                          (selectedRecord as BookingWithDetails).equipment_requested && 
+                          (selectedRecord as BookingWithDetails).equipment_requested.length > 0 ? (
+                            <div className="mt-6">
+                              <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide mb-3 block">
+                                {getText('Requested Equipment', 'Peralatan yang Diminta')}
+                                <span className="ml-2 text-xs normal-case">
+                                  ({(selectedRecord as BookingWithDetails).equipment_requested.length} types, {
+                                    (selectedRecord as BookingWithDetails).equipment_quantities?.reduce((sum, qty) => sum + qty, 0) || 
+                                    (selectedRecord as BookingWithDetails).equipment_requested.length
+                                  } total items)
+                                </span>
+                              </span>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {(selectedRecord as BookingWithDetails).equipment_requested.map((equipmentId, index) => {
+                                  // ✅ Get EXACT quantity from equipment_quantities array
+                                  const requestedQuantity = (selectedRecord as BookingWithDetails).equipment_quantities && 
+                                                          (selectedRecord as BookingWithDetails).equipment_quantities[index] 
+                                    ? (selectedRecord as BookingWithDetails).equipment_quantities[index] 
+                                    : 1;
+
+                                  // ✅ Get equipment details from allEquipment
+                                  const equipmentDetails = allEquipment.find(eq => eq.id === equipmentId);
+                                  const equipmentName = equipmentDetails?.name || `Equipment ${equipmentId}`;
+                                  const equipmentCode = equipmentDetails?.code || 'Unknown';
+                                  const equipmentUnit = equipmentDetails?.unit || 'pcs';
+                                  const equipmentCategory = equipmentDetails?.category || 'Unknown';
+
+                                  return (
+                                    <div key={`${equipmentId}-${index}`} className="flex items-center justify-between p-3 bg-white/60 rounded-xl border border-emerald-200/50">
+                                      <div className="flex items-center">
+                                        <div className="h-8 w-8 bg-emerald-100 rounded-lg flex items-center justify-center mr-3">
+                                          <Zap className="h-4 w-4 text-emerald-600" />
+                                        </div>
+                                        <div>
+                                          <div className="font-medium text-emerald-900">{equipmentName}</div>
+                                          <div className="text-xs text-emerald-700">{equipmentCode}</div>
+                                          <div className="text-xs text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded mt-1">
+                                            {equipmentCategory}
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <div className="font-bold text-emerald-900 text-lg">{requestedQuantity}</div>
+                                        <div className="text-xs text-emerald-600">{equipmentUnit}</div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
-                            ))}
-                          </div>
-                        </div>
-                      )
-                    ) : (
-                      (selectedRecord as LendingToolWithDetails).equipment_details && (selectedRecord as LendingToolWithDetails).equipment_details.length > 0 && (
-                        <div>
-                          <span className="text-sm font-semibold text-purple-700 uppercase tracking-wide mb-3 block">
-                            {getText('Borrowed Equipment', 'Peralatan yang Dipinjam')}
-                          </span>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {(selectedRecord as LendingToolWithDetails).equipment_details.map((equipment, index) => (
-                              <div key={equipment.id} className="flex items-center justify-between p-3 bg-white/60 rounded-xl border border-purple-200/50">
-                                <div className="flex items-center">
-                                  <div className="h-8 w-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
-                                    <Wrench className="h-4 w-4 text-purple-600" />
-                                  </div>
-                                  <div>
-                                    <div className="font-medium text-purple-900">{equipment.name}</div>
-                                    <div className="text-sm text-purple-700">{equipment.code}</div>
-                                  </div>
-                                </div>
-                                <div className="text-sm font-semibold text-purple-800">
-                                  Qty: {(selectedRecord as LendingToolWithDetails).qty[index] || 1}
+                              
+                              {/* ✅ Summary for booking */}
+                              <div className="mt-3 p-3 bg-emerald-100 rounded-lg">
+                                <div className="flex items-center text-emerald-700">
+                                  <CheckCircle className="h-4 w-4 mr-2" />
+                                  <span className="text-sm font-medium">
+                                    {getText('Total requested equipment', 'Total peralatan yang diminta')}: {
+                                      (selectedRecord as BookingWithDetails).equipment_quantities?.reduce((sum, qty) => sum + qty, 0) || 
+                                      (selectedRecord as BookingWithDetails).equipment_requested.length
+                                    } items
+                                  </span>
                                 </div>
                               </div>
-                            ))}
-                          </div>
-                        </div>
-                      )
+                            </div>
+                          ) : (
+                            <div className="mt-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                              <div className="flex items-center text-gray-500">
+                                <Package className="h-5 w-5 mr-2" />
+                                <span className="text-sm">{getText('No equipment requested for this booking', 'Tidak ada peralatan yang diminta untuk pemesanan ini')}</span>
+                              </div>
+                            </div>
+                          )
+                        ) : (
+                          // ✅ LENDING TOOL EQUIPMENT DISPLAY
+                          (selectedRecord as LendingToolWithDetails).equipment_details && 
+                          (selectedRecord as LendingToolWithDetails).equipment_details.length > 0 ? (
+                            <div className="mt-6">
+                              <span className="text-sm font-semibold text-purple-700 uppercase tracking-wide mb-3 block">
+                                {getText('Borrowed Equipment', 'Peralatan yang Dipinjam')}
+                                <span className="ml-2 text-xs normal-case">
+                                  ({(selectedRecord as LendingToolWithDetails).equipment_details.length} types, {
+                                    (selectedRecord as LendingToolWithDetails).qty?.reduce((sum, qty) => sum + qty, 0) || 
+                                    (selectedRecord as LendingToolWithDetails).equipment_details.length
+                                  } total items)
+                                </span>
+                              </span>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {(selectedRecord as LendingToolWithDetails).equipment_details.map((equipment, index) => {
+                                  // ✅ Get EXACT borrowed quantity from qty array
+                                  const borrowedQuantity = (selectedRecord as LendingToolWithDetails).qty && 
+                                                         (selectedRecord as LendingToolWithDetails).qty[index] 
+                                    ? (selectedRecord as LendingToolWithDetails).qty[index] 
+                                    : 1;
+
+                                  return (
+                                    <div key={`${equipment.id}-${index}`} className="flex items-center justify-between p-3 bg-white/60 rounded-xl border border-purple-200/50">
+                                      <div className="flex items-center">
+                                        <div className="h-8 w-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
+                                          <Wrench className="h-4 w-4 text-purple-600" />
+                                        </div>
+                                        <div>
+                                          <div className="font-medium text-purple-900">{equipment.name}</div>
+                                          <div className="text-xs text-purple-700">{equipment.code}</div>
+                                          <div className="text-xs text-purple-600 bg-purple-100 px-2 py-0.5 rounded mt-1">
+                                            {equipment.category}
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <div className="font-bold text-purple-900 text-lg">{borrowedQuantity}</div>
+                                        <div className="text-xs text-purple-600">qty</div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              
+                              {/* ✅ Summary for lending tools */}
+                              <div className="mt-3 p-3 bg-purple-100 rounded-lg">
+                                <div className="flex items-center text-purple-700">
+                                  <CheckCircle className="h-4 w-4 mr-2" />
+                                  <span className="text-sm font-medium">
+                                    {getText('Total borrowed equipment', 'Total peralatan dipinjam')}: {
+                                      (selectedRecord as LendingToolWithDetails).qty?.reduce((sum, qty) => sum + qty, 0) || 
+                                      (selectedRecord as LendingToolWithDetails).equipment_details.length
+                                    } items
+                                    <span className="ml-2 text-xs">
+                                      ({getText('Due date', 'Batas pengembalian')}: {format(new Date((selectedRecord as LendingToolWithDetails).date), 'MMM d, yyyy')})
+                                    </span>
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                              <div className="flex items-center text-gray-500">
+                                <Wrench className="h-5 w-5 mr-2" />
+                                <span className="text-sm">{getText('No equipment details available', 'Detail peralatan tidak tersedia')}</span>
+                              </div>
+                            </div>
+                          )
+                        )}
+                      </>
                     )}
                   </div>
                 )}
