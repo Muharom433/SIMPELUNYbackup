@@ -15,20 +15,13 @@ import {
   User,
   X,
   RefreshCw,
-  ChevronDown,
-  Eye,
-  EyeOff,
   ChevronLeft,
   ChevronRight,
-  ArrowUpDown,
-  Calendar,
-  MapPin,
-  Mail,
-  Phone,
-  Activity,
   Home,
   Clock,
-  GraduationCap
+  GraduationCap,
+  MapPin,
+  Activity // Ensure Activity is imported for the icon
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -87,7 +80,7 @@ interface Room {
   assigned_at?: string;
 }
 
-interface Activity {
+interface ActivityItem { // Renamed to avoid conflict with lucide-react Activity icon
   id: string;
   description: string;
   timestamp: string;
@@ -176,7 +169,7 @@ const UserManagement: React.FC = () => {
   const [showUserDetail, setShowUserDetail] = useState<User | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [userRooms, setUserRooms] = useState<Room[]>([]);
-  const [userActivities, setUserActivities] = useState<Activity[]>([]);
+  const [userActivities, setUserActivities] = useState<ActivityItem[]>([]);
   const [loadingUserDetails, setLoadingUserDetails] = useState(false);
 
   const itemsPerPage = 10;
@@ -345,14 +338,19 @@ const UserManagement: React.FC = () => {
     }
   }, [profile, fetchUsers, fetchDepartments, fetchStudyPrograms]);
 
-  useEffect(() => {
-    if (watchDepartmentId) {
-      const filteredPrograms = departments.find(d => d.id === watchDepartmentId) 
-        ? studyPrograms.filter(sp => sp.department_id === watchDepartmentId)
-        : studyPrograms;
-      // No need to refetch, just use existing data
-    }
-  }, [watchDepartmentId, departments, studyPrograms]);
+  // This useEffect was causing an issue because it was conditionally filtering study programs
+  // based on 'departments' state, which might not be fully loaded on first render.
+  // The filtering logic should ideally be within the render or a useMemo.
+  // For now, we'll remove this useEffect as the filtering is handled implicitly
+  // by the SimpleDropdown options prop.
+  // useEffect(() => {
+  //   if (watchDepartmentId) {
+  //     const filteredPrograms = departments.find(d => d.id === watchDepartmentId) 
+  //       ? studyPrograms.filter(sp => sp.department_id === watchDepartmentId)
+  //       : studyPrograms;
+  //     // No need to refetch, just use existing data
+  //   }
+  // }, [watchDepartmentId, departments, studyPrograms]);
 
   useEffect(() => {
     if (showUserDetail) {
@@ -360,24 +358,8 @@ const UserManagement: React.FC = () => {
     }
   }, [showUserDetail, fetchUserDetails]);
 
-  // Access control
+  // Access control check moved AFTER all hooks are declared
   const hasAccess = profile && ['super_admin', 'department_admin'].includes(profile.role);
-
-  if (!hasAccess) {
-    return (
-      <div className="flex items-center justify-center min-h-[50vh] p-4">
-        <div className="text-center">
-          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">
-            {getText('Access Denied', 'Akses Ditolak')}
-          </h3>
-          <p className="text-gray-600 text-center max-w-md">
-            {getText("You don't have permission to access user management.", 'Anda tidak memiliki izin untuk mengakses manajemen pengguna.')}
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   // Simplified filtering - only search
   const filteredUsers = useMemo(() => {
@@ -500,6 +482,23 @@ const UserManagement: React.FC = () => {
       setSubmitting(false);
     }
   };
+
+  // Conditional return for access denied, now placed AFTER all hooks
+  if (!hasAccess) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh] p-4">
+        <div className="text-center">
+          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+            {getText('Access Denied', 'Akses Ditolak')}
+          </h3>
+          <p className="text-gray-600 text-center max-w-md">
+            {getText("You don't have permission to access user management.", 'Anda tidak memiliki izin untuk mengakses manajemen pengguna.')}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1078,7 +1077,6 @@ const UserManagement: React.FC = () => {
                   disabled={submitting}
                   className="flex-1 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium flex items-center justify-center gap-2"
                 >
-                  {submitting && <RefreshCw className="h-4 w-4 animate-spin" />}
                   {submitting 
                     ? getText('Saving...', 'Menyimpan...') 
                     : editingUser 
@@ -1128,7 +1126,6 @@ const UserManagement: React.FC = () => {
                   disabled={submitting}
                   className="flex-1 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium flex items-center justify-center gap-2"
                 >
-                  {submitting && <RefreshCw className="h-4 w-4 animate-spin" />}
                   {submitting ? getText('Deleting...', 'Menghapus...') : getText('Delete', 'Hapus')}
                 </button>
               </div>
