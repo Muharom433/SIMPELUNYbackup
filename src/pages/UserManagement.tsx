@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -15,19 +15,17 @@ import {
   User,
   X,
   RefreshCw,
-  ChevronLeft,
-  ChevronRight,
+  ChevronDown,
   Home,
   Clock,
   GraduationCap,
   MapPin,
-  Eye,
   Activity // Ensure Activity is imported for the icon
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
-import toast from 'react-hot-toast';
+import toast from 'react-hot-toast'; // Menggunakan toast kembali
 import { format } from 'date-fns';
 
 // Simplified schema - no complex validation
@@ -56,14 +54,15 @@ interface User {
   department_id?: string;
   study_program_id?: string;
   created_at: string;
-  department?: { id: string; name: string; code: string; };
+  updated_at?: string; // Added updated_at from the provided code
+  department?: { id: string; name: string; code?: string; }; // Changed to include code for consistency
   study_program?: { id: string; name: string; code: string; };
 }
 
 interface Department {
   id: string;
   name: string;
-  code: string;
+  code?: string; // Added code for consistency
 }
 
 interface StudyProgram {
@@ -88,98 +87,177 @@ interface ActivityItem { // Renamed to avoid conflict with lucide-react Activity
   room_name?: string;
 }
 
-// Simple Dropdown Component
-const SimpleDropdown: React.FC<{
+// Searchable Dropdown Component - Moved outside to avoid re-creation
+interface SearchableDropdownProps {
   options: { id: string; name: string; code?: string }[];
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
   disabled?: boolean;
-  error?: string;
-}> = ({ options, value, onChange, placeholder, disabled = false, error }) => {
-  return (
-    <div>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        className={`w-full px-3 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-          error ? 'border-red-300' : 'border-gray-300'
-        } ${disabled ? 'bg-gray-100' : 'bg-white'}`}
-      >
-        <option value="">{placeholder}</option>
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.name} {option.code && `(${option.code})`}
-          </option>
-        ))}
-      </select>
-      {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
-    </div>
-  );
-};
+  searchPlaceholder?: string;
+  emptyMessage?: string;
+}
 
-// Password Input with toggle
-const PasswordInput: React.FC<{
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  error?: string;
-  required?: boolean;
-}> = ({ value, onChange, placeholder, error, required }) => {
-  const [showPassword, setShowPassword] = useState(false);
+const SearchableDropdown: React.FC<SearchableDropdownProps> = React.memo(({
+  options,
+  value,
+  onChange,
+  placeholder,
+  disabled = false,
+  searchPlaceholder = "Search...",
+  emptyMessage = "No options found"
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const selectedOption = useMemo(() => {
+    return options.find(option => option.id === value);
+  }, [options, value]);
+  
+  const filteredOptions = useMemo(() => {
+    if (!searchTerm.trim()) return options;
+    
+    const searchLower = searchTerm.toLowerCase().trim();
+    return options.filter(option =>
+      (option.name?.toLowerCase() || '').includes(searchLower) ||
+      (option.code?.toLowerCase() || '').includes(searchLower)
+    );
+  }, [options, searchTerm]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+        setSearchTerm('');
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSelect = (optionId: string) => {
+    onChange(optionId);
+    setIsOpen(false);
+    setSearchTerm('');
+  };
+
+  const handleClearSearch = () => {
+    setSearchTerm('');
+  };
 
   return (
-    <div className="relative">
-      <input
-        type={showPassword ? 'text' : 'password'}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className={`w-full px-3 py-3 pr-12 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-          error ? 'border-red-300' : 'border-gray-300'
-        }`}
-        required={required}
-      />
+    <div className="relative" ref={dropdownRef}>
       <button
         type="button"
-        onClick={() => setShowPassword(!showPassword)}
-        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-left flex items-center justify-between ${
+          disabled ? 'bg-gray-100 cursor-not-allowed text-gray-500' : 'hover:border-gray-400'
+        }`}
       >
-        {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+        <span className={selectedOption ? 'text-gray-900' : 'text-gray-500'}>
+          {selectedOption 
+            ? `${selectedOption.name}${selectedOption.code ? ` (${selectedOption.code})` : ''}`
+            : placeholder
+          }
+        </span>
+        <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
-      {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+
+      {isOpen && !disabled && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-hidden">
+          <div className="p-2 border-b border-gray-200">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder={searchPlaceholder}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-8 pr-8 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                autoFocus
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={handleClearSearch}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            {value && (
+              <button
+                type="button"
+                onClick={() => handleSelect('')}
+                className="w-full px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100"
+              >
+                Clear selection
+              </button>
+            )}
+            {filteredOptions.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-gray-500 text-center">
+                {searchTerm ? `No results for "${searchTerm}"` : emptyMessage}
+              </div>
+            ) : (
+              filteredOptions.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => handleSelect(option.id)}
+                  className={`w-full px-3 py-2 text-left text-sm hover:bg-blue-50 hover:text-blue-900 ${
+                    option.id === value ? 'bg-blue-100 text-blue-900' : 'text-gray-900'
+                  }`}
+                >
+                  {option.name}
+                  {option.code && <span className="text-gray-500"> ({option.code})</span>}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
-};
+});
+
+SearchableDropdown.displayName = 'SearchableDropdown';
 
 const UserManagement: React.FC = () => {
+  // PERBAIKAN: Semua hooks diletakkan di atas sebelum any conditional logic
   const { profile } = useAuth();
   const { getText } = useLanguage();
   
-  // Simplified states
+  // State hooks - semua diletakkan berurutan tanpa kondisional
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [studyPrograms, setStudyPrograms] = useState<StudyProgram[]>([]);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] = useState(false); // Added submitting state back
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  // States for user detail modal, re-added as per original UI logic
   const [showUserDetail, setShowUserDetail] = useState<User | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
   const [userRooms, setUserRooms] = useState<Room[]>([]);
   const [userActivities, setUserActivities] = useState<ActivityItem[]>([]);
   const [loadingUserDetails, setLoadingUserDetails] = useState(false);
 
-  const itemsPerPage = 10;
 
+  const itemsPerPage = 10; // Added for pagination logic
+
+  // Form hook
   const form = useForm<UserForm>({
     resolver: zodResolver(userSchema),
     defaultValues: {
       role: 'student',
-      username: '',
+      username: '', // Ensure default values are set for all fields
       email: '',
       full_name: '',
       identity_number: '',
@@ -190,15 +268,16 @@ const UserManagement: React.FC = () => {
     },
   });
 
+  // Form watch hooks
   const watchRole = form.watch('role');
   const watchDepartmentId = form.watch('department_id');
 
-  // Helper functions
+  // Helper functions - menggunakan useCallback untuk performance
   const getRoleIcon = useCallback((role: string) => {
     switch (role) {
       case 'super_admin': return Shield;
       case 'department_admin': return Building;
-      case 'lecturer': return GraduationCap;
+      case 'lecturer': return GraduationCap; // Re-added lecturer icon
       case 'student': return BookOpen;
       default: return User;
     }
@@ -207,7 +286,7 @@ const UserManagement: React.FC = () => {
   const getRoleDisplayName = useCallback((role: string) => {
     switch (role) {
       case 'super_admin': return getText('Super Admin', 'Super Admin');
-      case 'department_admin': return getText('Dept. Admin', 'Admin Dept.');
+      case 'department_admin': return getText('Department Admin', 'Admin Departemen');
       case 'lecturer': return getText('Lecturer', 'Dosen');
       case 'student': return getText('Student', 'Mahasiswa');
       default: return role;
@@ -224,6 +303,10 @@ const UserManagement: React.FC = () => {
     }
   }, []);
 
+  const handleClearSearch = useCallback(() => {
+    setSearchTerm('');
+  }, []);
+
   // API functions
   const fetchUsers = useCallback(async () => {
     try {
@@ -234,8 +317,10 @@ const UserManagement: React.FC = () => {
         study_program:study_programs(id, name, code)
       `);
       
-      // Role-based filtering - simplified
-      if (profile?.role === 'department_admin' && profile.department_id) {
+      if (profile?.role === 'super_admin') {
+        // Super admin sees all users
+      } else if (profile?.role === 'department_admin' && profile.department_id) {
+        // Department admin sees only users in their department
         query = query.eq('department_id', profile.department_id);
       }
       
@@ -243,7 +328,6 @@ const UserManagement: React.FC = () => {
 
       const { data, error } = await query;
       if (error) throw error;
-      
       setUsers(data || []);
     } catch (error: any) {
       console.error('Error fetching users:', error);
@@ -255,13 +339,20 @@ const UserManagement: React.FC = () => {
 
   const fetchDepartments = useCallback(async () => {
     try {
-      const { data, error } = await supabase.from('departments').select('*').order('name');
+      let query = supabase.from('departments').select('id, name, code'); // Include code for dropdown
+      
+      if (profile?.role === 'department_admin' && profile.department_id) {
+        query = query.eq('id', profile.department_id);
+      }
+      
+      const { data, error } = await query;
       if (error) throw error;
       setDepartments(data || []);
     } catch (error: any) {
       console.error('Error fetching departments:', error);
+      toast.error(getText('Failed to load departments', 'Gagal memuat departemen'));
     }
-  }, []);
+  }, [profile, getText]);
 
   const fetchStudyPrograms = useCallback(async () => {
     try {
@@ -269,6 +360,10 @@ const UserManagement: React.FC = () => {
       
       if (profile?.role === 'department_admin' && profile.department_id) {
         query = query.eq('department_id', profile.department_id);
+      } else if (profile?.role === 'super_admin') {
+        // Super admin should fetch all study programs initially if no department is selected
+        // Or if the dropdown is to be populated with all options for super admin
+        // For now, let's fetch all for super admin to populate dropdown
       }
       
       const { data, error } = await query;
@@ -276,8 +371,30 @@ const UserManagement: React.FC = () => {
       setStudyPrograms(data || []);
     } catch (error: any) {
       console.error('Error fetching study programs:', error);
+      toast.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
     }
-  }, [profile]);
+  }, [profile, getText]);
+
+  const fetchStudyProgramsByDepartment = useCallback(async (departmentId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('study_programs')
+        .select('*')
+        .eq('department_id', departmentId);
+      
+      if (error) throw error;
+      setStudyPrograms(data || []);
+      
+      const currentStudyProgramId = form.getValues('study_program_id');
+      const isCurrentProgramInDepartment = data?.some(program => program.id === currentStudyProgramId);
+      if (!isCurrentProgramInDepartment) {
+        form.setValue('study_program_id', '');
+      }
+    } catch (error: any) {
+      console.error('Error fetching study programs by department:', error);
+      toast.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
+    }
+  }, [form, getText]);
 
   const fetchUserDetails = useCallback(async (userId: string) => {
     setLoadingUserDetails(true);
@@ -330,7 +447,8 @@ const UserManagement: React.FC = () => {
     }
   }, [getText]);
 
-  // Effects
+
+  // useEffect hooks - semua diletakkan berurutan
   useEffect(() => {
     if (profile) {
       fetchUsers();
@@ -339,19 +457,14 @@ const UserManagement: React.FC = () => {
     }
   }, [profile, fetchUsers, fetchDepartments, fetchStudyPrograms]);
 
-  // This useEffect was causing an issue because it was conditionally filtering study programs
-  // based on 'departments' state, which might not be fully loaded on first render.
-  // The filtering logic should ideally be within the render or a useMemo.
-  // For now, we'll remove this useEffect as the filtering is handled implicitly
-  // by the SimpleDropdown options prop.
-  // useEffect(() => {
-  //   if (watchDepartmentId) {
-  //     const filteredPrograms = departments.find(d => d.id === watchDepartmentId) 
-  //       ? studyPrograms.filter(sp => sp.department_id === watchDepartmentId)
-  //       : studyPrograms;
-  //     // No need to refetch, just use existing data
-  //   }
-  // }, [watchDepartmentId, departments, studyPrograms]);
+  useEffect(() => {
+    if (watchDepartmentId) {
+      fetchStudyProgramsByDepartment(watchDepartmentId);
+    } else if (profile?.role === 'super_admin') {
+      setStudyPrograms([]); // Clear study programs if no department is selected for super admin
+      form.setValue('study_program_id', '');
+    }
+  }, [watchDepartmentId, profile, fetchStudyProgramsByDepartment, form]);
 
   useEffect(() => {
     if (showUserDetail) {
@@ -359,132 +472,10 @@ const UserManagement: React.FC = () => {
     }
   }, [showUserDetail, fetchUserDetails]);
 
+  // PERBAIKAN: Early return AFTER all hooks
   // Access control check moved AFTER all hooks are declared
   const hasAccess = profile && ['super_admin', 'department_admin'].includes(profile.role);
 
-  // Simplified filtering - only search
-  const filteredUsers = useMemo(() => {
-    if (!searchTerm.trim()) return users;
-    
-    const searchLower = searchTerm.toLowerCase();
-    return users.filter(user => 
-      user.full_name?.toLowerCase().includes(searchLower) ||
-      user.username?.toLowerCase().includes(searchLower) ||
-      user.email?.toLowerCase().includes(searchLower) ||
-      user.identity_number?.toLowerCase().includes(searchLower) ||
-      user.department?.name?.toLowerCase().includes(searchLower) ||
-      user.study_program?.name?.toLowerCase().includes(searchLower)
-    );
-  }, [users, searchTerm]);
-
-  // Pagination
-  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const currentTableData = filteredUsers.slice(startIndex, startIndex + itemsPerPage);
-
-  // Form submission
-  const handleSubmit = async (data: UserForm) => {
-    try {
-      setSubmitting(true);
-
-      // Auto-set department for department admin
-      if (profile?.role === 'department_admin') {
-        data.department_id = profile.department_id!;
-      }
-
-      const userData = {
-        username: data.username.trim(),
-        email: data.email?.trim() || null,
-        full_name: data.full_name.trim(),
-        identity_number: data.identity_number.trim(),
-        phone_number: data.phone_number?.trim() || null,
-        role: data.role,
-        department_id: data.department_id || null,
-        study_program_id: data.study_program_id || null,
-      };
-
-      if (editingUser) {
-        const updateData: any = { ...userData };
-        if (data.password?.trim()) {
-          updateData.password = data.password.trim();
-        }
-
-        const { error } = await supabase
-          .from('users')
-          .update(updateData)
-          .eq('id', editingUser.id);
-        
-        if (error) throw error;
-        toast.success(getText('User updated successfully', 'Pengguna berhasil diperbarui'));
-      } else {
-        if (!data.password?.trim()) {
-          throw new Error(getText('Password is required', 'Password diperlukan'));
-        }
-
-        const { error } = await supabase
-          .from('users')
-          .insert({ ...userData, password: data.password.trim() });
-        
-        if (error) throw error;
-        toast.success(getText('User created successfully', 'Pengguna berhasil dibuat'));
-      }
-
-      setShowModal(false);
-      setEditingUser(null);
-      form.reset();
-      fetchUsers();
-    } catch (error: any) {
-      console.error('Error saving user:', error);
-      
-      if (error.code === '23505') {
-        if (error.message.includes('username')) {
-          toast.error(getText('Username already exists', 'Username sudah ada'));
-        } else if (error.message.includes('identity_number')) {
-          toast.error(getText('Identity number already exists', 'Nomor identitas sudah ada'));
-        } else {
-          toast.error(getText('User already exists', 'Pengguna sudah ada'));
-        }
-      } else {
-        toast.error(error.message || getText('Failed to save user', 'Gagal menyimpan pengguna'));
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleEdit = useCallback((user: User) => {
-    setEditingUser(user);
-    form.reset({
-      username: user.username,
-      email: user.email || '',
-      full_name: user.full_name,
-      identity_number: user.identity_number,
-      phone_number: user.phone_number || '',
-      role: user.role as any,
-      department_id: user.department_id || '',
-      study_program_id: user.study_program_id || '',
-      password: '',
-    });
-    setShowModal(true);
-  }, [form]);
-
-  const handleDelete = async (userId: string) => {
-    try {
-      setSubmitting(true);
-      const { error } = await supabase.from('users').delete().eq('id', userId);
-      if (error) throw error;
-      toast.success(getText('User deleted successfully', 'Pengguna berhasil dihapus'));
-      setShowDeleteConfirm(null);
-      fetchUsers();
-    } catch (error: any) {
-      console.error('Error deleting user:', error);
-      toast.error(getText('Failed to delete user', 'Gagal menghapus pengguna'));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Conditional return for access denied, now placed AFTER all hooks
   if (!hasAccess) {
     return (
       <div className="flex items-center justify-center min-h-[50vh] p-4">
@@ -500,6 +491,155 @@ const UserManagement: React.FC = () => {
       </div>
     );
   }
+
+  // useMemo hooks - PERBAIKAN: Dipindahkan ke atas sebelum any early returns
+  const filteredUsers = useMemo(() => {
+    if (!users || users.length === 0) return [];
+    
+    return users.filter(user => {
+      const searchLower = searchTerm.toLowerCase().trim();
+      
+      if (!searchLower) {
+        return true;
+      }
+      
+      const matchesSearch = 
+        (user.full_name?.toLowerCase() || '').includes(searchLower) ||
+        (user.username?.toLowerCase() || '').includes(searchLower) ||
+        (user.email?.toLowerCase() || '').includes(searchLower) ||
+        (user.identity_number?.toLowerCase() || '').includes(searchLower) ||
+        (user.phone_number?.toLowerCase() || '').includes(searchLower) ||
+        (user.role?.toLowerCase() || '').includes(searchLower) ||
+        (user.department?.name?.toLowerCase() || '').includes(searchLower) ||
+        (user.study_program?.name?.toLowerCase() || '').includes(searchLower) ||
+        (user.study_program?.code?.toLowerCase() || '').includes(searchLower);
+      
+      return matchesSearch;
+    });
+  }, [users, searchTerm]);
+
+  // Pagination (re-added for table display)
+  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const currentTableData = filteredUsers.slice(startIndex, startIndex + itemsPerPage);
+
+
+  const handleSubmit = async (data: UserForm) => {
+    try {
+      setSubmitting(true);
+
+      if (profile?.role === 'department_admin' && profile.department_id) {
+        data.department_id = profile.department_id;
+        // Department admin can only create lecturer or student roles
+        if (!['lecturer', 'student'].includes(data.role)) {
+          data.role = 'student'; // Default to student if an invalid role is selected
+        }
+      }
+
+      const userData = {
+        username: data.username.trim(),
+        email: data.email?.trim() || null,
+        full_name: data.full_name.trim(),
+        identity_number: data.identity_number.trim(),
+        phone_number: data.phone_number?.trim() || null,
+        role: data.role,
+        department_id: data.department_id || null,
+        study_program_id: data.study_program_id || null,
+      };
+
+      if (editingUser) {
+        const updateData: any = { ...userData };
+        if (data.password?.trim()) { // Only update password if provided
+          updateData.password = data.password.trim();
+        }
+
+        const { error } = await supabase
+          .from('users')
+          .update(updateData)
+          .eq('id', editingUser.id);
+        
+        if (error) throw error;
+        toast.success(getText('User updated successfully', 'Pengguna berhasil diperbarui'));
+      } else {
+        if (!data.password?.trim()) { // Password is required for new users
+          toast.error(getText('Password is required for new users', 'Password diperlukan untuk pengguna baru'));
+          return;
+        }
+
+        const { error } = await supabase
+          .from('users')
+          .insert({ ...userData, password: data.password.trim() });
+        
+        if (error) throw error;
+        toast.success(getText('User created successfully', 'Pengguna berhasil dibuat'));
+      }
+
+      setShowModal(false);
+      setEditingUser(null);
+      form.reset({ role: 'student' }); // Reset form and default role
+      fetchUsers();
+    } catch (error: any) {
+      console.error('Error saving user:', error);
+      if (error.code === '23505') { // Unique constraint violation
+        if (error.message.includes('username')) {
+          toast.error(getText('Username already exists', 'Username sudah ada'));
+        } else if (error.message.includes('email')) {
+          toast.error(getText('Email already exists', 'Email sudah ada'));
+        } else if (error.message.includes('identity_number')) {
+          toast.error(getText('Identity number already exists', 'Nomor identitas sudah ada'));
+        } else {
+          toast.error(getText('User with this information already exists', 'Pengguna dengan informasi ini sudah ada'));
+        }
+      } else {
+        toast.error(error.message || getText('Failed to save user', 'Gagal menyimpan pengguna'));
+      }
+    } finally {
+      setSubmitting(false); // Use submitting state for form operations
+    }
+  };
+
+  const handleEdit = useCallback((user: User) => {
+    setEditingUser(user);
+    form.reset({
+      username: user.username,
+      email: user.email || '',
+      full_name: user.full_name,
+      identity_number: user.identity_number,
+      phone_number: user.phone_number || '',
+      role: user.role as any,
+      department_id: user.department_id || '', // Ensure it's an empty string for dropdown
+      study_program_id: user.study_program_id || '', // Ensure it's an empty string for dropdown
+      password: '', // Password should always be empty when editing
+    });
+    
+    if (user.department_id) {
+      fetchStudyProgramsByDepartment(user.department_id);
+    } else if (profile?.role === 'super_admin') {
+      setStudyPrograms([]); // Clear study programs if no department for super admin
+    }
+    
+    setShowModal(true);
+  }, [form, fetchStudyProgramsByDepartment, profile]);
+
+  const handleDelete = async (userId: string) => {
+    try {
+      setSubmitting(true); // Use submitting state for delete operation
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', userId);
+      
+      if (error) throw error;
+      toast.success(getText('User deleted successfully', 'Pengguna berhasil dihapus'));
+      setShowDeleteConfirm(null);
+      fetchUsers();
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      toast.error(error.message || getText('Failed to delete user', 'Gagal menghapus pengguna'));
+    } finally {
+      setSubmitting(false); // Use submitting state for delete operation
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -546,7 +686,22 @@ const UserManagement: React.FC = () => {
           <button
             onClick={() => {
               setEditingUser(null);
-              form.reset();
+              form.reset({
+                role: 'student',
+                username: '',
+                email: '',
+                full_name: '',
+                identity_number: '',
+                phone_number: '',
+                department_id: profile?.role === 'department_admin' ? profile.department_id : '',
+                study_program_id: '',
+                password: '',
+              });
+              if (profile?.role === 'department_admin' && profile.department_id) {
+                fetchStudyProgramsByDepartment(profile.department_id);
+              } else {
+                setStudyPrograms([]); // Clear study programs if no department is selected for super admin
+              }
               setShowModal(true);
             }}
             className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 whitespace-nowrap"
@@ -621,7 +776,7 @@ const UserManagement: React.FC = () => {
                         className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                         title={getText('View details', 'Lihat detail')}
                       >
-                        <Eye className="h-4 w-4" />
+                        <Activity className="h-4 w-4" /> {/* Changed to Activity icon for view details as per original UI */}
                       </button>
                       <button
                         onClick={() => handleEdit(user)}
@@ -969,40 +1124,46 @@ const UserManagement: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   {getText('Role', 'Peran')} <span className="text-red-500">*</span>
                 </label>
-                <SimpleDropdown
-                  options={[
-                    { id: 'student', name: getText('Student', 'Mahasiswa') },
-                    { id: 'lecturer', name: getText('Lecturer', 'Dosen') },
-                    ...(profile?.role === 'super_admin' ? [
-                      { id: 'department_admin', name: getText('Department Admin', 'Admin Departemen') },
-                      { id: 'super_admin', name: getText('Super Admin', 'Super Admin') }
-                    ] : [])
-                  ]}
-                  value={form.watch('role') || ''}
-                  onChange={(value) => form.setValue('role', value as any)}
-                  placeholder={getText('Select role', 'Pilih peran')}
+                <select
+                  {...form.register('role')}
+                  className="w-full px-3 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                   disabled={submitting}
-                  error={form.formState.errors.role?.message}
-                />
+                >
+                  <option value="student">{getText('Student', 'Mahasiswa')}</option>
+                  <option value="lecturer">{getText('Lecturer', 'Dosen')}</option>
+                  {profile?.role === 'super_admin' && (
+                    <>
+                      <option value="department_admin">{getText('Department Admin', 'Admin Departemen')}</option>
+                      <option value="super_admin">{getText('Super Admin', 'Super Admin')}</option>
+                    </>
+                  )}
+                </select>
+                {form.formState.errors.role && (
+                  <p className="mt-1 text-sm text-red-600">{form.formState.errors.role.message}</p>
+                )}
               </div>
 
-              {/* Department - SIMPLIFIED: Auto for dept admin, dropdown for super admin */}
+              {/* Department selection - show for super admin */}
               {profile?.role === 'super_admin' ? (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     {getText('Department', 'Departemen')}
                   </label>
-                  <SimpleDropdown
-                    options={departments}
+                  <SearchableDropdown
+                    options={departments.map(dept => ({ id: dept.id, name: dept.name, code: dept.code }))}
                     value={form.watch('department_id') || ''}
                     onChange={(value) => {
                       form.setValue('department_id', value);
                       form.setValue('study_program_id', '');
                     }}
-                    placeholder={getText('Select department', 'Pilih departemen')}
+                    placeholder={getText('Select Department (Optional)', 'Pilih Departemen (Opsional)')}
+                    searchPlaceholder={getText('Search departments...', 'Cari departemen...')}
+                    emptyMessage={getText('No departments found', 'Tidak ada departemen ditemukan')}
                     disabled={submitting}
-                    error={form.formState.errors.department_id?.message}
                   />
+                  {form.formState.errors.department_id && (
+                    <p className="mt-1 text-sm text-red-600">{form.formState.errors.department_id.message}</p>
+                  )}
                 </div>
               ) : (
                 <div>
@@ -1015,34 +1176,54 @@ const UserManagement: React.FC = () => {
                     className="w-full px-3 py-3 border border-gray-300 rounded-lg bg-gray-100 text-base"
                     disabled
                   />
+                  <p className="mt-1 text-sm text-gray-500">
+                    {getText('Department is automatically set based on your role', 'Departemen diatur otomatis berdasarkan peran Anda')}
+                  </p>
                 </div>
               )}
 
-              {/* Study Program - ONLY if department selected */}
+              {/* Study program selection */}
               {((profile?.role === 'super_admin' && watchDepartmentId) || profile?.role === 'department_admin') && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     {getText('Study Program', 'Program Studi')}
                   </label>
-                  <SimpleDropdown
+                  <SearchableDropdown
                     options={studyPrograms.filter(sp => 
                       profile?.role === 'department_admin' 
                         ? sp.department_id === profile.department_id
                         : sp.department_id === watchDepartmentId
-                    )}
+                    ).map(program => ({ 
+                      id: program.id, 
+                      name: program.name, 
+                      code: program.code 
+                    }))}
                     value={form.watch('study_program_id') || ''}
                     onChange={(value) => form.setValue('study_program_id', value)}
-                    placeholder={getText('Select study program', 'Pilih program studi')}
+                    placeholder={getText('Select Study Program (Optional)', 'Pilih Program Studi (Opsional)')}
+                    searchPlaceholder={getText('Search study programs...', 'Cari program studi...')}
+                    emptyMessage={getText('No study programs found', 'Tidak ada program studi ditemukan')}
                     disabled={submitting}
-                    error={form.formState.errors.study_program_id?.message}
                   />
+                  {form.formState.errors.study_program_id && (
+                    <p className="mt-1 text-sm text-red-600">{form.formState.errors.study_program_id.message}</p>
+                  )}
                 </div>
               )}
 
-              {/* Password */}
+              {/* Message for super admin when no department selected */}
+              {profile?.role === 'super_admin' && !watchDepartmentId && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-sm text-blue-700">
+                    💡 {getText('Select a department to see available study programs, or leave empty for general users', 'Pilih departemen untuk melihat program studi yang tersedia, atau biarkan kosong untuk pengguna umum')}
+                  </p>
+                </div>
+              )}
+
+              {/* Password Field */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {getText('Password', 'Password')} 
+                  {getText('Password', 'Kata Sandi')} 
                   {!editingUser && <span className="text-red-500"> *</span>}
                   {editingUser && (
                     <span className="text-gray-500 text-sm ml-1">
@@ -1053,7 +1234,7 @@ const UserManagement: React.FC = () => {
                 <PasswordInput
                   value={form.watch('password') || ''}
                   onChange={(value) => form.setValue('password', value)}
-                  placeholder={editingUser ? getText('Leave blank to keep current', 'Kosongkan jika tidak diubah') : getText('Enter password', 'Masukkan password')}
+                  placeholder={editingUser ? getText('Leave blank to keep current password', 'Biarkan kosong untuk mempertahankan password saat ini') : getText('Enter password', 'Masukkan password')}
                   error={form.formState.errors.password?.message}
                   required={!editingUser}
                 />
@@ -1081,7 +1262,7 @@ const UserManagement: React.FC = () => {
                   {submitting 
                     ? getText('Saving...', 'Menyimpan...') 
                     : editingUser 
-                      ? getText('Update', 'Update') 
+                      ? getText('Update', 'Perbarui') 
                       : getText('Create', 'Buat')
                   }
                 </button>
