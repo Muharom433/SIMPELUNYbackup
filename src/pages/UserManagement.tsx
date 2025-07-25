@@ -20,8 +20,6 @@ import {
   Clock,
   GraduationCap,
   MapPin,
-  ChevronLeft,
-ChevronRight,
   Activity, // Ensure Activity is imported for the icon
   Eye, // Added Eye icon for PasswordInput
   EyeOff // Added EyeOff icon for PasswordInput
@@ -862,9 +860,9 @@ const UserManagement: React.FC = () => {
           {/* Mobile-Optimized User Detail Modal */}
           {showUserDetail && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50">
-              <div className="bg-white w-full max-w-lg mx-4 rounded-t-2xl sm:rounded-2xl max-h-[90vh] overflow-hidden">
+              <div className="bg-white w-full max-w-lg mx-4 rounded-t-2xl sm:rounded-2xl h-[90vh] flex flex-col"> {/* Added flex flex-col and h-[90vh] */}
                 {/* Header */}
-                <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4">
+                <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 flex-shrink-0"> {/* Added flex-shrink-0 */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="h-12 w-12 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
@@ -887,7 +885,7 @@ const UserManagement: React.FC = () => {
                 </div>
 
                 {/* Content */}
-                <div className="p-4 max-h-[70vh] overflow-y-auto space-y-6">
+                <div className="p-4 flex-1 overflow-y-auto space-y-6"> {/* Changed max-h-[70vh] to flex-1 */}
                   {/* Basic Info */}
                   <div>
                     <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
@@ -1013,7 +1011,7 @@ const UserManagement: React.FC = () => {
                 </div>
 
                 {/* Footer */}
-                <div className="border-t bg-gray-50 p-4 flex gap-3">
+                <div className="border-t bg-gray-50 p-4 flex gap-3 flex-shrink-0"> {/* Added flex-shrink-0 */}
                   <button
                     onClick={() => {
                       setShowUserDetail(null);
@@ -1037,9 +1035,9 @@ const UserManagement: React.FC = () => {
           {/* Mobile-Optimized Add/Edit Modal */}
           {showModal && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50">
-              <div className="bg-white w-full max-w-lg mx-4 rounded-t-2xl sm:rounded-2xl max-h-[90vh] overflow-hidden">
+              <div className="bg-white w-full max-w-lg mx-4 rounded-t-2xl sm:rounded-2xl h-[90vh] flex flex-col"> {/* Added flex flex-col and h-[90vh] */}
                 {/* Header */}
-                <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4">
+                <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 flex-shrink-0"> {/* Added flex-shrink-0 */}
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-bold">
                       {editingUser ? getText('Edit User', 'Edit Pengguna') : getText('Add User', 'Tambah Pengguna')}
@@ -1058,7 +1056,7 @@ const UserManagement: React.FC = () => {
                   </div>
                 </div>
                 
-                <form onSubmit={form.handleSubmit(handleSubmit)} className="p-4 max-h-[70vh] overflow-y-auto space-y-4">
+                <form onSubmit={form.handleSubmit(handleSubmit)} className="p-4 flex-1 overflow-y-auto space-y-4"> {/* Changed max-h-[70vh] to flex-1 */}
                   {/* Basic Information */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
