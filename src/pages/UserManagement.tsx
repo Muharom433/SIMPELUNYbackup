@@ -20,6 +20,7 @@ import {
   Clock,
   GraduationCap,
   MapPin,
+  ChevronLeft,
   Activity, // Ensure Activity is imported for the icon
   Eye, // Added Eye icon for PasswordInput
   EyeOff // Added EyeOff icon for PasswordInput
