@@ -339,10 +339,11 @@ const PasswordInput: React.FC<{
 };
 
 const UserManagement: React.FC = () => {
+  // 🔥 FIXED: All hooks must be called at the top level in the same order every time
   const { profile } = useAuth();
   const { getText } = useLanguage();
   
-  // Enhanced state management
+  // All useState hooks - declared unconditionally at the top
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [studyPrograms, setStudyPrograms] = useState<StudyProgram[]>([]);
@@ -353,21 +354,17 @@ const UserManagement: React.FC = () => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [showUserDetail, setShowUserDetail] = useState<User | null>(null);
-  
-  // Enhanced filtering and pagination
   const [filterRole, setFilterRole] = useState<string>('');
   const [filterDepartment, setFilterDepartment] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [sortConfig, setSortConfig] = useState<{ key: keyof User; direction: 'ascending' | 'descending' } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
-
-  // Detail modal data
   const [userRooms, setUserRooms] = useState<Room[]>([]);
   const [userActivities, setUserActivities] = useState<Activity[]>([]);
   const [loadingUserDetails, setLoadingUserDetails] = useState(false);
 
-  // Form with better default values
+  // Form hook - always called
   const form = useForm<UserForm>({
     resolver: zodResolver(userSchema),
     defaultValues: {
@@ -384,67 +381,11 @@ const UserManagement: React.FC = () => {
     mode: 'onChange'
   });
 
+  // Watch hooks - always called
   const watchRole = form.watch('role');
   const watchDepartmentId = form.watch('department_id');
 
-  // Enhanced filtering with multiple criteria
-  const filteredUsers = useMemo(() => {
-    if (!users || users.length === 0) return [];
-    
-    return users.filter(user => {
-      const searchLower = searchTerm.toLowerCase().trim();
-      
-      // Search filter
-      const matchesSearch = !searchLower || 
-        (user.full_name?.toLowerCase() || '').includes(searchLower) ||
-        (user.username?.toLowerCase() || '').includes(searchLower) ||
-        (user.email?.toLowerCase() || '').includes(searchLower) ||
-        (user.identity_number?.toLowerCase() || '').includes(searchLower) ||
-        (user.phone_number?.toLowerCase() || '').includes(searchLower) ||
-        (user.department?.name?.toLowerCase() || '').includes(searchLower) ||
-        (user.study_program?.name?.toLowerCase() || '').includes(searchLower) ||
-        (user.study_program?.code?.toLowerCase() || '').includes(searchLower);
-      
-      // Role filter
-      const matchesRole = !filterRole || user.role === filterRole;
-      
-      // Department filter
-      const matchesDepartment = !filterDepartment || user.department_id === filterDepartment;
-      
-      // Status filter
-      const matchesStatus = filterStatus === 'all' || 
-        (filterStatus === 'active' && user.is_active) ||
-        (filterStatus === 'inactive' && !user.is_active);
-      
-      return matchesSearch && matchesRole && matchesDepartment && matchesStatus;
-    });
-  }, [users, searchTerm, filterRole, filterDepartment, filterStatus]);
-
-  // Enhanced sorting
-  const sortedUsers = useMemo(() => {
-    let sortableItems = [...filteredUsers];
-    if (sortConfig !== null) {
-      sortableItems.sort((a, b) => {
-        const valA = a[sortConfig.key] || '';
-        const valB = b[sortConfig.key] || '';
-        if (valA < valB) {
-          return sortConfig.direction === 'ascending' ? -1 : 1;
-        }
-        if (valA > valB) {
-          return sortConfig.direction === 'ascending' ? 1 : -1;
-        }
-        return 0;
-      });
-    }
-    return sortableItems;
-  }, [filteredUsers, sortConfig]);
-
-  // Pagination
-  const totalPages = Math.ceil(sortedUsers.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const currentTableData = sortedUsers.slice(startIndex, startIndex + itemsPerPage);
-
-  // Helper functions
+  // All useCallback hooks - always called at the same level
   const getRoleIcon = useCallback((role: string) => {
     switch (role) {
       case 'super_admin': return Shield;
@@ -475,16 +416,6 @@ const UserManagement: React.FC = () => {
     }
   }, []);
 
-  const requestSort = (key: keyof User) => {
-    let direction: 'ascending' | 'descending' = 'ascending';
-    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
-      direction = 'descending';
-    }
-    setSortConfig({ key, direction });
-    setCurrentPage(1);
-  };
-
-  // API functions
   const fetchUsers = useCallback(async () => {
     try {
       setLoading(true);
@@ -574,7 +505,6 @@ const UserManagement: React.FC = () => {
     }
   }, [form, getText]);
 
-  // Fetch user details for modal
   const fetchUserDetails = useCallback(async (userId: string) => {
     setLoadingUserDetails(true);
     try {
@@ -630,7 +560,104 @@ const UserManagement: React.FC = () => {
     }
   }, [getText]);
 
-  // Effects
+  const handleViewDetails = useCallback((user: User) => {
+    setShowUserDetail(user);
+  }, []);
+
+  const handleEdit = useCallback((user: User) => {
+    setEditingUser(user);
+    form.reset({
+      username: user.username,
+      email: user.email || '',
+      full_name: user.full_name,
+      identity_number: user.identity_number,
+      phone_number: user.phone_number || '',
+      role: user.role as any,
+      department_id: user.department_id || '',
+      study_program_id: user.study_program_id || '',
+      password: '', // Always empty for security
+    });
+    
+    if (user.department_id) {
+      fetchStudyProgramsByDepartment(user.department_id);
+    }
+    
+    setShowModal(true);
+  }, [form, fetchStudyProgramsByDepartment]);
+
+  const clearFilters = useCallback(() => {
+    setSearchTerm('');
+    setFilterRole('');
+    setFilterDepartment('');
+    setFilterStatus('all');
+    setCurrentPage(1);
+  }, []);
+
+  const requestSort = useCallback((key: keyof User) => {
+    let direction: 'ascending' | 'descending' = 'ascending';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
+      direction = 'descending';
+    }
+    setSortConfig({ key, direction });
+    setCurrentPage(1);
+  }, [sortConfig]);
+
+  // All useMemo hooks - always called
+  const filteredUsers = useMemo(() => {
+    if (!users || users.length === 0) return [];
+    
+    return users.filter(user => {
+      const searchLower = searchTerm.toLowerCase().trim();
+      
+      // Search filter
+      const matchesSearch = !searchLower || 
+        (user.full_name?.toLowerCase() || '').includes(searchLower) ||
+        (user.username?.toLowerCase() || '').includes(searchLower) ||
+        (user.email?.toLowerCase() || '').includes(searchLower) ||
+        (user.identity_number?.toLowerCase() || '').includes(searchLower) ||
+        (user.phone_number?.toLowerCase() || '').includes(searchLower) ||
+        (user.department?.name?.toLowerCase() || '').includes(searchLower) ||
+        (user.study_program?.name?.toLowerCase() || '').includes(searchLower) ||
+        (user.study_program?.code?.toLowerCase() || '').includes(searchLower);
+      
+      // Role filter
+      const matchesRole = !filterRole || user.role === filterRole;
+      
+      // Department filter
+      const matchesDepartment = !filterDepartment || user.department_id === filterDepartment;
+      
+      // Status filter
+      const matchesStatus = filterStatus === 'all' || 
+        (filterStatus === 'active' && user.is_active) ||
+        (filterStatus === 'inactive' && !user.is_active);
+      
+      return matchesSearch && matchesRole && matchesDepartment && matchesStatus;
+    });
+  }, [users, searchTerm, filterRole, filterDepartment, filterStatus]);
+
+  const sortedUsers = useMemo(() => {
+    let sortableItems = [...filteredUsers];
+    if (sortConfig !== null) {
+      sortableItems.sort((a, b) => {
+        const valA = a[sortConfig.key] || '';
+        const valB = b[sortConfig.key] || '';
+        if (valA < valB) {
+          return sortConfig.direction === 'ascending' ? -1 : 1;
+        }
+        if (valA > valB) {
+          return sortConfig.direction === 'ascending' ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+    return sortableItems;
+  }, [filteredUsers, sortConfig]);
+
+  const totalPages = useMemo(() => Math.ceil(sortedUsers.length / itemsPerPage), [sortedUsers.length, itemsPerPage]);
+  const startIndex = useMemo(() => (currentPage - 1) * itemsPerPage, [currentPage, itemsPerPage]);
+  const currentTableData = useMemo(() => sortedUsers.slice(startIndex, startIndex + itemsPerPage), [sortedUsers, startIndex, itemsPerPage]);
+
+  // All useEffect hooks - always called
   useEffect(() => {
     if (profile) {
       fetchUsers();
@@ -649,22 +676,8 @@ const UserManagement: React.FC = () => {
     }
   }, [showUserDetail, fetchUserDetails]);
 
-  // Access control check
-  if (!profile || !['super_admin', 'department_admin'].includes(profile.role)) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            {getText('Access Denied', 'Akses Ditolak')}
-          </h3>
-          <p className="text-gray-600">
-            {getText("You don't have permission to access user management.", 'Anda tidak memiliki izin untuk mengakses manajemen pengguna.')}
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // 🔥 FIXED: Access control check moved AFTER all hooks
+  const hasAccess = profile && ['super_admin', 'department_admin'].includes(profile.role);
 
   // Form submission
   const handleSubmit = async (data: UserForm) => {
@@ -757,27 +770,6 @@ const UserManagement: React.FC = () => {
     }
   };
 
-  const handleEdit = useCallback((user: User) => {
-    setEditingUser(user);
-    form.reset({
-      username: user.username,
-      email: user.email || '',
-      full_name: user.full_name,
-      identity_number: user.identity_number,
-      phone_number: user.phone_number || '',
-      role: user.role as any,
-      department_id: user.department_id || '',
-      study_program_id: user.study_program_id || '',
-      password: '', // Always empty for security
-    });
-    
-    if (user.department_id) {
-      fetchStudyProgramsByDepartment(user.department_id);
-    }
-    
-    setShowModal(true);
-  }, [form, fetchStudyProgramsByDepartment]);
-
   const handleDelete = async (userId: string) => {
     try {
       setSubmitting(true);
@@ -797,19 +789,22 @@ const UserManagement: React.FC = () => {
       setSubmitting(false);
     }
   };
-
-  const handleViewDetails = useCallback((user: User) => {
-    setShowUserDetail(user);
-  }, []);
-
-  // Clear filters function
-  const clearFilters = useCallback(() => {
-    setSearchTerm('');
-    setFilterRole('');
-    setFilterDepartment('');
-    setFilterStatus('all');
-    setCurrentPage(1);
-  }, []);
+  // 🔥 FIXED: Early return AFTER all hooks are called
+  if (!hasAccess) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            {getText('Access Denied', 'Akses Ditolak')}
+          </h3>
+          <p className="text-gray-600">
+            {getText("You don't have permission to access user management.", 'Anda tidak memiliki izin untuk mengakses manajemen pengguna.')}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -1223,7 +1218,6 @@ const UserManagement: React.FC = () => {
           </div>
         )}
       </div>
-
       {/* Enhanced User Detail Modal */}
       {showUserDetail && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
