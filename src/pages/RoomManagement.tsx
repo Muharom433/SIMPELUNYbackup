@@ -8,13 +8,14 @@ import {
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { Room, Department, Equipment } from '../types';
-import toast from 'react-hot-toast';
 import { format, parse, addDays } from 'date-fns';
 import { id as localeID } from 'date-fns/locale';
 import { useRoomData } from '../hooks/useRoomData';
 import { useRealTimeRoomUpdates } from '../hooks/useRealTimeRoomUpdates';
 import { usePerformanceMonitor } from '../hooks/usePerformanceMonitor';
 import { EnhancedRoomStatus } from '../stores/roomStore';
+import { useLanguage } from '../contexts/LanguageContext'; // ✅ NEW: Import language context
+import { alert } from '../components/Alert/AlertHelper'; // ✅ NEW: Import Sweet Alert
 
 // ========================
 // TIMEZONE UTILITY FUNCTIONS
@@ -71,6 +72,7 @@ interface CombinedSchedule {
 
 const RoomManagement: React.FC = () => {
     const { profile } = useAuth();
+    const { getText } = useLanguage(); // ✅ NEW: Use language hook
     
     // ✅ NEW: Use optimized room data hook
     const [targetDate, setTargetDate] = useState(getLocalDateString());
@@ -134,7 +136,7 @@ const RoomManagement: React.FC = () => {
         if (!room.is_available) {
             return {
                 status: 'Unavailable' as const,
-                reason: 'Ruangan dinonaktifkan untuk pemesanan',
+                reason: getText('Room is disabled for booking', 'Ruangan dinonaktifkan untuk pemesanan'),
                 color: 'bg-gray-100 text-gray-800 border-gray-200'
             };
         }
@@ -149,7 +151,10 @@ const RoomManagement: React.FC = () => {
             if (now >= bookingStart && now <= bookingEnd) {
                 return {
                     status: 'In Use' as const,
-                    reason: `Sedang digunakan oleh ${room.currentBooking.user?.full_name || 'Tidak diketahui'}`,
+                    reason: getText(
+                        `Currently used by ${room.currentBooking.user?.full_name || 'Unknown'}`,
+                        `Sedang digunakan oleh ${room.currentBooking.user?.full_name || 'Tidak diketahui'}`
+                    ),
                     color: 'bg-red-100 text-red-800 border-red-200',
                     detail: room.currentBooking
                 };
@@ -170,7 +175,10 @@ const RoomManagement: React.FC = () => {
                     if (searchStart < existingEnd && searchEnd > existingStart) {
                         return {
                             status: 'Conflict' as const,
-                            reason: `Bertabrakan dengan jadwal pukul ${booking.start_time_local} - ${booking.end_time_local}`,
+                            reason: getText(
+                                `Conflicts with schedule at ${booking.start_time_local} - ${booking.end_time_local}`,
+                                `Bertabrakan dengan jadwal pukul ${booking.start_time_local} - ${booking.end_time_local}`
+                            ),
                             color: 'bg-orange-100 text-orange-800 border-orange-200'
                         };
                     }
@@ -188,7 +196,7 @@ const RoomManagement: React.FC = () => {
         if (hasScheduledContent) {
             return {
                 status: 'Scheduled' as const,
-                reason: 'Ruangan memiliki aktivitas terjadwal',
+                reason: getText('Room has scheduled activities', 'Ruangan memiliki aktivitas terjadwal'),
                 color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
                 scheduleCount: (room.scheduleDetails?.lectures?.length || 0) + 
                             (room.scheduleDetails?.exams?.length || 0) + 
@@ -200,15 +208,15 @@ const RoomManagement: React.FC = () => {
         // 5. If passes all checks, it's available
         return {
             status: 'Available' as const,
-            reason: 'Ruangan bebas dan tersedia untuk dipesan',
+            reason: getText('Room is free and available for booking', 'Ruangan bebas dan tersedia untuk dipesan'),
             color: 'bg-green-100 text-green-800 border-green-200'
         };
-    }, [targetDate, searchStartTime, searchEndTime, isSearchMode]);
+    }, [targetDate, searchStartTime, searchEndTime, isSearchMode, getText]);
 
     // ✅ NEW: Availability search function (from BookRoom)
     const findAvailableRooms = async () => {
         if (!searchStartTime || !searchEndTime) { 
-            toast.error("Please complete all search filters."); 
+            alert.error(getText('Please complete all search filters.', 'Mohon lengkapi semua filter pencarian.')); 
             return; 
         }
         
@@ -221,13 +229,16 @@ const RoomManagement: React.FC = () => {
             // Force refresh data for the target date
             await fetchRoomData(targetDate, true);
             
-            toast.success(
-                `Found ${optimizedRooms.length} rooms for ${format(new Date(targetDate), 'MMM dd, yyyy')} ${searchStartTime}-${searchEndTime}`
+            alert.success(
+                getText(
+                    `Found ${optimizedRooms.length} rooms for ${format(new Date(targetDate), 'MMM dd, yyyy')} ${searchStartTime}-${searchEndTime}`,
+                    `Ditemukan ${optimizedRooms.length} ruangan untuk ${format(new Date(targetDate), 'dd MMM yyyy')} ${searchStartTime}-${searchEndTime}`
+                )
             );
             
         } catch (error) {
             console.error('Error searching for available rooms:', error);
-            toast.error('Failed to perform search.');
+            alert.error(getText('Failed to perform search.', 'Gagal melakukan pencarian.'));
         } finally {
             setIsRefreshing(false);
         }
@@ -239,7 +250,7 @@ const RoomManagement: React.FC = () => {
         const today = getLocalDateString();
         setTargetDate(today);
         fetchRoomData(today, true);
-        toast.success('Switched back to today\'s room status!');
+        alert.success(getText('Switched back to today\'s room status!', 'Kembali ke status ruangan hari ini!'));
     };
 
     // ✅ Sync optimized rooms with legacy state
@@ -316,9 +327,9 @@ const RoomManagement: React.FC = () => {
                         type: 'lecture',
                         start_time: lecture.start_time?.substring(0,5) || '',
                         end_time: lecture.end_time?.substring(0,5) || '',
-                        title: lecture.course_name || 'Lecture',
-                        subtitle: `Class ${lecture.class} • ${lecture.subject_study}`,
-                        description: `Lecturer: ${lecture.lecturer || 'TBA'} • Semester ${lecture.semester}`,
+                        title: lecture.course_name || getText('Lecture', 'Kuliah'),
+                        subtitle: `${getText('Class', 'Kelas')} ${lecture.class} • ${lecture.subject_study}`,
+                        description: `${getText('Lecturer', 'Dosen')}: ${lecture.lecturer || 'TBA'} • ${getText('Semester', 'Semester')} ${lecture.semester}`,
                         icon: BookOpen,
                         color: 'text-blue-700',
                         bgColor: 'bg-blue-50',
@@ -340,11 +351,11 @@ const RoomManagement: React.FC = () => {
                     combined.push({
                         id: exam.id,
                         type: 'exam',
-                        start_time: exam.is_take_home ? 'Take Home' : exam.start_time?.substring(0,5) || '',
+                        start_time: exam.is_take_home ? getText('Take Home', 'Take Home') : exam.start_time?.substring(0,5) || '',
                         end_time: exam.is_take_home ? '' : exam.end_time?.substring(0,5) || '',
-                        title: `${exam.course_name || 'UAS Exam'}`,
-                        subtitle: `${exam.student_amount} students • Semester ${exam.semester}`,
-                        description: `Class ${exam.class} • Inspector: ${exam.inspector}`,
+                        title: `${exam.course_name || getText('UAS Exam', 'Ujian UAS')}`,
+                        subtitle: `${exam.student_amount} ${getText('students', 'mahasiswa')} • ${getText('Semester', 'Semester')} ${exam.semester}`,
+                        description: `${getText('Class', 'Kelas')} ${exam.class} • ${getText('Inspector', 'Pengawas')}: ${exam.inspector}`,
                         icon: GraduationCap,
                         color: 'text-green-700',
                         bgColor: 'bg-green-50',
@@ -371,9 +382,9 @@ const RoomManagement: React.FC = () => {
                         type: 'session',
                         start_time: session.start_time?.substring(0,5) || '',
                         end_time: session.end_time?.substring(0,5) || '',
-                        title: `${session.student?.full_name || 'Final Session'}`,
+                        title: `${session.student?.full_name || getText('Final Session', 'Sidang Akhir')}`,
                         subtitle: `ID: ${session.student?.identity_number}`,
-                        description: `Supervisor: ${session.supervisor} • Examiner: ${session.examiner}`,
+                        description: `${getText('Supervisor', 'Pembimbing')}: ${session.supervisor} • ${getText('Examiner', 'Penguji')}: ${session.examiner}`,
                         icon: UserCheck,
                         color: 'text-purple-700',
                         bgColor: 'bg-purple-50',
@@ -408,9 +419,9 @@ const RoomManagement: React.FC = () => {
                         type: 'booking',
                         start_time: format(startDate, 'HH:mm'),
                         end_time: format(endDate, 'HH:mm'),
-                        title: `${booking.purpose || 'Room Booking'}`,
+                        title: `${booking.purpose || getText('Room Booking', 'Pemesanan Ruangan')}`,
                         subtitle: `${booking.user?.full_name} • ${booking.user?.identity_number}`,
-                        description: `Status: APPROVED`,
+                        description: `${getText('Status', 'Status')}: ${getText('APPROVED', 'DISETUJUI')}`,
                         icon: CalendarIcon,
                         color: 'text-orange-700',
                         bgColor: 'bg-orange-50',
@@ -421,8 +432,8 @@ const RoomManagement: React.FC = () => {
 
             // Sort by time
             combined.sort((a, b) => {
-                const aTime = a.start_time === 'Take Home' ? '00:00' : a.start_time;
-                const bTime = b.start_time === 'Take Home' ? '00:00' : b.start_time;
+                const aTime = a.start_time === getText('Take Home', 'Take Home') ? '00:00' : a.start_time;
+                const bTime = b.start_time === getText('Take Home', 'Take Home') ? '00:00' : b.start_time;
                 return aTime.localeCompare(bTime);
             });
             
@@ -430,7 +441,7 @@ const RoomManagement: React.FC = () => {
 
         } catch (error: any) { 
             console.error('Error fetching schedules:', error);
-            toast.error("Failed to load schedule for this room."); 
+            alert.error(getText("Failed to load schedule for this room.", "Gagal memuat jadwal untuk ruangan ini.")); 
         } finally { 
             setLoadingSchedules(false); 
         } 
@@ -483,12 +494,12 @@ const RoomManagement: React.FC = () => {
     const getEquipmentConditionChip = (status: string | undefined) => {
         switch (status) {
             case 'broken':
-                return <span className="text-xs font-medium text-red-800 bg-red-100 px-2 py-0.5 rounded-full">BROKEN</span>;
+                return <span className="text-xs font-medium text-red-800 bg-red-100 px-2 py-0.5 rounded-full">{getText('BROKEN', 'RUSAK')}</span>;
             case 'under_maintenance':
-                return <span className="text-xs font-medium text-yellow-800 bg-yellow-100 px-2 py-0.5 rounded-full">MAINTENANCE</span>;
+                return <span className="text-xs font-medium text-yellow-800 bg-yellow-100 px-2 py-0.5 rounded-full">{getText('MAINTENANCE', 'PERAWATAN')}</span>;
             case 'available':
             default:
-                return <span className="text-xs font-medium text-green-800 bg-green-100 px-2 py-0.5 rounded-full">GOOD</span>;
+                return <span className="text-xs font-medium text-green-800 bg-green-100 px-2 py-0.5 rounded-full">{getText('GOOD', 'BAIK')}</span>;
         }
     };
 
@@ -498,7 +509,7 @@ const RoomManagement: React.FC = () => {
             if (error) throw error; 
             setDepartments(data || []); 
         } catch (error: any) { 
-            toast.error('Failed to load departments'); 
+            alert.error(getText('Failed to load departments', 'Gagal memuat departemen')); 
         } 
     };
 
@@ -531,7 +542,7 @@ const RoomManagement: React.FC = () => {
                     <div class="relative">
                         <input
                             type="text"
-                            placeholder="Search by name or NIM..."
+                            placeholder="${getText('Search by name or NIM...', 'Cari berdasarkan nama atau NIM...')}"
                             class="w-full px-3 py-2 pl-10 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                             id="user-search-input"
                             autocomplete="off"
@@ -680,7 +691,7 @@ const RoomManagement: React.FC = () => {
             if (error) throw error;
             setSelectedRoomEquipment(data || []);
         } catch (error: any) {
-            toast.error("Failed to load room's equipment.");
+            alert.error(getText("Failed to load room's equipment.", "Gagal memuat peralatan ruangan."));
             console.error("Error fetching equipment for room:", error);
         } finally {
             setLoadingEquipment(false);
@@ -710,7 +721,7 @@ const RoomManagement: React.FC = () => {
             setRoomUsers(data || []);
         } catch (error) {
             console.error('Error fetching room users:', error);
-            toast.error("Failed to load assigned users.");
+            alert.error(getText("Failed to load assigned users.", "Gagal memuat pengguna yang ditugaskan."));
         } finally {
             setLoadingRoomUsers(false);
         }
@@ -733,7 +744,7 @@ const RoomManagement: React.FC = () => {
             }
             
             if (existing) {
-                toast.error('User is already assigned to this room');
+                alert.error(getText('User is already assigned to this room', 'Pengguna sudah ditugaskan ke ruangan ini'));
                 return;
             }
 
@@ -747,7 +758,10 @@ const RoomManagement: React.FC = () => {
             
             if (error) throw error;
             
-            toast.success(`${selectedUser.full_name} assigned to room successfully`);
+            alert.success(getText(
+                `${selectedUser.full_name} assigned to room successfully`,
+                `${selectedUser.full_name} berhasil ditugaskan ke ruangan`
+            ));
             setSelectedUser(null);
             if (userDisplayRef.current) {
                 userDisplayRef.current.value = '';
@@ -756,7 +770,7 @@ const RoomManagement: React.FC = () => {
             fetchRoomUsers(showRoomDetail.id);
         } catch (error) {
             console.error('Error assigning user:', error);
-            toast.error('Failed to assign user to room');
+            alert.error(getText('Failed to assign user to room', 'Gagal menugaskan pengguna ke ruangan'));
         }
     };
 
@@ -780,10 +794,13 @@ const RoomManagement: React.FC = () => {
             // Force refresh room data
             await fetchRoomData(targetDate, true);
             
-            toast.success(`Room ${newStatus ? 'enabled' : 'disabled'} successfully!`);
+            alert.success(getText(
+                `Room ${newStatus ? 'enabled' : 'disabled'} successfully!`,
+                `Ruangan berhasil ${newStatus ? 'diaktifkan' : 'dinonaktifkan'}!`
+            ));
         } catch (error) {
             console.error('Error updating room availability:', error);
-            toast.error('Failed to update room status');
+            alert.error(getText('Failed to update room status', 'Gagal memperbarui status ruangan'));
         }
     };
 
@@ -804,11 +821,14 @@ const RoomManagement: React.FC = () => {
             
             if (error) throw error;
             
-            toast.success(`${userToUnassign.name} removed from room successfully`);
+            alert.success(getText(
+                `${userToUnassign.name} removed from room successfully`,
+                `${userToUnassign.name} berhasil dihapus dari ruangan`
+            ));
             fetchRoomUsers(showRoomDetail!.id);
         } catch (error) {
             console.error('Error unassigning user:', error);
-            toast.error('Failed to remove user from room');
+            alert.error(getText('Failed to remove user from room', 'Gagal menghapus pengguna dari ruangan'));
         } finally {
             setShowUnassignModal(false);
             setUserToUnassign(null);
@@ -835,11 +855,11 @@ const RoomManagement: React.FC = () => {
             if (editingRoom) { 
                 const { error } = await supabase.from('rooms').update(roomData).eq('id', editingRoom.id); 
                 if (error) throw error; 
-                toast.success('Room updated successfully!'); 
+                alert.success(getText('Room updated successfully!', 'Ruangan berhasil diperbarui!')); 
             } else { 
                 const { error } = await supabase.from('rooms').insert(roomData); 
                 if (error) throw error; 
-                toast.success('Room created successfully!'); 
+                alert.success(getText('Room created successfully!', 'Ruangan berhasil dibuat!')); 
             } 
             setShowForm(false); 
             setEditingRoom(null); 
@@ -848,7 +868,7 @@ const RoomManagement: React.FC = () => {
             await fetchRoomData(targetDate, true);
         } catch (error: any) { 
             console.error('Error saving room:', error); 
-            toast.error(error.message || 'Failed to save room'); 
+            alert.error(error.message || getText('Failed to save room', 'Gagal menyimpan ruangan')); 
         } finally { 
             setLoading(false); 
         } 
@@ -867,15 +887,21 @@ const RoomManagement: React.FC = () => {
     };
 
     const handleDelete = async (roomId: string) => { 
-        if (!confirm('Are you sure you want to delete this room?')) return; 
+        const confirmed = await alert.confirm(
+            getText('Are you sure you want to delete this room?', 'Apakah Anda yakin ingin menghapus ruangan ini?'),
+            getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')
+        );
+        
+        if (!confirmed) return;
+        
         try { 
             const { error } = await supabase.from('rooms').delete().eq('id', roomId); 
             if (error) throw error; 
-            toast.success('Room deleted successfully!'); 
+            alert.success(getText('Room deleted successfully!', 'Ruangan berhasil dihapus!')); 
             await fetchRoomData(targetDate, true);
         } catch (error: any) { 
             console.error('Error deleting room:', error); 
-            toast.error(error.message || 'Failed to delete room'); 
+            alert.error(error.message || getText('Failed to delete room', 'Gagal menghapus ruangan')); 
         } 
     };
 
@@ -901,11 +927,11 @@ const RoomManagement: React.FC = () => {
     // Component untuk menampilkan combined schedules dalam satu section
     const CombinedScheduleSection = () => {
         const titleText = isSearchMode ? 
-            `Schedule for ${format(new Date(targetDate), 'EEEE, MMMM d, yyyy')}` :
-            'Room Schedule';
+            getText(`Schedule for ${format(new Date(targetDate), 'EEEE, MMMM d, yyyy')}`, `Jadwal untuk ${format(new Date(targetDate), 'EEEE, d MMMM yyyy')}`) :
+            getText('Room Schedule', 'Jadwal Ruangan');
         const subtitleText = isSearchMode ?
-            `Showing all activities for the selected date` :
-            `Today's schedule and activities`;
+            getText(`Showing all activities for the selected date`, `Menampilkan semua aktivitas untuk tanggal yang dipilih`) :
+            getText(`Today's schedule and activities`, `Jadwal dan aktivitas hari ini`);
         
         return (
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 overflow-hidden mb-4">
@@ -949,10 +975,10 @@ const RoomManagement: React.FC = () => {
                                                 </div>
                                                 <div className="flex items-center space-x-2">
                                                     <span className={`text-xs font-medium ${schedule.color} bg-white px-2 py-1 rounded-full uppercase tracking-wide`}>
-                                                        {schedule.type === 'lecture' ? 'Kuliah' : 
-                                                         schedule.type === 'exam' ? 'UAS' :
-                                                         schedule.type === 'session' ? 'Sidang' :
-                                                         'Booking'}
+                                                        {schedule.type === 'lecture' ? getText('Lecture', 'Kuliah') : 
+                                                         schedule.type === 'exam' ? getText('Exam', 'UAS') :
+                                                         schedule.type === 'session' ? getText('Session', 'Sidang') :
+                                                         getText('Booking', 'Booking')}
                                                     </span>
                                                     <span className="font-semibold text-gray-900 text-lg">
                                                         {schedule.end_time ? 
@@ -986,11 +1012,17 @@ const RoomManagement: React.FC = () => {
                     ) : (
                         <div className="text-center py-12 text-gray-500">
                             <CalendarIcon className="h-16 w-16 mx-auto mb-4 opacity-50"/>
-                            <p className="text-lg font-medium mb-2">Tidak ada jadwal</p>
+                            <p className="text-lg font-medium mb-2">{getText('No schedule', 'Tidak ada jadwal')}</p>
                             <p className="text-sm">
                                 {isSearchMode 
-                                    ? `Ruangan ini kosong untuk ${format(new Date(targetDate), 'MMM dd, yyyy')}`
-                                    : 'Tidak ada jadwal hari ini atau aktivitas yang terjadwal'
+                                    ? getText(
+                                        `This room is empty for ${format(new Date(targetDate), 'MMM dd, yyyy')}`,
+                                        `Ruangan ini kosong untuk ${format(new Date(targetDate), 'dd MMM yyyy')}`
+                                    )
+                                    : getText(
+                                        'No schedule today or scheduled activities',
+                                        'Tidak ada jadwal hari ini atau aktivitas yang terjadwal'
+                                    )
                                 }
                             </p>
                         </div>
@@ -1003,13 +1035,13 @@ const RoomManagement: React.FC = () => {
     // User Search Dropdown Component dengan manual DOM (SEMUA ROLE)
     const UserSearchDropdown = () => (
         <div className="relative">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Search and Select User</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{getText('Search and Select User', 'Cari dan Pilih Pengguna')}</label>
             <div className="relative">
                 <input
                     ref={userDisplayRef}
                     type="text"
                     readOnly
-                    placeholder="Click to select user..."
+                    placeholder={getText("Click to select user...", "Klik untuk pilih pengguna...")}
                     onClick={showUserDropdown}
                     className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer bg-white"
                 />
@@ -1050,7 +1082,11 @@ const RoomManagement: React.FC = () => {
     );
     
     if (roomsLoading && displayedRooms.length === 0) { 
-        return <div className="flex justify-center items-center h-screen"><RefreshCw className="h-12 w-12 animate-spin text-blue-600" /></div>; 
+        return (
+            <div className="flex justify-center items-center h-screen">
+                <RefreshCw className="h-12 w-12 animate-spin text-blue-600" />
+            </div>
+        ); 
     }
 
     return (
@@ -1058,21 +1094,27 @@ const RoomManagement: React.FC = () => {
             <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white"> 
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-3xl font-bold">Enhanced Room Management</h1> 
+                        <h1 className="text-3xl font-bold">{getText('Enhanced Room Management', 'Manajemen Ruangan Lanjutan')}</h1> 
                         <p className="mt-2 opacity-90">
                             {isSearchMode 
-                                ? `Availability search results for ${format(new Date(targetDate), 'MMM dd, yyyy')}`
-                                : 'View real-time room status and manage room operations'
+                                ? getText(
+                                    `Availability search results for ${format(new Date(targetDate), 'MMM dd, yyyy')}`,
+                                    `Hasil pencarian ketersediaan untuk ${format(new Date(targetDate), 'dd MMM yyyy')}`
+                                )
+                                : getText(
+                                    'View real-time room status and manage room operations',
+                                    'Lihat status ruangan real-time dan kelola operasi ruangan'
+                                )
                             }
                         </p>
                     </div>
                     <div className="text-right">
                         <div className="text-2xl font-bold">{filteredAndSortedRooms.length}</div>
                         <div className="text-sm opacity-90">
-                            {isSearchMode ? 'Available Rooms' : 'Total Rooms'}
+                            {isSearchMode ? getText('Available Rooms', 'Ruangan Tersedia') : getText('Total Rooms', 'Total Ruangan')}
                         </div>
                         <div className="text-xs opacity-75 mt-1">
-                            Cache Hit: {cacheStats.hitRate.toFixed(1)}%
+                            {getText('Cache Hit', 'Cache Hit')}: {cacheStats.hitRate.toFixed(1)}%
                         </div>
                     </div>
                 </div>
@@ -1084,14 +1126,14 @@ const RoomManagement: React.FC = () => {
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-medium text-gray-900 flex items-center space-x-2">
                             <Search className="h-5 w-5 text-blue-600" />
-                            <span>Find Available Rooms</span>
+                            <span>{getText('Find Available Rooms', 'Cari Ruangan Tersedia')}</span>
                         </h3>
                         <button
                             onClick={() => setShowAvailabilitySearch(!showAvailabilitySearch)}
                             className="flex items-center space-x-2 px-3 py-1 text-sm bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
                         >
                             <Filter className="h-4 w-4" />
-                            <span>{showAvailabilitySearch ? 'Hide' : 'Show'} Search</span>
+                            <span>{showAvailabilitySearch ? getText('Hide', 'Sembunyikan') : getText('Show', 'Tampilkan')} {getText('Search', 'Pencarian')}</span>
                             {showAvailabilitySearch ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                         </button>
                     </div>
@@ -1100,7 +1142,7 @@ const RoomManagement: React.FC = () => {
                         <div className="bg-blue-50 rounded-lg p-4 space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Target Date</label>
+                                    <label className="block text-sm font-medium text-gray-700">{getText('Target Date', 'Tanggal Target')}</label>
                                     <input 
                                         type="date" 
                                         value={targetDate} 
@@ -1111,7 +1153,7 @@ const RoomManagement: React.FC = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Start Time</label>
+                                    <label className="block text-sm font-medium text-gray-700">{getText('Start Time', 'Waktu Mulai')}</label>
                                     <input 
                                         type="time" 
                                         value={searchStartTime} 
@@ -1120,7 +1162,7 @@ const RoomManagement: React.FC = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">End Time</label>
+                                    <label className="block text-sm font-medium text-gray-700">{getText('End Time', 'Waktu Selesai')}</label>
                                     <input 
                                         type="time" 
                                         value={searchEndTime} 
@@ -1135,7 +1177,7 @@ const RoomManagement: React.FC = () => {
                                         className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 h-10 transition-colors"
                                     >
                                         {isRefreshing ? <Loader2 className="h-5 w-5 animate-spin"/> : <Search className="h-5 w-5" />} 
-                                        <span>Search</span>
+                                        <span>{getText('Search', 'Cari')}</span>
                                     </button>
                                     {isSearchMode && (
                                         <button 
@@ -1143,13 +1185,16 @@ const RoomManagement: React.FC = () => {
                                             className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 h-10 transition-colors"
                                         >
                                             <RefreshCw className="h-4 w-4" />
-                                            <span>Today</span>
+                                            <span>{getText('Today', 'Hari Ini')}</span>
                                         </button>
                                     )}
                                 </div>
                             </div>
                             <div className="text-sm text-gray-600 bg-white p-3 rounded border border-blue-200">
-                                💡 This search will check all schedules: Lectures, UAS Exams, Final Sessions, and Room Bookings for conflicts
+                                💡 {getText(
+                                    'This search will check all schedules: Lectures, UAS Exams, Final Sessions, and Room Bookings for conflicts',
+                                    'Pencarian ini akan memeriksa semua jadwal: Kuliah, UAS, Sidang Akhir, dan Pemesanan Ruangan untuk konflik'
+                                )}
                             </div>
                         </div>
                     )}
@@ -1158,7 +1203,7 @@ const RoomManagement: React.FC = () => {
                         <div className="flex flex-wrap gap-3"> 
                             <button onClick={handleAddNewRoom} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"> 
                                 <Plus className="h-5 w-5" /> 
-                                <span>Add Room</span> 
+                                <span>{getText('Add Room', 'Tambah Ruangan')}</span> 
                             </button> 
                         </div>
                         <div className="flex items-center space-x-3">
@@ -1166,7 +1211,7 @@ const RoomManagement: React.FC = () => {
                                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" /> 
                                 <input 
                                     type="text" 
-                                    placeholder="Filter results by name/code..." 
+                                    placeholder={getText("Filter results by name/code...", "Filter hasil berdasarkan nama/kode...")} 
                                     value={searchTerm} 
                                     onChange={(e) => setSearchTerm(e.target.value)} 
                                     className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1177,21 +1222,21 @@ const RoomManagement: React.FC = () => {
                                 onChange={(e) => setFilterStatus(e.target.value)} 
                                 className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             >
-                                <option value="all">All Statuses</option>
-                                <option value="Available">Available</option>
-                                <option value="Scheduled">Scheduled</option>
-                                <option value="In Use">In Use</option>
-                                <option value="Conflict">Conflict</option>
-                                <option value="Unavailable">Unavailable</option>
+                                <option value="all">{getText('All Statuses', 'Semua Status')}</option>
+                                <option value="Available">{getText('Available', 'Tersedia')}</option>
+                                <option value="Scheduled">{getText('Scheduled', 'Terjadwal')}</option>
+                                <option value="In Use">{getText('In Use', 'Sedang Digunakan')}</option>
+                                <option value="Conflict">{getText('Conflict', 'Konflik')}</option>
+                                <option value="Unavailable">{getText('Unavailable', 'Tidak Tersedia')}</option>
                             </select>
                             <label className="flex items-center space-x-2 cursor-pointer">
                                 <input
                                     type="checkbox"
                                     checked={showInUse}
-                                    onChange={(e) => setShowInUse(e.target.checked)}
+                                  onChange={(e) => setShowInUse(e.target.checked)}
                                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                                 />
-                                <span className="text-sm text-gray-700">Show In Use</span>
+                                <span className="text-sm text-gray-700">{getText('Show In Use', 'Tampilkan Sedang Digunakan')}</span>
                             </label>
                             <div className="flex border border-gray-300 rounded-lg overflow-hidden"> 
                                 <button 
@@ -1220,7 +1265,7 @@ const RoomManagement: React.FC = () => {
                             return (
                                 <div key={room.id} className="border border-gray-200 rounded-xl p-4 hover:shadow-lg transition-all duration-200 group relative"> 
                                     <div className={`absolute top-2 right-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${roomStatus.color}`}>
-                                        {roomStatus.status}
+                                        {getText(roomStatus.status, roomStatus.status)}
                                     </div> 
                                     <div className="flex flex-col h-full"> 
                                         <div className="flex-grow"> 
@@ -1228,32 +1273,32 @@ const RoomManagement: React.FC = () => {
                                             <p className="text-sm text-gray-600">{room.code}</p> 
                                             <div className="flex items-center text-sm text-gray-600 mt-2">
                                                 <Users className="h-4 w-4 mr-1"/>
-                                                <span>{room.capacity} seats</span>
+                                                <span>{room.capacity} {getText('seats', 'kursi')}</span>
                                             </div> 
                                             <div className="flex items-center text-sm text-gray-600">
                                                 <MapPin className="h-4 w-4 mr-1"/>
-                                                <span>{room.department?.name || 'General'}</span>
+                                                <span>{room.department?.name || getText('General', 'Umum')}</span>
                                             </div>
                                             
                                             {/* ✅ NEW: Enhanced status details */}
                                             {roomStatus.status === 'Conflict' && (
                                                 <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded text-xs text-orange-700">
                                                     <AlertTriangle className="h-3 w-3 inline mr-1" />
-                                                    Time conflict detected
+                                                    {getText('Time conflict detected', 'Konflik waktu terdeteksi')}
                                                 </div>
                                             )}
                                             
                                             {roomStatus.status === 'In Use' && room.currentBooking && (
                                                 <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
                                                     <Users className="h-3 w-3 inline mr-1" />
-                                                    {room.currentBooking.user?.full_name || 'In Use'}
+                                                    {room.currentBooking.user?.full_name || getText('In Use', 'Sedang Digunakan')}
                                                 </div>
                                             )}
                                             
                                             {roomStatus.scheduleCount && roomStatus.scheduleCount > 0 && (
                                                 <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-700">
                                                     <CalendarIcon className="h-3 w-3 inline mr-1" />
-                                                    {roomStatus.scheduleCount} activities scheduled
+                                                    {roomStatus.scheduleCount} {getText('activities scheduled', 'aktivitas terjadwal')}
                                                 </div>
                                             )}
                                         </div> 
@@ -1261,29 +1306,29 @@ const RoomManagement: React.FC = () => {
                                             <button 
                                                 onClick={() => setShowRoomDetail(room)} 
                                                 className="p-1 text-gray-500 hover:text-indigo-600 transition-colors"
-                                                title="View Details"
+                                                title={getText("View Details", "Lihat Detail")}
                                             >
                                                 <Eye className="h-4 w-4" />
                                             </button> 
                                             <button 
-                                onClick={() => handleEdit(room)} 
-                                className="p-1 text-gray-500 hover:text-blue-600 transition-colors"
-                                title="Edit Room"
-                            >
-                                <Edit className="h-4 w-4" />
-                            </button> 
-                            <button 
-                                onClick={() => handleDelete(room.id)} 
-                                className="p-1 text-gray-500 hover:text-red-600 transition-colors"
-                                title="Delete Room"
-                            >
-                                <Trash2 className="h-4 w-4" />
-                            </button> 
-                        </div> 
-                    </div> 
-                </div>
-            );
-        })} 
+                                                onClick={() => handleEdit(room)} 
+                                                className="p-1 text-gray-500 hover:text-blue-600 transition-colors"
+                                                title={getText("Edit Room", "Edit Ruangan")}
+                                            >
+                                                <Edit className="h-4 w-4" />
+                                            </button> 
+                                            <button 
+                                                onClick={() => handleDelete(room.id)} 
+                                                className="p-1 text-gray-500 hover:text-red-600 transition-colors"
+                                                title={getText("Delete Room", "Hapus Ruangan")}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </button> 
+                                        </div> 
+                                    </div> 
+                                </div>
+                            );
+                        })} 
                     </div> 
                 ) : ( 
                     <div className="space-y-3"> 
@@ -1295,7 +1340,7 @@ const RoomManagement: React.FC = () => {
                                         <div className={`w-3 h-12 rounded-full ${roomStatus.color.split(' ')[0]}`}></div>
                                         <div>
                                             <h3 className="font-semibold text-gray-900">{room.name}</h3>
-                                            <p className="text-sm text-gray-600">{room.code} • {room.department?.name || 'General'}</p>
+                                            <p className="text-sm text-gray-600">{room.code} • {room.department?.name || getText('General', 'Umum')}</p>
                                             {roomStatus.reason && (
                                                 <p className="text-xs text-gray-500 mt-1">{roomStatus.reason}</p>
                                             )}
@@ -1304,30 +1349,30 @@ const RoomManagement: React.FC = () => {
                                     <div className="flex items-center space-x-6">
                                         <div className="text-center">
                                             <div className="text-sm font-medium text-gray-900">{room.capacity}</div>
-                                            <div className="text-xs text-gray-500">Capacity</div>
+                                            <div className="text-xs text-gray-500">{getText('Capacity', 'Kapasitas')}</div>
                                         </div>
                                         <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${roomStatus.color}`}>
-                                            {roomStatus.status}
+                                            {getText(roomStatus.status, roomStatus.status)}
                                         </span>
                                         <div className="flex items-center space-x-2">
                                             <button 
                                                 onClick={() => setShowRoomDetail(room)} 
                                                 className="p-2 text-gray-600 hover:text-indigo-600 transition-colors"
-                                                title="View Details"
+                                                title={getText("View Details", "Lihat Detail")}
                                             >
                                                 <Eye className="h-4 w-4" />
                                             </button>
                                             <button 
                                                 onClick={() => handleEdit(room)} 
                                                 className="p-2 text-gray-600 hover:text-blue-600 transition-colors"
-                                                title="Edit Room"
+                                                title={getText("Edit Room", "Edit Ruangan")}
                                             >
                                                 <Edit className="h-4 w-4" />
                                             </button>
                                             <button 
                                                 onClick={() => handleDelete(room.id)} 
                                                 className="p-2 text-gray-600 hover:text-red-600 transition-colors"
-                                                title="Delete Room"
+                                                title={getText("Delete Room", "Hapus Ruangan")}
                                             >
                                                 <Trash2 className="h-4 w-4" />
                                             </button>
@@ -1341,11 +1386,11 @@ const RoomManagement: React.FC = () => {
                 {filteredAndSortedRooms.length === 0 && !roomsLoading && (
                     <div className="text-center py-12">
                         <Building className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                        <h3 className="text-lg font-medium text-gray-900">No Rooms Found</h3>
+                        <h3 className="text-lg font-medium text-gray-900">{getText('No Rooms Found', 'Tidak Ada Ruangan Ditemukan')}</h3>
                         <p className="text-gray-600">
                             {isSearchMode 
-                                ? 'No rooms are available for the selected time period.'
-                                : 'Try adjusting your filter criteria.'
+                                ? getText('No rooms are available for the selected time period.', 'Tidak ada ruangan yang tersedia untuk periode waktu yang dipilih.')
+                                : getText('Try adjusting your filter criteria.', 'Coba sesuaikan kriteria filter Anda.')
                             }
                         </p>
                         {isSearchMode && (
@@ -1353,7 +1398,7 @@ const RoomManagement: React.FC = () => {
                                 onClick={handleBackToToday}
                                 className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                             >
-                                Back to Today's View
+                                {getText('Back to Today\'s View', 'Kembali ke Tampilan Hari Ini')}
                             </button>
                         )}
                     </div>
@@ -1366,7 +1411,9 @@ const RoomManagement: React.FC = () => {
                     <div className="bg-white rounded-xl shadow-xl max-w-lg w-full">
                         <div className="p-6">
                             <div className="flex items-center justify-between mb-6">
-                                <h3 className="text-lg font-semibold text-gray-900">{editingRoom ? 'Edit Room' : 'Add New Room'}</h3>
+                                <h3 className="text-lg font-semibold text-gray-900">
+                                    {editingRoom ? getText('Edit Room', 'Edit Ruangan') : getText('Add New Room', 'Tambah Ruangan Baru')}
+                                </h3>
                                 <button onClick={() => { 
                                     setShowForm(false); 
                                     setEditingRoom(null); 
@@ -1380,7 +1427,7 @@ const RoomManagement: React.FC = () => {
                             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                                 {/* Enhanced Room Name Input with Autocomplete */}
                                 <div className="relative">
-                                    <label className="block text-sm font-medium text-gray-700">Room Name *</label>
+                                    <label className="block text-sm font-medium text-gray-700">{getText('Room Name', 'Nama Ruangan')} *</label>
                                     <div className="relative mt-1">
                                         <input
                                             type="text"
@@ -1389,7 +1436,7 @@ const RoomManagement: React.FC = () => {
                                             onFocus={() => setShowRoomSuggestions(roomNameInput.length >= 1)}
                                             onBlur={() => setTimeout(() => setShowRoomSuggestions(false), 200)}
                                             className="block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                                            placeholder="Type room name or select from list..."
+                                            placeholder={getText("Type room name or select from list...", "Ketik nama ruangan atau pilih dari daftar...")}
                                         />
                                         <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                                         
@@ -1408,24 +1455,24 @@ const RoomManagement: React.FC = () => {
                                                             >
                                                                 <div className="flex items-center justify-between">
                                                                     <span>{roomName}</span>
-                                                                    <span className="text-xs text-gray-400">from schedules</span>
+                                                                    <span className="text-xs text-gray-400">{getText('from schedules', 'dari jadwal')}</span>
                                                                 </div>
                                                             </button>
                                                         ))}
                                                         <div className="border-t border-gray-200 px-3 py-2 text-xs text-gray-500 bg-gray-50">
-                                                            💡 Select from existing rooms or type a new name
+                                                            💡 {getText('Select from existing rooms or type a new name', 'Pilih dari ruangan yang ada atau ketik nama baru')}
                                                         </div>
                                                     </>
                                                 ) : roomNameInput.length >= 1 ? (
                                                     <div className="px-3 py-2 text-sm text-gray-500">
                                                         <div className="flex items-center justify-between">
-                                                            <span>No matching rooms found</span>
-                                                            <span className="text-xs text-green-600">✓ Will create new</span>
+                                                            <span>{getText('No matching rooms found', 'Tidak ada ruangan yang cocok')}</span>
+                                                            <span className="text-xs text-green-600">✓ {getText('Will create new', 'Akan membuat baru')}</span>
                                                         </div>
                                                     </div>
                                                 ) : (
                                                     <div className="px-3 py-2 text-sm text-gray-500">
-                                                        Start typing to see suggestions...
+                                                        {getText('Start typing to see suggestions...', 'Mulai mengetik untuk melihat saran...')}
                                                     </div>
                                                 )}
                                             </div>
@@ -1437,7 +1484,7 @@ const RoomManagement: React.FC = () => {
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Code *</label>
+                                    <label className="block text-sm font-medium text-gray-700">{getText('Code', 'Kode')} *</label>
                                     <input 
                                         {...form.register('code')} 
                                         type="text" 
@@ -1450,7 +1497,7 @@ const RoomManagement: React.FC = () => {
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Capacity *</label>
+                                    <label className="block text-sm font-medium text-gray-700">{getText('Capacity', 'Kapasitas')} *</label>
                                     <input 
                                         {...form.register('capacity', {valueAsNumber: true})} 
                                         type="number" 
@@ -1464,12 +1511,12 @@ const RoomManagement: React.FC = () => {
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Department</label>
+                                    <label className="block text-sm font-medium text-gray-700">{getText('Department', 'Departemen')}</label>
                                     <select 
                                         {...form.register('department_id')} 
                                         className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                                     >
-                                        <option value="">No Department / General</option>
+                                        <option value="">{getText('No Department / General', 'Tidak Ada Departemen / Umum')}</option>
                                         {departments.map(d => (
                                             <option key={d.id} value={d.id}>{d.name}</option>
                                         ))}
@@ -1486,14 +1533,14 @@ const RoomManagement: React.FC = () => {
                                         }} 
                                         className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
                                     >
-                                        Cancel
+                                        {getText('Cancel', 'Batal')}
                                     </button>
                                     <button 
                                         type="submit" 
                                         disabled={loading} 
                                         className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors"
                                     >
-                                        {loading ? 'Saving...' : 'Save Room'}
+                                        {loading ? getText('Saving...', 'Menyimpan...') : getText('Save Room', 'Simpan Ruangan')}
                                     </button>
                                 </div>
                             </form>
@@ -1514,9 +1561,9 @@ const RoomManagement: React.FC = () => {
                                 <div>
                                     <h2 className="text-2xl font-bold text-gray-900">{showRoomDetail.name}</h2>
                                     <div className="flex items-center space-x-3 mt-1">
-                                        <p className="text-sm text-gray-500">{showRoomDetail.department?.name || 'General Use'}</p>
+                                        <p className="text-sm text-gray-500">{showRoomDetail.department?.name || getText('General Use', 'Penggunaan Umum')}</p>
                                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${getOptimizedRoomStatus(showRoomDetail).color}`}>
-                                            {getOptimizedRoomStatus(showRoomDetail).status}
+                                            {getText(getOptimizedRoomStatus(showRoomDetail).status, getOptimizedRoomStatus(showRoomDetail).status)}
                                         </span>
                                     </div>
                                 </div>
@@ -1535,25 +1582,25 @@ const RoomManagement: React.FC = () => {
                                 <div className="space-y-6">
                                     {/* Room Information */}
                                     <div>
-                                        <h3 className="text-lg font-semibold text-gray-800 mb-3">Room Information</h3>
+                                        <h3 className="text-lg font-semibold text-gray-800 mb-3">{getText('Room Information', 'Informasi Ruangan')}</h3>
                                         <div className="grid grid-cols-1 gap-4 text-sm">
                                             <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
                                                 <Hash className="h-5 w-5 text-gray-400"/>
                                                 <div>
-                                                    <p className="text-gray-500">Code</p>
+                                                    <p className="text-gray-500">{getText('Code', 'Kode')}</p>
                                                     <p className="font-semibold text-gray-800">{showRoomDetail.code}</p>
                                                 </div>
                                             </div>
                                             <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
                                                 <Users className="h-5 w-5 text-gray-400"/>
                                                 <div>
-                                                    <p className="text-gray-500">Capacity</p>
-                                                    <p className="font-semibold text-gray-800">{showRoomDetail.capacity} seats</p>
+                                                    <p className="text-gray-500">{getText('Capacity', 'Kapasitas')}</p>
+                                                    <p className="font-semibold text-gray-800">{showRoomDetail.capacity} {getText('seats', 'kursi')}</p>
                                                 </div>
                                             </div>
                                             <div className="bg-white p-3 rounded-lg border">
                                                 <div className="flex items-center justify-between mb-2">
-                                                    <p className="text-gray-500">Official Booking Status</p>
+                                                    <p className="text-gray-500">{getText('Official Booking Status', 'Status Pemesanan Resmi')}</p>
                                                     <button
                                                         onClick={() => handleToggleAvailability(showRoomDetail.id, !showRoomDetail.is_available)}
                                                         className={`p-1 rounded transition-colors ${
@@ -1561,7 +1608,10 @@ const RoomManagement: React.FC = () => {
                                                                 ? 'text-green-600 hover:bg-green-50' 
                                                                 : 'text-red-600 hover:bg-red-50'
                                                         }`}
-                                                        title={`Click to ${showRoomDetail.is_available ? 'disable' : 'enable'} room`}
+                                                        title={getText(
+                                                            `Click to ${showRoomDetail.is_available ? 'disable' : 'enable'} room`,
+                                                            `Klik untuk ${showRoomDetail.is_available ? 'menonaktifkan' : 'mengaktifkan'} ruangan`
+                                                        )}
                                                     >
                                                         <Edit className="h-4 w-4" />
                                                     </button>
@@ -1575,12 +1625,12 @@ const RoomManagement: React.FC = () => {
                                                     )}
                                                     <div className="flex-1">
                                                         <p className={`font-semibold ${showRoomDetail.is_available ? 'text-green-600' : 'text-red-600'}`}>
-                                                            {showRoomDetail.is_available ? 'AVAILABLE' : 'UNAVAILABLE'}
+                                                            {showRoomDetail.is_available ? getText('AVAILABLE', 'TERSEDIA') : getText('UNAVAILABLE', 'TIDAK TERSEDIA')}
                                                         </p>
                                                         <p className="text-xs text-gray-500 mt-1">
                                                             {showRoomDetail.is_available 
-                                                                ? 'Room can be booked officially' 
-                                                                : 'Room is disabled for booking'
+                                                                ? getText('Room can be booked officially', 'Ruangan dapat dipesan secara resmi')
+                                                                : getText('Room is disabled for booking', 'Ruangan dinonaktifkan untuk pemesanan')
                                                             }
                                                         </p>
                                                     </div>
@@ -1591,7 +1641,7 @@ const RoomManagement: React.FC = () => {
 
                                     {/* Equipment in Room */}
                                     <div>
-                                        <h3 className="text-lg font-semibold text-gray-800 mb-3">Equipment in Room</h3>
+                                        <h3 className="text-lg font-semibold text-gray-800 mb-3">{getText('Equipment in Room', 'Peralatan di Ruangan')}</h3>
                                         <div className="space-y-2 max-h-40 overflow-y-auto">
                                             {loadingEquipment ? (
                                                 <div className="flex justify-center p-4">
@@ -1608,7 +1658,7 @@ const RoomManagement: React.FC = () => {
                                                     </div>
                                                 ))
                                             ) : (
-                                                <p className="text-sm text-gray-500 text-center py-4">No equipment assigned to this room.</p>
+                                                <p className="text-sm text-gray-500 text-center py-4">{getText('No equipment assigned to this room.', 'Tidak ada peralatan yang ditugaskan ke ruangan ini.')}</p>
                                             )}
                                         </div>
                                     </div>
@@ -1616,13 +1666,13 @@ const RoomManagement: React.FC = () => {
                                     {/* Assigned Users Section */}
                                     <div>
                                         <div className="flex items-center justify-between mb-3">
-                                            <h3 className="text-lg font-semibold text-gray-800">Assigned Users</h3>
+                                            <h3 className="text-lg font-semibold text-gray-800">{getText('Assigned Users', 'Pengguna yang Ditugaskan')}</h3>
                                             <button
                                                 onClick={() => setShowAssignUserModal(true)}
                                                 className="flex items-center space-x-1 px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
                                             >
                                                 <UserPlus className="h-4 w-4" />
-                                                <span>Assign</span>
+                                                <span>{getText('Assign', 'Tugaskan')}</span>
                                             </button>
                                         </div>
                                         <div className="space-y-2 max-h-48 overflow-y-auto">
@@ -1647,7 +1697,7 @@ const RoomManagement: React.FC = () => {
                                                         <button
                                                             onClick={() => handleUnassignUser(roomUser.id, roomUser.user.full_name)}
                                                             className="text-red-600 hover:text-red-800 p-1 rounded transition-colors"
-                                                            title="Remove user"
+                                                            title={getText("Remove user", "Hapus pengguna")}
                                                         >
                                                             <UserMinus className="h-4 w-4" />
                                                         </button>
@@ -1656,7 +1706,7 @@ const RoomManagement: React.FC = () => {
                                             ) : (
                                                 <div className="text-center py-6 text-gray-500">
                                                     <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                                                    <p className="text-sm">No users assigned</p>
+                                                    <p className="text-sm">{getText('No users assigned', 'Tidak ada pengguna yang ditugaskan')}</p>
                                                 </div>
                                             )}
                                         </div>
@@ -1665,8 +1715,11 @@ const RoomManagement: React.FC = () => {
                                 
                                 {/* Right Column - Enhanced Schedule Display */}
                                 <div className="lg:col-span-2">
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                                        Complete Schedule for {format(new Date(targetDate), 'EEEE, MMMM d, yyyy')}
+                                  <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                                        {getText(
+                                            `Complete Schedule for ${format(new Date(targetDate), 'EEEE, MMMM d, yyyy')}`,
+                                            `Jadwal Lengkap untuk ${format(new Date(targetDate), 'EEEE, d MMMM yyyy')}`
+                                        )}
                                     </h3>
                                     
                                     <div className="space-y-4 max-h-[600px] overflow-y-auto">
@@ -1686,7 +1739,10 @@ const RoomManagement: React.FC = () => {
                         <div className="p-6">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-lg font-semibold text-gray-900">
-                                    Assign User to {showRoomDetail.name}
+                                    {getText(
+                                        `Assign User to ${showRoomDetail.name}`,
+                                        `Tugaskan Pengguna ke ${showRoomDetail.name}`
+                                    )}
                                 </h3>
                                 <button
                                     onClick={() => {
@@ -1715,14 +1771,14 @@ const RoomManagement: React.FC = () => {
                                     }}
                                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                                 >
-                                    Cancel
+                                    {getText('Cancel', 'Batal')}
                                 </button>
                                 <button
                                     onClick={handleAssignUser}
                                     disabled={!selectedUser}
                                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                 >
-                                    Assign User
+                                    {getText('Assign User', 'Tugaskan Pengguna')}
                                 </button>
                             </div>
                         </div>
@@ -1737,7 +1793,7 @@ const RoomManagement: React.FC = () => {
                         <div className="p-6">
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-lg font-semibold text-gray-900">
-                                    Confirm Removal
+                                    {getText('Confirm Removal', 'Konfirmasi Penghapusan')}
                                 </h3>
                                 <button
                                     onClick={() => {
@@ -1757,10 +1813,16 @@ const RoomManagement: React.FC = () => {
                                     </div>
                                     <div>
                                         <p className="text-sm text-gray-900">
-                                            Are you sure you want to remove <strong>{userToUnassign.name}</strong> from this room?
+                                            {getText(
+                                                `Are you sure you want to remove ${userToUnassign.name} from this room?`,
+                                                `Apakah Anda yakin ingin menghapus ${userToUnassign.name} dari ruangan ini?`
+                                            )}
                                         </p>
                                         <p className="text-xs text-gray-600 mt-1">
-                                            This action cannot be undone. The user will lose access to this room.
+                                            {getText(
+                                                'This action cannot be undone. The user will lose access to this room.',
+                                                'Tindakan ini tidak dapat dibatalkan. Pengguna akan kehilangan akses ke ruangan ini.'
+                                            )}
                                         </p>
                                     </div>
                                 </div>
@@ -1774,13 +1836,13 @@ const RoomManagement: React.FC = () => {
                                     }}
                                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                                 >
-                                    Cancel
+                                    {getText('Cancel', 'Batal')}
                                 </button>
                                 <button
                                     onClick={confirmUnassignUser}
                                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
                                 >
-                                    Remove User
+                                    {getText('Remove User', 'Hapus Pengguna')}
                                 </button>
                             </div>
                         </div>
