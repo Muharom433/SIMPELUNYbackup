@@ -20,8 +20,9 @@ import {
   Clock,
   GraduationCap,
   MapPin,
-  Eye,
-  Activity // Ensure Activity is imported for the icon
+  Activity, // Ensure Activity is imported for the icon
+  Eye, // Added Eye icon for PasswordInput
+  EyeOff // Added EyeOff icon for PasswordInput
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -229,36 +230,70 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = React.memo(({
 
 SearchableDropdown.displayName = 'SearchableDropdown';
 
+// Password Input with toggle
+const PasswordInput: React.FC<{
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  error?: string;
+  required?: boolean;
+}> = ({ value, onChange, placeholder, error, required }) => {
+  const [showPassword, setShowPassword] = useState(false);
+
+  return (
+    <div className="relative">
+      <input
+        type={showPassword ? 'text' : 'password'}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={`w-full px-3 py-3 pr-12 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
+          error ? 'border-red-300' : 'border-gray-300'
+        }`}
+        required={required}
+      />
+      <button
+        type="button"
+        onClick={() => setShowPassword(!showPassword)}
+        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+      >
+        {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+      </button>
+      {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+    </div>
+  );
+};
+
+
 const UserManagement: React.FC = () => {
-  // PERBAIKAN: Semua hooks diletakkan di atas sebelum any conditional logic
+  // Semua Hooks diletakkan di bagian paling atas komponen, tanpa kondisi.
   const { profile } = useAuth();
   const { getText } = useLanguage();
   
-  // State hooks - semua diletakkan berurutan tanpa kondisional
+  // State hooks
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [studyPrograms, setStudyPrograms] = useState<StudyProgram[]>([]);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false); // Added submitting state back
+  const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-  // States for user detail modal, re-added as per original UI logic
   const [showUserDetail, setShowUserDetail] = useState<User | null>(null);
   const [userRooms, setUserRooms] = useState<Room[]>([]);
   const [userActivities, setUserActivities] = useState<ActivityItem[]>([]);
   const [loadingUserDetails, setLoadingUserDetails] = useState(false);
 
-
-  const itemsPerPage = 10; // Added for pagination logic
+  const itemsPerPage = 10;
+  const [currentPage, setCurrentPage] = useState(1); // Added currentPage state
 
   // Form hook
   const form = useForm<UserForm>({
     resolver: zodResolver(userSchema),
     defaultValues: {
       role: 'student',
-      username: '', // Ensure default values are set for all fields
+      username: '',
       email: '',
       full_name: '',
       identity_number: '',
@@ -278,7 +313,7 @@ const UserManagement: React.FC = () => {
     switch (role) {
       case 'super_admin': return Shield;
       case 'department_admin': return Building;
-      case 'lecturer': return GraduationCap; // Re-added lecturer icon
+      case 'lecturer': return GraduationCap;
       case 'student': return BookOpen;
       default: return User;
     }
@@ -340,7 +375,7 @@ const UserManagement: React.FC = () => {
 
   const fetchDepartments = useCallback(async () => {
     try {
-      let query = supabase.from('departments').select('id, name, code'); // Include code for dropdown
+      let query = supabase.from('departments').select('id, name, code');
       
       if (profile?.role === 'department_admin' && profile.department_id) {
         query = query.eq('id', profile.department_id);
@@ -363,8 +398,6 @@ const UserManagement: React.FC = () => {
         query = query.eq('department_id', profile.department_id);
       } else if (profile?.role === 'super_admin') {
         // Super admin should fetch all study programs initially if no department is selected
-        // Or if the dropdown is to be populated with all options for super admin
-        // For now, let's fetch all for super admin to populate dropdown
       }
       
       const { data, error } = await query;
@@ -473,27 +506,7 @@ const UserManagement: React.FC = () => {
     }
   }, [showUserDetail, fetchUserDetails]);
 
-  // PERBAIKAN: Early return AFTER all hooks
-  // Access control check moved AFTER all hooks are declared
-  const hasAccess = profile && ['super_admin', 'department_admin'].includes(profile.role);
-
-  if (!hasAccess) {
-    return (
-      <div className="flex items-center justify-center min-h-[50vh] p-4">
-        <div className="text-center">
-          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">
-            {getText('Access Denied', 'Akses Ditolak')}
-          </h3>
-          <p className="text-gray-600 text-center max-w-md">
-            {getText("You don't have permission to access user management.", 'Anda tidak memiliki izin untuk mengakses manajemen pengguna.')}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // useMemo hooks - PERBAIKAN: Dipindahkan ke atas sebelum any early returns
+  // useMemo hooks - Dipindahkan ke atas sebelum early returns
   const filteredUsers = useMemo(() => {
     if (!users || users.length === 0) return [];
     
@@ -524,6 +537,25 @@ const UserManagement: React.FC = () => {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const currentTableData = filteredUsers.slice(startIndex, startIndex + itemsPerPage);
 
+  // PERBAIKAN: Early return AFTER all hooks
+  // Access control check moved AFTER all hooks are declared
+  const hasAccess = profile && ['super_admin', 'department_admin'].includes(profile.role);
+
+  if (!hasAccess) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh] p-4">
+        <div className="text-center">
+          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+            {getText('Access Denied', 'Akses Ditolak')}
+          </h3>
+          <p className="text-gray-600 text-center max-w-md">
+            {getText("You don't have permission to access user management.", 'Anda tidak memiliki izin untuk mengakses manajemen pengguna.')}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const handleSubmit = async (data: UserForm) => {
     try {
@@ -595,7 +627,7 @@ const UserManagement: React.FC = () => {
         toast.error(error.message || getText('Failed to save user', 'Gagal menyimpan pengguna'));
       }
     } finally {
-      setSubmitting(false); // Use submitting state for form operations
+      setSubmitting(false);
     }
   };
 
@@ -624,7 +656,7 @@ const UserManagement: React.FC = () => {
 
   const handleDelete = async (userId: string) => {
     try {
-      setSubmitting(true); // Use submitting state for delete operation
+      setSubmitting(true);
       const { error } = await supabase
         .from('users')
         .delete()
@@ -638,7 +670,7 @@ const UserManagement: React.FC = () => {
       console.error('Error deleting user:', error);
       toast.error(error.message || getText('Failed to delete user', 'Gagal menghapus pengguna'));
     } finally {
-      setSubmitting(false); // Use submitting state for delete operation
+      setSubmitting(false);
     }
   };
 
