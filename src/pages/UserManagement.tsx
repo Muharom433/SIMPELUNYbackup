@@ -20,6 +20,7 @@ import {
   Clock,
   GraduationCap,
   MapPin,
+  Eye,
   Activity // Ensure Activity is imported for the icon
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
