@@ -1721,13 +1721,12 @@ const BookRoom = () => {
                       <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
                       <div className="text-sm text-blue-800">
                         <p className="font-semibold mb-2">
-                          {getText('Booking Process', 'Proses Pemesanan')}
+                          {getText('Attention!', 'Perhatian')}
                         </p>
                         <ul className="space-y-1 text-xs">
-                          <li>• {getText('Your booking will be submitted as PENDING', 'Pemesanan Anda akan dikirim sebagai MENUNGGU')}</li>
-                          <li>• {getText('Equipment quantities will NOT be reduced until approved', 'Jumlah peralatan TIDAK akan dikurangi sampai disetujui')}</li>
-                          <li>• {getText('You will be notified when admin reviews your request', 'Anda akan diberitahu saat admin meninjau permintaan Anda')}</li>
-                          <li>• {getText('Equipment will be reserved only after approval', 'Peralatan akan dipesan hanya setelah persetujuan')}</li>
+                          <li>• {getText('Leave Your ID Card Like Student ID or Citizenship ID to Admin', 'Tinggalkan Kartu Identitas keperti KTP/ KTM ke Admin ')}</li>
+                          <li>• {getText('Follow The existing Procedure', 'Ikuti Prosedur yang sudah ada')}</li>
+                          <li>• {getText('Do Your Booking Before get the Rooms Key', 'Lakukan Booking Sebelum Mengambil Kunci Ruangan')}</li>
                         </ul>
                       </div>
                     </div>
