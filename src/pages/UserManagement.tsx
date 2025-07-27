@@ -22,17 +22,33 @@ import {
   MapPin,
   ChevronLeft,
   ChevronRight,
-  Activity, // Ensure Activity is imported for the icon
-  Eye, // Added Eye icon for PasswordInput
-  EyeOff // Added EyeOff icon for PasswordInput
+  Activity,
+  Eye,
+  EyeOff,
+  Mail,
+  Phone,
+  Hash,
+  Calendar,
+  Settings,
+  Filter,
+  Download,
+  Upload,
+  UserPlus,
+  UserCheck,
+  UserX,
+  Loader2,
+  Info,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
-import toast from 'react-hot-toast'; // Menggunakan toast kembali
+import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 
-// Simplified schema - no complex validation
+// Zod schema remains the same
 const userSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
   email: z.string().email('Invalid email address').optional().or(z.literal('')),
@@ -58,15 +74,15 @@ interface User {
   department_id?: string;
   study_program_id?: string;
   created_at: string;
-  updated_at?: string; // Added updated_at from the provided code
-  department?: { id: string; name: string; code?: string; }; // Changed to include code for consistency
+  updated_at?: string;
+  department?: { id: string; name: string; code?: string; };
   study_program?: { id: string; name: string; code: string; };
 }
 
 interface Department {
   id: string;
   name: string;
-  code?: string; // Added code for consistency
+  code?: string;
 }
 
 interface StudyProgram {
@@ -84,14 +100,14 @@ interface Room {
   assigned_at?: string;
 }
 
-interface ActivityItem { // Renamed to avoid conflict with lucide-react Activity icon
+interface ActivityItem {
   id: string;
   description: string;
   timestamp: string;
   room_name?: string;
 }
 
-// Searchable Dropdown Component - Moved outside to avoid re-creation
+// Enhanced SearchableDropdown Component
 interface SearchableDropdownProps {
   options: { id: string; name: string; code?: string }[];
   value: string;
@@ -147,18 +163,14 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = React.memo(({
     setSearchTerm('');
   };
 
-  const handleClearSearch = () => {
-    setSearchTerm('');
-  };
-
   return (
     <div className="relative" ref={dropdownRef}>
       <button
         type="button"
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
-        className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-left flex items-center justify-between ${
-          disabled ? 'bg-gray-100 cursor-not-allowed text-gray-500' : 'hover:border-gray-400'
+        className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-left flex items-center justify-between transition-all duration-200 ${
+          disabled ? 'bg-gray-100 cursor-not-allowed text-gray-500' : 'hover:border-gray-400 hover:shadow-sm'
         }`}
       >
         <span className={selectedOption ? 'text-gray-900' : 'text-gray-500'}>
@@ -167,27 +179,27 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = React.memo(({
             : placeholder
           }
         </span>
-        <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && !disabled && (
         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-hidden">
-          <div className="p-2 border-b border-gray-200">
+          <div className="p-3 border-b border-gray-200">
             <div className="relative">
-              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="text"
                 placeholder={searchPlaceholder}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 pr-8 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full pl-9 pr-8 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all duration-200"
                 autoFocus
               />
               {searchTerm && (
                 <button
                   type="button"
-                  onClick={handleClearSearch}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 hover:text-gray-600"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 hover:text-gray-600 transition-colors"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -199,13 +211,13 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => handleSelect('')}
-                className="w-full px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100"
+                className="w-full px-4 py-2 text-left text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100 transition-colors duration-200"
               >
                 Clear selection
               </button>
             )}
             {filteredOptions.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-gray-500 text-center">
+              <div className="px-4 py-3 text-sm text-gray-500 text-center">
                 {searchTerm ? `No results for "${searchTerm}"` : emptyMessage}
               </div>
             ) : (
@@ -214,7 +226,7 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = React.memo(({
                   key={option.id}
                   type="button"
                   onClick={() => handleSelect(option.id)}
-                  className={`w-full px-3 py-2 text-left text-sm hover:bg-blue-50 hover:text-blue-900 ${
+                  className={`w-full px-4 py-3 text-left text-sm hover:bg-blue-50 hover:text-blue-900 transition-colors duration-200 ${
                     option.id === value ? 'bg-blue-100 text-blue-900' : 'text-gray-900'
                   }`}
                 >
@@ -232,7 +244,7 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = React.memo(({
 
 SearchableDropdown.displayName = 'SearchableDropdown';
 
-// Password Input with toggle
+// Enhanced Password Input
 const PasswordInput: React.FC<{
   value: string;
   onChange: (value: string) => void;
@@ -249,15 +261,15 @@ const PasswordInput: React.FC<{
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className={`w-full px-3 py-3 pr-12 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-          error ? 'border-red-300' : 'border-gray-300'
+        className={`w-full px-4 py-3 pr-12 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
+          error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
         }`}
         required={required}
       />
       <button
         type="button"
         onClick={() => setShowPassword(!showPassword)}
-        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 transition-colors duration-200"
       >
         {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
       </button>
@@ -266,9 +278,7 @@ const PasswordInput: React.FC<{
   );
 };
 
-
 const UserManagement: React.FC = () => {
-  // Semua Hooks diletakkan di bagian paling atas komponen, tanpa kondisi.
   const { profile } = useAuth();
   const { getText } = useLanguage();
   
@@ -279,6 +289,8 @@ const UserManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
@@ -286,9 +298,10 @@ const UserManagement: React.FC = () => {
   const [userRooms, setUserRooms] = useState<Room[]>([]);
   const [userActivities, setUserActivities] = useState<ActivityItem[]>([]);
   const [loadingUserDetails, setLoadingUserDetails] = useState(false);
+  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
 
   const itemsPerPage = 10;
-  const [currentPage, setCurrentPage] = useState(1); // Added currentPage state
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Form hook
   const form = useForm<UserForm>({
@@ -306,11 +319,10 @@ const UserManagement: React.FC = () => {
     },
   });
 
-  // Form watch hooks
   const watchRole = form.watch('role');
   const watchDepartmentId = form.watch('department_id');
 
-  // Helper functions - menggunakan useCallback untuk performance
+  // Helper functions
   const getRoleIcon = useCallback((role: string) => {
     switch (role) {
       case 'super_admin': return Shield;
@@ -333,19 +345,15 @@ const UserManagement: React.FC = () => {
 
   const getRoleBadgeColor = useCallback((role: string) => {
     switch (role) {
-      case 'super_admin': return 'bg-red-100 text-red-800';
-      case 'department_admin': return 'bg-blue-100 text-blue-800';
-      case 'lecturer': return 'bg-purple-100 text-purple-800';
-      case 'student': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'super_admin': return 'bg-red-100 text-red-800 border-red-200';
+      case 'department_admin': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'lecturer': return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'student': return 'bg-green-100 text-green-800 border-green-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   }, []);
 
-  const handleClearSearch = useCallback(() => {
-    setSearchTerm('');
-  }, []);
-
-  // API functions
+  // API functions (keeping the same logic but with better error handling)
   const fetchUsers = useCallback(async () => {
     try {
       setLoading(true);
@@ -358,7 +366,6 @@ const UserManagement: React.FC = () => {
       if (profile?.role === 'super_admin') {
         // Super admin sees all users
       } else if (profile?.role === 'department_admin' && profile.department_id) {
-        // Department admin sees only users in their department
         query = query.eq('department_id', profile.department_id);
       }
       
@@ -398,8 +405,6 @@ const UserManagement: React.FC = () => {
       
       if (profile?.role === 'department_admin' && profile.department_id) {
         query = query.eq('department_id', profile.department_id);
-      } else if (profile?.role === 'super_admin') {
-        // Super admin should fetch all study programs initially if no department is selected
       }
       
       const { data, error } = await query;
@@ -453,7 +458,7 @@ const UserManagement: React.FC = () => {
         setUserRooms(rooms);
       }
 
-      // Fetch recent activities (bookings)
+      // Fetch recent activities
       const { data: bookingsData, error: bookingsError } = await supabase
         .from('bookings')
         .select(`
@@ -483,8 +488,7 @@ const UserManagement: React.FC = () => {
     }
   }, [getText]);
 
-
-  // useEffect hooks - semua diletakkan berurutan
+  // useEffect hooks
   useEffect(() => {
     if (profile) {
       fetchUsers();
@@ -497,7 +501,7 @@ const UserManagement: React.FC = () => {
     if (watchDepartmentId) {
       fetchStudyProgramsByDepartment(watchDepartmentId);
     } else if (profile?.role === 'super_admin') {
-      setStudyPrograms([]); // Clear study programs if no department is selected for super admin
+      setStudyPrograms([]);
       form.setValue('study_program_id', '');
     }
   }, [watchDepartmentId, profile, fetchStudyProgramsByDepartment, form]);
@@ -508,18 +512,14 @@ const UserManagement: React.FC = () => {
     }
   }, [showUserDetail, fetchUserDetails]);
 
-  // useMemo hooks - Dipindahkan ke atas sebelum early returns
+  // Filtered users with multiple filters
   const filteredUsers = useMemo(() => {
     if (!users || users.length === 0) return [];
     
     return users.filter(user => {
       const searchLower = searchTerm.toLowerCase().trim();
       
-      if (!searchLower) {
-        return true;
-      }
-      
-      const matchesSearch = 
+      const matchesSearch = !searchLower || 
         (user.full_name?.toLowerCase() || '').includes(searchLower) ||
         (user.username?.toLowerCase() || '').includes(searchLower) ||
         (user.email?.toLowerCase() || '').includes(searchLower) ||
@@ -527,30 +527,32 @@ const UserManagement: React.FC = () => {
         (user.phone_number?.toLowerCase() || '').includes(searchLower) ||
         (user.role?.toLowerCase() || '').includes(searchLower) ||
         (user.department?.name?.toLowerCase() || '').includes(searchLower) ||
-        (user.study_program?.name?.toLowerCase() || '').includes(searchLower) ||
-        (user.study_program?.code?.toLowerCase() || '').includes(searchLower);
+        (user.study_program?.name?.toLowerCase() || '').includes(searchLower);
       
-      return matchesSearch;
+      const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+      const matchesDepartment = departmentFilter === 'all' || user.department_id === departmentFilter;
+      
+      return matchesSearch && matchesRole && matchesDepartment;
     });
-  }, [users, searchTerm]);
+  }, [users, searchTerm, roleFilter, departmentFilter]);
 
-  // Pagination (re-added for table display)
+  // Pagination
   const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const currentTableData = filteredUsers.slice(startIndex, startIndex + itemsPerPage);
 
-  // Access control check moved AFTER all hooks are declared
+  // Access control check
   const hasAccess = profile && ['super_admin', 'department_admin'].includes(profile.role);
 
   const handleSubmit = async (data: UserForm) => {
     try {
       setSubmitting(true);
+      setProcessingIds(prev => new Set(prev).add('form'));
 
       if (profile?.role === 'department_admin' && profile.department_id) {
         data.department_id = profile.department_id;
-        // Department admin can only create lecturer or student roles
         if (!['lecturer', 'student'].includes(data.role)) {
-          data.role = 'student'; // Default to student if an invalid role is selected
+          data.role = 'student';
         }
       }
 
@@ -567,7 +569,7 @@ const UserManagement: React.FC = () => {
 
       if (editingUser) {
         const updateData: any = { ...userData };
-        if (data.password?.trim()) { // Only update password if provided
+        if (data.password?.trim()) {
           updateData.password = data.password.trim();
         }
 
@@ -579,7 +581,7 @@ const UserManagement: React.FC = () => {
         if (error) throw error;
         toast.success(getText('User updated successfully', 'Pengguna berhasil diperbarui'));
       } else {
-        if (!data.password?.trim()) { // Password is required for new users
+        if (!data.password?.trim()) {
           toast.error(getText('Password is required for new users', 'Password diperlukan untuk pengguna baru'));
           return;
         }
@@ -594,11 +596,11 @@ const UserManagement: React.FC = () => {
 
       setShowModal(false);
       setEditingUser(null);
-      form.reset({ role: 'student' }); // Reset form and default role
+      form.reset({ role: 'student' });
       fetchUsers();
     } catch (error: any) {
       console.error('Error saving user:', error);
-      if (error.code === '23505') { // Unique constraint violation
+      if (error.code === '23505') {
         if (error.message.includes('username')) {
           toast.error(getText('Username already exists', 'Username sudah ada'));
         } else if (error.message.includes('email')) {
@@ -613,6 +615,11 @@ const UserManagement: React.FC = () => {
       }
     } finally {
       setSubmitting(false);
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete('form');
+        return newSet;
+      });
     }
   };
 
@@ -625,15 +632,15 @@ const UserManagement: React.FC = () => {
       identity_number: user.identity_number,
       phone_number: user.phone_number || '',
       role: user.role as any,
-      department_id: user.department_id || '', // Ensure it's an empty string for dropdown
-      study_program_id: user.study_program_id || '', // Ensure it's an empty string for dropdown
-      password: '', // Password should always be empty when editing
+      department_id: user.department_id || '',
+      study_program_id: user.study_program_id || '',
+      password: '',
     });
     
     if (user.department_id) {
       fetchStudyProgramsByDepartment(user.department_id);
     } else if (profile?.role === 'super_admin') {
-      setStudyPrograms([]); // Clear study programs if no department for super admin
+      setStudyPrograms([]);
     }
     
     setShowModal(true);
@@ -641,7 +648,7 @@ const UserManagement: React.FC = () => {
 
   const handleDelete = async (userId: string) => {
     try {
-      setSubmitting(true);
+      setProcessingIds(prev => new Set(prev).add(userId));
       const { error } = await supabase
         .from('users')
         .delete()
@@ -655,323 +662,557 @@ const UserManagement: React.FC = () => {
       console.error('Error deleting user:', error);
       toast.error(error.message || getText('Failed to delete user', 'Gagal menghapus pengguna'));
     } finally {
-      setSubmitting(false);
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(userId);
+        return newSet;
+      });
     }
   };
 
+  if (!hasAccess) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh] p-4">
+        <div className="text-center">
+          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+            {getText('Access Denied', 'Akses Ditolak')}
+          </h3>
+          <p className="text-gray-600 text-center max-w-md">
+            {getText("You don't have permission to access user management.", 'Anda tidak memiliki izin untuk mengakses manajemen pengguna.')}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {!hasAccess ? (
-        <div className="flex items-center justify-center min-h-[50vh] p-4">
-          <div className="text-center">
-            <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              {getText('Access Denied', 'Akses Ditolak')}
-            </h3>
-            <p className="text-gray-600 text-center max-w-md">
-              {getText("You don't have permission to access user management.", 'Anda tidak memiliki izin untuk mengakses manajemen pengguna.')}
+    <div className="space-y-6">
+      {/* Modern Header with Gradient */}
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center space-x-3">
+              <Users className="h-8 w-8" />
+              <span>{getText('User Management', 'Manajemen Pengguna')}</span>
+            </h1>
+            <p className="mt-2 opacity-90">
+              {profile?.role === 'super_admin' 
+                ? getText('Manage all system users and their permissions', 'Kelola semua pengguna sistem dan izin mereka')
+                : getText('Manage department users and access', 'Kelola pengguna departemen dan akses')
+              }
             </p>
           </div>
+          <div className="hidden md:block text-right">
+            <div className="text-2xl font-bold">{users.length}</div>
+            <div className="text-sm opacity-80">{getText('Total Users', 'Total Pengguna')}</div>
+          </div>
         </div>
-      ) : (
-        <>
-          {/* Mobile-First Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
-            <div className="px-4 py-6">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
-                    <Users className="h-6 w-6" />
-                    {getText('Users', 'Pengguna')}
-                  </h1>
-                  <p className="text-blue-100 text-sm mt-1">
-                    {profile?.role === 'super_admin' 
-                      ? getText('Manage all users', 'Kelola semua pengguna')
-                      : getText('Manage department users', 'Kelola pengguna departemen')
-                    }
-                  </p>
-                </div>
-                <div className="text-right">
-                  <div className="text-lg md:text-xl font-bold">{users.length}</div>
-                  <div className="text-xs text-blue-100">{getText('Total', 'Total')}</div>
-                </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        {[
+          { 
+            label: getText('Students', 'Mahasiswa'), 
+            count: users.filter(u => u.role === 'student').length, 
+            color: 'bg-green-500', 
+            icon: BookOpen 
+          },
+          { 
+            label: getText('Lecturers', 'Dosen'), 
+            count: users.filter(u => u.role === 'lecturer').length, 
+            color: 'bg-purple-500', 
+            icon: GraduationCap 
+          },
+          { 
+            label: getText('Dept. Admins', 'Admin Dept.'), 
+            count: users.filter(u => u.role === 'department_admin').length, 
+            color: 'bg-blue-500', 
+            icon: Building 
+          },
+          { 
+            label: getText('Super Admins', 'Super Admin'), 
+            count: users.filter(u => u.role === 'super_admin').length, 
+            color: 'bg-red-500', 
+            icon: Shield 
+          },
+        ].map((stat, index) => (
+          <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow duration-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">{stat.label}</p>
+                <p className="text-3xl font-bold text-gray-900">{stat.count}</p>
+              </div>
+              <div className={`${stat.color} p-3 rounded-xl`}>
+                <stat.icon className="h-6 w-6 text-white" />
               </div>
             </div>
           </div>
+        ))}
+      </div>
 
-          {/* Mobile-First Controls */}
-          <div className="p-4 bg-white border-b sticky top-0 z-10">
-            <div className="flex gap-3">
-              {/* Search */}
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder={getText('Search...', 'Cari...')}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-                />
-              </div>
-              
-              {/* Add Button */}
-              <button
-                onClick={() => {
-                  setEditingUser(null);
-                  form.reset({
-                    role: 'student',
-                    username: '',
-                    email: '',
-                    full_name: '',
-                    identity_number: '',
-                    phone_number: '',
-                    department_id: profile?.role === 'department_admin' ? profile.department_id : '',
-                    study_program_id: '',
-                    password: '',
-                  });
-                  if (profile?.role === 'department_admin' && profile.department_id) {
-                    fetchStudyProgramsByDepartment(profile.department_id);
-                  } else {
-                    setStudyPrograms([]); // Clear study programs if no department is selected for super admin
-                  }
-                  setShowModal(true);
-                }}
-                className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 whitespace-nowrap"
-              >
-                <Plus className="h-5 w-5" />
-                <span className="hidden sm:inline">{getText('Add', 'Tambah')}</span>
-              </button>
+      {/* Enhanced Controls */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
+          <div className="flex flex-col sm:flex-row gap-4 flex-1">
+            {/* Search */}
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder={getText('Search users...', 'Cari pengguna...')}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+              />
             </div>
 
-            {/* Search Results Info */}
-            {searchTerm && (
-              <div className="mt-3 text-sm text-gray-600">
-                {filteredUsers.length} {getText('results found', 'hasil ditemukan')}
-              </div>
+            {/* Role Filter */}
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+            >
+              <option value="all">{getText('All Roles', 'Semua Peran')}</option>
+              <option value="student">{getText('Students', 'Mahasiswa')}</option>
+              <option value="lecturer">{getText('Lecturers', 'Dosen')}</option>
+              <option value="department_admin">{getText('Dept. Admins', 'Admin Dept.')}</option>
+              {profile?.role === 'super_admin' && (
+                <option value="super_admin">{getText('Super Admins', 'Super Admin')}</option>
+              )}
+            </select>
+
+            {/* Department Filter */}
+            {profile?.role === 'super_admin' && (
+              <select
+                value={departmentFilter}
+                onChange={(e) => setDepartmentFilter(e.target.value)}
+                className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+              >
+                <option value="all">{getText('All Departments', 'Semua Departemen')}</option>
+                {departments.map(dept => (
+                  <option key={dept.id} value={dept.id}>
+                    {dept.name} {dept.code && `(${dept.code})`}
+                  </option>
+                ))}
+              </select>
             )}
           </div>
 
-          {/* Mobile-First User List */}
-          <div className="p-4">
-            {loading ? (
-              <div className="flex justify-center py-12">
-                <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
-              </div>
-            ) : currentTableData.length === 0 ? (
-              <div className="text-center py-12">
-                <Users className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-                <p className="text-lg font-medium text-gray-900 mb-2">
-                  {searchTerm ? getText('No users found', 'Tidak ada pengguna') : getText('No users yet', 'Belum ada pengguna')}
-                </p>
-                <p className="text-gray-600 text-center">
-                  {searchTerm 
-                    ? getText('Try different search terms', 'Coba kata kunci lain')
-                    : getText('Add your first user', 'Tambahkan pengguna pertama')
-                  }
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {currentTableData.map((user) => {
+          {/* Action Buttons */}
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => {
+                fetchUsers();
+                setCurrentPage(1);
+              }}
+              disabled={loading}
+              className="p-3 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors duration-200 disabled:opacity-50"
+              title={getText('Refresh', 'Refresh')}
+            >
+              <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+            
+            <button
+              onClick={() => {
+                setEditingUser(null);
+                form.reset({
+                  role: 'student',
+                  username: '',
+                  email: '',
+                  full_name: '',
+                  identity_number: '',
+                  phone_number: '',
+                  department_id: profile?.role === 'department_admin' ? profile.department_id : '',
+                  study_program_id: '',
+                  password: '',
+                });
+                if (profile?.role === 'department_admin' && profile.department_id) {
+                  fetchStudyProgramsByDepartment(profile.department_id);
+                } else {
+                  setStudyPrograms([]);
+                }
+                setShowModal(true);
+              }}
+              className="flex items-center space-x-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-sm hover:shadow-md"
+            >
+              <Plus className="h-5 w-5" />
+              <span className="hidden sm:inline">{getText('Add User', 'Tambah Pengguna')}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Search Results Info */}
+        {(searchTerm || roleFilter !== 'all' || departmentFilter !== 'all') && (
+          <div className="mt-4 flex items-center justify-between text-sm">
+            <div className="text-gray-600">
+              {filteredUsers.length} {getText('of', 'dari')} {users.length} {getText('users found', 'pengguna ditemukan')}
+            </div>
+            {(searchTerm || roleFilter !== 'all' || departmentFilter !== 'all') && (
+              <button
+                onClick={() => {
+                  setSearchTerm('');
+                  setRoleFilter('all');
+                  setDepartmentFilter('all');
+                  setCurrentPage(1);
+                }}
+                className="text-blue-600 hover:text-blue-800 transition-colors duration-200"
+              >
+                {getText('Clear filters', 'Hapus filter')}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Users Table */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {getText('User Info', 'Info Pengguna')}
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {getText('Contact & Role', 'Kontak & Peran')}
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {getText('Academic Info', 'Info Akademik')}
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {getText('Created', 'Dibuat')}
+                </th>
+                <th className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {getText('Actions', 'Aksi')}
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center">
+                    <div className="flex items-center justify-center">
+                      <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mr-3" />
+                      <span className="text-gray-600">{getText('Loading users...', 'Memuat pengguna...')}</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : currentTableData.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center">
+                    <Users className="h-16 w-16 text-blue-500 mx-auto mb-4" />
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                      {filteredUsers.length === 0 && users.length > 0
+                        ? getText('No users match your filters', 'Tidak ada pengguna yang cocok dengan filter')
+                        : getText('No users found', 'Tidak ada pengguna ditemukan')
+                      }
+                    </h3>
+                    <p className="text-gray-600">
+                      {filteredUsers.length === 0 && users.length > 0
+                        ? getText('Try adjusting your search criteria', 'Coba sesuaikan kriteria pencarian')
+                        : getText('Add your first user to get started', 'Tambahkan pengguna pertama untuk memulai')
+                      }
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                currentTableData.map((user) => {
                   const RoleIcon = getRoleIcon(user.role);
+                  
                   return (
-                    <div key={user.id} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start gap-3 flex-1">
-                          <div className="h-12 w-12 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center flex-shrink-0">
+                    <tr key={user.id} className="hover:bg-gray-50 transition-colors duration-200">
+                      <td className="px-6 py-4">
+                        <div className="flex items-start space-x-4">
+                          <div className="flex-shrink-0 h-12 w-12 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center">
                             <RoleIcon className="h-6 w-6 text-white" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-gray-900 truncate">{user.full_name}</h3>
-                            <p className="text-sm text-gray-600">@{user.username}</p>
-                            <p className="text-sm text-gray-500">{user.identity_number}</p>
-                            
-                            {/* Role Badge */}
-                            <span className={`inline-block mt-2 px-2 py-1 text-xs font-medium rounded-full ${getRoleBadgeColor(user.role)}`}>
-                              {getRoleDisplayName(user.role)}
-                            </span>
-                            
-                            {/* Department Info */}
-                            {user.department && (
-                              <div className="flex items-center gap-1 mt-1 text-xs text-gray-500">
-                                <Building className="h-3 w-3" />
-                                {user.department.name}
-                              </div>
-                            )}
+                            <div className="flex items-center space-x-2">
+                              <p className="text-sm font-semibold text-gray-900 truncate">
+                                {user.full_name}
+                              </p>
+                            </div>
+                            <p className="text-sm text-blue-600 truncate">@{user.username}</p>
+                            <p className="text-sm text-gray-500 truncate flex items-center mt-1">
+                              <Hash className="h-3 w-3 mr-1" />
+                              {user.identity_number}
+                            </p>
                           </div>
                         </div>
-                        
-                        {/* Actions */}
-                        <div className="flex items-center gap-2 ml-2">
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <div className="space-y-2">
+                          {user.email && (
+                            <div className="flex items-center text-sm text-gray-600">
+                              <Mail className="h-4 w-4 mr-2 text-gray-400" />
+                              <span className="truncate">{user.email}</span>
+                            </div>
+                          )}
+                          {user.phone_number && (
+                            <div className="flex items-center text-sm text-gray-600">
+                              <Phone className="h-4 w-4 mr-2 text-gray-400" />
+                              <span>{user.phone_number}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center space-x-2">
+                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${getRoleBadgeColor(user.role)}`}>
+                              {getRoleDisplayName(user.role)}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <div className="space-y-1">
+                          {user.department && (
+                            <div className="flex items-center text-sm text-gray-900">
+                              <Building className="h-4 w-4 mr-2 text-gray-400" />
+                              <span className="font-medium truncate">{user.department.name}</span>
+                            </div>
+                          )}
+                          {user.study_program && (
+                            <div className="flex items-center text-sm text-gray-600">
+                              <GraduationCap className="h-4 w-4 mr-2 text-gray-400" />
+                              <span className="truncate">{user.study_program.name}</span>
+                            </div>
+                          )}
+                          {!user.department && !user.study_program && (
+                            <div className="text-sm text-gray-400 italic">
+                              {getText('No academic info', 'Tidak ada info akademik')}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <div className="flex items-center text-sm text-gray-600">
+                          <Calendar className="h-4 w-4 mr-2 text-gray-400" />
+                          <span>{format(new Date(user.created_at), 'MMM d, yyyy')}</span>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {format(new Date(user.created_at), 'HH:mm')}
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end space-x-2">
                           <button
                             onClick={() => setShowUserDetail(user)}
-                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                            title={getText('View details', 'Lihat detail')}
+                            className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors duration-200"
+                            title={getText('View Details', 'Lihat Detail')}
                           >
-                            <Activity className="h-4 w-4" /> {/* Changed to Activity icon for view details as per original UI */}
+                            <Activity className="h-4 w-4" />
                           </button>
+                          
                           <button
                             onClick={() => handleEdit(user)}
-                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title={getText('Edit', 'Edit')}
+                            disabled={processingIds.has(user.id)}
+                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200 disabled:opacity-50"
+                            title={getText('Edit User', 'Edit Pengguna')}
                           >
                             <Edit className="h-4 w-4" />
                           </button>
+                          
                           <button
                             onClick={() => setShowDeleteConfirm(user.id)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title={getText('Delete', 'Hapus')}
+                            disabled={processingIds.has(user.id)}
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200 disabled:opacity-50"
+                            title={getText('Delete User', 'Hapus Pengguna')}
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
-                      </div>
-                    </div>
+                      </td>
+                    </tr>
                   );
-                })}
-              </div>
-            )}
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
 
-            {/* Mobile Pagination */}
-            {totalPages > 1 && (
-              <div className="flex justify-between items-center mt-6 px-2">
+        {/* Enhanced Pagination */}
+        {totalPages > 1 && (
+          <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center text-sm text-gray-700">
+                <span>
+                  {getText('Showing', 'Menampilkan')} {startIndex + 1} - {Math.min(startIndex + itemsPerPage, filteredUsers.length)} {getText('of', 'dari')} {filteredUsers.length} {getText('users', 'pengguna')}
+                </span>
+              </div>
+              
+              <div className="flex items-center space-x-2">
                 <button
                   onClick={() => setCurrentPage(p => p - 1)}
                   disabled={currentPage === 1}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center space-x-2 px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors duration-200"
                 >
                   <ChevronLeft className="h-4 w-4" />
-                  {getText('Previous', 'Sebelum')}
+                  <span className="hidden sm:inline">{getText('Previous', 'Sebelum')}</span>
                 </button>
                 
-                <span className="text-sm text-gray-600">
-                  {currentPage} / {totalPages}
-                </span>
+                <div className="flex items-center space-x-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+                    
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200 ${
+                          currentPage === pageNum
+                            ? 'bg-blue-600 text-white'
+                            : 'text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
                 
                 <button
                   onClick={() => setCurrentPage(p => p + 1)}
                   disabled={currentPage >= totalPages}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center space-x-2 px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors duration-200"
                 >
-                  {getText('Next', 'Selanjutnya')}
+                  <span className="hidden sm:inline">{getText('Next', 'Selanjutnya')}</span>
                   <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
-            )}
+            </div>
           </div>
-          {/* Mobile-Optimized User Detail Modal */}
-          {showUserDetail && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50">
-              <div className="bg-white w-full max-w-lg mx-4 rounded-t-2xl sm:rounded-2xl h-[90vh] flex flex-col"> {/* Added flex flex-col and h-[90vh] */}
-                {/* Header */}
-                <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 flex-shrink-0"> {/* Added flex-shrink-0 */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="h-12 w-12 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                        {React.createElement(getRoleIcon(showUserDetail.role), {
-                          className: "h-6 w-6 text-white"
-                        })}
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-bold">{showUserDetail.full_name}</h3>
-                        <p className="text-blue-100 text-sm">@{showUserDetail.username}</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setShowUserDetail(null)}
-                      className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
+        )}
+      </div>
+
+      {/* Enhanced User Detail Modal */}
+      {showUserDetail && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="h-16 w-16 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
+                    {React.createElement(getRoleIcon(showUserDetail.role), {
+                      className: "h-8 w-8 text-white"
+                    })}
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold">{showUserDetail.full_name}</h2>
+                    <p className="text-blue-100">@{showUserDetail.username}</p>
+                    <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-medium bg-white bg-opacity-20 text-white border border-white border-opacity-30`}>
+                      {getRoleDisplayName(showUserDetail.role)}
+                    </span>
                   </div>
                 </div>
+                <button
+                  onClick={() => setShowUserDetail(null)}
+                  className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors duration-200"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
 
-                {/* Content */}
-                <div className="p-4 flex-1 overflow-y-auto space-y-6"> {/* Changed max-h-[70vh] to flex-1 */}
-                  {/* Basic Info */}
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                      <User className="h-4 w-4 text-blue-600" />
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Left Column */}
+                <div className="space-y-6">
+                  {/* Basic Information */}
+                  <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                    <h4 className="font-semibold text-blue-900 mb-4 flex items-center">
+                      <User className="h-5 w-5 mr-2" />
                       {getText('Basic Information', 'Informasi Dasar')}
                     </h4>
                     <div className="space-y-3">
-                      <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                        <span className="text-gray-600">{getText('ID Number', 'No. Identitas')}</span>
-                        <span className="font-medium">{showUserDetail.identity_number}</span>
-                      </div>
-                      <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                        <span className="text-gray-600">{getText('Role', 'Peran')}</span>
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getRoleBadgeColor(showUserDetail.role)}`}>
-                          {getRoleDisplayName(showUserDetail.role)}
-                        </span>
+                      <div className="flex justify-between items-center py-2 border-b border-blue-200 last:border-b-0">
+                        <span className="text-sm text-blue-700">{getText('ID Number', 'No. Identitas')}</span>
+                        <span className="font-medium text-blue-900">{showUserDetail.identity_number}</span>
                       </div>
                       {showUserDetail.email && (
-                        <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                          <span className="text-gray-600">{getText('Email', 'Email')}</span>
-                          <span className="font-medium text-sm">{showUserDetail.email}</span>
+                        <div className="flex justify-between items-center py-2 border-b border-blue-200 last:border-b-0">
+                          <span className="text-sm text-blue-700">{getText('Email', 'Email')}</span>
+                          <span className="font-medium text-blue-900 text-sm">{showUserDetail.email}</span>
                         </div>
                       )}
                       {showUserDetail.phone_number && (
-                        <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                          <span className="text-gray-600">{getText('Phone', 'Telepon')}</span>
-                          <span className="font-medium">{showUserDetail.phone_number}</span>
+                        <div className="flex justify-between items-center py-2 border-b border-blue-200 last:border-b-0">
+                          <span className="text-sm text-blue-700">{getText('Phone', 'Telepon')}</span>
+                          <span className="font-medium text-blue-900">{showUserDetail.phone_number}</span>
                         </div>
                       )}
-                      <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                        <span className="text-gray-600">{getText('Created', 'Dibuat')}</span>
-                        <span className="font-medium text-sm">{format(new Date(showUserDetail.created_at), 'dd MMM yyyy')}</span>
+                      <div className="flex justify-between items-center py-2 border-b border-blue-200 last:border-b-0">
+                        <span className="text-sm text-blue-700">{getText('Created', 'Dibuat')}</span>
+                        <span className="font-medium text-blue-900 text-sm">{format(new Date(showUserDetail.created_at), 'dd MMM yyyy, HH:mm')}</span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Academic Info */}
-                  {showUserDetail.department && (
-                    <div>
-                      <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                        <Building className="h-4 w-4 text-green-600" />
-                        {getText('Academic Info', 'Info Akademik')}
+                  {/* Academic Information */}
+                  {(showUserDetail.department || showUserDetail.study_program) && (
+                    <div className="bg-green-50 rounded-xl p-4 border border-green-200">
+                      <h4 className="font-semibold text-green-900 mb-4 flex items-center">
+                        <Building className="h-5 w-5 mr-2" />
+                        {getText('Academic Information', 'Informasi Akademik')}
                       </h4>
                       <div className="space-y-3">
-                        <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                          <span className="text-gray-600">{getText('Department', 'Departemen')}</span>
-                          <span className="font-medium text-sm">{showUserDetail.department.name}</span>
-                        </div>
+                        {showUserDetail.department && (
+                          <div className="flex justify-between items-center py-2 border-b border-green-200 last:border-b-0">
+                            <span className="text-sm text-green-700">{getText('Department', 'Departemen')}</span>
+                            <span className="font-medium text-green-900 text-sm">{showUserDetail.department.name}</span>
+                          </div>
+                        )}
                         {showUserDetail.study_program && (
-                          <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                            <span className="text-gray-600">{getText('Study Program', 'Program Studi')}</span>
-                            <span className="font-medium text-sm">{showUserDetail.study_program.name}</span>
+                          <div className="flex justify-between items-center py-2 border-b border-green-200 last:border-b-0">
+                            <span className="text-sm text-green-700">{getText('Study Program', 'Program Studi')}</span>
+                            <span className="font-medium text-green-900 text-sm">{showUserDetail.study_program.name}</span>
                           </div>
                         )}
                       </div>
                     </div>
                   )}
+                </div>
 
-                  {/* Assigned Rooms - HANYA RUANGAN */}
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-orange-600" />
+                {/* Right Column */}
+                <div className="space-y-6">
+                  {/* Assigned Rooms */}
+                  <div className="bg-orange-50 rounded-xl p-4 border border-orange-200">
+                    <h4 className="font-semibold text-orange-900 mb-4 flex items-center">
+                      <MapPin className="h-5 w-5 mr-2" />
                       {getText('Assigned Rooms', 'Ruangan yang Ditugaskan')}
                     </h4>
                     {loadingUserDetails ? (
                       <div className="flex justify-center py-6">
-                        <RefreshCw className="h-5 w-5 animate-spin" />
+                        <RefreshCw className="h-5 w-5 animate-spin text-orange-600" />
                       </div>
                     ) : userRooms.length > 0 ? (
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {userRooms.map((room) => (
-                          <div key={room.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div key={room.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-orange-200">
                             <div>
-                              <div className="font-medium text-gray-900">{room.name}</div>
-                              <div className="text-sm text-gray-500">{room.code} • {room.capacity} {getText('seats', 'kursi')}</div>
+                              <div className="font-medium text-orange-900">{room.name}</div>
+                              <div className="text-sm text-orange-700">{room.code} • {room.capacity} {getText('seats', 'kursi')}</div>
                             </div>
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs text-orange-600">
                               {format(new Date(room.assigned_at || ''), 'dd MMM')}
                             </div>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <div className="text-center py-6 text-gray-500">
+                      <div className="text-center py-6 text-orange-600">
                         <Home className="h-8 w-8 mx-auto mb-2 opacity-50" />
                         <p className="text-sm">{getText('No rooms assigned', 'Tidak ada ruangan')}</p>
                       </div>
@@ -979,23 +1220,23 @@ const UserManagement: React.FC = () => {
                   </div>
 
                   {/* Recent Activities */}
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                      <Activity className="h-4 w-4 text-indigo-600" />
+                  <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
+                    <h4 className="font-semibold text-purple-900 mb-4 flex items-center">
+                      <Activity className="h-5 w-5 mr-2" />
                       {getText('Recent Activities', 'Aktivitas Terbaru')}
                     </h4>
                     {loadingUserDetails ? (
                       <div className="flex justify-center py-6">
-                        <RefreshCw className="h-5 w-5 animate-spin" />
+                        <RefreshCw className="h-5 w-5 animate-spin text-purple-600" />
                       </div>
                     ) : userActivities.length > 0 ? (
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {userActivities.map((activity) => (
-                          <div key={activity.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                            <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
+                          <div key={activity.id} className="flex items-start gap-3 p-3 bg-white rounded-lg border border-purple-200">
+                            <div className="w-2 h-2 bg-purple-500 rounded-full mt-2 flex-shrink-0"></div>
                             <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium text-gray-900 truncate">{activity.description}</div>
-                              <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                              <div className="text-sm font-medium text-purple-900 truncate">{activity.description}</div>
+                              <div className="text-xs text-purple-600 flex items-center gap-1 mt-1">
                                 <Clock className="h-3 w-3" />
                                 {format(new Date(activity.timestamp), 'dd MMM, HH:mm')}
                               </div>
@@ -1004,161 +1245,211 @@ const UserManagement: React.FC = () => {
                         ))}
                       </div>
                     ) : (
-                      <div className="text-center py-6 text-gray-500">
+                      <div className="text-center py-6 text-purple-600">
                         <Activity className="h-8 w-8 mx-auto mb-2 opacity-50" />
                         <p className="text-sm">{getText('No recent activities', 'Tidak ada aktivitas')}</p>
                       </div>
                     )}
                   </div>
                 </div>
-
-                {/* Footer */}
-                <div className="border-t bg-gray-50 p-4 flex gap-3 flex-shrink-0"> {/* Added flex-shrink-0 */}
-                  <button
-                    onClick={() => {
-                      setShowUserDetail(null);
-                      handleEdit(showUserDetail);
-                    }}
-                    className="flex-1 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                  >
-                    {getText('Edit User', 'Edit Pengguna')}
-                  </button>
-                  <button
-                    onClick={() => setShowUserDetail(null)}
-                    className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    {getText('Close', 'Tutup')}
-                  </button>
-                </div>
               </div>
             </div>
-          )}
 
-          {/* Mobile-Optimized Add/Edit Modal */}
-          {showModal && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50">
-              <div className="bg-white w-full max-w-lg mx-4 rounded-t-2xl sm:rounded-2xl h-[90vh] flex flex-col"> {/* Added flex flex-col and h-[90vh] */}
-                {/* Header */}
-                <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 flex-shrink-0"> {/* Added flex-shrink-0 */}
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-bold">
-                      {editingUser ? getText('Edit User', 'Edit Pengguna') : getText('Add User', 'Tambah Pengguna')}
+            {/* Footer Actions */}
+            <div className="border-t bg-gray-50 p-6 flex gap-3">
+              <button
+                onClick={() => {
+                  setShowUserDetail(null);
+                  handleEdit(showUserDetail);
+                }}
+                className="flex-1 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 font-medium flex items-center justify-center space-x-2"
+              >
+                <Edit className="h-4 w-4" />
+                <span>{getText('Edit User', 'Edit Pengguna')}</span>
+              </button>
+              <button
+                onClick={() => setShowUserDetail(null)}
+                className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-200"
+              >
+                {getText('Close', 'Tutup')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Enhanced Add/Edit User Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="h-12 w-12 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
+                    {editingUser ? <Edit className="h-6 w-6" /> : <UserPlus className="h-6 w-6" />}
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold">
+                      {editingUser ? getText('Edit User', 'Edit Pengguna') : getText('Add New User', 'Tambah Pengguna Baru')}
                     </h3>
-                    <button
-                      onClick={() => {
-                        setShowModal(false);
-                        setEditingUser(null);
-                        form.reset();
-                      }}
-                      className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
-                      disabled={submitting}
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
+                    <p className="text-blue-100 text-sm">
+                      {editingUser 
+                        ? getText('Update user information and permissions', 'Perbarui informasi dan izin pengguna')
+                        : getText('Create a new user account', 'Buat akun pengguna baru')
+                      }
+                    </p>
                   </div>
                 </div>
-                
-                <form onSubmit={form.handleSubmit(handleSubmit)} className="p-4 flex-1 overflow-y-auto space-y-4"> {/* Changed max-h-[70vh] to flex-1 */}
-                  {/* Basic Information */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {getText('Full Name', 'Nama Lengkap')} <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      {...form.register('full_name')}
-                      type="text"
-                      className={`w-full px-3 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                        form.formState.errors.full_name ? 'border-red-300' : 'border-gray-300'
-                      }`}
-                      placeholder={getText('Enter full name', 'Masukkan nama lengkap')}
-                      disabled={submitting}
-                    />
-                    {form.formState.errors.full_name && (
-                      <p className="mt-1 text-sm text-red-600">{form.formState.errors.full_name.message}</p>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <button
+                  onClick={() => {
+                    setShowModal(false);
+                    setEditingUser(null);
+                    form.reset();
+                  }}
+                  disabled={submitting}
+                  className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors duration-200"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+                </div>
+            </div>
+            
+            {/* Modal Content */}
+            <form onSubmit={form.handleSubmit(handleSubmit)} className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+              <div className="space-y-6">
+                {/* Basic Information Section */}
+                <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                  <h4 className="font-semibold text-blue-900 mb-4 flex items-center">
+                    <User className="h-5 w-5 mr-2" />
+                    {getText('Basic Information', 'Informasi Dasar')}
+                  </h4>
+                  
+                  <div className="space-y-4">
+                    {/* Full Name */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {getText('Username', 'Username')} <span className="text-red-500">*</span>
+                        {getText('Full Name', 'Nama Lengkap')} <span className="text-red-500">*</span>
                       </label>
                       <input
-                        {...form.register('username')}
+                        {...form.register('full_name')}
                         type="text"
-                        className={`w-full px-3 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                          form.formState.errors.username ? 'border-red-300' : 'border-gray-300'
+                        className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
+                          form.formState.errors.full_name ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
                         }`}
-                        placeholder="username"
+                        placeholder={getText('Enter full name', 'Masukkan nama lengkap')}
                         disabled={submitting}
                       />
-                      {form.formState.errors.username && (
-                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.username.message}</p>
+                      {form.formState.errors.full_name && (
+                        <p className="mt-1 text-sm text-red-600 flex items-center">
+                          <AlertCircle className="h-4 w-4 mr-1" />
+                          {form.formState.errors.full_name.message}
+                        </p>
                       )}
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {getText('ID Number', 'No. Identitas')} <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        {...form.register('identity_number')}
-                        type="text"
-                        className={`w-full px-3 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                          form.formState.errors.identity_number ? 'border-red-300' : 'border-gray-300'
-                        }`}
-                        placeholder="NIM/NIP"
-                        disabled={submitting}
-                      />
-                      {form.formState.errors.identity_number && (
-                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.identity_number.message}</p>
-                      )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Username */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {getText('Username', 'Username')} <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          {...form.register('username')}
+                          type="text"
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
+                            form.formState.errors.username ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
+                          }`}
+                          placeholder="username"
+                          disabled={submitting}
+                        />
+                        {form.formState.errors.username && (
+                          <p className="mt-1 text-sm text-red-600 flex items-center">
+                            <AlertCircle className="h-4 w-4 mr-1" />
+                            {form.formState.errors.username.message}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Identity Number */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {getText('ID Number', 'No. Identitas')} <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          {...form.register('identity_number')}
+                          type="text"
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
+                            form.formState.errors.identity_number ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
+                          }`}
+                          placeholder="NIM/NIP"
+                          disabled={submitting}
+                        />
+                        {form.formState.errors.identity_number && (
+                          <p className="mt-1 text-sm text-red-600 flex items-center">
+                            <AlertCircle className="h-4 w-4 mr-1" />
+                            {form.formState.errors.identity_number.message}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Email */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {getText('Email', 'Email')}
+                        </label>
+                        <input
+                          {...form.register('email')}
+                          type="email"
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
+                            form.formState.errors.email ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
+                          }`}
+                          placeholder="user@email.com"
+                          disabled={submitting}
+                        />
+                        {form.formState.errors.email && (
+                          <p className="mt-1 text-sm text-red-600 flex items-center">
+                            <AlertCircle className="h-4 w-4 mr-1" />
+                            {form.formState.errors.email.message}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Phone Number */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {getText('Phone', 'Telepon')}
+                        </label>
+                        <input
+                          {...form.register('phone_number')}
+                          type="tel"
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
+                            form.formState.errors.phone_number ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
+                          }`}
+                          placeholder="08xxxxxxxxxx"
+                          disabled={submitting}
+                        />
+                      </div>
                     </div>
                   </div>
+                </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {getText('Email', 'Email')}
-                      </label>
-                      <input
-                        {...form.register('email')}
-                        type="email"
-                        className={`w-full px-3 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                          form.formState.errors.email ? 'border-red-300' : 'border-gray-300'
-                        }`}
-                        placeholder="user@email.com"
-                        disabled={submitting}
-                      />
-                      {form.formState.errors.email && (
-                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.email.message}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {getText('Phone', 'Telepon')}
-                      </label>
-                      <input
-                        {...form.register('phone_number')}
-                        type="tel"
-                        className={`w-full px-3 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base ${
-                          form.formState.errors.phone_number ? 'border-red-300' : 'border-gray-300'
-                        }`}
-                        placeholder="08xxxxxxxxxx"
-                        disabled={submitting}
-                      />
-                    </div>
-                  </div>
+                {/* Role & Permissions Section */}
+                <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
+                  <h4 className="font-semibold text-purple-900 mb-4 flex items-center">
+                    <Shield className="h-5 w-5 mr-2" />
+                    {getText('Role & Permissions', 'Peran & Izin')}
+                  </h4>
 
                   {/* Role Selection */}
-                  <div>
+                  <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       {getText('Role', 'Peran')} <span className="text-red-500">*</span>
                     </label>
                     <select
                       {...form.register('role')}
-                      className="w-full px-3 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200"
                       disabled={submitting}
                     >
                       <option value="student">{getText('Student', 'Mahasiswa')}</option>
@@ -1171,94 +1462,137 @@ const UserManagement: React.FC = () => {
                       )}
                     </select>
                     {form.formState.errors.role && (
-                      <p className="mt-1 text-sm text-red-600">{form.formState.errors.role.message}</p>
+                      <p className="mt-1 text-sm text-red-600 flex items-center">
+                        <AlertCircle className="h-4 w-4 mr-1" />
+                        {form.formState.errors.role.message}
+                      </p>
                     )}
                   </div>
 
-                  {/* Department selection - show for super admin */}
-                  {profile?.role === 'super_admin' ? (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {getText('Department', 'Departemen')}
-                      </label>
-                      <SearchableDropdown
-                        options={departments.map(dept => ({ id: dept.id, name: dept.name, code: dept.code }))}
-                        value={form.watch('department_id') || ''}
-                        onChange={(value) => {
-                          form.setValue('department_id', value);
-                          form.setValue('study_program_id', '');
-                        }}
-                        placeholder={getText('Select Department (Optional)', 'Pilih Departemen (Opsional)')}
-                        searchPlaceholder={getText('Search departments...', 'Cari departemen...')}
-                        emptyMessage={getText('No departments found', 'Tidak ada departemen ditemukan')}
-                        disabled={submitting}
-                      />
-                      {form.formState.errors.department_id && (
-                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.department_id.message}</p>
-                      )}
+                  {/* Role Description */}
+                  <div className="bg-white rounded-lg p-3 border border-purple-200">
+                    <div className="text-sm text-purple-700">
+                      <strong>{getText('Selected Role', 'Peran Terpilih')}:</strong> {getRoleDisplayName(watchRole)}
                     </div>
-                  ) : (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {getText('Department', 'Departemen')}
-                      </label>
-                      <input
-                        type="text"
-                        value={departments.find(d => d.id === profile?.department_id)?.name || getText('Your Department', 'Departemen Anda')}
-                        className="w-full px-3 py-3 border border-gray-300 rounded-lg bg-gray-100 text-base"
-                        disabled
-                      />
-                      <p className="mt-1 text-sm text-gray-500">
-                        {getText('Department is automatically set based on your role', 'Departemen diatur otomatis berdasarkan peran Anda')}
-                      </p>
+                    <div className="text-xs text-purple-600 mt-1">
+                      {watchRole === 'super_admin' && getText('Full system access and user management', 'Akses penuh sistem dan manajemen pengguna')}
+                      {watchRole === 'department_admin' && getText('Department-level management and oversight', 'Manajemen dan pengawasan tingkat departemen')}
+                      {watchRole === 'lecturer' && getText('Room booking and class management', 'Pemesanan ruangan dan manajemen kelas')}
+                      {watchRole === 'student' && getText('Basic room booking access', 'Akses dasar pemesanan ruangan')}
                     </div>
-                  )}
+                  </div>
+                </div>
 
-                  {/* Study program selection */}
-                  {((profile?.role === 'super_admin' && watchDepartmentId) || profile?.role === 'department_admin') && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {getText('Study Program', 'Program Studi')}
-                      </label>
-                      <SearchableDropdown
-                        options={studyPrograms.filter(sp => 
-                          profile?.role === 'department_admin' 
-                            ? sp.department_id === profile.department_id
-                            : sp.department_id === watchDepartmentId
-                        ).map(program => ({ 
-                          id: program.id, 
-                          name: program.name, 
-                          code: program.code 
-                        }))}
-                        value={form.watch('study_program_id') || ''}
-                        onChange={(value) => form.setValue('study_program_id', value)}
-                        placeholder={getText('Select Study Program (Optional)', 'Pilih Program Studi (Opsional)')}
-                        searchPlaceholder={getText('Search study programs...', 'Cari program studi...')}
-                        emptyMessage={getText('No study programs found', 'Tidak ada program studi ditemukan')}
-                        disabled={submitting}
-                      />
-                      {form.formState.errors.study_program_id && (
-                        <p className="mt-1 text-sm text-red-600">{form.formState.errors.study_program_id.message}</p>
-                      )}
-                    </div>
-                  )}
+                {/* Academic Information Section */}
+                <div className="bg-green-50 rounded-xl p-4 border border-green-200">
+                  <h4 className="font-semibold text-green-900 mb-4 flex items-center">
+                    <GraduationCap className="h-5 w-5 mr-2" />
+                    {getText('Academic Information', 'Informasi Akademik')}
+                  </h4>
 
-                  {/* Message for super admin when no department selected */}
-                  {profile?.role === 'super_admin' && !watchDepartmentId && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                      <p className="text-sm text-blue-700">
-                        💡 {getText('Select a department to see available study programs, or leave empty for general users', 'Pilih departemen untuk melihat program studi yang tersedia, atau biarkan kosong untuk pengguna umum')}
-                      </p>
-                    </div>
-                  )}
+                  <div className="space-y-4">
+                    {/* Department Selection */}
+                    {profile?.role === 'super_admin' ? (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {getText('Department', 'Departemen')}
+                        </label>
+                        <SearchableDropdown
+                          options={departments.map(dept => ({ id: dept.id, name: dept.name, code: dept.code }))}
+                          value={form.watch('department_id') || ''}
+                          onChange={(value) => {
+                            form.setValue('department_id', value);
+                            form.setValue('study_program_id', '');
+                          }}
+                          placeholder={getText('Select Department (Optional)', 'Pilih Departemen (Opsional)')}
+                          searchPlaceholder={getText('Search departments...', 'Cari departemen...')}
+                          emptyMessage={getText('No departments found', 'Tidak ada departemen ditemukan')}
+                          disabled={submitting}
+                        />
+                        {form.formState.errors.department_id && (
+                          <p className="mt-1 text-sm text-red-600 flex items-center">
+                            <AlertCircle className="h-4 w-4 mr-1" />
+                            {form.formState.errors.department_id.message}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {getText('Department', 'Departemen')}
+                        </label>
+                        <input
+                          type="text"
+                          value={departments.find(d => d.id === profile?.department_id)?.name || getText('Your Department', 'Departemen Anda')}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 transition-all duration-200"
+                          disabled
+                        />
+                        <p className="mt-1 text-sm text-gray-500 flex items-center">
+                          <Info className="h-4 w-4 mr-1" />
+                          {getText('Department is automatically set based on your role', 'Departemen diatur otomatis berdasarkan peran Anda')}
+                        </p>
+                      </div>
+                    )}
 
-                  {/* Password Field */}
+                    {/* Study Program Selection */}
+                    {((profile?.role === 'super_admin' && watchDepartmentId) || profile?.role === 'department_admin') && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {getText('Study Program', 'Program Studi')}
+                        </label>
+                        <SearchableDropdown
+                          options={studyPrograms.filter(sp => 
+                            profile?.role === 'department_admin' 
+                              ? sp.department_id === profile.department_id
+                              : sp.department_id === watchDepartmentId
+                          ).map(program => ({ 
+                            id: program.id, 
+                            name: program.name, 
+                            code: program.code 
+                          }))}
+                          value={form.watch('study_program_id') || ''}
+                          onChange={(value) => form.setValue('study_program_id', value)}
+                          placeholder={getText('Select Study Program (Optional)', 'Pilih Program Studi (Opsional)')}
+                          searchPlaceholder={getText('Search study programs...', 'Cari program studi...')}
+                          emptyMessage={getText('No study programs found', 'Tidak ada program studi ditemukan')}
+                          disabled={submitting}
+                        />
+                        {form.formState.errors.study_program_id && (
+                          <p className="mt-1 text-sm text-red-600 flex items-center">
+                            <AlertCircle className="h-4 w-4 mr-1" />
+                            {form.formState.errors.study_program_id.message}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Info Message for Super Admin */}
+                    {profile?.role === 'super_admin' && !watchDepartmentId && (
+                      <div className="bg-blue-100 border border-blue-300 rounded-lg p-3">
+                        <div className="flex items-center">
+                          <Info className="h-5 w-5 text-blue-600 mr-2" />
+                          <p className="text-sm text-blue-700">
+                            {getText('Select a department to see available study programs, or leave empty for general users', 'Pilih departemen untuk melihat program studi yang tersedia, atau biarkan kosong untuk pengguna umum')}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Security Section */}
+                <div className="bg-red-50 rounded-xl p-4 border border-red-200">
+                  <h4 className="font-semibold text-red-900 mb-4 flex items-center">
+                    <Settings className="h-5 w-5 mr-2" />
+                    {getText('Security', 'Keamanan')}
+                  </h4>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       {getText('Password', 'Kata Sandi')} 
                       {!editingUser && <span className="text-red-500"> *</span>}
                       {editingUser && (
-                        <span className="text-gray-500 text-sm ml-1">
+                        <span className="text-gray-500 text-sm ml-2">
                           {getText('(leave blank to keep current)', '(kosongkan jika tidak diubah)')}
                         </span>
                       )}
@@ -1270,84 +1604,145 @@ const UserManagement: React.FC = () => {
                       error={form.formState.errors.password?.message}
                       required={!editingUser}
                     />
-                  </div>
-
-                  {/* Form Actions */}
-                  <div className="flex gap-3 pt-4 border-t border-gray-200">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowModal(false);
-                        setEditingUser(null);
-                        form.reset();
-                      }}
-                      className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
-                      disabled={submitting}
-                    >
-                      {getText('Cancel', 'Batal')}
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={submitting}
-                      className="flex-1 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium flex items-center justify-center gap-2"
-                    >
-                      {submitting 
-                        ? getText('Saving...', 'Menyimpan...') 
-                        : editingUser 
-                          ? getText('Update', 'Perbarui') 
-                          : getText('Create', 'Buat')
-                      }
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {/* Mobile-Optimized Delete Confirmation */}
-          {showDeleteConfirm && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50">
-              <div className="bg-white w-full max-w-sm mx-4 rounded-t-2xl sm:rounded-2xl p-6">
-                <div className="text-center">
-                  <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    {getText('Delete User?', 'Hapus Pengguna?')}
-                  </h3>
-                  <p className="text-gray-600 text-sm mb-6">
-                    {getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')}
-                  </p>
-                  
-                  {(() => {
-                    const userToDelete = users.find(u => u.id === showDeleteConfirm);
-                    return userToDelete && (
-                      <div className="bg-gray-50 rounded-lg p-3 mb-6">
-                        <p className="font-medium text-gray-900">{userToDelete.full_name}</p>
-                        <p className="text-sm text-gray-500">@{userToDelete.username}</p>
+                    
+                    {/* Password Requirements */}
+                    {!editingUser && (
+                      <div className="mt-2 p-3 bg-white rounded-lg border border-red-200">
+                        <p className="text-xs text-red-700 mb-2 font-medium">
+                          {getText('Password Requirements:', 'Persyaratan Password:')}
+                        </p>
+                        <ul className="text-xs text-red-600 space-y-1">
+                          <li>• {getText('Minimum 6 characters', 'Minimal 6 karakter')}</li>
+                          <li>• {getText('Mix of letters and numbers recommended', 'Kombinasi huruf dan angka direkomendasikan')}</li>
+                          <li>• {getText('Avoid common passwords', 'Hindari password umum')}</li>
+                        </ul>
                       </div>
-                    );
-                  })()}
-
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => setShowDeleteConfirm(null)}
-                      className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
-                      disabled={submitting}
-                    >
-                      {getText('Cancel', 'Batal')}
-                    </button>
-                    <button
-                      onClick={() => handleDelete(showDeleteConfirm)}
-                      disabled={submitting}
-                      className="flex-1 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium flex items-center justify-center gap-2"
-                    >
-                      {submitting ? getText('Deleting...', 'Menghapus...') : getText('Delete', 'Hapus')}
-                    </button>
+                    )}
                   </div>
                 </div>
               </div>
+            </form>
+
+            {/* Modal Footer */}
+            <div className="border-t bg-gray-50 p-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowModal(false);
+                  setEditingUser(null);
+                  form.reset();
+                }}
+                className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors duration-200 font-medium disabled:opacity-50"
+                disabled={submitting}
+              >
+                {getText('Cancel', 'Batal')}
+              </button>
+              <button
+                type="submit"
+                onClick={form.handleSubmit(handleSubmit)}
+                disabled={submitting || processingIds.has('form')}
+                className="flex-1 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors duration-200 font-medium flex items-center justify-center gap-2"
+              >
+                {submitting || processingIds.has('form') ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {getText('Saving...', 'Menyimpan...')}
+                  </>
+                ) : (
+                  <>
+                    {editingUser ? <Edit className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                    {editingUser ? getText('Update User', 'Perbarui Pengguna') : getText('Create User', 'Buat Pengguna')}
+                  </>
+                )}
+              </button>
             </div>
-          )}
-        </>
+          </div>
+        </div>
+      )}
+
+      {/* Enhanced Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center space-x-4 mb-4">
+                <div className="flex-shrink-0 w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                  <AlertTriangle className="h-6 w-6 text-red-600" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-gray-900">
+                    {getText('Delete User', 'Hapus Pengguna')}
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    {getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')}
+                  </p>
+                </div>
+              </div>
+              
+              <div className="mb-6">
+                <p className="text-gray-700 mb-4">
+                  {getText(
+                    'Are you sure you want to delete this user? All associated data will be permanently removed.',
+                    'Apakah Anda yakin ingin menghapus pengguna ini? Semua data terkait akan dihapus secara permanen.'
+                  )}
+                </p>
+                
+                {(() => {
+                  const userToDelete = users.find(u => u.id === showDeleteConfirm);
+                  return userToDelete && (
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <div className="flex items-center space-x-3">
+                        <div className="h-10 w-10 bg-gradient-to-r from-red-500 to-red-600 rounded-lg flex items-center justify-center">
+                          {React.createElement(getRoleIcon(userToDelete.role), {
+                            className: "h-5 w-5 text-white"
+                          })}
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900">{userToDelete.full_name}</p>
+                          <p className="text-sm text-gray-500">@{userToDelete.username}</p>
+                          <span className={`inline-block mt-1 px-2 py-1 rounded-full text-xs font-medium ${getRoleBadgeColor(userToDelete.role)}`}>
+                            {getRoleDisplayName(userToDelete.role)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(null)}
+                  className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-200 font-medium"
+                  disabled={processingIds.has(showDeleteConfirm || '')}
+                >
+                  {getText('Cancel', 'Batal')}
+                </button>
+                <button
+                  onClick={() => {
+                    if (showDeleteConfirm) {
+                      handleDelete(showDeleteConfirm);
+                    }
+                  }}
+                  disabled={processingIds.has(showDeleteConfirm || '')}
+                  className="flex-1 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors duration-200 font-medium flex items-center justify-center gap-2"
+                >
+                  {processingIds.has(showDeleteConfirm || '') ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      {getText('Deleting...', 'Menghapus...')}
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-4 w-4" />
+                      {getText('Delete User', 'Hapus Pengguna')}
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
