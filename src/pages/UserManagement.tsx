@@ -1191,7 +1191,7 @@ const UserManagement: React.FC = () => {
                   <div className="bg-orange-50 rounded-xl p-4 border border-orange-200">
                     <h4 className="font-semibold text-orange-900 mb-4 flex items-center">
                       <MapPin className="h-5 w-5 mr-2" />
-                      {getText('Assigned Rooms', 'Ruangan yang Ditugaskan')}
+                      {getText('Assigned Rooms', 'Ruangan yang')}
                     </h4>
                     {loadingUserDetails ? (
                       <div className="flex justify-center py-6">
