@@ -1317,11 +1317,10 @@ const CheckOut: React.FC = () => {
                           <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
                           <span>{getText('Any reported issues will be forwarded to the maintenance team', 'Masalah yang dilaporkan akan diteruskan ke tim pemeliharaan')}</span>
                         </li>
-                        <li className="flex items-center space-x-2">
-                          <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                          <span>{getText("You'll receive a confirmation notification", 'Anda akan menerima notifikasi konfirmasi')}</span>
-                        </li>
                       </ul>
+                      <div></div>
+                        <hr></hr>
+                        <h3><b>Contact Person  : 089604819029 (Muharom)</b></h3>
                     </div>
                   </div>
                 </div>
