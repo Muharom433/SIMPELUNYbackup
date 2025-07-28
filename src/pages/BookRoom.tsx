@@ -1733,7 +1733,7 @@ const fetchEquipmentForRoom = async (roomId) => {
                         </ul>
                         <div></div>
                         <hr></hr>
-                        <h3>Contact Person  : 089604819029 (Muharom)</h3>
+                        <h3<b>Contact Person  : 089604819029 (Muharom)</b></h3>
                       </div>
                     </div>
                   </div>
