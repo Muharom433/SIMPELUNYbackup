@@ -1731,6 +1731,7 @@ const fetchEquipmentForRoom = async (roomId) => {
                           <li>• {getText('Follow The existing Procedure', 'Ikuti Prosedur yang sudah ada')}</li>
                           <li>• {getText('Do Your Booking Before get the Rooms Key', 'Lakukan Booking Sebelum Mengambil Kunci Ruangan')}</li>
                         </ul>
+                        <div></div>
                         <h3>Contact Person  : 089604819029 (Muharom)</h3>
                       </div>
                     </div>
