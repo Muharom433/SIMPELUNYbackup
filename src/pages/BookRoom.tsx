@@ -598,54 +598,57 @@ const BookRoom = () => {
   };
 
   // Equipment fetching with proper quantity handling
-  const fetchEquipmentForRoom = async (roomId) => {
-    try {
-      const { data, error } = await supabase
-        .from('equipment')
-        .select('*')
-        .or(`rooms_id.eq.${roomId},rooms_id.is.null`)
-        .eq('is_available', true)
-        .gt('quantity', 0)
-        .order('name');
+  // ✅ FIXED: Equipment fetching with proper reset
+const fetchEquipmentForRoom = async (roomId) => {
+  try {
+    const { data, error } = await supabase
+      .from('equipment')
+      .select('*')
+      .or(`rooms_id.eq.${roomId},rooms_id.is.null`)
+      .eq('is_available', true)
+      .gt('quantity', 0)
+      .order('name');
 
-      if (error) throw error;
-      
-      const equipmentData = Array.isArray(data) ? data : [];
-      setAvailableEquipment(equipmentData);
-      
-      // Handle mandatory equipment with quantity 1
-      const mandatoryEquipment = equipmentData.filter(eq => eq.is_mandatory);
+    if (error) throw error;
+    
+    const equipmentData = Array.isArray(data) ? data : [];
+    setAvailableEquipment(equipmentData);
+    
+    // 🔥 RESET EQUIPMENT ARRAYS FIRST - Clear previous room equipment
+    form.setValue('equipment_requested', []);
+    form.setValue('equipment_quantities', {});
+    
+    // Then add mandatory equipment for NEW room only
+    const mandatoryEquipment = equipmentData.filter(eq => eq.is_mandatory);
+    
+    if (mandatoryEquipment.length > 0) {
       const mandatoryIds = mandatoryEquipment.map(eq => eq.id);
       
-      // Get current selections and ensure they're arrays
-      const currentEquipment = form.getValues('equipment_requested') || [];
-      const currentQuantities = form.getValues('equipment_quantities') || {};
-      
-      // Ensure currentEquipment is an array
-      const safeCurrentEquipment = Array.isArray(currentEquipment) ? currentEquipment : [];
-      
-      // Add mandatory equipment (avoid duplicates)
-      const updatedEquipment = [...new Set([...safeCurrentEquipment, ...mandatoryIds])];
-      
       // Set quantities for mandatory equipment (always 1)
-      // Set quantities for mandatory equipment (always 1)
-      const updatedQuantities = { ...currentQuantities };
+      const mandatoryQuantities = {};
       mandatoryEquipment.forEach(eq => {
-        updatedQuantities[eq.id] = 1; // Mandatory equipment always quantity 1
+        mandatoryQuantities[eq.id] = 1;
       });
       
-      // Update form with validated arrays
-      form.setValue('equipment_requested', updatedEquipment);
-      form.setValue('equipment_quantities', updatedQuantities);
-      
-    } catch (error) {
-      console.error('Error fetching equipment:', error);
-      setAvailableEquipment([]);
-      // Reset to empty arrays on error
-      form.setValue('equipment_requested', []);
-      form.setValue('equipment_quantities', {});
+      // Update form with ONLY new room's mandatory equipment
+      form.setValue('equipment_requested', mandatoryIds);
+      form.setValue('equipment_quantities', mandatoryQuantities);
     }
-  };
+    
+    console.log('✅ Equipment reset and set for new room:', {
+      roomId,
+      mandatoryCount: mandatoryEquipment.length,
+      totalAvailable: equipmentData.length
+    });
+    
+  } catch (error) {
+    console.error('Error fetching equipment:', error);
+    setAvailableEquipment([]);
+    // Reset to empty arrays on error
+    form.setValue('equipment_requested', []);
+    form.setValue('equipment_quantities', {});
+  }
+};
 
   // Equipment quantity management functions
   const handleEquipmentToggle = (equipmentId: string, isChecked: boolean) => {
