@@ -1732,6 +1732,7 @@ const fetchEquipmentForRoom = async (roomId) => {
                           <li>• {getText('Do Your Booking Before get the Rooms Key', 'Lakukan Booking Sebelum Mengambil Kunci Ruangan')}</li>
                         </ul>
                         <div></div>
+                        <hr></hr>
                         <h3>Contact Person  : 089604819029 (Muharom)</h3>
                       </div>
                     </div>
