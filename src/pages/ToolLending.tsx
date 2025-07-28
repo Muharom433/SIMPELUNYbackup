@@ -905,8 +905,8 @@ const ToolLending: React.FC = () => {
                                             {...form.register('purpose')}
                                             className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all duration-200"
                                         >
-                                            <option value="Class/Lecture">{getText('Class/Lecture', 'Kuliah')}</option>
-                                            <option value="Other">{getText('Other', 'Lainnya')}</option>
+                                            <option value="Class/Lecture">{getText('Class/Lecture', 'Kuliah / Sidang TA')}</option>
+                                            <option value="Other">{getText('Others...', 'Lainnya...')}</option>
                                         </select>
                                         {form.formState.errors.purpose && (
                                             <p className="mt-2 text-sm text-red-600 font-medium">
