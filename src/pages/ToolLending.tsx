@@ -1011,6 +1011,9 @@ const ToolLending: React.FC = () => {
                                             <p className="mt-1">
                                                 {getText('Your lending request will be reviewed by admin. You will be notified once approved.', 'Permintaan peminjaman Anda akan ditinjau oleh admin. Anda akan diberitahu setelah disetujui.')}
                                             </p>
+                                          <div></div>
+                        <hr></hr>
+                        <h3><b>Contact Person  : 089604819029 (Muharom)</b></h3>
                                         </div>
                                     </div>
                                 </div>
