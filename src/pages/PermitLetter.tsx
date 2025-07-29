@@ -157,8 +157,7 @@ const PermitLetter: React.FC = () => {
       const { data: bookingsData, error: bookingsError } = await supabase
         .from('bookings')
         .select('*')
-        .eq('status', 'pending')
-        .or('attachments.is.null,attachments.eq.{}') // ✅ TAMBAH: belum ada attachment
+        .eq('status', 'pending') // ✅ TAMBAH: belum ada attachment
         .order('created_at', { ascending: false });
 
       if (bookingsError) {
