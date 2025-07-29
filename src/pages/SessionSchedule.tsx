@@ -33,8 +33,7 @@ import {
   Filter,
   Eye,
   ChevronUp,
-  EyeOff,
-  AlertTriangle
+  EyeOff
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -43,7 +42,6 @@ import toast from 'react-hot-toast';
 import { alert } from '../components/Alert/AlertHelper';
 import { useLanguage } from '../contexts/LanguageContext';
 import logoUNY from '../assets/logouny.png';
-import { RoomAvailabilityChecker } from '../utils/roomAvailabilityChecker';
 
 const sessionSchema = z.object({
   student_id: z.string().optional(),
@@ -67,20 +65,21 @@ const sessionSchema = z.object({
 
 type SessionFormData = z.infer<typeof sessionSchema>;
 
+// ✅ Print Form Data Type - Simplified
 type PrintFormData = {
-  study_program_id: string;
-  month: string;
+    study_program_id: string;
+    month: string;
 };
-
+// ✅ Helper function for image data URL
 const getImageDataUrl = async (url: string): Promise<string> => {
-  const response = await fetch(url);
-  const blob = await response.blob();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
 };
 
 const SessionScheduleProgressive = () => {
@@ -96,11 +95,7 @@ const SessionScheduleProgressive = () => {
   const [studyPrograms, setStudyPrograms] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [departmentHeads, setDepartmentHeads] = useState([]);
-  
-  // ✅ ENHANCED: Room filtering states
   const [availableRooms, setAvailableRooms] = useState([]);
-  const [roomConflicts, setRoomConflicts] = useState(new Map());
-  const [checkingRooms, setCheckingRooms] = useState(false);
   
   // ✅ NEW: Search states
   const [searchTerm, setSearchTerm] = useState('');
@@ -162,11 +157,11 @@ const SessionScheduleProgressive = () => {
 
   // ✅ Print Form Schema - Simplified
   const printSchema = useMemo(() => {
-    return z.object({
+  return z.object({
       study_program_id: z.string().min(1, getText('Study Program is required', 'Program Studi wajib diisi')),
       month: z.string().min(1, getText('Month is required', 'Bulan wajib diisi')),
-    });
-  }, [getText]);
+  });
+}, [getText]);
 
   const printForm = useForm<PrintFormData>({ resolver: zodResolver(printSchema) });
 
@@ -238,90 +233,6 @@ const SessionScheduleProgressive = () => {
     }
   };
 
-  // ✅ ENHANCED: Comprehensive room availability checker
-  const checkAvailableRooms = useCallback(async (date: string, startTime: string, endTime: string) => {
-    if (!date || !startTime || !endTime) {
-      setAvailableRooms(rooms);
-      setRoomConflicts(new Map());
-      return;
-    }
-
-    try {
-      setCheckingRooms(true);
-      console.log(`🔍 Comprehensive room check for ${date} ${startTime}-${endTime}`);
-      
-      const params = {
-        date,
-        startTime,
-        endTime,
-        excludeSessionId: editingSession?.id // Exclude current session when editing
-      };
-
-      // Use the comprehensive checker
-      const { available, unavailable } = await RoomAvailabilityChecker.filterAvailableRooms(
-        rooms, 
-        params
-      );
-
-      setAvailableRooms(available);
-      
-      // Store conflict details for UI display
-      const conflictMap = new Map();
-      unavailable.forEach(({ room, result }) => {
-        conflictMap.set(room.id, result);
-      });
-      setRoomConflicts(conflictMap);
-
-      // ✅ Enhanced logging
-      console.log(`✅ Available rooms: ${available.length}/${rooms.length}`);
-      console.log(`❌ Conflicted rooms: ${unavailable.length}`);
-      
-      if (process.env.NODE_ENV === 'development') {
-        unavailable.forEach(({ room, result }) => {
-          console.log(`❌ ${room.name}:`, result.reason);
-          result.conflicts.forEach(conflict => {
-            console.log(`   • ${conflict.type}: ${conflict.title} (${conflict.startTime}-${conflict.endTime})`);
-          });
-        });
-      }
-
-      // ✅ Show user-friendly notification
-      if (available.length === 0) {
-        alert.warning(getText(
-          `No rooms available for ${date} ${startTime}-${endTime}. Please choose different time.`,
-          `Tidak ada ruangan tersedia untuk ${date} ${startTime}-${endTime}. Silakan pilih waktu lain.`
-        ));
-      } else if (unavailable.length > 0) {
-        alert.info(getText(
-          `${available.length} rooms available, ${unavailable.length} have conflicts`,
-          `${available.length} ruangan tersedia, ${unavailable.length} mengalami konflik`
-        ));
-      }
-
-    } catch (error) {
-      console.error('Error checking room availability:', error);
-      setAvailableRooms(rooms); // Fallback to show all rooms
-      alert.error(getText('Failed to check room availability', 'Gagal memeriksa ketersediaan ruangan'));
-    } finally {
-      setCheckingRooms(false);
-    }
-  }, [rooms, editingSession, getText]);
-
-  // ✅ ENHANCED: Real-time room checking
-  useEffect(() => {
-    if (watchDate && watchStartTime && watchEndTime && rooms.length > 0) {
-      // Debounce the checking to avoid too many API calls
-      const timeoutId = setTimeout(() => {
-        checkAvailableRooms(watchDate, watchStartTime, watchEndTime);
-      }, 500);
-
-      return () => clearTimeout(timeoutId);
-    } else {
-      setAvailableRooms(rooms);
-      setRoomConflicts(new Map());
-    }
-  }, [watchDate, watchStartTime, watchEndTime, rooms, checkAvailableRooms]);
-
   // ✅ Calendar Helper Functions menggunakan allSessions
   const getSessionsForDate = (date) => {
     const dateStr = format(date, 'yyyy-MM-dd');
@@ -367,800 +278,600 @@ const SessionScheduleProgressive = () => {
     }
   };
 
-  // ✅ ENHANCED: Room Selection Dropdown with conflict display
-  const EnhancedRoomDropdown = () => {
-    const [isOpen, setIsOpen] = useState(false);
-    const [searchTerm, setSearchTerm] = useState('');
+  // ✅ Calendar Modal dengan mobile toggle untuk details
+const CalendarModal = () => {
+  const calendarDays = generateCalendarDays();
+  
+  const monthNames = getText('en') === 'en' ? [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ] : [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ];
+
+  const dayNames = getText('en') === 'en' ? 
+    ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] :
+    ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+
+  const roomDropdownRef = useRef(null);
+  const roomDisplayRef = useRef(null);
+
+  // Function untuk mengelompokkan sessions berdasarkan ruangan
+  const groupSessionsByRoom = (sessions) => {
+    const grouped = {};
     
-    const filteredRooms = useMemo(() => {
-      if (!searchTerm.trim()) return availableRooms;
+    sessions.forEach(session => {
+      const roomKey = session.room?.id || 'unknown';
+      const roomName = session.room?.name || 'Unknown Room';
       
-      const searchLower = searchTerm.toLowerCase();
-      return availableRooms.filter(room => 
-        room.name.toLowerCase().includes(searchLower) ||
-        room.code.toLowerCase().includes(searchLower)
-      );
-    }, [searchTerm, availableRooms]);
-
-    const conflictedRooms = useMemo(() => {
-      return rooms.filter(room => roomConflicts.has(room.id));
-    }, [rooms, roomConflicts]);
-
-    return (
-      <div className="relative">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          {getText('Select Room', 'Pilih Ruangan')} *
-          {checkingRooms && (
-            <span className="ml-2 text-xs text-blue-600">
-              <RefreshCw className="inline h-3 w-3 animate-spin mr-1" />
-              {getText('Checking availability...', 'Memeriksa ketersediaan...')}
-            </span>
-          )}
-        </label>
-        
-        <div className="relative">
-          <input
-            type="text"
-            readOnly
-            placeholder={getText("Click to select room...", "Klik untuk pilih ruangan...")}
-            value={form.getValues('room_id') ? 
-              availableRooms.find(r => r.id === form.getValues('room_id'))?.name + 
-              ` (${availableRooms.find(r => r.id === form.getValues('room_id'))?.code})` : ''}
-            onClick={() => setIsOpen(!isOpen)}
-            className="w-full px-4 py-3 pr-10 bg-white border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer transition-all duration-200 hover:border-gray-300"
-          />
-          <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-            {isOpen ? (
-              <ChevronUp className="h-5 w-5 text-gray-400" />
-            ) : (
-              <ChevronDown className="h-5 w-5 text-gray-400" />
-            )}
-          </div>
-        </div>
-
-        {isOpen && (
-          <div className="absolute z-[9999] w-full mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-96 overflow-hidden">
-            {/* Search Input */}
-            <div className="p-4 border-b border-gray-200 bg-gray-50">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder={getText("Search rooms...", "Cari ruangan...")}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                  autoComplete="off"
-                />
-              </div>
-              
-              {/* Quick Stats */}
-              <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
-                <span>
-                  {getText('Available', 'Tersedia')}: <strong className="text-green-600">{availableRooms.length}</strong>
-                </span>
-                <span>
-                  {getText('Conflicted', 'Bentrok')}: <strong className="text-red-600">{conflictedRooms.length}</strong>
-                </span>
-                <span>
-                  {getText('Total', 'Total')}: {rooms.length}
-                </span>
-              </div>
-            </div>
-
-            {/* Available Rooms */}
-            <div className="max-h-80 overflow-y-auto">
-              {filteredRooms.length > 0 && (
-                <div>
-                  <div className="px-4 py-2 bg-green-50 border-b border-green-200">
-                    <h4 className="font-medium text-green-800 text-sm">
-                      ✅ {getText('Available Rooms', 'Ruangan Tersedia')} ({filteredRooms.length})
-                    </h4>
-                  </div>
-                  <div className="divide-y divide-gray-100">
-                    {filteredRooms.map((room) => (
-                      <div
-                        key={room.id}
-                        onClick={() => {
-                          form.setValue('room_id', room.id);
-                          setIsOpen(false);
-                          setSearchTerm('');
-                        }}
-                        className="p-4 hover:bg-green-50 cursor-pointer transition-colors duration-150"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h4 className="font-semibold text-gray-900">{room.name}</h4>
-                            <p className="text-sm text-gray-600">
-                              {room.code} • {room.capacity} seats
-                              {room.department?.name && ` • ${room.department.name}`}
-                            </p>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium">
-                              {getText('Available', 'Tersedia')}
-                            </span>
-                            <CheckCircle2 className="h-5 w-5 text-green-600" />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Show message when no rooms available */}
-              {filteredRooms.length === 0 && availableRooms.length === 0 && (
-                <div className="p-6 text-center">
-                  <AlertTriangle className="h-8 w-8 text-orange-400 mx-auto mb-2" />
-                  <p className="text-gray-600 text-sm font-medium mb-2">
-                    {getText('No Available Rooms', 'Tidak Ada Ruangan Tersedia')}
-                  </p>
-                  <p className="text-gray-500 text-xs">
-                    {getText('All rooms have conflicts with the selected time', 'Semua ruangan bentrok dengan waktu yang dipilih')}
-                  </p>
-                  
-                  {/* Show conflicted rooms summary */}
-                  {conflictedRooms.length > 0 && (
-                    <div className="mt-4 bg-red-50 rounded-lg p-3">
-                      <p className="text-xs text-red-700 font-medium mb-2">
-                        {getText('Rooms with conflicts:', 'Ruangan yang bentrok:')}
-                      </p>
-                      <div className="space-y-1">
-                        {conflictedRooms.slice(0, 3).map((room) => {
-                          const conflicts = roomConflicts.get(room.id);
-                          return (
-                            <div key={room.id} className="text-xs text-red-600">
-                              <span className="font-medium">{room.name}</span>: {conflicts?.reason}
-                            </div>
-                          );
-                        })}
-                        {conflictedRooms.length > 3 && (
-                          <p className="text-xs text-red-500">
-                            +{conflictedRooms.length - 3} {getText('more rooms', 'ruangan lainnya')}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* No search results */}
-              {filteredRooms.length === 0 && availableRooms.length > 0 && searchTerm && (
-                <div className="p-6 text-center">
-                  <Search className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-gray-600 text-sm">
-                    {getText('No rooms match your search', 'Tidak ada ruangan yang cocok dengan pencarian')}
-                  </p>
-                  <button
-                    onClick={() => setSearchTerm('')}
-                    className="mt-2 text-blue-600 hover:text-blue-800 text-sm underline"
-                  >
-                    {getText('Clear search', 'Hapus pencarian')}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Footer Actions */}
-            <div className="p-3 border-t border-gray-200 bg-gray-50">
-              <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>
-                  {getText('Select available room for the session', 'Pilih ruangan yang tersedia untuk sidang')}
-                </span>
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="text-gray-600 hover:text-gray-800 p-1 hover:bg-gray-100 rounded transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-        
-        {form.formState.errors.room_id && (
-          <p className="mt-1 text-sm text-red-600">{form.formState.errors.room_id.message}</p>
-        )}
-      </div>
-    );
+      if (!grouped[roomKey]) {
+        grouped[roomKey] = {
+          room: {
+            id: roomKey,
+            name: roomName,
+            display: roomName
+          },
+          sessions: []
+        };
+      }
+      
+      grouped[roomKey].sessions.push(session);
+    });
+    
+    // Sort sessions dalam setiap ruangan berdasarkan waktu
+    Object.keys(grouped).forEach(roomKey => {
+      grouped[roomKey].sessions.sort((a, b) => {
+        return a.start_time.localeCompare(b.start_time);
+      });
+    });
+    
+    return grouped;
   };
 
-  // ✅ Calendar Modal dengan mobile toggle untuk details
-  const CalendarModal = () => {
-    const calendarDays = generateCalendarDays();
+  // Function untuk mendapatkan rentang waktu total per ruangan (tanpa detik)
+  const getRoomTimeRange = (sessions) => {
+    if (sessions.length === 0) return '';
     
-    const monthNames = getText('en') === 'en' ? [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ] : [
-      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-    ];
+    const startTimes = sessions.map(s => s.start_time.substring(0, 5)); // HH:MM only
+    const endTimes = sessions.map(s => s.end_time.substring(0, 5)); // HH:MM only
+    
+    const earliestStart = startTimes.sort()[0];
+    const latestEnd = endTimes.sort().reverse()[0];
+    
+    return `${earliestStart} - ${latestEnd}`;
+  };
 
-    const dayNames = getText('en') === 'en' ? 
-      ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] :
-      ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
-
-    const roomDropdownRef = useRef(null);
-    const roomDisplayRef = useRef(null);
-
-    // Function untuk mengelompokkan sessions berdasarkan ruangan
-    const groupSessionsByRoom = (sessions) => {
-      const grouped = {};
-      
-      sessions.forEach(session => {
-        const roomKey = session.room?.id || 'unknown';
-        const roomName = session.room?.name || 'Unknown Room';
-        
-        if (!grouped[roomKey]) {
-          grouped[roomKey] = {
-            room: {
-              id: roomKey,
-              name: roomName,
-              display: roomName
-            },
-            sessions: []
-          };
-        }
-        
-        grouped[roomKey].sessions.push(session);
-      });
-      
-      // Sort sessions dalam setiap ruangan berdasarkan waktu
-      Object.keys(grouped).forEach(roomKey => {
-        grouped[roomKey].sessions.sort((a, b) => {
-          return a.start_time.localeCompare(b.start_time);
-        });
-      });
-      
-      return grouped;
-    };
-
-    // Function untuk mendapatkan rentang waktu total per ruangan (tanpa detik)
-    const getRoomTimeRange = (sessions) => {
-      if (sessions.length === 0) return '';
-      
-      const startTimes = sessions.map(s => s.start_time.substring(0, 5)); // HH:MM only
-      const endTimes = sessions.map(s => s.end_time.substring(0, 5)); // HH:MM only
-      
-      const earliestStart = startTimes.sort()[0];
-      const latestEnd = endTimes.sort().reverse()[0];
-      
-      return `${earliestStart} - ${latestEnd}`;
-    };
-
-    const showRoomDropdown = () => {
-      const dropdownHTML = `
-        <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
-          <div class="p-3 border-b border-gray-100">
-            <input
-              type="text"
-              placeholder="${getText("Search rooms...", "Cari ruangan...")}"
-              class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-              id="calendar-room-search-input"
-              autocomplete="off"
-            />
+  const showRoomDropdown = () => {
+    const dropdownHTML = `
+      <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
+        <div class="p-3 border-b border-gray-100">
+          <input
+            type="text"
+            placeholder="${getText("Search rooms...", "Cari ruangan...")}"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            id="calendar-room-search-input"
+            autocomplete="off"
+          />
+        </div>
+        <div class="max-h-60 overflow-y-auto" id="calendar-room-list">
+          <div 
+            class="calendar-room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 transition-colors duration-150"
+            data-room-id=""
+          >
+            <div class="font-semibold text-gray-800">${getText('All Rooms', 'Semua Ruangan')}</div>
           </div>
-          <div class="max-h-60 overflow-y-auto" id="calendar-room-list">
+          ${rooms.map(room => `
+            <div 
+              class="calendar-room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+              data-room-id="${room.id}"
+              data-room-name="${room.name}"
+              data-room-code="${room.code}"
+            >
+              <div class="font-semibold text-gray-800">${room.name}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+
+    if (roomDropdownRef.current) {
+      roomDropdownRef.current.innerHTML = dropdownHTML;
+      roomDropdownRef.current.style.display = 'block';
+      
+      const searchInput = roomDropdownRef.current.querySelector('#calendar-room-search-input');
+      const roomList = roomDropdownRef.current.querySelector('#calendar-room-list');
+      
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.addEventListener('input', (e) => {
+          const searchTerm = e.target.value.toLowerCase();
+          
+          const allRoomsOption = `
             <div 
               class="calendar-room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 transition-colors duration-150"
               data-room-id=""
             >
               <div class="font-semibold text-gray-800">${getText('All Rooms', 'Semua Ruangan')}</div>
             </div>
-            ${rooms.map(room => `
-              <div 
-                class="calendar-room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                data-room-id="${room.id}"
-                data-room-name="${room.name}"
-                data-room-code="${room.code}"
-              >
-                <div class="font-semibold text-gray-800">${room.name}</div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      `;
+          `;
+          
+          const filteredRooms = rooms.filter(room =>
+            room.name.toLowerCase().includes(searchTerm) ||
+            room.code.toLowerCase().includes(searchTerm)
+          );
+          
+          roomList.innerHTML = allRoomsOption + filteredRooms.map(room => `
+            <div 
+              class="calendar-room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+              data-room-id="${room.id}"
+              data-room-name="${room.name}"
+              data-room-code="${room.code}"
+            >
+              <div class="font-semibold text-gray-800">${room.name}</div>
+            </div>
+          `).join('');
+          
+          addCalendarRoomListeners();
+        });
+      }
+      
+      addCalendarRoomListeners();
+    }
+  };
 
-      if (roomDropdownRef.current) {
-        roomDropdownRef.current.innerHTML = dropdownHTML;
-        roomDropdownRef.current.style.display = 'block';
+  const addCalendarRoomListeners = () => {
+    roomDropdownRef.current?.querySelectorAll('.calendar-room-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        const roomId = e.currentTarget.dataset.roomId;
+        const roomName = e.currentTarget.dataset.roomName;
         
-        const searchInput = roomDropdownRef.current.querySelector('#calendar-room-search-input');
-        const roomList = roomDropdownRef.current.querySelector('#calendar-room-list');
-        
-        if (searchInput) {
-          searchInput.focus();
-          searchInput.addEventListener('input', (e) => {
-            const searchTerm = e.target.value.toLowerCase();
-            
-            const allRoomsOption = `
-              <div 
-                class="calendar-room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 transition-colors duration-150"
-                data-room-id=""
-              >
-                <div class="font-semibold text-gray-800">${getText('All Rooms', 'Semua Ruangan')}</div>
-              </div>
-            `;
-            
-            const filteredRooms = rooms.filter(room =>
-              room.name.toLowerCase().includes(searchTerm) ||
-              room.code.toLowerCase().includes(searchTerm)
-            );
-            
-            roomList.innerHTML = allRoomsOption + filteredRooms.map(room => `
-              <div 
-                class="calendar-room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
-                data-room-id="${room.id}"
-                data-room-name="${room.name}"
-                data-room-code="${room.code}"
-              >
-                <div class="font-semibold text-gray-800">${room.name}</div>
-              </div>
-            `).join('');
-            
-            addCalendarRoomListeners();
-          });
+        if (roomId) {
+          if (roomDisplayRef.current) {
+            roomDisplayRef.current.value = roomName;
+          }
+          setSelectedRoomForCalendar(roomId);
+        } else {
+          if (roomDisplayRef.current) {
+            roomDisplayRef.current.value = getText('All Rooms', 'Semua Ruangan');
+          }
+          setSelectedRoomForCalendar('');
         }
         
-        addCalendarRoomListeners();
-      }
-    };
-
-    const addCalendarRoomListeners = () => {
-      roomDropdownRef.current?.querySelectorAll('.calendar-room-item').forEach(item => {
-        item.addEventListener('click', (e) => {
-          const roomId = e.currentTarget.dataset.roomId;
-          const roomName = e.currentTarget.dataset.roomName;
-          
-          if (roomId) {
-            if (roomDisplayRef.current) {
-              roomDisplayRef.current.value = roomName;
-            }
-            setSelectedRoomForCalendar(roomId);
-          } else {
-            if (roomDisplayRef.current) {
-              roomDisplayRef.current.value = getText('All Rooms', 'Semua Ruangan');
-            }
-            setSelectedRoomForCalendar('');
-          }
-          
-          setSelectedDateSessions([]);
-          // ✅ Hide mobile details when filter changes
-          setShowMobileDetails(false);
-          hideRoomDropdown();
-        });
+        setSelectedDateSessions([]);
+        // ✅ Hide mobile details when filter changes
+        setShowMobileDetails(false);
+        hideRoomDropdown();
       });
-    };
+    });
+  };
 
-    const hideRoomDropdown = () => {
-      if (roomDropdownRef.current) {
-        roomDropdownRef.current.style.display = 'none';
-      }
-    };
+  const hideRoomDropdown = () => {
+    if (roomDropdownRef.current) {
+      roomDropdownRef.current.style.display = 'none';
+    }
+  };
 
-    const getSessionCountForDate = (date) => {
-      const dateStr = format(date, 'yyyy-MM-dd');
-      if (selectedRoomForCalendar) {
-        return allSessions.filter(session => 
-          session.date === dateStr && session.room_id === selectedRoomForCalendar
-        ).length;
-      }
-      return allSessions.filter(session => session.date === dateStr).length;
-    };
+  const getSessionCountForDate = (date) => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    if (selectedRoomForCalendar) {
+      return allSessions.filter(session => 
+        session.date === dateStr && session.room_id === selectedRoomForCalendar
+      ).length;
+    }
+    return allSessions.filter(session => session.date === dateStr).length;
+  };
 
-    return (
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4"
-        onClick={(e) => {
-          if (e.target === e.currentTarget) {
-            setShowCalendarModal(false);
-            setSelectedRoomForCalendar('');
-            setSelectedDateSessions([]);
-            setShowMobileDetails(false);
-          }
-        }}
-      >
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl h-[85vh] flex flex-col overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50 flex-shrink-0">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Calendar className="h-5 w-5 text-blue-600" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">
-                  {getText('Session Calendar', 'Kalender Jadwal Sidang')}
-                </h3>
-                <p className="text-sm text-gray-600">
-                  {getText('View room schedules by date', 'Lihat jadwal ruangan per tanggal')}
-                </p>
+  return (
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          setShowCalendarModal(false);
+          setSelectedRoomForCalendar('');
+          setSelectedDateSessions([]);
+          setShowMobileDetails(false);
+        }
+      }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl h-[85vh] flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50 flex-shrink-0">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Calendar className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">
+                {getText('Session Calendar', 'Kalender Jadwal Sidang')}
+              </h3>
+              <p className="text-sm text-gray-600">
+                {getText('View room schedules by date', 'Lihat jadwal ruangan per tanggal')}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setShowCalendarModal(false);
+              setSelectedRoomForCalendar('');
+              setSelectedDateSessions([]);
+              setShowMobileDetails(false);
+            }}
+            className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
+          {/* Calendar Section */}
+          <div className="flex-1 p-6 overflow-y-auto bg-gray-50">
+            {/* Room Filter */}
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-gray-700 mb-3">
+                <div className="flex items-center space-x-2">
+                  <Filter className="h-4 w-4 text-gray-500" />
+                  <span>{getText('Filter by Room', 'Filter berdasarkan Ruangan')}</span>
+                </div>
+              </label>
+              <div className="relative">
+                <input
+                  ref={roomDisplayRef}
+                  type="text"
+                  readOnly
+                  placeholder={getText("Click to select room...", "Klik untuk pilih ruangan...")}
+                  onClick={showRoomDropdown}
+                  defaultValue={getText('All Rooms', 'Semua Ruangan')}
+                  className="w-full px-4 py-3 pr-10 bg-white border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer text-sm font-medium transition-all duration-200 hover:border-gray-300"
+                />
+                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                <div ref={roomDropdownRef} style={{ display: 'none' }}></div>
               </div>
             </div>
-            <button
-              onClick={() => {
-                setShowCalendarModal(false);
-                setSelectedRoomForCalendar('');
-                setSelectedDateSessions([]);
-                setShowMobileDetails(false);
-              }}
-              className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl transition-colors"
-            >
-              <X className="h-5 w-5" />
-            </button>
+
+            {/* Month Navigation */}
+            <div className="flex items-center justify-between mb-6 bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+              <button
+                onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
+                className="flex items-center justify-center w-10 h-10 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors duration-200 group"
+              >
+                <ChevronLeft className="h-5 w-5 text-gray-600 group-hover:text-gray-800" />
+              </button>
+              
+              <div className="text-center">
+                <h2 className="text-xl font-bold text-gray-900">
+                  {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {getText('Click dates with sessions', 'Klik tanggal dengan sidang')}
+                </p>
+              </div>
+              
+              <button
+                onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
+                className="flex items-center justify-center w-10 h-10 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors duration-200 group"
+              >
+                <ChevronRight className="h-5 w-5 text-gray-600 group-hover:text-gray-800" />
+              </button>
+            </div>
+
+            {/* Calendar Grid */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="grid grid-cols-7 bg-gray-50 border-b border-gray-200">
+                {dayNames.map(day => (
+                  <div key={day} className="p-4 text-center text-sm font-semibold text-gray-700 border-r border-gray-200 last:border-r-0">
+                    {day}
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-7">
+                {calendarDays.map((day, index) => {
+                  const isCurrentMonth = isSameMonth(day, currentMonth);
+                  const isToday = isSameDay(day, new Date());
+                  const sessionCount = getSessionCountForDate(day);
+                  const hasSessions = sessionCount > 0;
+                  
+                  return (
+                    <button
+                      key={day.toString()}
+                      onClick={() => isCurrentMonth && handleDateClick(day)}
+                      disabled={!isCurrentMonth}
+                      className={`
+                        h-16 p-2 text-sm border-r border-b border-gray-200 last:border-r-0 transition-all duration-200 relative group
+                        ${!isCurrentMonth 
+                          ? 'bg-gray-50 text-gray-300 cursor-not-allowed' 
+                          : isToday
+                            ? 'bg-blue-50 text-blue-900 font-bold ring-2 ring-blue-200'
+                            : hasSessions 
+                              ? 'bg-red-50 hover:bg-red-100 text-red-900 font-semibold cursor-pointer' 
+                              : 'bg-white hover:bg-gray-50 text-gray-700 cursor-pointer'
+                        }
+                      `}
+                    >
+                      <div className="flex flex-col items-center justify-center h-full">
+                        <span className={`
+                          ${isToday ? 'bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs' : ''}
+                        `}>
+                          {format(day, 'd')}
+                        </span>
+                        
+                        {hasSessions && isCurrentMonth && (
+                          <div className="mt-1 flex items-center space-x-1">
+                            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                            <span className="text-xs font-bold text-red-700">
+                              {sessionCount}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
-          {/* Content */}
-          <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
-            {/* Calendar Section */}
-            <div className="flex-1 p-6 overflow-y-auto bg-gray-50">
-              {/* Room Filter */}
-              <div className="mb-6">
-                <label className="block text-sm font-semibold text-gray-700 mb-3">
-                  <div className="flex items-center space-x-2">
-                    <Filter className="h-4 w-4 text-gray-500" />
-                    <span>{getText('Filter by Room', 'Filter berdasarkan Ruangan')}</span>
+          {/* ✅ Mobile Toggle Button - Only visible on small screens */}
+          {selectedDateSessions.length > 0 && (
+            <div className="lg:hidden border-t border-gray-200 bg-white p-4 flex-shrink-0">
+              <button
+                onClick={() => setShowMobileDetails(!showMobileDetails)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors duration-200"
+              >
+                <div className="flex items-center space-x-3">
+                  <Building className="h-5 w-5 text-blue-600" />
+                  <div className="text-left">
+                    <div className="font-semibold text-blue-900">
+                      {getText('Room Schedule Details', 'Detail Jadwal Ruangan')}
+                    </div>
+                    <div className="text-sm text-blue-700">
+                      {format(new Date(selectedDateSessions[0].date), 'EEEE, MMMM d, yyyy')}
+                    </div>
                   </div>
-                </label>
-                <div className="relative">
-                  <input
-                    ref={roomDisplayRef}
-                    type="text"
-                    readOnly
-                    placeholder={getText("Click to select room...", "Klik untuk pilih ruangan...")}
-                    onClick={showRoomDropdown}
-                    defaultValue={getText('All Rooms', 'Semua Ruangan')}
-                    className="w-full px-4 py-3 pr-10 bg-white border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer text-sm font-medium transition-all duration-200 hover:border-gray-300"
-                  />
-                  <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-                  <div ref={roomDropdownRef} style={{ display: 'none' }}></div>
                 </div>
-              </div>
+                <div className="flex items-center space-x-2">
+                  <span className="bg-blue-600 text-white px-2 py-1 rounded-full text-xs font-semibold">
+                    {Object.keys(groupSessionsByRoom(selectedDateSessions)).length}
+                  </span>
+                  {showMobileDetails ? (
+                    <ChevronUp className="h-5 w-5 text-blue-600" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-blue-600" />
+                  )}
+                </div>
+              </button>
+            </div>
+          )}
 
-              {/* Month Navigation */}
-              <div className="flex items-center justify-between mb-6 bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-                <button
-                  onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
-                  className="flex items-center justify-center w-10 h-10 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors duration-200 group"
-                >
-                  <ChevronLeft className="h-5 w-5 text-gray-600 group-hover:text-gray-800" />
-                </button>
-                
-                <div className="text-center">
-                  <h2 className="text-xl font-bold text-gray-900">
-                    {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
-                  </h2>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {getText('Click dates with sessions', 'Klik tanggal dengan sidang')}
+          {/* Room-Based Session Details Sidebar */}
+          <div className={`
+            w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-gray-200 bg-white overflow-y-auto
+            ${showMobileDetails ? 'block' : 'hidden lg:block'}
+          `}>
+            <div className="p-6 border-b border-gray-200 bg-gray-50 lg:block">
+              <div className="flex items-center justify-between lg:block">
+                <h4 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
+                  <div className="p-1 bg-blue-100 rounded">
+                    <Building className="h-4 w-4 text-blue-600" />
+                  </div>
+                  <span>{getText('Room Schedule', 'Jadwal Ruangan')}</span>
+                </h4>
+                {selectedDateSessions.length > 0 && (
+                  <p className="text-sm text-gray-600 mt-1 lg:mt-1">
+                    {format(new Date(selectedDateSessions[0].date), 'EEEE, MMMM d, yyyy')}
                   </p>
-                </div>
+                )}
                 
+                {/* ✅ Close button for mobile */}
                 <button
-                  onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-                  className="flex items-center justify-center w-10 h-10 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors duration-200 group"
+                  onClick={() => setShowMobileDetails(false)}
+                  className="lg:hidden p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                 >
-                  <ChevronRight className="h-5 w-5 text-gray-600 group-hover:text-gray-800" />
+                  <X className="h-5 w-5" />
                 </button>
               </div>
+            </div>
 
-              {/* Calendar Grid */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <div className="grid grid-cols-7 bg-gray-50 border-b border-gray-200">
-                  {dayNames.map(day => (
-                    <div key={day} className="p-4 text-center text-sm font-semibold text-gray-700 border-r border-gray-200 last:border-r-0">
-                      {day}
+            <div className="p-6">
+              {selectedDateSessions.length > 0 ? (
+                <div className="space-y-4">
+                  {Object.entries(groupSessionsByRoom(selectedDateSessions)).map(([roomId, roomData]) => (
+                    <div key={roomId} className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 overflow-hidden">
+                      <div className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className="p-2 bg-white bg-opacity-20 rounded-lg">
+                              <Building className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <h5 className="font-bold text-lg">{roomData.room.display}</h5>
+                              <p className="text-blue-100 text-sm">
+                                {getRoomTimeRange(roomData.sessions)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="bg-white bg-opacity-20 rounded-lg px-3 py-1">
+                            <span className="text-sm font-semibold">
+                              {roomData.sessions.length}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-4 space-y-3">
+                        {roomData.sessions.map((session, sessionIndex) => (
+                          <div key={session.id} className="bg-white rounded-lg p-4 border border-gray-200 hover:shadow-sm transition-shadow">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center space-x-3">
+                                <div className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                                  {sessionIndex + 1}
+                                </div>
+                                <span className="font-semibold text-gray-900 text-lg">
+                                  {session.start_time.substring(0, 5)} - {session.end_time.substring(0, 5)}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            <div className="mb-2">
+                              <span className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm font-medium">
+                                {session.student?.study_program?.name}
+                              </span>
+                            </div>
+                            
+                            <div className="text-sm text-gray-700">
+                              <div className="flex items-center space-x-2">
+                                <User className="h-4 w-4 text-gray-500" />
+                                <span className="font-medium">{session.student?.full_name}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </div>
-
-                <div className="grid grid-cols-7">
-                  {calendarDays.map((day, index) => {
-                    const isCurrentMonth = isSameMonth(day, currentMonth);
-                    const isToday = isSameDay(day, new Date());
-                    const sessionCount = getSessionCountForDate(day);
-                    const hasSessions = sessionCount > 0;
-                    
-                    return (
-                      <button
-                        key={day.toString()}
-                        onClick={() => isCurrentMonth && handleDateClick(day)}
-                        disabled={!isCurrentMonth}
-                        className={`
-                          h-16 p-2 text-sm border-r border-b border-gray-200 last:border-r-0 transition-all duration-200 relative group
-                          ${!isCurrentMonth 
-                            ? 'bg-gray-50 text-gray-300 cursor-not-allowed' 
-                            : isToday
-                              ? 'bg-blue-50 text-blue-900 font-bold ring-2 ring-blue-200'
-                              : hasSessions 
-                                ? 'bg-red-50 hover:bg-red-100 text-red-900 font-semibold cursor-pointer' 
-                                : 'bg-white hover:bg-gray-50 text-gray-700 cursor-pointer'
-                          }
-                        `}
-                      >
-                        <div className="flex flex-col items-center justify-center h-full">
-                          <span className={`
-                            ${isToday ? 'bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs' : ''}
-                          `}>
-                            {format(day, 'd')}
-                          </span>
-                          
-                          {hasSessions && isCurrentMonth && (
-                            <div className="mt-1 flex items-center space-x-1">
-                              <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                              <span className="text-xs font-bold text-red-700">
-                                {sessionCount}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* ✅ Mobile Toggle Button - Only visible on small screens */}
-            {selectedDateSessions.length > 0 && (
-              <div className="lg:hidden border-t border-gray-200 bg-white p-4 flex-shrink-0">
-                <button
-                  onClick={() => setShowMobileDetails(!showMobileDetails)}
-                  className="w-full flex items-center justify-between px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors duration-200"
-                >
-                  <div className="flex items-center space-x-3">
-                    <Building className="h-5 w-5 text-blue-600" />
-                    <div className="text-left">
-                      <div className="font-semibold text-blue-900">
-                        {getText('Room Schedule Details', 'Detail Jadwal Ruangan')}
-                      </div>
-                      <div className="text-sm text-blue-700">
-                        {format(new Date(selectedDateSessions[0].date), 'EEEE, MMMM d, yyyy')}
-                      </div>
-                    </div>
+              ) : (
+                <div className="text-center text-gray-500 py-12">
+                  <div className="bg-gray-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+                    <Building className="h-8 w-8 text-gray-400" />
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="bg-blue-600 text-white px-2 py-1 rounded-full text-xs font-semibold">
-                      {Object.keys(groupSessionsByRoom(selectedDateSessions)).length}
-                    </span>
-                    {showMobileDetails ? (
-                      <ChevronUp className="h-5 w-5 text-blue-600" />
-                    ) : (
-                      <ChevronDown className="h-5 w-5 text-blue-600" />
+                  <h5 className="font-semibold text-gray-700 mb-2">
+                    {getText('No sessions selected', 'Tidak ada sidang dipilih')}
+                  </h5>
+                  <p className="text-sm text-gray-500 leading-relaxed">
+                    {getText(
+                      'Click on a highlighted date to view room schedules.',
+                      'Klik pada tanggal yang diberi tanda untuk melihat jadwal ruangan.'
                     )}
-                  </div>
-                </button>
-              </div>
-            )}
-
-            {/* Room-Based Session Details Sidebar */}
-            <div className={`
-              w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-gray-200 bg-white overflow-y-auto
-              ${showMobileDetails ? 'block' : 'hidden lg:block'}
-            `}>
-              <div className="p-6 border-b border-gray-200 bg-gray-50 lg:block">
-                <div className="flex items-center justify-between lg:block">
-                  <h4 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
-                    <div className="p-1 bg-blue-100 rounded">
-                      <Building className="h-4 w-4 text-blue-600" />
-                    </div>
-                    <span>{getText('Room Schedule', 'Jadwal Ruangan')}</span>
-                  </h4>
-                  {selectedDateSessions.length > 0 && (
-                    <p className="text-sm text-gray-600 mt-1 lg:mt-1">
-                      {format(new Date(selectedDateSessions[0].date), 'EEEE, MMMM d, yyyy')}
-                    </p>
-                  )}
-                  
-                  {/* ✅ Close button for mobile */}
-                  <button
-                    onClick={() => setShowMobileDetails(false)}
-                    className="lg:hidden p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
+                  </p>
                 </div>
-              </div>
-
-              <div className="p-6">
-                {selectedDateSessions.length > 0 ? (
-                  <div className="space-y-4">
-                    {Object.entries(groupSessionsByRoom(selectedDateSessions)).map(([roomId, roomData]) => (
-                      <div key={roomId} className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 overflow-hidden">
-                        <div className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white p-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-3">
-                              <div className="p-2 bg-white bg-opacity-20 rounded-lg">
-                                <Building className="h-4 w-4" />
-                              </div>
-                              <div>
-                                <h5 className="font-bold text-lg">{roomData.room.display}</h5>
-                                <p className="text-blue-100 text-sm">
-                                  {getRoomTimeRange(roomData.sessions)}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="bg-white bg-opacity-20 rounded-lg px-3 py-1">
-                              <span className="text-sm font-semibold">
-                                {roomData.sessions.length}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="p-4 space-y-3">
-                          {roomData.sessions.map((session, sessionIndex) => (
-                            <div key={session.id} className="bg-white rounded-lg p-4 border border-gray-200 hover:shadow-sm transition-shadow">
-                              <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center space-x-3">
-                                  <div className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                                    {sessionIndex + 1}
-                                  </div>
-                                  <span className="font-semibold text-gray-900 text-lg">
-                                    {session.start_time.substring(0, 5)} - {session.end_time.substring(0, 5)}
-                                  </span>
-                                </div>
-                              </div>
-                              
-                              <div className="mb-2">
-                                <span className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm font-medium">
-                                  {session.student?.study_program?.name}
-                                </span>
-                              </div>
-                              
-                              <div className="text-sm text-gray-700">
-                                <div className="flex items-center space-x-2">
-                                  <User className="h-4 w-4 text-gray-500" />
-                                  <span className="font-medium">{session.student?.full_name}</span>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center text-gray-500 py-12">
-                    <div className="bg-gray-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-                      <Building className="h-8 w-8 text-gray-400" />
-                    </div>
-                    <h5 className="font-semibold text-gray-700 mb-2">
-                      {getText('No sessions selected', 'Tidak ada sidang dipilih')}
-                    </h5>
-                    <p className="text-sm text-gray-500 leading-relaxed">
-                      {getText(
-                        'Click on a highlighted date to view room schedules.',
-                        'Klik pada tanggal yang diberi tanda untuk melihat jadwal ruangan.'
-                      )}
-                    </p>
-                  </div>
-                )}
-              </div>
+              )}
             </div>
           </div>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   const DeleteConfirmationModal = () => {
-    if (!sessionToDelete) return null;
+  if (!sessionToDelete) return null;
 
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-          {/* Header */}
-          <div className="bg-red-50 border-b border-red-200 p-6">
-            <div className="flex items-center space-x-3">
-              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <AlertCircle className="h-6 w-6 text-red-600" />
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+        {/* Header */}
+        <div className="bg-red-50 border-b border-red-200 p-6">
+          <div className="flex items-center space-x-3">
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <AlertCircle className="h-6 w-6 text-red-600" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-red-900">
+                {getText('Delete Session', 'Hapus Jadwal Sidang')}
+              </h3>
+              <p className="text-sm text-red-700 mt-1">
+                {getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-6">
+          <div className="text-center mb-6">
+            <p className="text-gray-700 text-lg mb-4">
+              {getText('Are you sure you want to delete this session?', 'Apakah Anda yakin ingin menghapus jadwal sidang ini?')}
+            </p>
+          </div>
+
+          {/* Session Details */}
+          <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 mb-6">
+            <div className="space-y-3">
+              <div className="flex items-center space-x-3">
+                <User className="h-5 w-5 text-gray-500" />
+                <div>
+                  <div className="font-semibold text-gray-900">
+                    {sessionToDelete.student?.full_name || 'Unknown Student'}
+                  </div>
+                  <div className="text-sm text-gray-600 font-mono">
+                    {sessionToDelete.student?.identity_number || 'No NIM'}
+                  </div>
+                </div>
               </div>
-              <div>
-                <h3 className="text-lg font-bold text-red-900">
-                  {getText('Delete Session', 'Hapus Jadwal Sidang')}
-                </h3>
-                <p className="text-sm text-red-700 mt-1">
-                  {getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')}
+              
+              <div className="flex items-center space-x-3">
+                <Calendar className="h-5 w-5 text-gray-500" />
+                <div>
+                  <div className="text-sm font-medium text-gray-900">
+                    {format(parseISO(sessionToDelete.date), 'EEEE, MMMM d, yyyy')}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {sessionToDelete.start_time} - {sessionToDelete.end_time}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-3">
+                <MapPin className="h-5 w-5 text-gray-500" />
+                <div className="text-sm text-gray-900">
+                  {sessionToDelete.room?.name || 'No Room'} - {sessionToDelete.room?.code || 'No Code'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Warning Message */}
+          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <AlertCircle className="h-5 w-5 text-yellow-400" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-yellow-800">
+                  {getText(
+                    'This will permanently delete the session and all related data. This action cannot be undone.',
+                    'Ini akan menghapus jadwal sidang dan semua data terkait secara permanen. Tindakan ini tidak dapat dibatalkan.'
+                  )}
                 </p>
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Content */}
-          <div className="p-6">
-            <div className="text-center mb-6">
-              <p className="text-gray-700 text-lg mb-4">
-                {getText('Are you sure you want to delete this session?', 'Apakah Anda yakin ingin menghapus jadwal sidang ini?')}
-              </p>
-            </div>
-
-            {/* Session Details */}
-            <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 mb-6">
-              <div className="space-y-3">
-                <div className="flex items-center space-x-3">
-                  <User className="h-5 w-5 text-gray-500" />
-                  <div>
-                    <div className="font-semibold text-gray-900">
-                      {sessionToDelete.student?.full_name || 'Unknown Student'}
-                    </div>
-                    <div className="text-sm text-gray-600 font-mono">
-                      {sessionToDelete.student?.identity_number || 'No NIM'}
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="flex items-center space-x-3">
-                  <Calendar className="h-5 w-5 text-gray-500" />
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">
-                      {format(parseISO(sessionToDelete.date), 'EEEE, MMMM d, yyyy')}
-                    </div>
-                    <div className="text-sm text-gray-600">
-                      {sessionToDelete.start_time} - {sessionToDelete.end_time}
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="flex items-center space-x-3">
-                  <MapPin className="h-5 w-5 text-gray-500" />
-                  <div className="text-sm text-gray-900">
-                    {sessionToDelete.room?.name || 'No Room'} - {sessionToDelete.room?.code || 'No Code'}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Warning Message */}
-            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
-              <div className="flex">
-                <div className="flex-shrink-0">
-                  <AlertCircle className="h-5 w-5 text-yellow-400" />
-                </div>
-                <div className="ml-3">
-                  <p className="text-sm text-yellow-800">
-                    {getText(
-                      'This will permanently delete the session and all related data. This action cannot be undone.',
-                      'Ini akan menghapus jadwal sidang dan semua data terkait secara permanen. Tindakan ini tidak dapat dibatalkan.'
-                    )}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="bg-gray-50 px-6 py-4 flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-3">
-            <button
-              onClick={handleCancelDelete}
-              disabled={submitting}
-              className="w-full sm:w-auto px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium disabled:opacity-50"
-            >
-              {getText('Cancel', 'Batal')}
-            </button>
-            <button
-              onClick={handleConfirmDelete}
-              disabled={submitting}
-              className="w-full sm:w-auto px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all duration-200 font-medium disabled:opacity-50 flex items-center justify-center space-x-2"
-            >
-              {submitting ? (
-                <>
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                  <span>{getText('Deleting...', 'Menghapus...')}</span>
-                </>
-              ) : (
-                <>
-                  <Trash2 className="h-4 w-4" />
-                  <span>{getText('Delete Session', 'Hapus Sidang')}</span>
-                </>
-              )}
-            </button>
-          </div>
+        {/* Footer */}
+        <div className="bg-gray-50 px-6 py-4 flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-3">
+          <button
+            onClick={handleCancelDelete}
+            disabled={submitting}
+            className="w-full sm:w-auto px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium disabled:opacity-50"
+          >
+            {getText('Cancel', 'Batal')}
+          </button>
+          <button
+            onClick={handleConfirmDelete}
+            disabled={submitting}
+            className="w-full sm:w-auto px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all duration-200 font-medium disabled:opacity-50 flex items-center justify-center space-x-2"
+          >
+            {submitting ? (
+              <>
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                <span>{getText('Deleting...', 'Menghapus...')}</span>
+              </>
+            ) : (
+              <>
+                <Trash2 className="h-4 w-4" />
+                <span>{getText('Delete Session', 'Hapus Sidang')}</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   // ✅ Fetch Sessions Universal
   const fetchSessions = async () => {
@@ -1264,7 +975,7 @@ const SessionScheduleProgressive = () => {
       const { data, error } = await supabase.from('rooms').select('*').order('name');
       if (error) throw error;
       setRooms(data || []);
-      // Initial rooms will be set to available rooms after the first check
+      setAvailableRooms(data || []);
     } catch (error) {
       console.error('Error fetching rooms:', error);
       alert.error(getText('Failed to load rooms.', 'Gagal memuat ruangan.'));
@@ -1331,7 +1042,62 @@ const SessionScheduleProgressive = () => {
     }
   }, [profile]);
 
-  // ✅ Mobile Progress Indicator
+  useEffect(() => {
+    if (watchDate && watchStartTime && watchEndTime) {
+      checkAvailableRooms(watchDate, watchStartTime, watchEndTime);
+    } else {
+      setAvailableRooms(rooms);
+    }
+  }, [watchDate, watchStartTime, watchEndTime, rooms]);
+
+  // ✅ checkAvailableRooms menggunakan allSessions
+  const checkAvailableRooms = async (date, startTime, endTime) => {
+    try {
+      const dateObj = new Date(date);
+      const dayNamesIndonesian = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+      const dayName = dayNamesIndonesian[dateObj.getDay()];
+      
+      const finalSessionConflicts = allSessions
+        .filter(session => session.date === date && session.room_id)
+        .filter(session => {
+          if (editingSession && session.id === editingSession.id) return false;
+          const hasOverlap = startTime < session.end_time && endTime > session.start_time;
+          return hasOverlap;
+        })
+        .map(session => session.room_id);
+
+      const { data: lectureSchedules, error } = await supabase
+        .from('lecture_schedules')
+        .select('room, start_time, end_time')
+        .eq('day', dayName);
+
+      if (error) throw error;
+      
+      const lectureScheduleConflicts = (lectureSchedules || [])
+        .filter(schedule => {
+          const hasOverlap = startTime < schedule.end_time && endTime > schedule.start_time;
+          return hasOverlap;
+        });
+
+      const lectureRoomIds = [];
+      for (const conflictSchedule of lectureScheduleConflicts) {
+        const matchingRoom = rooms.find(room => room.name.toLowerCase() === conflictSchedule.room.toLowerCase());
+        if (matchingRoom) {
+          lectureRoomIds.push(matchingRoom.id);
+        }
+      }
+      
+      const allConflictingRoomIds = [...finalSessionConflicts, ...lectureRoomIds];
+      const available = rooms.filter(room => !allConflictingRoomIds.includes(room.id));
+      setAvailableRooms(available);
+
+    } catch (error) {
+      console.error('Error checking available rooms:', error);
+      setAvailableRooms(rooms);
+    }
+  };
+
+  // Mobile Progress Indicator
   const MobileProgressIndicator = () => (
     <div className="flex items-center justify-between">
       {steps.map((step, index) => {
@@ -1464,835 +1230,959 @@ const SessionScheduleProgressive = () => {
     }
   }, [currentStep]);
 
-  const validateAllFields = () => {
-    const errors = [];
-    
-    // Step 1 validation
-    const studentNim = formData.student_nim || (studentInputRef.current?.value) || '';
-    const studentName = formData.student_name || (studentNameRef.current?.value) || '';
-    const studyProgramId = formData.study_program_id || '';
-    
-    if (!studentNim.trim()) {
-      errors.push(getText('Student NIM is required', 'NIM Mahasiswa wajib diisi'));
-    }
-    if (!studentName.trim()) {
-      errors.push(getText('Student Name is required', 'Nama Mahasiswa wajib diisi'));
-    }
-    if (!studyProgramId) {
-      errors.push(getText('Study Program is required', 'Program Studi wajib dipilih'));
-    }
-    
-    // Step 2 validation
-    const date = form.getValues('date');
-    const startTime = form.getValues('start_time');
-    const endTime = form.getValues('end_time');
-    
-    if (!date) {
-      errors.push(getText('Date is required', 'Tanggal wajib diisi'));
-    }
-    if (!startTime) {
-      errors.push(getText('Start time is required', 'Waktu mulai wajib diisi'));
-    }
-    if (!endTime) {
-      errors.push(getText('End time is required', 'Waktu selesai wajib diisi'));
-    }
-    if (startTime && endTime && startTime >= endTime) {
-      errors.push(getText('End time must be after start time', 'Waktu selesai harus setelah waktu mulai'));
-    }
-    
-    // Step 3 validation
-    const roomId = form.getValues('room_id');
-    const title = form.getValues('title') || (titleInputRef.current?.value) || '';
-    const supervisor = form.getValues('supervisor') || (supervisorInputRef.current?.value) || '';
-    const examiner = form.getValues('examiner') || (examinerInputRef.current?.value) || '';
-    const secretary = form.getValues('secretary') || (secretaryInputRef.current?.value) || '';
-    
-    if (!roomId) {
-      errors.push(getText('Room is required', 'Ruangan wajib dipilih'));
-    }
-    if (!title.trim()) {
-      errors.push(getText('Thesis title is required', 'Judul skripsi/tesis wajib diisi'));
-    }
-    if (!supervisor.trim()) {
-      errors.push(getText('Supervisor is required', 'Pembimbing wajib diisi'));
-    }
-    if (!examiner.trim()) {
-      errors.push(getText('Examiner is required', 'Penguji wajib diisi'));
-    }
-    if (!secretary.trim()) {
-      errors.push(getText('Secretary is required', 'Sekretaris wajib diisi'));
-    }
-    
-    return errors;
-  };
+const validateAllFields = () => {
+  const errors = [];
+  
+  // Step 1 validation
+  const studentNim = formData.student_nim || (studentInputRef.current?.value) || '';
+  const studentName = formData.student_name || (studentNameRef.current?.value) || '';
+  const studyProgramId = formData.study_program_id || '';
+  
+  if (!studentNim.trim()) {
+    errors.push(getText('Student NIM is required', 'NIM Mahasiswa wajib diisi'));
+  }
+  if (!studentName.trim()) {
+    errors.push(getText('Student Name is required', 'Nama Mahasiswa wajib diisi'));
+  }
+  if (!studyProgramId) {
+    errors.push(getText('Study Program is required', 'Program Studi wajib dipilih'));
+  }
+  
+  // Step 2 validation
+  const date = form.getValues('date');
+  const startTime = form.getValues('start_time');
+  const endTime = form.getValues('end_time');
+  
+  if (!date) {
+    errors.push(getText('Date is required', 'Tanggal wajib diisi'));
+  }
+  if (!startTime) {
+    errors.push(getText('Start time is required', 'Waktu mulai wajib diisi'));
+  }
+  if (!endTime) {
+    errors.push(getText('End time is required', 'Waktu selesai wajib diisi'));
+  }
+  if (startTime && endTime && startTime >= endTime) {
+    errors.push(getText('End time must be after start time', 'Waktu selesai harus setelah waktu mulai'));
+  }
+  
+  // Step 3 validation
+  const roomId = form.getValues('room_id');
+  const title = form.getValues('title') || (titleInputRef.current?.value) || '';
+  const supervisor = form.getValues('supervisor') || (supervisorInputRef.current?.value) || '';
+  const examiner = form.getValues('examiner') || (examinerInputRef.current?.value) || '';
+  const secretary = form.getValues('secretary') || (secretaryInputRef.current?.value) || '';
+  
+  if (!roomId) {
+    errors.push(getText('Room is required', 'Ruangan wajib dipilih'));
+  }
+  if (!title.trim()) {
+    errors.push(getText('Thesis title is required', 'Judul skripsi/tesis wajib diisi'));
+  }
+  if (!supervisor.trim()) {
+    errors.push(getText('Supervisor is required', 'Pembimbing wajib diisi'));
+  }
+  if (!examiner.trim()) {
+    errors.push(getText('Examiner is required', 'Penguji wajib diisi'));
+  }
+  if (!secretary.trim()) {
+    errors.push(getText('Secretary is required', 'Sekretaris wajib diisi'));
+  }
+  
+  return errors;
+};
 
-  // ✅ TAMBAH FUNCTION BARU - Submit dengan validasi + duplicate check
-  const handleSubmitWithValidation = async () => {
-    // Sync semua nilai dari DOM ke React state
-    const supervisorValue = supervisorInputRef.current?.value || '';
-    const examinerValue = examinerInputRef.current?.value || '';
-    const secretaryValue = secretaryInputRef.current?.value || '';
-    const titleValue = titleInputRef.current?.value || '';
+// ✅ TAMBAH FUNCTION BARU - Submit dengan validasi + duplicate check
+const handleSubmitWithValidation = async () => {
+  // Sync semua nilai dari DOM ke React state
+  const supervisorValue = supervisorInputRef.current?.value || '';
+  const examinerValue = examinerInputRef.current?.value || '';
+  const secretaryValue = secretaryInputRef.current?.value || '';
+  const titleValue = titleInputRef.current?.value || '';
+  
+  if (supervisorValue) form.setValue('supervisor', supervisorValue);
+  if (examinerValue) form.setValue('examiner', examinerValue);
+  if (secretaryValue) form.setValue('secretary', secretaryValue);
+  if (titleValue) form.setValue('title', titleValue);
+  
+  // Sync student data
+  const nimValue = studentInputRef.current?.value || '';
+  const nameValue = studentNameRef.current?.value || '';
+  
+  if (nimValue && nimValue !== formData.student_nim) {
+    setFormData(prev => ({ ...prev, student_nim: nimValue }));
+  }
+  if (nameValue && nameValue !== formData.student_name) {
+    setFormData(prev => ({ ...prev, student_name: nameValue }));
+  }
+  
+  // Wait for state updates
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
+  // Validate all fields
+  const validationErrors = validateAllFields();
+  
+  if (validationErrors.length > 0) {
+    // Show detailed error message
+    const errorMessage = getText(
+      `Please complete the following fields:\n• ${validationErrors.join('\n• ')}`,
+      `Silakan lengkapi field berikut:\n• ${validationErrors.join('\n• ')}`
+    );
     
-    if (supervisorValue) form.setValue('supervisor', supervisorValue);
-    if (examinerValue) form.setValue('examiner', examinerValue);
-    if (secretaryValue) form.setValue('secretary', secretaryValue);
-    if (titleValue) form.setValue('title', titleValue);
+    alert.error(errorMessage);
     
-    // Sync student data
-    const nimValue = studentInputRef.current?.value || '';
-    const nameValue = studentNameRef.current?.value || '';
-    
-    if (nimValue && nimValue !== formData.student_nim) {
-      setFormData(prev => ({ ...prev, student_nim: nimValue }));
+    // Navigate to first incomplete step
+    if (!formData.student_nim || !formData.student_name || !formData.study_program_id) {
+      setCurrentStep(1);
+    } else if (!form.getValues('date') || !form.getValues('start_time') || !form.getValues('end_time')) {
+      setCurrentStep(2);
+    } else {
+      setCurrentStep(3);
     }
-    if (nameValue && nameValue !== formData.student_name) {
-      setFormData(prev => ({ ...prev, student_name: nameValue }));
-    }
     
-    // Wait for state updates
-    await new Promise(resolve => setTimeout(resolve, 100));
+    return;
+  }
+  
+  // ✅ NEW: Final duplicate check before submit
+  const existingSession = await checkDuplicateStudent(form.getValues('student_id'), nimValue);
+  if (existingSession) {
+    const existingDate = format(parseISO(existingSession.date), 'EEEE, dd MMMM yyyy');
+    const existingTime = `${existingSession.start_time} - ${existingSession.end_time}`;
     
-    // Validate all fields
-    const validationErrors = validateAllFields();
+    alert.error(
+      getText(
+        `⚠️ Duplicate Student Found!\n\nStudent ${nameValue} (${nimValue}) already has a scheduled session:\n📅 Date: ${existingDate}\n⏰ Time: ${existingTime}\n🏢 Room: ${existingSession.room?.name || 'Unknown'}\n\nPlease select a different student or edit the existing session.`,
+        `⚠️ Mahasiswa Duplikat Ditemukan!\n\nMahasiswa ${nameValue} (${nimValue}) sudah memiliki jadwal sidang:\n📅 Tanggal: ${existingDate}\n⏰ Waktu: ${existingTime}\n🏢 Ruangan: ${existingSession.room?.name || 'Tidak diketahui'}\n\nSilakan pilih mahasiswa lain atau edit jadwal yang sudah ada.`
+      )
+    );
+    setCurrentStep(1); // Navigate back to student selection
+    return;
+  }
+  
+  // If all validation passes, submit the form
+  form.handleSubmit(handleSubmit)();
+};
+  // ✅ StudentInformationStep
+  const StudentInformationStep = () => {
+    const dropdownRef = useRef(null);
+    const programDisplayRef = useRef(null);
+    const programDropdownRef = useRef(null);
     
-    if (validationErrors.length > 0) {
-      // Show detailed error message
-      const errorMessage = getText(
-        `Please complete the following fields:\n• ${validationErrors.join('\n• ')}`,
-        `Silakan lengkapi field berikut:\n• ${validationErrors.join('\n• ')}`
-      );
-      
-      alert.error(errorMessage);
-      
-      // Navigate to first incomplete step
-      if (!formData.student_nim || !formData.student_name || !formData.study_program_id) {
-        setCurrentStep(1);
-      } else if (!form.getValues('date') || !form.getValues('start_time') || !form.getValues('end_time')) {
-        setCurrentStep(2);
-      } else {
-        setCurrentStep(3);
+    const localData = useRef({
+      studentSearch: '',
+      studentName: '',
+      studentNim: '',
+      studyProgramId: '',
+      selectedProgramDisplay: ''
+    });
+
+    const updateParentFormData = (field, value) => {
+      localData.current[field] = value;
+    };
+
+    const syncToParentForm = () => {
+      setFormData(prev => ({
+        ...prev,
+        student_name: localData.current.studentName,
+        student_nim: localData.current.studentNim,
+        study_program_id: localData.current.studyProgramId
+      }));
+    };
+
+    const showStudentDropdown = (searchTerm) => {
+      if (!searchTerm.trim()) {
+        hideStudentDropdown();
+        return;
       }
-      
-      return;
-    }
-    
-    // ✅ NEW: Final duplicate check before submit
-    const existingSession = await checkDuplicateStudent(form.getValues('student_id'), nimValue);
-    if (existingSession) {
-      const existingDate = format(parseISO(existingSession.date), 'EEEE, dd MMMM yyyy');
-      const existingTime = `${existingSession.start_time} - ${existingSession.end_time}`;
-      
-      alert.error(
-        getText(
-          `⚠️ Duplicate Student Found!\n\nStudent ${nameValue} (${nimValue}) already has a scheduled session:\n📅 Date: ${existingDate}\n⏰ Time: ${existingTime}\n🏢 Room: ${existingSession.room?.name || 'Unknown'}\n\nPlease select a different student or edit the existing session.`,
-          `⚠️ Mahasiswa Duplikat Ditemukan!\n\nMahasiswa ${nameValue} (${nimValue}) sudah memiliki jadwal sidang:\n📅 Tanggal: ${existingDate}\n⏰ Waktu: ${existingTime}\n🏢 Ruangan: ${existingSession.room?.name || 'Tidak diketahui'}\n\nSilakan pilih mahasiswa lain atau edit jadwal yang sudah ada.`
+
+      const filteredStudents = students.filter(student => 
+        student && 
+        student.identity_number && 
+        student.full_name &&
+        (
+          student.identity_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          student.full_name.toLowerCase().includes(searchTerm.toLowerCase())
         )
       );
-      setCurrentStep(1); // Navigate back to student selection
-      return;
-    }
-    
-    // If all validation passes, submit the form
-    form.handleSubmit(handleSubmit)();
-  };
 
-  // Rest of the component implementation...
-  // (StudentInformationStep, ScheduleInformationStep, RoomAndDetailsStep, etc.)
-  // These would be implemented similar to the original but with enhanced room filtering
+      if (filteredStudents.length === 0) {
+        hideStudentDropdown();
+        return;
+      }
 
-  if (loading) {
+      const dropdownHTML = `
+        <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+          ${filteredStudents.map(student => `
+            <div 
+              class="dropdown-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+              data-student-id="${student.id}"
+              data-student-nim="${student.identity_number}"
+              data-student-name="${student.full_name}"
+              data-program-id="${student.study_program_id || ''}"
+            >
+              <div class="font-semibold text-gray-800">${student.identity_number}</div>
+              <div class="text-sm text-gray-600">${student.full_name}</div>
+              ${student.study_program ? `<div class="text-xs text-gray-500">${student.study_program.name}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      `;
+
+      if (dropdownRef.current) {
+        dropdownRef.current.innerHTML = dropdownHTML;
+        dropdownRef.current.style.display = 'block';
+        
+        dropdownRef.current.querySelectorAll('.dropdown-item').forEach(item => {
+          item.addEventListener('mousedown', (e) => e.preventDefault());
+          item.addEventListener('click', (e) => {
+            const studentId = e.currentTarget.dataset.studentId;
+            const studentNim = e.currentTarget.dataset.studentNim;
+            const studentName = e.currentTarget.dataset.studentName;
+            const programId = e.currentTarget.dataset.programId;
+            
+            studentInputRef.current.value = studentNim;
+            studentNameRef.current.value = studentName;
+            
+            localData.current.studentNim = studentNim;
+            localData.current.studentName = studentName;
+            localData.current.studyProgramId = programId;
+            
+            form.setValue('student_id', studentId);
+            syncToParentForm();
+            
+            if (programId) {
+              const program = studyPrograms.find(p => p.id === programId);
+              if (program) {
+                const display = `${program.name} (${program.code})`;
+                localData.current.selectedProgramDisplay = display;
+                if (programDisplayRef.current) {
+                  programDisplayRef.current.value = display;
+                }
+              }
+            }
+            
+            hideStudentDropdown();
+            studentInputRef.current.focus();
+          });
+        });
+      }
+    };
+
+    const hideStudentDropdown = () => {
+      if (dropdownRef.current) {
+        dropdownRef.current.style.display = 'none';
+      }
+    };
+
+    const showProgramDropdown = () => {
+      const dropdownHTML = `
+        <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
+          <div class="p-3 border-b border-gray-100">
+            <input
+              type="text"
+              placeholder="${getText("Search programs...", "Cari program studi...")}"
+              class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              id="program-search-input"
+              autocomplete="off"
+            />
+          </div>
+          <div class="max-h-60 overflow-y-auto" id="program-list">
+            ${studyPrograms.map(program => `
+              <div 
+                class="program-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                data-program-id="${program.id}"
+                data-program-name="${program.name}"
+                data-program-code="${program.code || ''}"
+              >
+                <div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+
+      if (programDropdownRef.current) {
+        programDropdownRef.current.innerHTML = dropdownHTML;
+        programDropdownRef.current.style.display = 'block';
+        
+        const searchInput = programDropdownRef.current.querySelector('#program-search-input');
+        const programList = programDropdownRef.current.querySelector('#program-list');
+        
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            const filteredPrograms = studyPrograms.filter(program =>
+              program.name.toLowerCase().includes(searchTerm) ||
+              (program.code && program.code.toLowerCase().includes(searchTerm))
+            );
+            
+            programList.innerHTML = filteredPrograms.map(program => `
+              <div 
+                class="program-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                data-program-id="${program.id}"
+                data-program-name="${program.name}"
+                data-program-code="${program.code || ''}"
+              >
+                <div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div>
+              </div>
+            `).join('');
+            
+            addProgramListeners();
+          });
+        }
+        
+        addProgramListeners();
+      }
+    };
+
+    const addProgramListeners = () => {
+      programDropdownRef.current?.querySelectorAll('.program-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+          const programId = e.currentTarget.dataset.programId;
+          const programName = e.currentTarget.dataset.programName;
+          const programCode = e.currentTarget.dataset.programCode;
+          
+          const display = `${programName} (${programCode})`;
+          localData.current.selectedProgramDisplay = display;
+          localData.current.studyProgramId = programId;
+          
+          if (programDisplayRef.current) {
+            programDisplayRef.current.value = display;
+          }
+          
+          syncToParentForm();
+          hideProgramDropdown();
+        });
+      });
+    };
+
+    const hideProgramDropdown = () => {
+      if (programDropdownRef.current) {
+        programDropdownRef.current.style.display = 'none';
+      }
+    };
+
+    useEffect(() => {
+      if (formData.student_nim && studentInputRef.current && !localData.current.studentNim) {
+        studentInputRef.current.value = formData.student_nim;
+        localData.current.studentNim = formData.student_nim;
+      }
+      
+      if (formData.student_name && studentNameRef.current && !localData.current.studentName) {
+        studentNameRef.current.value = formData.student_name;
+        localData.current.studentName = formData.student_name;
+      }
+      
+      if (formData.study_program_id && !localData.current.studyProgramId) {
+        const selectedProgram = studyPrograms.find(sp => sp.id === formData.study_program_id);
+        if (selectedProgram && programDisplayRef.current) {
+          const display = `${selectedProgram.name} (${selectedProgram.code})`;
+          programDisplayRef.current.value = display;
+          localData.current.selectedProgramDisplay = display;
+          localData.current.studyProgramId = formData.study_program_id;
+        }
+      }
+    }, []);
+
     return (
-      <div className="flex justify-center items-center h-64">
-        <RefreshCw className="animate-spin h-8 w-8 text-blue-600" />
+      <div className="space-y-4 md:space-y-6">
+        <div className="text-center mb-4 md:mb-8">
+          <h3 className="text-lg md:text-2xl font-bold text-gray-900 mb-2">
+            {getText('Student Information', 'Informasi Mahasiswa')}
+          </h3>
+          <p className="text-sm md:text-base text-gray-600">
+            {getText('Please select or enter student details for the examination', 'Silakan pilih atau masukkan detail mahasiswa untuk sidang')}
+          </p>
+        </div>
+        
+        <div className="space-y-4 md:grid md:grid-cols-1 lg:grid-cols-3 md:gap-6 md:space-y-0">
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {getText("Student NIM", "NIM Mahasiswa")} *
+            </label>
+            <div className="relative">
+              <input
+                ref={studentInputRef}
+                type="text"
+                placeholder={getText("Search student by NIM or name...", "Cari mahasiswa berdasarkan NIM atau nama...")}
+                onInput={(e) => {
+                  localData.current.studentNim = e.target.value;
+                  showStudentDropdown(e.target.value);
+                }}
+                onFocus={(e) => {
+                  showStudentDropdown(e.target.value);
+                }}
+                onBlur={() => {
+                  syncToParentForm();
+                  setTimeout(() => hideStudentDropdown(), 150);
+                }}
+                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                autoComplete="off"
+              />
+              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+              <div ref={dropdownRef} style={{ display: 'none' }}></div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {getText("Student Name", "Nama Mahasiswa")} *
+            </label>
+            <input
+              ref={studentNameRef}
+              type="text"
+              placeholder={getText("Enter student name...", "Masukkan nama mahasiswa...")}
+              onInput={(e) => {
+                localData.current.studentName = e.target.value;
+              }}
+              onBlur={() => {
+                syncToParentForm();
+              }}
+              className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
+              autoComplete="off"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {getText("Study Program", "Program Studi")} *
+            </label>
+            <div className="relative">
+              <input
+                ref={programDisplayRef}
+                type="text"
+                readOnly
+                placeholder={getText("Click to select program...", "Klik untuk pilih program...")}
+                onClick={showProgramDropdown}
+                className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer bg-white"
+              />
+             <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+              <div ref={programDropdownRef} style={{ display: 'none' }}></div>
+            </div>
+          </div>
+        </div>
+        
+        {formData.student_nim && !form.getValues('student_id') && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg md:rounded-xl p-3 md:p-4">
+            <div className="flex items-start space-x-2 md:space-x-3">
+              <User className="h-4 w-4 md:h-5 md:w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="text-xs md:text-sm text-blue-800">
+                <p className="font-semibold">
+                  {getText('New Student Registration', 'Pendaftaran Mahasiswa Baru')}
+                </p>
+                <p className="mt-1">
+                  {getText('Student not found in database. A new student account will be automatically created when you save this session.', 'Mahasiswa tidak ditemukan di database. Akun mahasiswa baru akan otomatis dibuat saat Anda menyimpan jadwal sidang ini.')}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
-  }
+  };
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center space-x-3">
-              <UserCheck className="h-8 w-8" />
-              <span>{getText("Session Schedule", "Jadwal Sidang")}</span>
-            </h1>
-            <p className="mt-2 opacity-90">{getText("Manage final examination sessions with enhanced room filtering", "Kelola jadwal sidang akhir dengan filtering ruangan yang ditingkatkan")}</p>
-          </div>
-          <div className="hidden md:block text-right">
-            <div className="text-2xl font-bold">{sessions.length}</div>
-            <div className="text-sm opacity-80">{getText("Total Sessions", "Total Sidang")}</div>
-          </div>
+  // ✅ ScheduleInformationStep
+  const ScheduleInformationStep = () => (
+    <div className="space-y-4 md:space-y-6">
+      <div className="text-center mb-4 md:mb-6">
+        <h3 className="text-lg md:text-2xl font-bold text-gray-900 mb-2">
+          {getText('When will the examination be?', 'Kapan sidang akan dilaksanakan?')}
+        </h3>
+        <p className="text-sm md:text-base text-gray-600">
+          {getText('Please set the date and time for the examination', 'Silakan tentukan tanggal dan waktu sidang')}
+        </p>
+      </div>
+      
+      <div className="space-y-4 md:grid md:grid-cols-3 md:gap-6 md:space-y-0 max-w-2xl mx-auto">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {getText("Date", "Tanggal")} *
+          </label>
+         <input
+            {...form.register('date')}
+            type="date"
+            className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
+          />
+          {form.formState.errors.date && (
+            <p className="mt-1 text-xs md:text-sm text-red-600">{form.formState.errors.date.message}</p>
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {getText("Start Time", "Waktu Mulai")} *
+          </label>
+          <input
+            {...form.register('start_time')}
+            type="time"
+            className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
+          />
+          {form.formState.errors.start_time && (
+            <p className="mt-1 text-xs md:text-sm text-red-600">{form.formState.errors.start_time.message}</p>
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {getText("End Time", "Waktu Selesai")} *
+          </label>
+          <input
+            {...form.register('end_time')}
+            type="time"
+            className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
+          />
+          {form.formState.errors.end_time && (
+            <p className="mt-1 text-xs md:text-sm text-red-600">{form.formState.errors.end_time.message}</p>
+          )}
         </div>
       </div>
 
-      {/* ✅ ENHANCED: Search Section with room availability info */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0 sm:space-x-4">
-          <div className="w-full sm:w-96">
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                type="text"
-                placeholder={getText("Search by student name or NIM...", "Cari berdasarkan nama atau NIM mahasiswa...")}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
-              />
-            </div>
-          </div>
-          
-          <div className="flex items-center space-x-3 w-full sm:w-auto">
-            <button
-              onClick={() => {
-                setShowCalendarModal(true);
-                setShowMobileDetails(false);
-              }}
-              className="flex items-center space-x-2 px-4 md:px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-200 shadow-lg hover:shadow-xl"
-            >
-              <Calendar className="h-5 w-5" />
-              <span className="hidden sm:inline">{getText("View Calendar", "Lihat Kalender")}</span>
-            </button>
-
-            {/* ✅ Print Button */}
-            <button
-              onClick={() => {
-                setShowPrintModal(true);
-                printForm.reset();
-              }}
-              className="flex items-center space-x-2 px-4 md:px-6 py-3 text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 shadow-sm hover:shadow-md"
-            >
-              <Printer className="h-5 w-5" />
-              <span className="hidden sm:inline">{getText("Print", "Cetak")}</span>
-            </button>
-            
-            {profile?.role === 'department_admin' && (
-              <button
-                onClick={() => {
-                  resetForm();
-                  setShowModal(true);
-                }}
-                className="flex items-center space-x-2 px-4 md:px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl"
-              >
-                <Plus className="h-5 w-5" />
-                <span className="hidden sm:inline">{getText("Create Session", "Buat Sidang")}</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* ✅ Room Availability Status Bar */}
-        {checkingRooms && (
-          <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <div className="flex items-center space-x-2">
-              <RefreshCw className="h-4 w-4 text-blue-600 animate-spin" />
-              <span className="text-sm text-blue-800 font-medium">
-                {getText('Checking room availability...', 'Memeriksa ketersediaan ruangan...')}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {watchDate && watchStartTime && watchEndTime && !checkingRooms && (
-          <div className="mt-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
-                <span className="text-sm text-green-800 font-medium">
-                  {getText('Room availability checked', 'Ketersediaan ruangan sudah diperiksa')}
-                </span>
-              </div>
-              <div className="text-sm text-green-700">
-                {availableRooms.length} / {rooms.length} {getText('available', 'tersedia')}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Sessions Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">{getText("Registered Sessions", "Jadwal Sidang Terdaftar")}</h3>
-            {searchTerm && (
-              <div className="text-sm text-gray-500">
-                {getText(`Found ${filteredSessions.length} of ${sessions.length} sessions`, `Ditemukan ${filteredSessions.length} dari ${sessions.length} sidang`)}
-                </div>
-            )}
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  {getText("Student", "Mahasiswa")}
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  {getText("Schedule", "Jadwal")}
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  {getText("Room", "Ruangan")}
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  {getText("Committee", "Panitia")}
-                </th>
-                {profile?.role === 'department_admin' && (
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {getText("Actions", "Aksi")}
-                  </th>
-                )}
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredSessions.length === 0 ? (
-                <tr>
-                  <td colSpan={profile?.role === 'department_admin' ? 5 : 4} className="px-6 py-12 text-center">
-                    <div className="text-gray-500">
-                      <UserCheck className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      {searchTerm ? (
-                        <>
-                          <p className="text-lg font-medium mb-2">{getText("No matching sessions found", "Tidak ada jadwal sidang yang cocok")}</p>
-                          <p>{getText(`No sessions found for "${searchTerm}"`, `Tidak ada sidang ditemukan untuk "${searchTerm}"`)}</p>
-                          <button 
-                            onClick={() => setSearchTerm('')}
-                            className="mt-2 text-blue-600 hover:text-blue-800 underline"
-                          >
-                            {getText("Clear search", "Hapus pencarian")}
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-lg font-medium mb-2">{getText("No sessions found", "Tidak ada jadwal sidang ditemukan")}</p>
-                          <p>{getText("Create your first examination session", "Buat jadwal sidang pertama Anda")}</p>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredSessions.map((session: any) => (
-                  <tr key={session.id} className="hover:bg-gray-50 transition-colors duration-200">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
-                          <User className="h-5 w-5 text-white" />
-                        </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-semibold text-gray-900">{session.student?.full_name}</div>
-                          <div className="text-sm text-gray-600 font-mono">{session.student?.identity_number}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{format(parseISO(session.date), 'MMM d, yyyy')}</div>
-                        <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full inline-block mt-1">
-                          {session.start_time} - {session.end_time}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="h-8 w-8 bg-gradient-to-r from-green-500 to-teal-500 rounded-lg flex items-center justify-center">
-                          <MapPin className="h-4 w-4 text-white" />
-                        </div>
-                        <div className="ml-3">
-                          <div className="text-sm font-medium text-gray-900">{session.room?.name || 'N/A'}</div>
-                          <div className="text-sm text-gray-600">{session.room?.code || 'N/A'}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-xs space-y-1">
-                        <div><span className="font-medium text-blue-600">{getText('Supervisor', 'Pembimbing')}:</span> {session.supervisor}</div>
-                        <div><span className="font-medium text-green-600">{getText('Examiner', 'Penguji')}:</span> {session.examiner}</div>
-                        <div><span className="font-medium text-purple-600">{getText('Secretary', 'Sekretaris')}:</span> {session.secretary}</div>
-                      </div>
-                    </td>
-                    {profile?.role === 'department_admin' && (
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end space-x-2">
-                          <button
-                            onClick={() => handleEdit(session)}
-                            className="text-blue-600 hover:text-blue-900 p-2 rounded-lg hover:bg-blue-50 transition-all duration-200"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteClick(session)}
-                            className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* ✅ ENHANCED: Progressive Form Modal dengan Room Filtering */}
-      {showModal && profile?.role === 'department_admin' && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 md:p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowModal(false);
-              resetForm();
-            }
-          }}
-        >
-          <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl flex flex-col overflow-hidden" 
-            style={{ 
-              height: 'calc(100vh - 16px)',
-              maxHeight: '95vh'
-            }}
-          >
-            
-            <div className="md:hidden bg-white border-b border-gray-200 p-3 flex-shrink-0">
-              <MobileProgressIndicator />
-            </div>
-            
-            <div className="flex flex-1 min-h-0">
-              <div className="hidden md:block flex-shrink-0">
-                <ProgressSidebar />
-              </div>
-              
-              <div className="flex-1 flex flex-col min-w-0">
-                <div className="flex items-center justify-between p-3 md:p-6 border-b border-gray-200 bg-white flex-shrink-0">
-                  <h3 className="text-base md:text-xl font-bold text-gray-900 flex items-center space-x-2">
-                    <UserCheck className="h-4 w-4 md:h-6 md:w-6 text-blue-600" />
-                    <span className="hidden sm:inline">
-                      {editingSession ? getText('Edit Session', 'Edit Sidang') : getText('Create Session', 'Buat Sidang')}
-                    </span>
-                    <span className="sm:hidden text-sm">
-                      {editingSession ? getText('Edit', 'Edit') : getText('Create', 'Buat')}
-                    </span>
-                  </h3>
-                  <button
-                    onClick={() => {
-                      setShowModal(false);
-                      resetForm();
-                    }}
-                    className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl flex-shrink-0"
-                  >
-                    <X className="h-4 w-4 md:h-5 md:w-5" />
-                  </button>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto p-3 md:p-8 bg-gray-50 min-h-0">
-                  <div className="max-w-4xl mx-auto">
-                    {/* Step 3: Room & Details dengan Enhanced Room Dropdown */}
-                    {currentStep === 3 && (
-                      <div className="space-y-6">
-                        <div className="text-center mb-6">
-                          <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-2">
-                            {getText('Room & Examination Details', 'Ruangan & Detail Sidang')}
-                          </h3>
-                          <p className="text-sm md:text-base text-gray-600">
-                            {getText('Complete the examination setup with room, title and committee', 'Lengkapi pengaturan sidang dengan ruangan, judul dan panitia')}
-                          </p>
-                        </div>
-
-                        {/* ✅ ENHANCED: Room Selection with Advanced Filtering */}
-                        <div className="space-y-3">
-                          <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
-                            <Building className="h-4 w-4 text-blue-500" />
-                            <span>{getText('Room', 'Ruangan')}</span>
-                          </h4>
-                          
-                          {/* ✅ Room availability info banner */}
-                          {watchDate && watchStartTime && watchEndTime && (
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center space-x-2">
-                                  <CheckCircle2 className="h-4 w-4 text-blue-600" />
-                                  <span className="text-sm text-blue-800 font-medium">
-                                    {getText('Showing rooms available for', 'Menampilkan ruangan tersedia untuk')}:
-                                  </span>
-                                </div>
-                                <div className="text-sm text-blue-700 font-mono">
-                                  {format(parseISO(watchDate), 'MMM dd, yyyy')} • {watchStartTime} - {watchEndTime}
-                                </div>
-                              </div>
-                              <div className="mt-2 flex items-center space-x-4 text-xs text-blue-600">
-                                <span>✅ {availableRooms.length} {getText('available', 'tersedia')}</span>
-                                <span>❌ {rooms.length - availableRooms.length} {getText('conflicted', 'bentrok')}</span>
-                                <span>📊 {rooms.length} {getText('total', 'total')}</span>
-                              </div>
-                            </div>
-                          )}
-
-                          <EnhancedRoomDropdown />
-                        </div>
-
-                        {/* Title Section */}
-                        <div className="space-y-3">
-                          <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
-                            <BookOpen className="h-4 w-4 text-blue-500" />
-                            <span>{getText('Thesis Title', 'Judul Skripsi/Tesis')}</span>
-                          </h4>
-                          <textarea
-                            ref={titleInputRef}
-                            rows={3}
-                            className="w-full px-3 md:px-4 py-2.5 md:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm resize-none"
-                            placeholder={getText("Enter the complete thesis title...", "Masukkan judul lengkap skripsi/tesis...")}
-                            onInput={(e) => {
-                              form.setValue('title', e.target.value);
-                            }}
-                            onBlur={(e) => {
-                              form.setValue('title', e.target.value);
-                            }}
-                          />
-                          {form.formState.errors.title && (
-                            <p className="mt-1 text-xs text-red-600">{form.formState.errors.title.message}</p>
-                          )}
-                        </div>
-
-                        {/* Committee Section */}
-                        <div className="space-y-3">
-                          <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
-                            <Users className="h-4 w-4 text-blue-500" />
-                            <span>{getText('Examination Committee', 'Panitia Sidang')}</span>
-                          </h4>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                {getText("Supervisor", "Pembimbing")} *
-                              </label>
-                              <input
-                                ref={supervisorInputRef}
-                                type="text"
-                                placeholder={getText("Enter supervisor name...", "Masukkan nama pembimbing...")}
-                                onBlur={(e) => {
-                                  form.setValue('supervisor', e.target.value);
-                                }}
-                                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                                autoComplete="off"
-                              />
-                              {form.formState.errors.supervisor && (
-                                <p className="mt-1 text-xs text-red-600">{form.formState.errors.supervisor.message}</p>
-                              )}
-                            </div>
-                            
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                {getText("Secretary", "Sekretaris")} *
-                              </label>
-                              <input
-                                ref={secretaryInputRef}
-                                type="text"
-                                placeholder={getText("Enter secretary name...", "Masukkan nama sekretaris...")}
-                                onBlur={(e) => {
-                                  form.setValue('secretary', e.target.value);
-                                }}
-                                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                                autoComplete="off"
-                              />
-                              {form.formState.errors.secretary && (
-                                <p className="mt-1 text-xs text-red-600">{form.formState.errors.secretary.message}</p>
-                              )}
-                            </div>
-
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                {getText("Examiner", "Penguji")} *
-                              </label>
-                              <input
-                                ref={examinerInputRef}
-                                type="text"
-                                placeholder={getText("Enter examiner name...", "Masukkan nama penguji...")}
-                                onBlur={(e) => {
-                                  form.setValue('examiner', e.target.value);
-                                }}
-                                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                                autoComplete="off"
-                              />
-                              {form.formState.errors.examiner && (
-                                <p className="mt-1 text-xs text-red-600">{form.formState.errors.examiner.message}</p>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Other steps would be rendered here */}
-                    {currentStep !== 3 && (
-                      <div className="text-center py-12">
-                        <p className="text-gray-500">Other form steps would be implemented here...</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                
-                <div className="border-t border-gray-200 p-3 md:p-6 bg-white flex-shrink-0">
-                  <div className="flex flex-col sm:flex-row justify-between items-center space-y-3 sm:space-y-0 sm:space-x-4 max-w-4xl mx-auto">
-                    <div className="flex w-full sm:w-auto space-x-3 sm:space-x-0">
-                      {currentStep > 1 && (
-                        <button
-                          type="button"
-                          onClick={handleStepBack}
-                          className="flex-1 sm:flex-none flex items-center justify-center space-x-2 px-3 md:px-4 py-2 md:py-3 text-gray-600 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 text-sm"
-                        >
-                          <ArrowLeft className="h-4 w-4" />
-                          <span className="hidden sm:inline">{getText('Back', 'Kembali')}</span>
-                          <span className="sm:hidden">Back</span>
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="w-full sm:w-auto">
-                      {currentStep < 3 ? (
-                        <button
-                          type="button"
-                          onClick={() => handleStepComplete(currentStep)}
-                          className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 text-sm"
-                        >
-                          <span>{getText('Continue', 'Lanjutkan')}</span>
-                          <ArrowRight className="h-4 w-4" />
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={handleSubmitWithValidation}
-                          disabled={submitting}
-                          className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
-                        >
-                          {submitting ? (
-                            <>
-                              <RefreshCw className="h-4 w-4 animate-spin" />
-                              <span>{getText('Saving...', 'Menyimpan...')}</span>
-                            </>
-                          ) : (
-                            <>
-                              <Check className="h-4 w-4" />
-                              <span className="hidden sm:inline">
-                                {editingSession ? getText('Update Session', 'Perbarui Sidang') : getText('Create Session', 'Buat Sidang')}
-                              </span>
-                              <span className="sm:hidden">
-                                {editingSession ? getText('Update', 'Perbarui') : getText('Create', 'Buat')}
-                              </span>
-                            </>
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
+     {watchDate && (
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg md:rounded-xl p-3 md:p-4 max-w-md mx-auto">
+          <div className="flex items-center space-x-2 md:space-x-3">
+            <Calendar className="h-4 w-4 md:h-5 md:w-5 text-green-600" />
+            <div className="text-xs md:text-sm text-green-800">
+              <p className="font-semibold">
+                {getText('Selected Date', 'Tanggal Terpilih')}
+              </p>
+              <p className="mt-1">
+                {format(new Date(watchDate), 'EEEE, MMMM d, yyyy')}
+              </p>
             </div>
           </div>
         </div>
       )}
-
-      {/* Calendar Modal */}
-      {showCalendarModal && (
-        <CalendarModal />
-      )}
-
-      {/* Print Modal */}
-      {showPrintModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
-                  <Printer className="h-6 w-6 text-blue-600" />
-                  <span>{getText("Print Session Schedule", "Cetak Jadwal Sidang")}</span>
-                </h3>
-                <button 
-                  onClick={() => setShowPrintModal(false)} 
-                  className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-lg transition-colors" 
-                > 
-                  <X className="h-6 w-6" /> 
-                </button>
-              </div>
-              <form onSubmit={printForm.handleSubmit(handlePrint)} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Study Program", "Program Studi")} *</label>
-                  <Controller 
-                    name="study_program_id" 
-                    control={printForm.control} 
-                    render={({ field }) => { 
-                      const options = studyPrograms.map(p => ({ 
-                        value: p.id, 
-                        label: `${p.name} - ${p.department?.name || 'Unknown Dept'}` 
-                      })); 
-                      const currentValue = options.find(o => o.value === field.value); 
-                      return ( 
-                        <Select 
-                          {...field} 
-                          options={options} 
-                          value={currentValue} 
-                          onChange={option => field.onChange(option ? option.value : '')} 
-                          placeholder={getText("Select study program...", "Pilih program studi...")} 
-                          isClearable 
-                        /> 
-                      )
-                    }} 
-                  />
-                  {printForm.formState.errors.study_program_id && (
-                    <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.study_program_id.message}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Month", "Bulan")} *</label>
-                  <Controller 
-                    name="month" 
-                    control={printForm.control} 
-                    render={({ field }) => { 
-                      const monthOptions = [
-                        { value: '1', label: getText('January', 'Januari') },
-                        { value: '2', label: getText('February', 'Februari') },
-                        { value: '3', label: getText('March', 'Maret') },
-                        { value: '4', label: getText('April', 'April') },
-                        { value: '5', label: getText('May', 'Mei') },
-                        { value: '6', label: getText('June', 'Juni') },
-                        { value: '7', label: getText('July', 'Juli') },
-                        { value: '8', label: getText('August', 'Agustus') },
-                        { value: '9', label: getText('September', 'September') },
-                        { value: '10', label: getText('October', 'Oktober') },
-                        { value: '11', label: getText('November', 'November') },
-                        { value: '12', label: getText('December', 'Desember') }
-                      ];
-                      const currentValue = monthOptions.find(o => o.value === field.value); 
-                      return ( 
-                        <Select 
-                          {...field} 
-                          options={monthOptions} 
-                          value={currentValue} 
-                          onChange={option => field.onChange(option ? option.value : '')} 
-                          placeholder={getText("Select month...", "Pilih bulan...")} 
-                          isClearable 
-                        /> 
-                      )
-                    }} 
-                  />
-                  {printForm.formState.errors.month && (
-                    <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.month.message}</p>
-                  )}
-                </div>
-
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <div className="flex items-center space-x-2">
-                    <Calendar className="h-4 w-4 text-blue-600" />
-                    <span className="text-sm text-blue-800">
-                      {getText(`Printing schedule for year: ${new Date().getFullYear()}`, `Mencetak jadwal untuk tahun: ${new Date().getFullYear()}`)}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex space-x-3 pt-4">
-                  <button 
-                    type="button" 
-                    onClick={() => setShowPrintModal(false)} 
-                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium"
-                  >
-                    {getText("Cancel", "Batal")}
-                  </button>
-                  <button 
-                    type="submit" 
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium flex items-center justify-center space-x-2"
-                  >
-                    <Printer className="h-4 w-4" />
-                    <span>{getText("Generate PDF", "Buat PDF")}</span>
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && <DeleteConfirmationModal />}
     </div>
   );
 
-  // ✅ Helper functions that were missing
-  const resetForm = () => {
-    form.reset({
-      student_id: '',
-      date: format(new Date(), 'yyyy-MM-dd'),
-      start_time: '',
-      end_time: '',
-      room_id: '',
-      title: '',
-      supervisor: '',
-      examiner: '',
-      secretary: '',
-    });
-    setFormData({ student_name: '', student_nim: '', study_program_id: '' });
-    setCurrentStep(1);
-    setCompletedSteps(new Set());
-  };
+  // ✅ RoomAndDetailsStep dengan DOM manipulation
+  const RoomAndDetailsStep = () => {
+    const roomDisplayRef = useRef(null);
 
-  const handleEdit = (session: any) => {
-    setEditingSession(session);
-    
-    form.reset({
-      student_id: session.student_id,
-      date: session.date,
-      start_time: session.start_time,
-      end_time: session.end_time,
-      room_id: session.room_id,
-      title: session.title,
-      supervisor: session.supervisor,
-      examiner: session.examiner,
-      secretary: session.secretary,
+    const dosenData = useRef({
+      supervisorSearch: '',
+      examinerSearch: '',
+      secretarySearch: '',
+      roomSearch: '',
+      selectedRoomDisplay: '',
+      showSupervisorDropdown: false,
+      showExaminerDropdown: false,
+      showSecretaryDropdown: false,
+      showRoomDropdown: false
     });
-    
-    setFormData({
-      student_name: session.student?.full_name || '',
-      student_nim: session.student?.identity_number || '',
-      study_program_id: session.student?.study_program?.id || ''
-    });
-    
-    setShowModal(true);
-  };
 
-  const handleDeleteClick = (session: any) => {
-    setSessionToDelete(session);
-    setShowDeleteModal(true);
-  };
+    const showLecturerDropdown = (type, searchTerm) => {
+      if (!searchTerm.trim()) {
+        hideLecturerDropdown(type);
+        return;
+      }
 
-  const handleConfirmDelete = async () => {
-    if (!sessionToDelete) return;
-    
-    try {
-      setSubmitting(true);
-      const { error } = await supabase.from('final_sessions').delete().eq('id', sessionToDelete.id);
-      if (error) throw error;
+      const filteredLecturers = lecturers.filter(lecturer =>
+        lecturer && 
+        lecturer.full_name &&
+        lecturer.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+
+      if (filteredLecturers.length === 0) {
+        hideLecturerDropdown(type);
+        return;
+      }
+
+      const dropdownHTML = `
+        <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+          ${filteredLecturers.map(lecturer => `
+            <div 
+              class="lecturer-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+              data-lecturer-name="${lecturer.full_name}"
+            >
+              <div class="font-semibold text-gray-800">${lecturer.full_name}</div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+
+      const dropdownContainer = document.querySelector(`#${type}-dropdown`);
+      if (dropdownContainer) {
+        dropdownContainer.innerHTML = dropdownHTML;
+        dropdownContainer.style.display = 'block';
+        
+        dropdownContainer.querySelectorAll('.lecturer-item').forEach(item => {
+          item.addEventListener('mousedown', (e) => e.preventDefault());
+          item.addEventListener('click', (e) => {
+            const lecturerName = e.currentTarget.dataset.lecturerName;
+            
+            const inputRef = type === 'supervisor' ? supervisorInputRef : 
+                            type === 'examiner' ? examinerInputRef : secretaryInputRef;
+            
+            if (inputRef.current) {
+              inputRef.current.value = lecturerName;
+            }
+            
+            form.setValue(type, lecturerName);
+            dosenData.current[`${type}Search`] = lecturerName;
+            
+            hideLecturerDropdown(type);
+            inputRef.current?.focus();
+          });
+        });
+      }
+    };
+
+    const hideLecturerDropdown = (type) => {
+      const dropdownContainer = document.querySelector(`#${type}-dropdown`);
+      if (dropdownContainer) {
+        dropdownContainer.style.display = 'none';
+      }
+    };
+
+    const showRoomDropdown = () => {
+      const dropdownHTML = `
+        <div class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-hidden">
+          <div class="p-3 border-b border-gray-100">
+            <input
+              type="text"
+              placeholder="${getText("Search rooms...", "Cari ruangan...")}"
+              class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              id="room-search-input"
+              autocomplete="off"
+            />
+          </div>
+          <div class="max-h-60 overflow-y-auto" id="room-list">
+            ${availableRooms.map(room => `
+              <div 
+                class="room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                data-room-id="${room.id}"
+                data-room-name="${room.name}"
+                data-room-code="${room.code}"
+              >
+                <div class="font-semibold text-gray-800">${room.name} - ${room.code}</div>
+                <div class="text-sm text-gray-600">Kapasitas: ${room.capacity || 'N/A'}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+
+      const roomDropdownContainer = document.querySelector('#room-dropdown');
+      if (roomDropdownContainer) {
+        roomDropdownContainer.innerHTML = dropdownHTML;
+        roomDropdownContainer.style.display = 'block';
+        
+        const searchInput = roomDropdownContainer.querySelector('#room-search-input');
+        const roomList = roomDropdownContainer.querySelector('#room-list');
+        
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            const filteredRooms = availableRooms.filter(room =>
+              room.name.toLowerCase().includes(searchTerm) ||
+              room.code.toLowerCase().includes(searchTerm)
+            );
+            
+            roomList.innerHTML = filteredRooms.map(room => `
+              <div 
+                class="room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
+                data-room-id="${room.id}"
+                data-room-name="${room.name}"
+                data-room-code="${room.code}"
+              >
+                <div class="font-semibold text-gray-800">${room.name} - ${room.code}</div>
+                <div class="text-sm text-gray-600">Kapasitas: ${room.capacity || 'N/A'}</div>
+              </div>
+            `).join('');
+            
+            addRoomListeners();
+          });
+        }
+        
+        addRoomListeners();
+      }
+    };
+
+    const addRoomListeners = () => {
+      document.querySelectorAll('.room-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+          const roomId = e.currentTarget.dataset.roomId;
+          const roomName = e.currentTarget.dataset.roomName;
+          const roomCode = e.currentTarget.dataset.roomCode;
+          
+          const display = `${roomName} - ${roomCode}`;
+          dosenData.current.selectedRoomDisplay = display;
+          
+          if (roomDisplayRef.current) {
+            roomDisplayRef.current.value = display;
+          }
+          
+          form.setValue('room_id', roomId);
+          hideRoomDropdown();
+        });
+      });
+    };
+
+    const hideRoomDropdown = () => {
+      const roomDropdownContainer = document.querySelector('#room-dropdown');
+      if (roomDropdownContainer) {
+        roomDropdownContainer.style.display = 'none';
+      }
+    };
+
+    useEffect(() => {
+      const supervisorValue = form.getValues('supervisor');
+      if (supervisorValue && supervisorInputRef.current) {
+        supervisorInputRef.current.value = supervisorValue;
+        dosenData.current.supervisorSearch = supervisorValue;
+      }
       
-      alert.success(getText('Session deleted successfully', 'Jadwal sidang berhasil dihapus'));
-      setShowDeleteModal(false);
-      setSessionToDelete(null);
-      fetchSessions();
-    } catch (error) {
-      console.error('Error deleting session:', error);
-      alert.error(error.message || getText('Failed to delete session', 'Gagal menghapus jadwal sidang'));
-    } finally {
-      setSubmitting(false);
+      const examinerValue = form.getValues('examiner');
+      if (examinerValue && examinerInputRef.current) {
+        examinerInputRef.current.value = examinerValue;
+        dosenData.current.examinerSearch = examinerValue;
+      }
+      
+      const secretaryValue = form.getValues('secretary');
+      if (secretaryValue && secretaryInputRef.current) {
+        secretaryInputRef.current.value = secretaryValue;
+        dosenData.current.secretarySearch = secretaryValue;
+      }
+      
+      const roomId = form.getValues('room_id');
+      if (roomId && roomDisplayRef.current) {
+        const room = availableRooms.find(r => r.id === roomId);
+        if (room) {
+          const display = `${room.name} - ${room.code}`;
+          roomDisplayRef.current.value = display;
+          dosenData.current.selectedRoomDisplay = display;
+        }
+      }
+      
+      const titleValue = form.getValues('title');
+      if (titleValue && titleInputRef.current) {
+        titleInputRef.current.value = titleValue;
+      }
+    }, [currentStep]);
+
+    return (
+      <div className="space-y-6">
+        <div className="text-center mb-6">
+          <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-2">
+            {getText('Room & Examination Details', 'Ruangan & Detail Sidang')}
+          </h3>
+          <p className="text-sm md:text-base text-gray-600">
+            {getText('Complete the examination setup with room, title and committee', 'Lengkapi pengaturan sidang dengan ruangan, judul dan panitia')}
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
+            <Building className="h-4 w-4 text-blue-500" />
+            <span>{getText('Room', 'Ruangan')}</span>
+          </h4>
+          <div className="relative">
+            <input
+              ref={roomDisplayRef}
+              type="text"
+              readOnly
+              placeholder={getText("Click to select room...", "Klik untuk pilih ruangan...")}
+              onClick={showRoomDropdown}
+              className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer bg-white"
+            />
+            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <div id="room-dropdown" style={{ display: 'none' }}></div>
+          </div>
+          
+          {form.formState.errors.room_id && (
+            <p className="mt-1 text-xs text-red-600">{form.formState.errors.room_id.message}</p>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
+            <BookOpen className="h-4 w-4 text-blue-500" />
+            <span>{getText('Thesis Title', 'Judul Skripsi/Tesis')}</span>
+          </h4>
+          <textarea
+            ref={titleInputRef}
+            rows={3}
+            className="w-full px-3 md:px-4 py-2.5 md:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm resize-none"
+            placeholder={getText("Enter the complete thesis title...", "Masukkan judul lengkap skripsi/tesis...")}
+            onInput={(e) => {
+              form.setValue('title', e.target.value);
+            }}
+            onBlur={(e) => {
+              form.setValue('title', e.target.value);
+            }}
+          />
+          {form.formState.errors.title && (
+            <p className="mt-1 text-xs text-red-600">{form.formState.errors.title.message}</p>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <h4 className="text-base font-semibold text-gray-800 flex items-center space-x-2">
+            <Users className="h-4 w-4 text-blue-500" />
+            <span>{getText('Examination Committee', 'Panitia Sidang')}</span>
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {getText("Supervisor", "Pembimbing")} *
+              </label>
+              <div className="relative">
+                <input
+                  ref={supervisorInputRef}
+                  type="text"
+                  placeholder={getText("Search supervisor...", "Cari pembimbing...")}
+                  onInput={(e) => {
+                    dosenData.current.supervisorSearch = e.target.value;
+                    showLecturerDropdown('supervisor', e.target.value);
+                  }}
+                  onFocus={(e) => {
+                    showLecturerDropdown('supervisor', e.target.value);
+                  }}
+                  onBlur={(e) => {
+                    form.setValue('supervisor', e.target.value);
+                    setTimeout(() => hideLecturerDropdown('supervisor'), 150);
+                  }}
+                  className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                  autoComplete="off"
+                />
+                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <div id="supervisor-dropdown" style={{ display: 'none' }}></div>
+              </div>
+              {form.formState.errors.supervisor && (
+                <p className="mt-1 text-xs text-red-600">{form.formState.errors.supervisor.message}</p>
+              )}
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {getText("Secretary", "Sekretaris")} *
+              </label>
+              <div className="relative">
+                <input
+                  ref={secretaryInputRef}
+                  type="text"
+                  placeholder={getText("Search secretary...", "Cari sekretaris...")}
+                  onInput={(e) => {
+                    dosenData.current.secretarySearch = e.target.value;
+                    showLecturerDropdown('secretary', e.target.value);
+                  }}
+                  onFocus={(e) => {
+                    showLecturerDropdown('secretary', e.target.value);
+                  }}
+                  onBlur={(e) => {
+                    form.setValue('secretary', e.target.value);
+                    setTimeout(() => hideLecturerDropdown('secretary'), 150);
+                  }}
+                  className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                  autoComplete="off"
+                />
+                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <div id="secretary-dropdown" style={{ display: 'none' }}></div>
+              </div>
+              {form.formState.errors.secretary && (
+                <p className="mt-1 text-xs text-red-600">{form.formState.errors.secretary.message}</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {getText("Examiner", "Penguji")} *
+              </label>
+              <div className="relative">
+                <input
+                  ref={examinerInputRef}
+                  type="text"
+                  placeholder={getText("Search examiner...", "Cari penguji...")}
+                  onInput={(e) => {
+                    dosenData.current.examinerSearch = e.target.value;
+                    showLecturerDropdown('examiner', e.target.value);
+                  }}
+                  onFocus={(e) => {
+                    showLecturerDropdown('examiner', e.target.value);
+                  }}
+                  onBlur={(e) => {
+                    form.setValue('examiner', e.target.value);
+                    setTimeout(() => hideLecturerDropdown('examiner'), 150);
+                  }}
+                  className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                  autoComplete="off"
+                />
+                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <div id="examiner-dropdown" style={{ display: 'none' }}></div>
+              </div>
+              {form.formState.errors.examiner && (
+                <p className="mt-1 text-xs text-red-600">{form.formState.errors.examiner.message}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ✅ ProgressSidebar
+  const ProgressSidebar = () => (
+    <div className="w-72 bg-white border-r-2 border-blue-100 p-6">
+      <div className="mb-8">
+        <h3 className="text-lg font-bold text-gray-900">Session Creation</h3>
+        <p className="text-sm text-gray-500 mt-1">Follow the steps below</p>
+      </div>
+
+      <div className="space-y-6">
+        {steps.map((step, index) => {
+          const isCompleted = completedSteps.has(step.id);
+          const isCurrent = currentStep === step.id;
+          
+          return (
+            <div key={step.id} className="relative flex items-start">
+              {index < steps.length - 1 && (
+                <div className={`absolute left-6 top-12 w-0.5 h-16 ${
+                  isCompleted ? 'bg-blue-500' : 'bg-gray-200'
+                }`} />
+              )}
+              
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 relative z-10 ${
+                isCompleted
+                  ? 'bg-blue-500 border-blue-500 text-white'
+                  : isCurrent
+                  ? 'bg-white border-blue-500 text-blue-500 ring-4 ring-blue-100'
+                  : 'bg-white border-gray-300 text-gray-400'
+              }`}>
+                {isCompleted ? <Check className="h-5 w-5" /> : <step.icon className="h-5 w-5" />}
+              </div>
+              
+              <div className="ml-4">
+                <div className={`text-sm font-medium ${isCurrent || isCompleted ? 'text-blue-600' : 'text-gray-400'}`}>
+                  Step {step.id}
+                </div>
+                <div className={`font-semibold ${isCurrent || isCompleted ? 'text-gray-900' : 'text-gray-500'}`}>
+                  {step.title}
+                </div>
+                <div className="text-sm text-gray-500 mt-1">{step.description}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const renderCurrentStep = () => {
+    switch (currentStep) {
+      case 1:
+        return <StudentInformationStep />;
+      case 2:
+        return <ScheduleInformationStep />;
+      case 3:
+        return <RoomAndDetailsStep />;
+      default:
+        return null;
     }
   };
 
-  const handleCancelDelete = () => {
-    setShowDeleteModal(false);
-    setSessionToDelete(null);
-  };
-
+  // ✅ handleSubmit menggunakan BookRoom pattern
   const handleSubmit = async (data: SessionFormData) => {
     try {
       setSubmitting(true);
@@ -2422,54 +2312,80 @@ const SessionScheduleProgressive = () => {
     }
   };
 
-  // ✅ Progress Sidebar Component
-  const ProgressSidebar = () => (
-    <div className="w-72 bg-white border-r-2 border-blue-100 p-6">
-      <div className="mb-8">
-        <h3 className="text-lg font-bold text-gray-900">Session Creation</h3>
-        <p className="text-sm text-gray-500 mt-1">Follow the steps below</p>
-      </div>
+  // ✅ resetForm
+  const resetForm = () => {
+    form.reset({
+      student_id: '',
+      date: format(new Date(), 'yyyy-MM-dd'),
+      start_time: '',
+      end_time: '',
+      room_id: '',
+      title: '',
+      supervisor: '',
+      examiner: '',
+      secretary: '',
+    });
+    setFormData({ student_name: '', student_nim: '', study_program_id: '' });
+    setCurrentStep(1);
+    setCompletedSteps(new Set());
+  };
 
-      <div className="space-y-6">
-        {steps.map((step, index) => {
-          const isCompleted = completedSteps.has(step.id);
-          const isCurrent = currentStep === step.id;
-          
-          return (
-            <div key={step.id} className="relative flex items-start">
-              {index < steps.length - 1 && (
-                <div className={`absolute left-6 top-12 w-0.5 h-16 ${
-                  isCompleted ? 'bg-blue-500' : 'bg-gray-200'
-                }`} />
-              )}
-              
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 relative z-10 ${
-                isCompleted
-                  ? 'bg-blue-500 border-blue-500 text-white'
-                  : isCurrent
-                  ? 'bg-white border-blue-500 text-blue-500 ring-4 ring-blue-100'
-                  : 'bg-white border-gray-300 text-gray-400'
-              }`}>
-                {isCompleted ? <Check className="h-5 w-5" /> : <step.icon className="h-5 w-5" />}
-              </div>
-              
-              <div className="ml-4">
-                <div className={`text-sm font-medium ${isCurrent || isCompleted ? 'text-blue-600' : 'text-gray-400'}`}>
-                  Step {step.id}
-                </div>
-                <div className={`font-semibold ${isCurrent || isCompleted ? 'text-gray-900' : 'text-gray-500'}`}>
-                  {step.title}
-                </div>
-                <div className="text-sm text-gray-500 mt-1">{step.description}</div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+  // ✅ handleEdit
+  const handleEdit = (session: any) => {
+    setEditingSession(session);
+    
+    form.reset({
+      student_id: session.student_id,
+      date: session.date,
+      start_time: session.start_time,
+      end_time: session.end_time,
+      room_id: session.room_id,
+      title: session.title,
+      supervisor: session.supervisor,
+      examiner: session.examiner,
+      secretary: session.secretary,
+    });
+    
+    setFormData({
+      student_name: session.student?.full_name || '',
+      student_nim: session.student?.identity_number || '',
+      study_program_id: session.student?.study_program?.id || ''
+    });
+    
+    setShowModal(true);
+  };
 
-  // ✅ Print PDF Handler
+  // ✅ handleDelete
+  const handleDeleteClick = (session: any) => {
+  setSessionToDelete(session);
+  setShowDeleteModal(true);
+};
+  const handleConfirmDelete = async () => {
+  if (!sessionToDelete) return;
+  
+  try {
+    setSubmitting(true);
+    const { error } = await supabase.from('final_sessions').delete().eq('id', sessionToDelete.id);
+    if (error) throw error;
+    
+    alert.success(getText('Session deleted successfully', 'Jadwal sidang berhasil dihapus'));
+    setShowDeleteModal(false);
+    setSessionToDelete(null);
+    fetchSessions();
+  } catch (error) {
+    console.error('Error deleting session:', error);
+    alert.error(error.message || getText('Failed to delete session', 'Gagal menghapus jadwal sidang'));
+  } finally {
+    setSubmitting(false);
+  }
+};
+
+const handleCancelDelete = () => {
+  setShowDeleteModal(false);
+  setSessionToDelete(null);
+};
+
+  // ✅ NEW: Handle Print PDF Function - Simplified dengan Fixed Layout
   const handlePrint = async (formData: PrintFormData) => {
     try {
       const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id);
@@ -2481,36 +2397,36 @@ const SessionScheduleProgressive = () => {
 
       // ✅ Filter sessions by study program only (tidak terbatas departemen)
       const currentYear = new Date().getFullYear();
-      const selectedMonth = parseInt(formData.month);
+const selectedMonth = parseInt(formData.month);
 
-      // ✅ Filter sessions by study program and month/year
-      const sessionsToPrint = allSessions.filter(session => {
-        const sessionDate = new Date(session.date);
-        const sessionMonth = sessionDate.getMonth() + 1; // JavaScript months are 0-indexed
-        const sessionYear = sessionDate.getFullYear();
-        
-        return session.student?.study_program?.id === formData.study_program_id &&
-               sessionMonth === selectedMonth &&
-               sessionYear === currentYear;
-      });
+// ✅ Filter sessions by study program and month/year
+const sessionsToPrint = allSessions.filter(session => {
+  const sessionDate = new Date(session.date);
+  const sessionMonth = sessionDate.getMonth() + 1; // JavaScript months are 0-indexed
+  const sessionYear = sessionDate.getFullYear();
+  
+  return session.student?.study_program?.id === formData.study_program_id &&
+         sessionMonth === selectedMonth &&
+         sessionYear === currentYear;
+});
 
       if (sessionsToPrint.length === 0) {
-        const monthNames = getText('en') === 'en' ? [
-          'January', 'February', 'March', 'April', 'May', 'June',
-          'July', 'August', 'September', 'October', 'November', 'December'
-        ] : [
-          'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-          'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-        ];
-        
-        alert.error(
-          getText(
-            `No sessions found for ${monthNames[selectedMonth - 1]} ${currentYear} in the selected study program.`,
-            `Tidak ditemukan jadwal sidang untuk ${monthNames[selectedMonth - 1]} ${currentYear} pada program studi yang dipilih.`
-          )
-        );
-        return;
-      }
+  const monthNames = getText('en') === 'en' ? [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ] : [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ];
+  
+  alert.error(
+    getText(
+      `No sessions found for ${monthNames[selectedMonth - 1]} ${currentYear} in the selected study program.`,
+      `Tidak ditemukan jadwal sidang untuk ${monthNames[selectedMonth - 1]} ${currentYear} pada program studi yang dipilih.`
+    )
+  );
+  return;
+}
 
       const doc = new jsPDF('landscape', 'mm', 'a4');
       const pageWidth = doc.internal.pageSize.getWidth();
@@ -2550,17 +2466,16 @@ const SessionScheduleProgressive = () => {
       doc.setLineWidth(1);
       doc.line(10, currentY, pageWidth - 10, currentY);
       currentY += 10;
+// ✅ Judul dengan bulan dan tahun
+const monthNames = getText('en') === 'en' ? [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+] : [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+];
 
-      // ✅ Judul dengan bulan dan tahun
-      const monthNames = getText('en') === 'en' ? [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'
-      ] : [
-        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-      ];
-
-      const subtitle = `JADWAL SIDANG PROGRAM STUDI ${selectedProgram.name.toUpperCase()}\n${monthNames[selectedMonth - 1].toUpperCase()} ${currentYear}`;
+const subtitle = `JADWAL SIDANG PROGRAM STUDI ${selectedProgram.name.toUpperCase()}\n${monthNames[selectedMonth - 1].toUpperCase()} ${currentYear}`;
       doc.setFontSize(14);
       doc.setFont('helvetica', 'bold');
       const titleMaxWidth = pageWidth - 40;
@@ -2607,42 +2522,45 @@ const SessionScheduleProgressive = () => {
         startY: currentY,
         theme: 'grid',
         styles: { 
-          fontSize: 8,        
-          cellPadding: 2,     
+          fontSize: 8,        // ✅ Font size dikembalikan ke 8 untuk menghemat ruang
+          cellPadding: 2,     // ✅ Padding dikembalikan ke 2 untuk menghemat ruang
           valign: 'middle',
           lineColor: [0, 0, 0],
           lineWidth: 0.1,
-          overflow: 'linebreak',
-          cellWidth: 'wrap'
+          overflow: 'linebreak',  // ✅ Tambahan untuk text wrapping yang lebih baik
+          cellWidth: 'wrap'       // ✅ Auto width calculation
         },
         headStyles: { 
           fillColor: [220, 220, 220], 
           textColor: [0, 0, 0], 
           fontStyle: 'bold', 
           halign: 'center',
-          fontSize: 9,
-          cellPadding: 2
+          fontSize: 9,       // ✅ Header font size disesuaikan
+          cellPadding: 2     // ✅ Header padding disesuaikan
         },
         columnStyles: {
-          0: { halign: 'center', cellWidth: 10 },
-          1: { halign: 'center', cellWidth: 22 },
-          2: { halign: 'center', cellWidth: 18 },
-          3: { halign: 'left', cellWidth: 42 },
-          4: { halign: 'center', cellWidth: 22 },
-          5: { halign: 'left', cellWidth: 58 },
-          6: { halign: 'center', cellWidth: 18 },
-          7: { halign: 'left', cellWidth: 30 },
-          8: { halign: 'left', cellWidth: 30 },
-          9: { halign: 'left', cellWidth: 30 }
+          0: { halign: 'center', cellWidth: 10 },    // ✅ No - lebih kecil
+          1: { halign: 'center', cellWidth: 22 },    // ✅ Tanggal - sedikit dikurangi
+          2: { halign: 'center', cellWidth: 18 },    // ✅ Waktu - dikurangi
+          3: { halign: 'left', cellWidth: 42 },      // ✅ Nama Mahasiswa - dikurangi
+          4: { halign: 'center', cellWidth: 22 },    // ✅ NIM - dikurangi
+          5: { halign: 'left', cellWidth: 58 },      // ✅ Judul Skripsi - diperkecil dari 80 ke 58
+          6: { halign: 'center', cellWidth: 18 },    // ✅ Ruang - dikurangi
+          7: { halign: 'left', cellWidth: 30 },      // ✅ Pembimbing - dikurangi
+          8: { halign: 'left', cellWidth: 30 },      // ✅ Penguji - dikurangi
+          9: { halign: 'left', cellWidth: 30 }       // ✅ Sekretaris - dikurangi
         },
+        // ✅ Total width = 280mm (pas untuk landscape A4)
         tableWidth: 'auto',
         margin: { left: 10, right: 10 },
+        // ✅ Hapus didDrawPage yang menyebabkan halaman kosong
         showHead: 'everyPage',
         pageBreak: 'auto'
       });
 
+      // ✅ Tidak ada tanda tangan, langsung save dengan nama yang bersih
       // ✅ Save dengan nama file yang include bulan dan tahun
-      const fileName = `Jadwal_Sidang_${selectedProgram.code || selectedProgram.name.replace(/\s+/g, '_')}_${monthNames[selectedMonth - 1]}_${currentYear}.pdf`;
+const fileName = `Jadwal_Sidang_${selectedProgram.code || selectedProgram.name.replace(/\s+/g, '_')}_${monthNames[selectedMonth - 1]}_${currentYear}.pdf`;
       doc.save(fileName);
       setShowPrintModal(false);
     } catch (e: any) {
@@ -2651,180 +2569,456 @@ const SessionScheduleProgressive = () => {
     }
   };
 
-  // ✅ Implement StudentInformationStep 
-  const StudentInformationStep = () => {
-    const dropdownRef = useRef(null);
-    const programDisplayRef = useRef(null);
-    const programDropdownRef = useRef(null);
-    
-    const localData = useRef({
-      studentSearch: '',
-      studentName: '',
-      studentNim: '',
-      studyProgramId: '',
-      selectedProgramDisplay: ''
-    });
-
-    const updateParentFormData = (field, value) => {
-      localData.current[field] = value;
-    };
-
-    const syncToParentForm = () => {
-      setFormData(prev => ({
-        ...prev,
-        student_name: localData.current.studentName,
-        student_nim: localData.current.studentNim,
-        study_program_id: localData.current.studyProgramId
-      }));
-    };
-
-    // Implementation would continue with dropdown management...
+  if (loading) {
     return (
-      <div className="space-y-4 md:space-y-6">
-        <div className="text-center mb-4 md:mb-8">
-          <h3 className="text-lg md:text-2xl font-bold text-gray-900 mb-2">
-            {getText('Student Information', 'Informasi Mahasiswa')}
-          </h3>
-          <p className="text-sm md:text-base text-gray-600">
-            {getText('Please select or enter student details for the examination', 'Silakan pilih atau masukkan detail mahasiswa untuk sidang')}
-          </p>
-        </div>
-        
-        <div className="space-y-4 md:grid md:grid-cols-1 lg:grid-cols-3 md:gap-6 md:space-y-0">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {getText("Student NIM", "NIM Mahasiswa")} *
-            </label>
-            <input
-              ref={studentInputRef}
-              type="text"
-              placeholder={getText("Enter student NIM...", "Masukkan NIM mahasiswa...")}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-              autoComplete="off"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {getText("Student Name", "Nama Mahasiswa")} *
-            </label>
-            <input
-              ref={studentNameRef}
-              type="text"
-              placeholder={getText("Enter student name...", "Masukkan nama mahasiswa...")}
-              className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
-              autoComplete="off"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {getText("Study Program", "Program Studi")} *
-            </label>
-            <select 
-              onChange={(e) => setFormData(prev => ({ ...prev, study_program_id: e.target.value }))}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-            >
-              <option value="">{getText("Select study program", "Pilih program studi")}</option>
-              {studyPrograms.map(program => (
-                <option key={program.id} value={program.id}>
-                  {program.name} ({program.code})
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+      <div className="flex justify-center items-center h-64">
+        <RefreshCw className="animate-spin h-8 w-8 text-blue-600" />
       </div>
     );
-  };
+  }
 
-  // ✅ Implement ScheduleInformationStep
-  const ScheduleInformationStep = () => (
-    <div className="space-y-4 md:space-y-6">
-      <div className="text-center mb-4 md:mb-6">
-        <h3 className="text-lg md:text-2xl font-bold text-gray-900 mb-2">
-          {getText('When will the examination be?', 'Kapan sidang akan dilaksanakan?')}
-        </h3>
-        <p className="text-sm md:text-base text-gray-600">
-          {getText('Please set the date and time for the examination', 'Silakan tentukan tanggal dan waktu sidang')}
-        </p>
-      </div>
-      
-      <div className="space-y-4 md:grid md:grid-cols-3 md:gap-6 md:space-y-0 max-w-2xl mx-auto">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            {getText("Date", "Tanggal")} *
-          </label>
-          <input
-            {...form.register('date')}
-            type="date"
-            className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
-          />
-          {form.formState.errors.date && (
-            <p className="mt-1 text-xs md:text-sm text-red-600">{form.formState.errors.date.message}</p>
-          )}
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            {getText("Start Time", "Waktu Mulai")} *
-          </label>
-          <input
-            {...form.register('start_time')}
-            type="time"
-            className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
-          />
-          {form.formState.errors.start_time && (
-            <p className="mt-1 text-xs md:text-sm text-red-600">{form.formState.errors.start_time.message}</p>
-          )}
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            {getText("End Time", "Waktu Selesai")} *
-          </label>
-          <input
-            {...form.register('end_time')}
-            type="time"
-            min={watchStartDateTime}
-            className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
-          />
-          {form.formState.errors.end_time && (
-            <p className="mt-1 text-xs md:text-sm text-red-600">{form.formState.errors.end_time.message}</p>
-          )}
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center space-x-3">
+              <UserCheck className="h-8 w-8" />
+              <span>{getText("Session Schedule", "Jadwal Sidang")}</span>
+            </h1>
+            <p className="mt-2 opacity-90">{getText("Manage final examination sessions with progressive workflow", "Kelola jadwal sidang akhir dengan alur kerja progresif")}</p>
+          </div>
+          <div className="hidden md:block text-right">
+            <div className="text-2xl font-bold">{sessions.length}</div>
+            <div className="text-sm opacity-80">{getText("Total Sessions", "Total Sidang")}</div>
+          </div>
         </div>
       </div>
 
-      {watchDate && (
-        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg md:rounded-xl p-3 md:p-4 max-w-md mx-auto">
-          <div className="flex items-center space-x-2 md:space-x-3">
-            <Calendar className="h-4 w-4 md:h-5 md:w-5 text-green-600" />
-            <div className="text-xs md:text-sm text-green-800">
-              <p className="font-semibold">
-                {getText('Selected Date', 'Tanggal Terpilih')}
-              </p>
-              <p className="mt-1">
-                {format(new Date(watchDate), 'EEEE, MMMM d, yyyy')}
-              </p>
+      {/* ✅ NEW: Search Section */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0 sm:space-x-4">
+          <div className="w-full sm:w-96">
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                placeholder={getText("Search by student name or NIM...", "Cari berdasarkan nama atau NIM mahasiswa...")}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+              />
+            </div>
+          </div>
+          
+          <div className="flex items-center space-x-3 w-full sm:w-auto">
+            <button
+              onClick={() => {
+                setShowCalendarModal(true);
+                setShowMobileDetails(false); // ✅ Reset mobile details when opening calendar
+              }}
+              className="flex items-center space-x-2 px-4 md:px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+            >
+              <Calendar className="h-5 w-5" />
+              <span className="hidden sm:inline">{getText("View Calendar", "Lihat Kalender")}</span>
+            </button>
+
+            {/* ✅ Print Button - Mobile Responsive */}
+            <button
+              onClick={() => {
+                setShowPrintModal(true);
+                printForm.reset();
+              }}
+              className="flex items-center space-x-2 px-4 md:px-6 py-3 text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 shadow-sm hover:shadow-md"
+            >
+              <Printer className="h-5 w-5" />
+              <span className="hidden sm:inline">{getText("Print", "Cetak")}</span>
+            </button>
+            
+            {profile?.role === 'department_admin' && (
+              <button
+                onClick={() => {
+                  resetForm();
+                  setShowModal(true);
+                }}
+                className="flex items-center space-x-2 px-4 md:px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+              >
+                <Plus className="h-5 w-5" />
+                <span className="hidden sm:inline">{getText("Create Session", "Buat Sidang")}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Sessions Table */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">{getText("Registered Sessions", "Jadwal Sidang Terdaftar")}</h3>
+            {searchTerm && (
+              <div className="text-sm text-gray-500">
+                {getText(`Found ${filteredSessions.length} of ${sessions.length} sessions`, `Ditemukan ${filteredSessions.length} dari ${sessions.length} sidang`)}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {getText("Student", "Mahasiswa")}
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {getText("Schedule", "Jadwal")}
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {getText("Room", "Ruangan")}
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {getText("Committee", "Panitia")}
+                </th>
+                {profile?.role === 'department_admin' && (
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {getText("Actions", "Aksi")}
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredSessions.length === 0 ? (
+                <tr>
+                  <td colSpan={profile?.role === 'department_admin' ? 5 : 4} className="px-6 py-12 text-center">
+                    <div className="text-gray-500">
+                      <UserCheck className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      {searchTerm ? (
+                        <>
+                          <p className="text-lg font-medium mb-2">{getText("No matching sessions found", "Tidak ada jadwal sidang yang cocok")}</p>
+                          <p>{getText(`No sessions found for "${searchTerm}"`, `Tidak ada sidang ditemukan untuk "${searchTerm}"`)}</p>
+                          <button 
+                            onClick={() => setSearchTerm('')}
+                            className="mt-2 text-blue-600 hover:text-blue-800 underline"
+                          >
+                            {getText("Clear search", "Hapus pencarian")}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-lg font-medium mb-2">{getText("No sessions found", "Tidak ada jadwal sidang ditemukan")}</p>
+                          <p>{getText("Create your first examination session", "Buat jadwal sidang pertama Anda")}</p>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredSessions.map((session: any) => (
+                  <tr key={session.id} className="hover:bg-gray-50 transition-colors duration-200">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
+                          <User className="h-5 w-5 text-white" />
+                        </div>
+                        <div className="ml-4">
+                          <div className="text-sm font-semibold text-gray-900">{session.student?.full_name}</div>
+                         <div className="text-sm text-gray-600 font-mono">{session.student?.identity_number}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{format(parseISO(session.date), 'MMM d, yyyy')}</div>
+                        <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full inline-block mt-1">
+                          {session.start_time} - {session.end_time}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div className="h-8 w-8 bg-gradient-to-r from-green-500 to-teal-500 rounded-lg flex items-center justify-center">
+                          <MapPin className="h-4 w-4 text-white" />
+                        </div>
+                        <div className="ml-3">
+                          <div className="text-sm font-medium text-gray-900">{session.room?.name || 'N/A'}</div>
+                          <div className="text-sm text-gray-600">{session.room?.code || 'N/A'}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-xs space-y-1">
+                        <div><span className="font-medium text-blue-600">{getText('Supervisor', 'Pembimbing')}:</span> {session.supervisor}</div>
+                        <div><span className="font-medium text-green-600">{getText('Examiner', 'Penguji')}:</span> {session.examiner}</div>
+                        <div><span className="font-medium text-purple-600">{getText('Secretary', 'Sekretaris')}:</span> {session.secretary}</div>
+                      </div>
+                    </td>
+                    {profile?.role === 'department_admin' && (
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <div className="flex items-center justify-end space-x-2">
+                          <button
+                            onClick={() => handleEdit(session)}
+                            className="text-blue-600 hover:text-blue-900 p-2 rounded-lg hover:bg-blue-50 transition-all duration-200"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteClick(session)}
+                            className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Progressive Form Modal */}
+      {showModal && profile?.role === 'department_admin' && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 md:p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowModal(false);
+              resetForm();
+            }
+          }}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl flex flex-col overflow-hidden" 
+            style={{ 
+              height: 'calc(100vh - 16px)',
+              maxHeight: '95vh'
+            }}
+          >
+            
+            <div className="md:hidden bg-white border-b border-gray-200 p-3 flex-shrink-0">
+              <MobileProgressIndicator />
+            </div>
+            
+            <div className="flex flex-1 min-h-0">
+              <div className="hidden md:block flex-shrink-0">
+                <ProgressSidebar />
+              </div>
+              
+              <div className="flex-1 flex flex-col min-w-0">
+                <div className="flex items-center justify-between p-3 md:p-6 border-b border-gray-200 bg-white flex-shrink-0">
+                  <h3 className="text-base md:text-xl font-bold text-gray-900 flex items-center space-x-2">
+                    <UserCheck className="h-4 w-4 md:h-6 md:w-6 text-blue-600" />
+                    <span className="hidden sm:inline">
+                      {editingSession ? getText('Edit Session', 'Edit Sidang') : getText('Create Session', 'Buat Sidang')}
+                    </span>
+                    <span className="sm:hidden text-sm">
+                      {editingSession ? getText('Edit', 'Edit') : getText('Create', 'Buat')}
+                    </span>
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setShowModal(false);
+                      resetForm();
+                    }}
+                    className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl flex-shrink-0"
+                  >
+                    <X className="h-4 w-4 md:h-5 md:w-5" />
+                  </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-3 md:p-8 bg-gray-50 min-h-0">
+                  <div className="max-w-4xl mx-auto">
+                    {renderCurrentStep()}
+                  </div>
+                </div>
+                
+                <div className="border-t border-gray-200 p-3 md:p-6 bg-white flex-shrink-0">
+                  <div className="flex flex-col sm:flex-row justify-between items-center space-y-3 sm:space-y-0 sm:space-x-4 max-w-4xl mx-auto">
+                    <div className="flex w-full sm:w-auto space-x-3 sm:space-x-0">
+                      {currentStep > 1 && (
+                        <button
+                          type="button"
+                          onClick={handleStepBack}
+                          className="flex-1 sm:flex-none flex items-center justify-center space-x-2 px-3 md:px-4 py-2 md:py-3 text-gray-600 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 text-sm"
+                        >
+                          <ArrowLeft className="h-4 w-4" />
+                          <span className="hidden sm:inline">{getText('Back', 'Kembali')}</span>
+                          <span className="sm:hidden">Back</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="w-full sm:w-auto">
+                      {currentStep < 3 ? (
+                        <button
+                          type="button"
+                          onClick={() => handleStepComplete(currentStep)}
+                          className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 text-sm"
+                        >
+                          <span>{getText('Continue', 'Lanjutkan')}</span>
+                          <ArrowRight className="h-4 w-4" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleSubmitWithValidation}
+                          disabled={submitting}
+                          className="w-full flex items-center justify-center space-x-2 px-4 md:px-6 py-2 md:py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
+                        >
+                          {submitting ? (
+                            <>
+                              <RefreshCw className="h-4 w-4 animate-spin" />
+                              <span>{getText('Saving...', 'Menyimpan...')}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Check className="h-4 w-4" />
+                              <span className="hidden sm:inline">
+                                {editingSession ? getText('Update Session', 'Perbarui Sidang') : getText('Create Session', 'Buat Sidang')}
+                              </span>
+                              <span className="sm:hidden">
+                                {editingSession ? getText('Update', 'Perbarui') : getText('Create', 'Buat')}
+                              </span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Calendar Modal */}
+      {showCalendarModal && (
+        <CalendarModal />
+      )}
+
+      {/* ✅ Print Modal - Simplified */}
+      {showPrintModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
+                  <Printer className="h-6 w-6 text-blue-600" />
+                  <span>{getText("Print Session Schedule", "Cetak Jadwal Sidang")}</span>
+                </h3>
+                <button 
+                  onClick={() => setShowPrintModal(false)} 
+                  className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-lg transition-colors" 
+                > 
+                  <X className="h-6 w-6" /> 
+                </button>
+              </div>
+              <form onSubmit={printForm.handleSubmit(handlePrint)} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Study Program", "Program Studi")} *</label>
+                  <Controller 
+                    name="study_program_id" 
+                    control={printForm.control} 
+                    render={({ field }) => { 
+                      const options = studyPrograms.map(p => ({ 
+                        value: p.id, 
+                        label: `${p.name} - ${p.department?.name || 'Unknown Dept'}` 
+                      })); 
+                      const currentValue = options.find(o => o.value === field.value); 
+                      return ( 
+                        <Select 
+                          {...field} 
+                          options={options} 
+                          value={currentValue} 
+                          onChange={option => field.onChange(option ? option.value : '')} 
+                          placeholder={getText("Select study program...", "Pilih program studi...")} 
+                          isClearable 
+                        /> 
+                      )
+                    }} 
+                  />
+                  {printForm.formState.errors.study_program_id && (
+                    <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.study_program_id.message}</p>
+                  )}
+                </div>
+                <div>
+  <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Month", "Bulan")} *</label>
+  <Controller 
+    name="month" 
+    control={printForm.control} 
+    render={({ field }) => { 
+      const monthOptions = [
+        { value: '1', label: getText('January', 'Januari') },
+        { value: '2', label: getText('February', 'Februari') },
+        { value: '3', label: getText('March', 'Maret') },
+        { value: '4', label: getText('April', 'April') },
+        { value: '5', label: getText('May', 'Mei') },
+        { value: '6', label: getText('June', 'Juni') },
+        { value: '7', label: getText('July', 'Juli') },
+        { value: '8', label: getText('August', 'Agustus') },
+        { value: '9', label: getText('September', 'September') },
+        { value: '10', label: getText('October', 'Oktober') },
+        { value: '11', label: getText('November', 'November') },
+        { value: '12', label: getText('December', 'Desember') }
+      ];
+      const currentValue = monthOptions.find(o => o.value === field.value); 
+      return ( 
+        <Select 
+          {...field} 
+          options={monthOptions} 
+          value={currentValue} 
+          onChange={option => field.onChange(option ? option.value : '')} 
+          placeholder={getText("Select month...", "Pilih bulan...")} 
+          isClearable 
+        /> 
+      )
+    }} 
+  />
+  {printForm.formState.errors.month && (
+    <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.month.message}</p>
+  )}
+</div>
+
+{/* ✅ Info current year */}
+<div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+  <div className="flex items-center space-x-2">
+    <Calendar className="h-4 w-4 text-blue-600" />
+    <span className="text-sm text-blue-800">
+      {getText(`Printing schedule for year: ${new Date().getFullYear()}`, `Mencetak jadwal untuk tahun: ${new Date().getFullYear()}`)}
+    </span>
+  </div>
+</div>
+                <div className="flex space-x-3 pt-4">
+                  <button 
+                    type="button" 
+                    onClick={() => setShowPrintModal(false)} 
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium"
+                  >
+                    {getText("Cancel", "Batal")}
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium flex items-center justify-center space-x-2"
+                  >
+                    <Printer className="h-4 w-4" />
+                    <span>{getText("Generate PDF", "Buat PDF")}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && <DeleteConfirmationModal />}
     </div>
   );
-
-  // ✅ Render current step in form
-  const renderCurrentStep = () => {
-    switch (currentStep) {
-      case 1:
-        return <StudentInformationStep />;
-      case 2:
-        return <ScheduleInformationStep />;
-      case 3:
-        // This is already implemented in the modal JSX above
-        return null;
-      default:
-        return null;
-    }
-  };
 };
 
 export default SessionScheduleProgressive;
