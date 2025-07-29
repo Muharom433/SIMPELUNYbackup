@@ -6,7 +6,7 @@ import {
     Package, Plus, Minus, Search, User, Phone, Mail, Hash, Calendar, Clock, 
     CheckCircle, AlertCircle, Trash2, Loader2, Send, Eye, Building, 
     ChevronDown, Settings, Wrench, Zap, ShoppingCart, GraduationCap, BookOpen,
-    Upload, FileText, X
+    Upload, FileText, X, Camera, Info, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -252,26 +252,77 @@ const ToolLending: React.FC = () => {
         setSelectedEquipment(prev => prev.filter(item => item.equipment.id !== equipmentId));
     };
 
+    // ✅ ENHANCED: File handling functions with preview support
+    const getFileTypeIcon = (attachment: string) => {
+        if (attachment.startsWith('data:application/pdf')) {
+            return <FileText className="h-4 w-4 text-red-600" />;
+        } else if (attachment.startsWith('data:image/')) {
+            return <Camera className="h-4 w-4 text-amber-600" />;
+        } else {
+            return <FileText className="h-4 w-4 text-gray-600" />;
+        }
+    };
+
+    const getFileName = (attachment: string, index: number) => {
+        if (attachment.startsWith('data:application/pdf')) {
+            return `Document_${index + 1}.pdf`;
+        } else if (attachment.startsWith('data:image/')) {
+            return `Image_${index + 1}.jpg`;
+        } else {
+            return `File_${index + 1}`;
+        }
+    };
+
+    const getFileType = (attachment: string) => {
+        if (attachment.startsWith('data:application/pdf')) {
+            return 'PDF Document';
+        } else if (attachment.startsWith('data:image/')) {
+            return 'Image File';
+        } else {
+            return 'Document';
+        }
+    };
+
+    // ✅ ENHANCED: File upload with validation and preview
     const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
         if (!files) return;
         
         const currentAttachments = form.getValues('attachments') || [];
+        const safeCurrentAttachments = Array.isArray(currentAttachments) ? currentAttachments : [];
+        
         Array.from(files).forEach((file) => {
+            // ✅ ENHANCED: File validation
+            const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+            if (!allowedTypes.includes(file.type)) {
+                alert.error(getText('Please select an image, PDF, or document file', 'Silakan pilih file gambar, PDF, atau dokumen'));
+                return;
+            }
+
+            // ✅ ENHANCED: File size validation (max 10MB)
+            if (file.size > 10 * 1024 * 1024) {
+                alert.error(getText('File size must be less than 10MB', 'Ukuran file harus kurang dari 10MB'));
+                return;
+            }
+
             const reader = new FileReader();
             reader.onload = (e) => {
                 const result = e.target?.result as string;
                 if (result) {
-                    form.setValue('attachments', [...currentAttachments, result], { shouldValidate: true });
+                    const newAttachments = [...safeCurrentAttachments, result];
+                    form.setValue('attachments', newAttachments, { shouldValidate: true });
+                    alert.success(getText('File uploaded successfully', 'File berhasil diunggah'));
                 }
             };
             reader.readAsDataURL(file);
         });
     };
 
+    // ✅ ENHANCED: Remove attachment with validation
     const removeAttachment = (index: number) => {
         const currentAttachments = form.getValues('attachments') || [];
-        const updatedAttachments = currentAttachments.filter((_, i) => i !== index);
+        const safeCurrentAttachments = Array.isArray(currentAttachments) ? currentAttachments : [];
+        const updatedAttachments = safeCurrentAttachments.filter((_, i) => i !== index);
         form.setValue('attachments', updatedAttachments, { shouldValidate: true });
     };
 
@@ -602,7 +653,7 @@ const ToolLending: React.FC = () => {
                                                         >
                                                             <Minus className="h-3 w-3 text-white" />
                                                         </button>
-                                                        <span className="text-white font-bold px-2">{selectedItem.quantity}</span>
+                                                      <span className="text-white font-bold px-2">{selectedItem.quantity}</span>
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
@@ -896,7 +947,7 @@ const ToolLending: React.FC = () => {
                                         )}
                                     </div>
 
-                                    {/* NEW: Purpose Field */}
+                                    {/* Purpose Field */}
                                     <div>
                                         <label className="block text-sm font-semibold text-gray-700 mb-2">
                                             {getText('Purpose', 'Tujuan')} *
@@ -915,9 +966,9 @@ const ToolLending: React.FC = () => {
                                         )}
                                     </div>
 
-                                    {/* Additional fields for "Other" purpose */}
+                                    {/* ✅ ENHANCED: Additional fields for "Other" purpose with improved attachment system */}
                                     {watchPurpose === 'Other' && (
-                                        <div className="space-y-4">
+                                        <div className="space-y-6 border-t border-gray-200/50 pt-6">
                                             <div>
                                                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                                                     {getText('Notes', 'Catatan')}
@@ -930,55 +981,146 @@ const ToolLending: React.FC = () => {
                                                 />
                                             </div>
                                             
-                                            <div>
-                                                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                                    {getText('Attachments', 'Lampiran')} *
-                                                </label>
-                                                <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-green-400 transition-colors duration-200">
-                                                    <Upload className="h-8 w-8 text-gray-400 mx-auto mb-3" />
-                                                    <input
-                                                        type="file"
-                                                        multiple
-                                                        accept="image/*,.pdf,.doc,.docx"
-                                                        onChange={handleFileUpload}
-                                                        className="hidden"
-                                                        id="file-upload"
-                                                    />
-                                                    <label htmlFor="file-upload" className="cursor-pointer">
-                                                        <span className="text-sm font-medium text-green-600 hover:text-green-700">
-                                                            {getText('Upload Files', 'Unggah File')}
-                                                        </span>
-                                                        <p className="text-xs text-gray-500 mt-1">
-                                                            {getText('Support: Images, PDF, DOC, DOCX', 'Mendukung: Gambar, PDF, DOC, DOCX')}
-                                                        </p>
-                                                    </label>
+                                            {/* ✅ ENHANCED: Attachments Section with Preview */}
+                                            <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200/50 rounded-2xl p-6 space-y-6">
+                                                <div className="flex items-center space-x-3 mb-4">
+                                                    <FileText className="h-5 w-5 text-yellow-600" />
+                                                    <h4 className="text-lg font-semibold text-yellow-900">
+                                                        {getText('Attachments', 'Lampiran')} *
+                                                    </h4>
                                                 </div>
-                                                {watchAttachments && watchAttachments.length > 0 && (
-                                                    <div className="mt-3 space-y-2">
-                                                        {watchAttachments.map((_, index) => (
-                                                            <div key={index} className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
-                                                                <div className="flex items-center space-x-2">
-                                                                    <FileText className="h-4 w-4 text-green-600" />
-                                                                    <span className="text-sm text-green-800 font-medium">
-                                                                        {getText('Attachment', 'Lampiran')} {index + 1}
-                                                                    </span>
-                                                                </div>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => removeAttachment(index)}
-                                                                    className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 transition-colors duration-200"
-                                                                >
-                                                                    <X className="h-4 w-4" />
-                                                                </button>
+
+                                                <div className="space-y-4">
+                                                    {/* File Upload Area */}
+                                                    <div className="border-2 border-dashed border-gray-300/50 rounded-xl p-6 text-center bg-gradient-to-b from-gray-50/50 to-white/50 hover:from-gray-100/50 hover:to-gray-50/50 transition-all duration-200">
+                                                        <div className="flex flex-col items-center">
+                                                            <div className="p-3 bg-green-100 rounded-full mb-3">
+                                                                <Upload className="h-8 w-8 text-green-600" />
                                                             </div>
-                                                        ))}
+                                                            <input
+                                                                type="file"
+                                                                multiple
+                                                                accept="image/*,.pdf,.doc,.docx"
+                                                                onChange={handleFileUpload}
+                                                                className="hidden"
+                                                                id="file-upload"
+                                                            />
+                                                            <label htmlFor="file-upload" className="cursor-pointer">
+                                                                <span className="text-lg font-semibold text-green-600 hover:text-green-700">
+                                                                    {getText('Upload Files', 'Unggah File')}
+                                                                </span>
+                                                            </label>
+                                                            <p className="text-sm text-gray-500 mt-2">
+                                                                {getText('PDF, JPG, PNG, DOC up to 10MB each', 'PDF, JPG, PNG, DOC hingga 10MB per file')}
+                                                            </p>
+                                                        </div>
                                                     </div>
-                                                )}
-                                                {form.formState.errors.attachments && (
-                                                    <p className="mt-2 text-sm text-red-600 font-medium">
-                                                        {form.formState.errors.attachments.message}
-                                                    </p>
-                                                )}
+
+                                                    {/* ✅ ENHANCED: Uploaded Files Preview */}
+                                                    {watchAttachments && watchAttachments.length > 0 && (
+                                                        <div>
+                                                            <h5 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
+                                                                <Package className="h-4 w-4 mr-2" />
+                                                                {getText('Uploaded Documents', 'Dokumen yang Diunggah')} ({watchAttachments.length})
+                                                            </h5>
+                                                            <div className="grid grid-cols-1 gap-3">
+                                                                {watchAttachments.map((attachment, index) => (
+                                                                    <div key={index} className="flex items-center justify-between p-3 bg-white/80 border border-gray-200 rounded-xl hover:bg-white hover:shadow-md transition-all duration-200">
+                                                                        <div className="flex items-center space-x-3">
+                                                                            {/* File Preview */}
+                                                                            <div className="flex-shrink-0">
+                                                                                {attachment.startsWith('data:application/pdf') ? (
+                                                                                    <div className="h-10 w-10 bg-red-100 rounded-lg flex items-center justify-center">
+                                                                                        <FileText className="h-5 w-5 text-red-600" />
+                                                                                    </div>
+                                                                                ) : attachment.startsWith('data:image/') ? (
+                                                                                    <div className="h-10 w-10 rounded-lg overflow-hidden border border-gray-200">
+                                                                                        <img
+                                                                                            src={attachment}
+                                                                                            alt={`Document ${index + 1}`}
+                                                                                            className="h-full w-full object-cover"
+                                                                                        />
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <div className="h-10 w-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                                                                                        <FileText className="h-5 w-5 text-gray-600" />
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                            
+                                                                            {/* File Info */}
+                                                                            <div className="flex-1 min-w-0">
+                                                                                <p className="text-sm font-medium text-gray-900 truncate">
+                                                                                    {getFileName(attachment, index)}
+                                                                                </p>
+                                                                                <p className="text-xs text-gray-500">
+                                                                                    {getFileType(attachment)}
+                                                                                </p>
+                                                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1">
+                                                                                    {getText('Uploaded', 'Terupload')}
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+                                                                        
+                                                                        {/* Action Buttons */}
+                                                                        <div className="flex items-center space-x-2">
+                                                                            {/* View Button */}
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => window.open(attachment, '_blank')}
+                                                                                className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-full transition-colors duration-200"
+                                                                                title={getText('View document', 'Lihat dokumen')}
+                                                                            >
+                                                                                <Eye className="h-4 w-4" />
+                                                                            </button>
+                                                                            
+                                                                            {/* Remove Button */}
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => removeAttachment(index)}
+                                                                                className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-full transition-colors duration-200"
+                                                                                title={getText('Remove document', 'Hapus dokumen')}
+                                                                            >
+                                                                                <X className="h-4 w-4" />
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Validation Error */}
+                                                    {form.formState.errors.attachments && (
+                                                        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                                                            <div className="flex items-center space-x-2">
+                                                                <AlertTriangle className="h-4 w-4 text-red-600" />
+                                                                <p className="text-sm text-red-800 font-medium">
+                                                                    {form.formState.errors.attachments.message}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Helper Information */}
+                                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                                    <div className="flex items-start space-x-3">
+                                                        <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                                                        <div className="text-sm text-blue-800">
+                                                            <p className="font-semibold mb-2">
+                                                                {getText('Document Requirements:', 'Persyaratan Dokumen:')}
+                                                            </p>
+                                                            <ul className="space-y-1 text-xs">
+                                                                <li>• {getText('Upload official permission documents', 'Unggah dokumen izin resmi')}</li>
+                                                                <li>• {getText('Supported formats: PDF, JPG, PNG, DOC', 'Format yang didukung: PDF, JPG, PNG, DOC')}</li>
+                                                                <li>• {getText('Maximum file size: 10MB per file', 'Ukuran file maksimal: 10MB per file')}</li>
+                                                                <li>• {getText('You can upload multiple documents', 'Anda dapat mengunggah beberapa dokumen')}</li>
+                                                                <li>• {getText('Click the eye icon to preview documents', 'Klik ikon mata untuk melihat dokumen')}</li>
+                                                            </ul>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     )}
@@ -1011,9 +1153,9 @@ const ToolLending: React.FC = () => {
                                             <p className="mt-1">
                                                 {getText('Your lending request will be reviewed by admin. You will be notified once approved.', 'Permintaan peminjaman Anda akan ditinjau oleh admin. Anda akan diberitahu setelah disetujui.')}
                                             </p>
-                                          <div></div>
-                        <hr></hr>
-                        <h3><b>Contact Person  : 089604819029 (Muharom)</b></h3>
+                                            <div></div>
+                                            <hr></hr>
+                                            <h3><b>Contact Person: 089604819029 (Muharom)</b></h3>
                                         </div>
                                     </div>
                                 </div>
