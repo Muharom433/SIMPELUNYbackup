@@ -169,8 +169,7 @@ const PermitLetter: React.FC = () => {
       const { data: lendingToolsData, error: lendingToolsError } = await supabase
         .from('lending_tool')
         .select('*')
-        .eq('status', 'pending')
-        .or('attachments.is.null,attachments.eq.{}') // ✅ TAMBAH: belum ada attachment
+        .eq('status', 'pending')// ✅ TAMBAH: belum ada attachment
         .order('created_at', { ascending: false });
 
       if (lendingToolsError) {
