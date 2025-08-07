@@ -57,10 +57,11 @@ interface Booking {
   sks: number;
   class_type: 'theory' | 'practical';
   status: 'pending' | 'approved' | 'rejected' | 'completed';
-  equipment_requested: string[];
-  equipment_quantities: number[];
+  equipment_requested: string; // Changed from string[] to string
+  equipment_quantities: number; // Changed from number[] to number
+  equipment_details: any; // Added based on your table
   notes: string | null;
-  attachments: string[];
+  attachments: string; // Changed from string[] to string
   user_info: any;
   created_at: string;
   updated_at: string;
@@ -93,10 +94,18 @@ const BookingManagement: React.FC = () => {
   // Data states
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [allEquipment, setAllEquipment] = useState<any[]>([]);
+  const [bookingStats, setBookingStats] = useState({
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    completed: 0,
+    total: 0
+  });
   
   // Loading and UI states
   const [loading, setLoading] = useState(true);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+  const [statsLoading, setStatsLoading] = useState(false);
   
   // Filter states
   const [searchTerm, setSearchTerm] = useState('');
@@ -112,15 +121,14 @@ const BookingManagement: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(50);
   const [totalCount, setTotalCount] = useState(0);
-  const [loadingCount, setLoadingCount] = useState(false);
 
+  // Initialize data on component mount
   useEffect(() => {
-    fetchBookings();
-    fetchAllEquipment();
+    initializeData();
     
-    // Set up real-time subscription
+    // Set up real-time subscription for live updates
     const subscription = supabase
-      .channel('booking-management')
+      .channel('booking-management-realtime')
       .on('postgres_changes', 
         { 
           event: '*', 
@@ -128,11 +136,11 @@ const BookingManagement: React.FC = () => {
           table: 'bookings'
         }, 
         (payload) => {
+          console.log('🔄 Real-time update received:', payload);
           try {
-            // Only refetch if we're on the first page for real-time updates
-            if (currentPage === 1) {
-              fetchBookings();
-            }
+            // Refresh data when bookings change
+            fetchBookings();
+            fetchBookingStats();
           } catch (error) {
             console.error('Error in real-time subscription:', error);
           }
@@ -143,47 +151,112 @@ const BookingManagement: React.FC = () => {
     return () => {
       subscription.unsubscribe();
     };
-  }, [currentPage]);
+  }, []);
 
-  const fetchAllEquipment = async () => {
+  // Refetch data when filters or pagination change
+  useEffect(() => {
+    fetchBookings();
+  }, [currentPage, searchTerm, statusFilter, dateFilter]);
+
+  // Initialize all data
+  const initializeData = async () => {
+    await Promise.all([
+      fetchBookings(),
+      fetchAllEquipment(),
+      fetchBookingStats()
+    ]);
+  };
+
+  // ✅ OPTIMIZED FETCH USING DATABASE FUNCTION
+  const fetchBookings = async () => {
     try {
-      const { data, error } = await supabase
-        .from('equipment')
-        .select('id, name, code, category, quantity, unit')
-        .order('name');
+      setLoading(true);
       
-      if (error) throw error;
-      setAllEquipment(data || []);
+      console.log('🚀 Using optimized database function for booking fetch...');
+      
+      // Check if database function exists, if not fallback to basic query
+      const { data, error } = await supabase.rpc('get_bookings_paginated', {
+        page_number: currentPage,
+        page_size: pageSize,
+        search_term: searchTerm,
+        status_filter: statusFilter,
+        date_filter: dateFilter
+      });
+      
+      if (error) {
+        console.warn('Database function not available, using fallback query:', error);
+        await fetchBookingsFallback();
+        return;
+      }
+      
+      if (data && data.length > 0) {
+        // Transform the flat data back to nested structure for compatibility
+        const transformedBookings = data.map(row => ({
+          id: row.id,
+          user_id: row.user_id,
+          room_id: row.room_id,
+          start_time: row.start_time,
+          end_time: row.end_time,
+          purpose: row.purpose,
+          sks: row.sks,
+          class_type: row.class_type,
+          status: row.status,
+          equipment_requested: row.equipment_requested,
+          equipment_quantities: row.equipment_quantities,
+          equipment_details: row.equipment_details,
+          notes: row.notes,
+          attachments: row.attachments,
+          user_info: row.user_info,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          user: row.user_name ? {
+            id: row.user_id,
+            full_name: row.user_name,
+            identity_number: row.user_identity,
+            email: row.user_email,
+            role: row.user_role,
+            study_program: row.study_program_name ? {
+              name: row.study_program_name,
+              code: row.study_program_code
+            } : null
+          } : null,
+          room: row.room_name ? {
+            id: row.room_id,
+            name: row.room_name,
+            code: row.room_code,
+            capacity: row.room_capacity,
+            department: row.department_name ? {
+              name: row.department_name
+            } : null
+          } : null
+        }));
+        
+        setBookings(transformedBookings);
+        setTotalCount(data[0]?.total_count || 0);
+        
+        console.log(`✅ Successfully loaded ${data.length} bookings using database function`);
+      } else {
+        setBookings([]);
+        setTotalCount(0);
+      }
+      
     } catch (error) {
-      console.error('Error fetching equipment:', error);
+      console.error('❌ Database function failed:', error);
+      await fetchBookingsFallback();
+    } finally {
+      setLoading(false);
     }
   };
 
-  // ✅ OPTIMIZED FETCH WITH PAGINATION & ERROR HANDLING
-  const fetchBookings = async (retryCount = 0) => {
+  // ✅ FALLBACK QUERY FOR COMPATIBILITY
+  const fetchBookingsFallback = async () => {
     try {
-      setLoading(true);
+      console.log('🔄 Using fallback query method...');
       
       // Calculate offset for pagination
       const offset = (currentPage - 1) * pageSize;
       
-      // First, get the total count (only when needed)
-      if (currentPage === 1 || totalCount === 0) {
-        setLoadingCount(true);
-        try {
-          const { count, error: countError } = await supabase
-            .from('bookings')
-            .select('id', { count: 'exact', head: true });
-          
-          if (countError) throw countError;
-          setTotalCount(count || 0);
-        } catch (countError) {
-          console.warn('Count query failed, using pagination anyway:', countError);
-        }
-        setLoadingCount(false);
-      }
-      
-      // Optimized query with limited joins and pagination
+      // Simple query with minimal joins to avoid timeout
       let query = supabase
         .from('bookings')
         .select(`
@@ -198,6 +271,7 @@ const BookingManagement: React.FC = () => {
           status,
           equipment_requested,
           equipment_quantities,
+          equipment_details,
           notes,
           attachments,
           user_info,
@@ -208,15 +282,13 @@ const BookingManagement: React.FC = () => {
             full_name,
             identity_number,
             email,
-            role,
-            study_program:study_programs(name, code)
+            role
           ),
           room:rooms(
             id,
             name,
             code,
-            capacity,
-            department:departments(name)
+            capacity
           )
         `)
         .order('created_at', { ascending: false })
@@ -227,199 +299,120 @@ const BookingManagement: React.FC = () => {
       
       setBookings(data || []);
       
-    } catch (error) {
-      console.error('Error fetching bookings (attempt ' + (retryCount + 1) + '):', error);
-      
-      if (retryCount < 2) {
-        console.log('Retrying with simplified query...');
-        setTimeout(() => fetchBookingsSimplified(retryCount + 1), 1000);
-        return;
+      // Get approximate total count
+      if (currentPage === 1) {
+        const { count } = await supabase
+          .from('bookings')
+          .select('*', { count: 'exact', head: true });
+        setTotalCount(count || 0);
       }
       
-      alert.error(getText('Failed to load bookings', 'Gagal memuat pemesanan'));
-    } finally {
-      setLoading(false);
+      console.log(`✅ Fallback query loaded ${data?.length || 0} bookings`);
+      
+    } catch (error) {
+      console.error('❌ Fallback query also failed:', error);
+      
+      // Last resort: basic query without joins
+      try {
+        const { data: basicData, error: basicError } = await supabase
+          .from('bookings')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(25);
+        
+        if (!basicError && basicData) {
+          setBookings(basicData);
+          setTotalCount(basicData.length);
+          alert.warning(getText(
+            'Loaded basic booking data. Some user and room details may be missing.',
+            'Memuat data pemesanan dasar. Beberapa detail pengguna dan ruangan mungkin tidak lengkap.'
+          ));
+        }
+      } catch (basicError) {
+        console.error('❌ Basic query failed:', basicError);
+        alert.error(getText('Failed to load bookings', 'Gagal memuat pemesanan'));
+      }
     }
   };
 
-  // ✅ FALLBACK SIMPLIFIED QUERY
-  const fetchBookingsSimplified = async (retryCount = 0) => {
+  // ✅ FETCH EQUIPMENT DATA
+  const fetchAllEquipment = async () => {
     try {
-      setLoading(true);
-      console.log('🔄 Using simplified query fallback...');
+      const { data, error } = await supabase
+        .from('equipment')
+        .select('id, name, code, category, quantity, unit')
+        .order('name');
       
-      const offset = (currentPage - 1) * pageSize;
-      
-      // Get basic booking data without joins
-      const { data: bookingsData, error: bookingsError } = await supabase
-        .from('bookings')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .range(offset, offset + pageSize - 1);
-      
-      if (bookingsError) throw bookingsError;
-      
-      if (bookingsData && bookingsData.length > 0) {
-        // Get unique user IDs and room IDs
-        const userIds = [...new Set(bookingsData.map(b => b.user_id).filter(Boolean))];
-        const roomIds = [...new Set(bookingsData.map(b => b.room_id).filter(Boolean))];
-        
-        // Fetch users separately (with timeout)
-        let usersData = [];
-        let roomsData = [];
-        
-        if (userIds.length > 0) {
-          try {
-            const { data: users, error: usersError } = await supabase
-              .from('users')
-              .select(`
-                id, full_name, identity_number, email, role,
-                study_program:study_programs(name, code)
-              `)
-              .in('id', userIds);
-            
-            if (!usersError) usersData = users || [];
-          } catch (userError) {
-            console.warn('Users query failed:', userError);
-          }
-        }
-        
-        // Fetch rooms separately (with timeout)
-        if (roomIds.length > 0) {
-          try {
-            const { data: rooms, error: roomsError } = await supabase
-              .from('rooms')
-              .select(`
-                id, name, code, capacity,
-                department:departments(name)
-              `)
-              .in('id', roomIds);
-            
-            if (!roomsError) roomsData = rooms || [];
-          } catch (roomError) {
-            console.warn('Rooms query failed:', roomError);
-          }
-        }
-        
-        // Combine the data
-        const enrichedBookings = bookingsData.map(booking => ({
-          ...booking,
-          user: usersData.find(u => u.id === booking.user_id),
-          room: roomsData.find(r => r.id === booking.room_id)
-        }));
-        
-        setBookings(enrichedBookings);
-        alert.success(getText('Loaded booking data successfully', 'Data pemesanan berhasil dimuat'));
-        
-      } else {
-        setBookings([]);
-      }
-      
+      if (error) throw error;
+      setAllEquipment(data || []);
     } catch (error) {
-      console.error('Simplified query failed:', error);
-      
-      if (retryCount < 1) {
-        // Last resort: get just basic data
-        try {
-          const { data: basicData, error: basicError } = await supabase
-            .from('bookings')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(25);
-          
-          if (!basicError && basicData) {
-            setBookings(basicData);
-            alert.warning(getText(
-              'Loaded basic data only. Some details may be missing.',
-              'Hanya memuat data dasar. Beberapa detail mungkin tidak lengkap.'
-            ));
-            return;
-          }
-        } catch (basicError) {
-          console.error('Basic query also failed:', basicError);
-        }
-      }
-      
-      alert.error(getText('Failed to load bookings', 'Gagal memuat pemesanan'));
-    } finally {
-      setLoading(false);
+      console.error('Error fetching equipment:', error);
+      alert.error(getText('Failed to load equipment data', 'Gagal memuat data peralatan'));
     }
   };
 
-  // ✅ SIMPLIFIED BOOKING STATUS UPDATE WITH EQUIPMENT MANAGEMENT
+  // ✅ FETCH BOOKING STATISTICS
+  const fetchBookingStats = async () => {
+    try {
+      setStatsLoading(true);
+      
+      // Try using database function first
+      const { data, error } = await supabase.rpc('get_booking_statistics');
+      
+      if (error || !data) {
+        // Fallback to manual count
+        const { data: allBookings } = await supabase
+          .from('bookings')
+          .select('status');
+        
+        if (allBookings) {
+          const stats = allBookings.reduce((acc, booking) => {
+            acc[booking.status] = (acc[booking.status] || 0) + 1;
+            acc.total = (acc.total || 0) + 1;
+            return acc;
+          }, { pending: 0, approved: 0, rejected: 0, completed: 0, total: 0 });
+          
+          setBookingStats(stats);
+        }
+      } else {
+        setBookingStats(data);
+      }
+    } catch (error) {
+      console.error('Error fetching booking statistics:', error);
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
+  // ✅ OPTIMIZED STATUS UPDATE USING DATABASE FUNCTION
   const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 'rejected') => {
     try {
       setProcessingIds(prev => new Set(prev).add(bookingId));
       
-      const booking = bookings.find(b => b.id === bookingId);
-      if (!booking) {
-        throw new Error('Booking not found');
-      }
-
-      console.log('📋 SIMPLE: Updating booking status:', {
-        bookingId: booking.id,
-        currentStatus: booking.status,
-        newStatus,
-        equipment_requested: booking.equipment_requested,
-        equipment_quantities: booking.equipment_quantities
-      });
-
-      // ✅ SIMPLE: Direct equipment updates
-      if (booking.equipment_requested && booking.equipment_requested.length > 0) {
-        
-        for (let i = 0; i < booking.equipment_requested.length; i++) {
-          const equipmentId = booking.equipment_requested[i];
-          const quantity = booking.equipment_quantities?.[i] || 1;
-          
-          if (newStatus === 'approved') {
-            // ✅ APPROVED: Kurangi quantity
-            console.log(`📉 Decreasing ${equipmentId} by ${quantity}`);
-            
-            const { error } = await supabase.rpc('decrease_equipment_quantity', {
-              equipment_id: equipmentId,
-              decrease_by: quantity
-            });
-            
-            if (error) {
-              console.error(`❌ Failed to decrease ${equipmentId}:`, error);
-              throw new Error(`Failed to update equipment ${equipmentId}: ${error.message}`);
-            }
-            
-          } else if (newStatus === 'rejected' && booking.status === 'approved') {
-            // ✅ REJECTED (from approved): Tambah quantity kembali
-            console.log(`📈 Increasing ${equipmentId} by ${quantity}`);
-            
-            const { error } = await supabase.rpc('increase_equipment_quantity', {
-              equipment_id: equipmentId,
-              increase_by: quantity
-            });
-            
-            if (error) {
-              console.error(`❌ Failed to increase ${equipmentId}:`, error);
-              throw new Error(`Failed to restore equipment ${equipmentId}: ${error.message}`);
-            }
-          }
-        }
-      }
-
-      // ✅ UPDATE BOOKING STATUS
-      const { error: bookingError } = await supabase
-        .from('bookings')
-        .update({ 
-          status: newStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', bookingId);
-
-      if (bookingError) throw bookingError;
+      console.log('📋 Updating booking status using database function...');
       
-      console.log('✅ SIMPLE: Booking status updated successfully');
+      // Try using database function first
+      const { data, error } = await supabase.rpc('update_booking_status_with_equipment', {
+        booking_id: bookingId,
+        new_status: newStatus
+      });
+      
+      if (error || !data?.success) {
+        // Fallback to manual update
+        console.log('🔄 Database function failed, using manual update...');
+        await handleStatusUpdateFallback(bookingId, newStatus);
+        return;
+      }
       
       const statusText = newStatus === 'approved' ? getText('approved', 'disetujui') : getText('rejected', 'ditolak');
       alert.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
       
-      await fetchBookings();
-      await fetchAllEquipment();
+      // Refresh data
+      await Promise.all([
+        fetchBookings(),
+        fetchAllEquipment(),
+        fetchBookingStats()
+      ]);
       
       if (selectedBooking?.id === bookingId) {
         setShowDetailModal(false);
@@ -437,49 +430,85 @@ const BookingManagement: React.FC = () => {
     }
   };
 
-  // ✅ SIMPLIFIED DELETE WITH QUANTITY RESTORATION
-  const handleDelete = async (bookingId: string) => {
-    try {
-      setProcessingIds(prev => new Set(prev).add(bookingId));
-      
-      const booking = bookings.find(b => b.id === bookingId);
-      if (!booking) {
-        throw new Error('Booking not found');
-      }
+  // ✅ FALLBACK STATUS UPDATE
+  const handleStatusUpdateFallback = async (bookingId: string, newStatus: 'approved' | 'rejected') => {
+    const booking = bookings.find(b => b.id === bookingId);
+    if (!booking) {
+      throw new Error('Booking not found');
+    }
 
-      // ✅ SIMPLE: Restore quantities if booking was approved
-      if (booking.status === 'approved' && booking.equipment_requested && booking.equipment_requested.length > 0) {
+    // Handle equipment quantity updates for new table structure
+    const equipmentList = parseEquipmentRequested(booking.equipment_requested);
+    if (equipmentList.length > 0) {
+      for (let i = 0; i < equipmentList.length; i++) {
+        const equipmentId = equipmentList[i];
+        const quantity = booking.equipment_quantities || 1; // Single number in new structure
         
-        for (let i = 0; i < booking.equipment_requested.length; i++) {
-          const equipmentId = booking.equipment_requested[i];
-          const quantity = booking.equipment_quantities?.[i] || 1;
+        if (newStatus === 'approved') {
+          // Decrease equipment quantity
+          const { error } = await supabase.rpc('decrease_equipment_quantity', {
+            equipment_id: equipmentId,
+            decrease_by: quantity
+          });
           
-          console.log(`📈 Restoring ${equipmentId} by ${quantity} (booking deleted)`);
+          if (error) {
+            throw new Error(`Failed to update equipment ${equipmentId}: ${error.message}`);
+          }
           
+        } else if (newStatus === 'rejected' && booking.status === 'approved') {
+          // Restore equipment quantity
           const { error } = await supabase.rpc('increase_equipment_quantity', {
             equipment_id: equipmentId,
             increase_by: quantity
           });
           
           if (error) {
-            console.warn(`⚠️ Failed to restore ${equipmentId}:`, error);
-            // Don't throw error for delete operation
+            throw new Error(`Failed to restore equipment ${equipmentId}: ${error.message}`);
           }
         }
       }
+    }
 
-      // ✅ DELETE BOOKING
-      const { error } = await supabase
-        .from('bookings')
-        .delete()
-        .eq('id', bookingId);
+    // Update booking status
+    const { error: bookingError } = await supabase
+      .from('bookings')
+      .update({ 
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', bookingId);
 
-      if (error) throw error;
+    if (bookingError) throw bookingError;
+  };
+
+  // ✅ OPTIMIZED DELETE USING DATABASE FUNCTION
+  const handleDelete = async (bookingId: string) => {
+    try {
+      setProcessingIds(prev => new Set(prev).add(bookingId));
+      
+      console.log('🗑️ Deleting booking using database function...');
+      
+      // Try using database function first
+      const { data, error } = await supabase.rpc('delete_booking_with_equipment_restoration', {
+        booking_id: bookingId
+      });
+      
+      if (error || !data?.success) {
+        // Fallback to manual delete
+        console.log('🔄 Database function failed, using manual delete...');
+        await handleDeleteFallback(bookingId);
+        return;
+      }
       
       alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
       setShowDeleteConfirm(null);
-      await fetchBookings();
-      await fetchAllEquipment();
+      
+      // Refresh data
+      await Promise.all([
+        fetchBookings(),
+        fetchAllEquipment(),
+        fetchBookingStats()
+      ]);
       
       if (selectedBooking?.id === bookingId) {
         setShowDetailModal(false);
@@ -497,21 +526,83 @@ const BookingManagement: React.FC = () => {
     }
   };
 
-  // ✅ ENHANCED EQUIPMENT AVAILABILITY CHECK
+  // ✅ FALLBACK DELETE
+  const handleDeleteFallback = async (bookingId: string) => {
+    const booking = bookings.find(b => b.id === bookingId);
+    if (!booking) {
+      throw new Error('Booking not found');
+    }
+
+    // Restore equipment quantities if booking was approved
+    const equipmentList = parseEquipmentRequested(booking.equipment_requested);
+    if (booking.status === 'approved' && equipmentList.length > 0) {
+      for (let i = 0; i < equipmentList.length; i++) {
+        const equipmentId = equipmentList[i];
+        const quantity = booking.equipment_quantities || 1;
+        
+        await supabase.rpc('increase_equipment_quantity', {
+          equipment_id: equipmentId,
+          increase_by: quantity
+        });
+      }
+    }
+
+    // Delete the booking
+    const { error } = await supabase
+      .from('bookings')
+      .delete()
+      .eq('id', bookingId);
+
+    if (error) throw error;
+  };
+
+  // ✅ EQUIPMENT UTILITY FUNCTIONS FOR NEW TABLE STRUCTURE
+  const parseEquipmentRequested = (equipmentStr: string): string[] => {
+    if (!equipmentStr) return [];
+    try {
+      // Try parsing as JSON first
+      const parsed = JSON.parse(equipmentStr);
+      return Array.isArray(parsed) ? parsed : [equipmentStr];
+    } catch {
+      // Fallback to comma-separated values
+      return equipmentStr.split(',').map(item => item.trim()).filter(item => item);
+    }
+  };
+
+  const parseAttachments = (attachmentStr: string): string[] => {
+    if (!attachmentStr) return [];
+    try {
+      const parsed = JSON.parse(attachmentStr);
+      return Array.isArray(parsed) ? parsed : [attachmentStr];
+    } catch {
+      return attachmentStr.split(',').map(item => item.trim()).filter(item => item);
+    }
+  };
+
+  const getEquipmentQuantities = (booking: Booking): number[] => {
+    const equipmentList = parseEquipmentRequested(booking.equipment_requested);
+    if (booking.equipment_quantities) {
+      // If it's a single number, use it for all equipment
+      return equipmentList.map(() => booking.equipment_quantities);
+    }
+    return equipmentList.map(() => 1); // Default to 1 for each
+  };
+
+  // ✅ EQUIPMENT AVAILABILITY CHECK
   const getEquipmentAvailability = (equipmentId: string) => {
-    const equipment = allEquipment.find(eq => eq.id === equipmentId);
+    const equipment = allEquipment.find(eq => eq.id === equipmentId || eq.code === equipmentId || eq.name === equipmentId);
     if (!equipment) return { available: 0, total: 0 };
     
     return {
-      available: equipment.quantity, // Simplified: quantity field shows available
-      total: equipment.quantity, // For display purposes
+      available: equipment.quantity,
+      total: equipment.quantity,
     };
   };
 
-  // ✅ OPTIMIZED FILTERING
+  // ✅ OPTIMIZED FILTERING (CLIENT-SIDE FOR REAL-TIME RESPONSIVENESS)
   const filteredBookings = bookings.filter(booking => {
     const searchLower = searchTerm.toLowerCase();
-    const matchesSearch = 
+    const matchesSearch = !searchTerm || 
       (booking.user?.full_name && booking.user.full_name.toLowerCase().includes(searchLower)) ||
       (booking.user?.identity_number && booking.user.identity_number.toLowerCase().includes(searchLower)) ||
       (booking.purpose && booking.purpose.toLowerCase().includes(searchLower)) ||
@@ -543,6 +634,7 @@ const BookingManagement: React.FC = () => {
     return matchesSearch && matchesStatus && matchesDate;
   });
 
+  // ✅ UTILITY FUNCTIONS
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending': return 'bg-yellow-100 text-yellow-800';
@@ -551,13 +643,6 @@ const BookingManagement: React.FC = () => {
       case 'completed': return 'bg-blue-100 text-blue-800';
       default: return 'bg-gray-100 text-gray-800';
     }
-  };
-
-  const getEquipmentDetails = (equipmentIds: string[]) => {
-    return equipmentIds.map(id => {
-      const equipment = allEquipment.find(eq => eq.id === id);
-      return equipment || { id, name: `Equipment ${id}`, code: 'Unknown', category: 'Unknown' };
-    });
   };
 
   const getStatusIcon = (status: string) => {
@@ -570,11 +655,16 @@ const BookingManagement: React.FC = () => {
     }
   };
 
-  // ✅ ENHANCED EQUIPMENT DISPLAY WITH REAL-TIME AVAILABILITY
+  // ✅ ENHANCED EQUIPMENT DISPLAY FOR NEW TABLE STRUCTURE
   const renderEquipmentSection = (selectedBooking: Booking) => {
-    if (!selectedBooking.equipment_requested || selectedBooking.equipment_requested.length === 0) {
+    const equipmentList = parseEquipmentRequested(selectedBooking.equipment_requested);
+    const quantities = getEquipmentQuantities(selectedBooking);
+    
+    if (equipmentList.length === 0) {
       return null;
     }
+
+    const totalItems = quantities.reduce((sum, qty) => sum + qty, 0);
 
     return (
       <div>
@@ -582,27 +672,22 @@ const BookingManagement: React.FC = () => {
           <Package className="h-5 w-5 mr-2 text-blue-600" />
           {getText('Requested Equipment', 'Peralatan yang Diminta')}
           <span className="ml-2 text-sm text-gray-500">
-            ({selectedBooking.equipment_requested.length} types, {
-              selectedBooking.equipment_quantities?.reduce((sum, qty) => sum + qty, 0) || selectedBooking.equipment_requested.length
-            } total items)
+            ({equipmentList.length} types, {totalItems} total items)
           </span>
         </h5>
         
         <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {selectedBooking.equipment_requested.map((equipmentId, index) => {
-              // ✅ Get EXACT quantity from equipment_quantities array
-              const requestedQuantity = selectedBooking.equipment_quantities && selectedBooking.equipment_quantities[index] 
-                ? selectedBooking.equipment_quantities[index] 
-                : 1;
+            {equipmentList.map((equipmentId, index) => {
+              const requestedQuantity = quantities[index] || 1;
 
-              // ✅ Get equipment details
-              const equipmentDetails = allEquipment.find(eq => eq.id === equipmentId);
+              const equipmentDetails = allEquipment.find(eq => 
+                eq.id === equipmentId || eq.code === equipmentId || eq.name === equipmentId
+              );
               const equipmentName = equipmentDetails?.name || `Equipment ${equipmentId}`;
               const equipmentCode = equipmentDetails?.code || 'Unknown';
               const equipmentUnit = equipmentDetails?.unit || 'pcs';
               
-              // ✅ Get current real-time availability
               const availability = getEquipmentAvailability(equipmentId);
 
               return (
@@ -624,7 +709,7 @@ const BookingManagement: React.FC = () => {
                     </div>
                   </div>
                   
-                  {/* ✅ CURRENT AVAILABILITY STATUS */}
+                  {/* Current Availability Status */}
                   <div className="mt-3 p-3 bg-gray-50 rounded-lg border">
                     <div className="text-xs font-medium text-gray-600 mb-2">CURRENT AVAILABILITY</div>
                     <div className="flex items-center justify-between">
@@ -634,7 +719,6 @@ const BookingManagement: React.FC = () => {
                       </span>
                     </div>
                     
-                    {/* ✅ Availability Status Check */}
                     <div className="mt-2 pt-2 border-t border-gray-200">
                       {availability.available >= requestedQuantity ? (
                         <div className="flex items-center text-green-700">
@@ -661,24 +745,21 @@ const BookingManagement: React.FC = () => {
             })}
           </div>
           
-          {/* ✅ Overall Equipment Status Summary */}
+          {/* Overall Equipment Status Summary */}
           <div className="mt-4 pt-4 border-t border-emerald-200">
             {(() => {
-              const allSufficient = selectedBooking.equipment_requested.every((equipmentId, index) => {
-                const requestedQuantity = selectedBooking.equipment_quantities?.[index] || 1;
+              const allSufficient = equipmentList.every((equipmentId, index) => {
+                const requestedQuantity = quantities[index] || 1;
                 const availability = getEquipmentAvailability(equipmentId);
                 return availability.available >= requestedQuantity;
               });
-              
-              const totalRequested = selectedBooking.equipment_quantities?.reduce((sum, qty) => sum + qty, 0) || 
-                                   selectedBooking.equipment_requested.length;
               
               return allSufficient ? (
                 <div className="flex items-center text-green-700 bg-green-100 rounded-lg p-3">
                   <CheckCircle className="h-5 w-5 mr-2" />
                   <span className="font-medium">
                     {getText('✅ All equipment available for booking', '✅ Semua peralatan tersedia untuk pemesanan')}
-                    <span className="ml-2 text-sm">({totalRequested} items total)</span>
+                    <span className="ml-2 text-sm">({totalItems} items total)</span>
                   </span>
                 </div>
               ) : (
@@ -686,7 +767,7 @@ const BookingManagement: React.FC = () => {
                   <XCircle className="h-5 w-5 mr-2" />
                   <span className="font-medium">
                     {getText('❌ Some equipment insufficient for booking', '❌ Beberapa peralatan tidak mencukupi untuk pemesanan')}
-                    <span className="ml-2 text-sm">({totalRequested} items requested)</span>
+                    <span className="ml-2 text-sm">({totalItems} items requested)</span>
                   </span>
                 </div>
               );
@@ -708,16 +789,9 @@ const BookingManagement: React.FC = () => {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mt-6">
         <div className="flex items-center justify-between">
           <div className="text-sm text-gray-700">
-            {loadingCount ? (
-              <div className="flex items-center">
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                {getText('Counting...', 'Menghitung...')}
-              </div>
-            ) : (
-              getText(
-                `Showing ${((currentPage - 1) * pageSize) + 1} to ${Math.min(currentPage * pageSize, totalCount)} of ${totalCount} bookings`,
-                `Menampilkan ${((currentPage - 1) * pageSize) + 1} hingga ${Math.min(currentPage * pageSize, totalCount)} dari ${totalCount} pemesanan`
-              )
+            {getText(
+              `Showing ${((currentPage - 1) * pageSize) + 1} to ${Math.min(currentPage * pageSize, totalCount)} of ${totalCount} bookings`,
+              `Menampilkan ${((currentPage - 1) * pageSize) + 1} hingga ${Math.min(currentPage * pageSize, totalCount)} dari ${totalCount} pemesanan`
             )}
           </div>
           
@@ -775,7 +849,7 @@ const BookingManagement: React.FC = () => {
     );
   };
 
-  // ✅ ACCESS CONTROL
+  // ✅ ACCESS CONTROL CHECK
   if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
     return (
       <div className="flex items-center justify-center h-64">
@@ -807,7 +881,13 @@ const BookingManagement: React.FC = () => {
             </p>
           </div>
           <div className="hidden md:block text-right">
-            <div className="text-2xl font-bold">{totalCount || bookings.length}</div>
+            <div className="text-2xl font-bold">
+              {statsLoading ? (
+                <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+              ) : (
+                bookingStats.total || bookings.length
+              )}
+            </div>
             <div className="text-sm opacity-80">{getText('Total Bookings', 'Total Pemesanan')}</div>
           </div>
         </div>
@@ -818,25 +898,25 @@ const BookingManagement: React.FC = () => {
         {[
           { 
             label: getText('Pending', 'Menunggu'), 
-            count: bookings.filter(b => b.status === 'pending').length, 
+            count: bookingStats.pending, 
             color: 'bg-yellow-500', 
             icon: Clock 
           },
           { 
             label: getText('Approved', 'Disetujui'), 
-            count: bookings.filter(b => b.status === 'approved').length, 
+            count: bookingStats.approved, 
             color: 'bg-green-500', 
             icon: CheckCircle 
           },
           { 
             label: getText('Rejected', 'Ditolak'), 
-            count: bookings.filter(b => b.status === 'rejected').length, 
+            count: bookingStats.rejected, 
             color: 'bg-red-500', 
             icon: XCircle 
           },
           { 
             label: getText('Completed', 'Selesai'), 
-            count: bookings.filter(b => b.status === 'completed').length, 
+            count: bookingStats.completed, 
             color: 'bg-blue-500', 
             icon: Award 
           },
@@ -845,7 +925,13 @@ const BookingManagement: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">{stat.label}</p>
-                <p className="text-3xl font-bold text-gray-900">{stat.count}</p>
+                <p className="text-3xl font-bold text-gray-900">
+                  {statsLoading ? (
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  ) : (
+                    stat.count
+                  )}
+                </p>
               </div>
               <div className={`${stat.color} p-3 rounded-xl`}>
                 <stat.icon className="h-6 w-6 text-white" />
@@ -902,8 +988,7 @@ const BookingManagement: React.FC = () => {
           <div className="flex items-center space-x-2">
             <button
               onClick={() => {
-                fetchBookings();
-                fetchAllEquipment();
+                initializeData();
               }}
               disabled={loading}
               className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors duration-200 disabled:opacity-50"
@@ -966,6 +1051,7 @@ const BookingManagement: React.FC = () => {
               ) : (
                 filteredBookings.map((booking) => {
                   const StatusIcon = getStatusIcon(booking.status);
+                  const equipmentList = parseEquipmentRequested(booking.equipment_requested);
                   
                   return (
                     <tr key={booking.id} className="hover:bg-gray-50 transition-colors duration-200">
@@ -1031,14 +1117,14 @@ const BookingManagement: React.FC = () => {
                             </span>
                           </div>
                           
-                          {booking.equipment_requested && booking.equipment_requested.length > 0 && (
+                          {equipmentList.length > 0 && (
                             <div className="flex items-center text-sm text-gray-600">
                               <Package className="h-4 w-4 mr-1 text-gray-400" />
                               <span>
-                                {booking.equipment_requested.length} {getText('equipment', 'peralatan')}
+                                {equipmentList.length} {getText('equipment', 'peralatan')}
                                 {booking.equipment_quantities && (
                                   <span className="ml-1 text-xs text-gray-500">
-                                    ({booking.equipment_quantities.reduce((sum, qty) => sum + qty, 0)} items)
+                                    ({getEquipmentQuantities(booking).reduce((sum, qty) => sum + qty, 0)} items)
                                   </span>
                                 )}
                               </span>
@@ -1288,7 +1374,7 @@ const BookingManagement: React.FC = () => {
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-gray-700">{getText('Current Status', 'Status Saat Ini')}:</span>
                         <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(selectedBooking.status)}`}>
-                          {getText(selectedBooking.status, selectedBooking.status === 'pending' ? 'Menunggu' : 
+                         {getText(selectedBooking.status, selectedBooking.status === 'pending' ? 'Menunggu' : 
                                     selectedBooking.status === 'approved' ? 'Disetujui' : 
                                     selectedBooking.status === 'rejected' ? 'Ditolak' : 'Selesai')}
                         </span>
@@ -1311,16 +1397,16 @@ const BookingManagement: React.FC = () => {
                   </div>
 
                   {/* Attachments */}
-                  {selectedBooking.attachments && selectedBooking.attachments.length > 0 && (
+                  {selectedBooking.attachments && parseAttachments(selectedBooking.attachments).length > 0 && (
                     <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
                       <h4 className="font-medium text-purple-900 mb-3 flex items-center">
                         <FileText className="h-5 w-5 mr-2" />
                         {getText('Booking Documents', 'Dokumen Pemesanan')}
-                        <span className="ml-2 text-sm text-purple-600">({selectedBooking.attachments.length} files)</span>
+                        <span className="ml-2 text-sm text-purple-600">({parseAttachments(selectedBooking.attachments).length} files)</span>
                       </h4>
                       
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {selectedBooking.attachments.map((attachment, index) => {
+                        {parseAttachments(selectedBooking.attachments).map((attachment, index) => {
                           const isPDF = attachment.startsWith('data:application/pdf') || attachment.toLowerCase().includes('.pdf');
                           
                           return (
@@ -1406,7 +1492,7 @@ const BookingManagement: React.FC = () => {
                       <div className="mt-4 pt-4 border-t border-purple-200">
                         <button
                           onClick={() => {
-                            selectedBooking.attachments?.forEach((attachment, index) => {
+                            parseAttachments(selectedBooking.attachments).forEach((attachment, index) => {
                               const link = document.createElement('a');
                               link.href = attachment;
                               link.download = `booking_document_${index + 1}${attachment.startsWith('data:application/pdf') ? '.pdf' : '.jpg'}`;
