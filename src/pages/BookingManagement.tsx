@@ -36,6 +36,8 @@ import {
   Info,
   MessageSquare,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -87,16 +89,30 @@ interface Booking {
 const BookingManagement: React.FC = () => {
   const { profile } = useAuth();
   const { getText } = useLanguage();
+  
+  // Data states
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [allEquipment, setAllEquipment] = useState<any[]>([]);
+  
+  // Loading and UI states
   const [loading, setLoading] = useState(true);
+  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+  
+  // Filter states
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
+  
+  // Modal states
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
-  const [allEquipment, setAllEquipment] = useState<any[]>([]);
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(50);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loadingCount, setLoadingCount] = useState(false);
 
   useEffect(() => {
     fetchBookings();
@@ -113,7 +129,10 @@ const BookingManagement: React.FC = () => {
         }, 
         (payload) => {
           try {
-            fetchBookings();
+            // Only refetch if we're on the first page for real-time updates
+            if (currentPage === 1) {
+              fetchBookings();
+            }
           } catch (error) {
             console.error('Error in real-time subscription:', error);
           }
@@ -124,7 +143,7 @@ const BookingManagement: React.FC = () => {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [currentPage]);
 
   const fetchAllEquipment = async () => {
     try {
@@ -140,43 +159,187 @@ const BookingManagement: React.FC = () => {
     }
   };
 
-  const fetchBookings = async () => {
+  // ✅ OPTIMIZED FETCH WITH PAGINATION & ERROR HANDLING
+  const fetchBookings = async (retryCount = 0) => {
     try {
       setLoading(true);
       
+      // Calculate offset for pagination
+      const offset = (currentPage - 1) * pageSize;
+      
+      // First, get the total count (only when needed)
+      if (currentPage === 1 || totalCount === 0) {
+        setLoadingCount(true);
+        try {
+          const { count, error: countError } = await supabase
+            .from('bookings')
+            .select('id', { count: 'exact', head: true });
+          
+          if (countError) throw countError;
+          setTotalCount(count || 0);
+        } catch (countError) {
+          console.warn('Count query failed, using pagination anyway:', countError);
+        }
+        setLoadingCount(false);
+      }
+      
+      // Optimized query with limited joins and pagination
       let query = supabase
         .from('bookings')
         .select(`
-          *,
+          id,
+          user_id,
+          room_id,
+          start_time,
+          end_time,
+          purpose,
+          sks,
+          class_type,
+          status,
+          equipment_requested,
+          equipment_quantities,
+          notes,
+          attachments,
+          user_info,
+          created_at,
+          updated_at,
           user:users(
             id,
             full_name,
             identity_number,
             email,
             role,
-            study_program:study_programs(
-              name,
-              code
-            )
+            study_program:study_programs(name, code)
           ),
           room:rooms(
             id,
             name,
             code,
             capacity,
-            department:departments(
-              name
-            )
+            department:departments(name)
           )
-        `);
-      
-      query = query.order('created_at', { ascending: false });
+        `)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + pageSize - 1);
 
       const { data, error } = await query;
       if (error) throw error;
+      
       setBookings(data || []);
+      
     } catch (error) {
-      console.error('Error fetching bookings:', error);
+      console.error('Error fetching bookings (attempt ' + (retryCount + 1) + '):', error);
+      
+      if (retryCount < 2) {
+        console.log('Retrying with simplified query...');
+        setTimeout(() => fetchBookingsSimplified(retryCount + 1), 1000);
+        return;
+      }
+      
+      alert.error(getText('Failed to load bookings', 'Gagal memuat pemesanan'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✅ FALLBACK SIMPLIFIED QUERY
+  const fetchBookingsSimplified = async (retryCount = 0) => {
+    try {
+      setLoading(true);
+      console.log('🔄 Using simplified query fallback...');
+      
+      const offset = (currentPage - 1) * pageSize;
+      
+      // Get basic booking data without joins
+      const { data: bookingsData, error: bookingsError } = await supabase
+        .from('bookings')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(offset, offset + pageSize - 1);
+      
+      if (bookingsError) throw bookingsError;
+      
+      if (bookingsData && bookingsData.length > 0) {
+        // Get unique user IDs and room IDs
+        const userIds = [...new Set(bookingsData.map(b => b.user_id).filter(Boolean))];
+        const roomIds = [...new Set(bookingsData.map(b => b.room_id).filter(Boolean))];
+        
+        // Fetch users separately (with timeout)
+        let usersData = [];
+        let roomsData = [];
+        
+        if (userIds.length > 0) {
+          try {
+            const { data: users, error: usersError } = await supabase
+              .from('users')
+              .select(`
+                id, full_name, identity_number, email, role,
+                study_program:study_programs(name, code)
+              `)
+              .in('id', userIds);
+            
+            if (!usersError) usersData = users || [];
+          } catch (userError) {
+            console.warn('Users query failed:', userError);
+          }
+        }
+        
+        // Fetch rooms separately (with timeout)
+        if (roomIds.length > 0) {
+          try {
+            const { data: rooms, error: roomsError } = await supabase
+              .from('rooms')
+              .select(`
+                id, name, code, capacity,
+                department:departments(name)
+              `)
+              .in('id', roomIds);
+            
+            if (!roomsError) roomsData = rooms || [];
+          } catch (roomError) {
+            console.warn('Rooms query failed:', roomError);
+          }
+        }
+        
+        // Combine the data
+        const enrichedBookings = bookingsData.map(booking => ({
+          ...booking,
+          user: usersData.find(u => u.id === booking.user_id),
+          room: roomsData.find(r => r.id === booking.room_id)
+        }));
+        
+        setBookings(enrichedBookings);
+        alert.success(getText('Loaded booking data successfully', 'Data pemesanan berhasil dimuat'));
+        
+      } else {
+        setBookings([]);
+      }
+      
+    } catch (error) {
+      console.error('Simplified query failed:', error);
+      
+      if (retryCount < 1) {
+        // Last resort: get just basic data
+        try {
+          const { data: basicData, error: basicError } = await supabase
+            .from('bookings')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(25);
+          
+          if (!basicError && basicData) {
+            setBookings(basicData);
+            alert.warning(getText(
+              'Loaded basic data only. Some details may be missing.',
+              'Hanya memuat data dasar. Beberapa detail mungkin tidak lengkap.'
+            ));
+            return;
+          }
+        } catch (basicError) {
+          console.error('Basic query also failed:', basicError);
+        }
+      }
+      
       alert.error(getText('Failed to load bookings', 'Gagal memuat pemesanan'));
     } finally {
       setLoading(false);
@@ -185,46 +348,113 @@ const BookingManagement: React.FC = () => {
 
   // ✅ SIMPLIFIED BOOKING STATUS UPDATE WITH EQUIPMENT MANAGEMENT
   const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 'rejected') => {
-  try {
-    setProcessingIds(prev => new Set(prev).add(bookingId));
-    
-    const booking = bookings.find(b => b.id === bookingId);
-    if (!booking) {
-      throw new Error('Booking not found');
-    }
-
-    console.log('📋 SIMPLE: Updating booking status:', {
-      bookingId: booking.id,
-      currentStatus: booking.status,
-      newStatus,
-      equipment_requested: booking.equipment_requested,
-      equipment_quantities: booking.equipment_quantities
-    });
-
-    // ✅ SIMPLE: Direct equipment updates
-    if (booking.equipment_requested && booking.equipment_requested.length > 0) {
+    try {
+      setProcessingIds(prev => new Set(prev).add(bookingId));
       
-      for (let i = 0; i < booking.equipment_requested.length; i++) {
-        const equipmentId = booking.equipment_requested[i];
-        const quantity = booking.equipment_quantities?.[i] || 1;
+      const booking = bookings.find(b => b.id === bookingId);
+      if (!booking) {
+        throw new Error('Booking not found');
+      }
+
+      console.log('📋 SIMPLE: Updating booking status:', {
+        bookingId: booking.id,
+        currentStatus: booking.status,
+        newStatus,
+        equipment_requested: booking.equipment_requested,
+        equipment_quantities: booking.equipment_quantities
+      });
+
+      // ✅ SIMPLE: Direct equipment updates
+      if (booking.equipment_requested && booking.equipment_requested.length > 0) {
         
-        if (newStatus === 'approved') {
-          // ✅ APPROVED: Kurangi quantity
-          console.log(`📉 Decreasing ${equipmentId} by ${quantity}`);
+        for (let i = 0; i < booking.equipment_requested.length; i++) {
+          const equipmentId = booking.equipment_requested[i];
+          const quantity = booking.equipment_quantities?.[i] || 1;
           
-          const { error } = await supabase.rpc('decrease_equipment_quantity', {
-            equipment_id: equipmentId,
-            decrease_by: quantity
-          });
-          
-          if (error) {
-            console.error(`❌ Failed to decrease ${equipmentId}:`, error);
-            throw new Error(`Failed to update equipment ${equipmentId}: ${error.message}`);
+          if (newStatus === 'approved') {
+            // ✅ APPROVED: Kurangi quantity
+            console.log(`📉 Decreasing ${equipmentId} by ${quantity}`);
+            
+            const { error } = await supabase.rpc('decrease_equipment_quantity', {
+              equipment_id: equipmentId,
+              decrease_by: quantity
+            });
+            
+            if (error) {
+              console.error(`❌ Failed to decrease ${equipmentId}:`, error);
+              throw new Error(`Failed to update equipment ${equipmentId}: ${error.message}`);
+            }
+            
+          } else if (newStatus === 'rejected' && booking.status === 'approved') {
+            // ✅ REJECTED (from approved): Tambah quantity kembali
+            console.log(`📈 Increasing ${equipmentId} by ${quantity}`);
+            
+            const { error } = await supabase.rpc('increase_equipment_quantity', {
+              equipment_id: equipmentId,
+              increase_by: quantity
+            });
+            
+            if (error) {
+              console.error(`❌ Failed to increase ${equipmentId}:`, error);
+              throw new Error(`Failed to restore equipment ${equipmentId}: ${error.message}`);
+            }
           }
+        }
+      }
+
+      // ✅ UPDATE BOOKING STATUS
+      const { error: bookingError } = await supabase
+        .from('bookings')
+        .update({ 
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', bookingId);
+
+      if (bookingError) throw bookingError;
+      
+      console.log('✅ SIMPLE: Booking status updated successfully');
+      
+      const statusText = newStatus === 'approved' ? getText('approved', 'disetujui') : getText('rejected', 'ditolak');
+      alert.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
+      
+      await fetchBookings();
+      await fetchAllEquipment();
+      
+      if (selectedBooking?.id === bookingId) {
+        setShowDetailModal(false);
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Error updating booking status:', error);
+      alert.error(error.message || getText('Failed to update booking status', 'Gagal memperbarui status pemesanan'));
+    } finally {
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(bookingId);
+        return newSet;
+      });
+    }
+  };
+
+  // ✅ SIMPLIFIED DELETE WITH QUANTITY RESTORATION
+  const handleDelete = async (bookingId: string) => {
+    try {
+      setProcessingIds(prev => new Set(prev).add(bookingId));
+      
+      const booking = bookings.find(b => b.id === bookingId);
+      if (!booking) {
+        throw new Error('Booking not found');
+      }
+
+      // ✅ SIMPLE: Restore quantities if booking was approved
+      if (booking.status === 'approved' && booking.equipment_requested && booking.equipment_requested.length > 0) {
+        
+        for (let i = 0; i < booking.equipment_requested.length; i++) {
+          const equipmentId = booking.equipment_requested[i];
+          const quantity = booking.equipment_quantities?.[i] || 1;
           
-        } else if (newStatus === 'rejected' && booking.status === 'approved') {
-          // ✅ REJECTED (from approved): Tambah quantity kembali
-          console.log(`📈 Increasing ${equipmentId} by ${quantity}`);
+          console.log(`📈 Restoring ${equipmentId} by ${quantity} (booking deleted)`);
           
           const { error } = await supabase.rpc('increase_equipment_quantity', {
             equipment_id: equipmentId,
@@ -232,107 +462,40 @@ const BookingManagement: React.FC = () => {
           });
           
           if (error) {
-            console.error(`❌ Failed to increase ${equipmentId}:`, error);
-            throw new Error(`Failed to restore equipment ${equipmentId}: ${error.message}`);
+            console.warn(`⚠️ Failed to restore ${equipmentId}:`, error);
+            // Don't throw error for delete operation
           }
         }
       }
-    }
 
-    // ✅ UPDATE BOOKING STATUS
-    const { error: bookingError } = await supabase
-      .from('bookings')
-      .update({ 
-        status: newStatus,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', bookingId);
+      // ✅ DELETE BOOKING
+      const { error } = await supabase
+        .from('bookings')
+        .delete()
+        .eq('id', bookingId);
 
-    if (bookingError) throw bookingError;
-    
-    console.log('✅ SIMPLE: Booking status updated successfully');
-    
-    const statusText = newStatus === 'approved' ? getText('approved', 'disetujui') : getText('rejected', 'ditolak');
-    alert.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
-    
-    await fetchBookings();
-    await fetchAllEquipment();
-    
-    if (selectedBooking?.id === bookingId) {
-      setShowDetailModal(false);
-    }
-    
-  } catch (error: any) {
-    console.error('❌ Error updating booking status:', error);
-    alert.error(error.message || getText('Failed to update booking status', 'Gagal memperbarui status pemesanan'));
-  } finally {
-    setProcessingIds(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(bookingId);
-      return newSet;
-    });
-  }
-};
-
-  // ✅ SIMPLIFIED DELETE WITH QUANTITY RESTORATION
-  const handleDelete = async (bookingId: string) => {
-  try {
-    setProcessingIds(prev => new Set(prev).add(bookingId));
-    
-    const booking = bookings.find(b => b.id === bookingId);
-    if (!booking) {
-      throw new Error('Booking not found');
-    }
-
-    // ✅ SIMPLE: Restore quantities if booking was approved
-    if (booking.status === 'approved' && booking.equipment_requested && booking.equipment_requested.length > 0) {
+      if (error) throw error;
       
-      for (let i = 0; i < booking.equipment_requested.length; i++) {
-        const equipmentId = booking.equipment_requested[i];
-        const quantity = booking.equipment_quantities?.[i] || 1;
-        
-        console.log(`📈 Restoring ${equipmentId} by ${quantity} (booking deleted)`);
-        
-        const { error } = await supabase.rpc('increase_equipment_quantity', {
-          equipment_id: equipmentId,
-          increase_by: quantity
-        });
-        
-        if (error) {
-          console.warn(`⚠️ Failed to restore ${equipmentId}:`, error);
-          // Don't throw error for delete operation
-        }
+      alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
+      setShowDeleteConfirm(null);
+      await fetchBookings();
+      await fetchAllEquipment();
+      
+      if (selectedBooking?.id === bookingId) {
+        setShowDetailModal(false);
       }
+      
+    } catch (error: any) {
+      console.error('❌ Error deleting booking:', error);
+      alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
+    } finally {
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(bookingId);
+        return newSet;
+      });
     }
-
-    // ✅ DELETE BOOKING
-    const { error } = await supabase
-      .from('bookings')
-      .delete()
-      .eq('id', bookingId);
-
-    if (error) throw error;
-    
-    alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
-    setShowDeleteConfirm(null);
-    await fetchBookings();
-    await fetchAllEquipment();
-    
-    if (selectedBooking?.id === bookingId) {
-      setShowDetailModal(false);
-    }
-    
-  } catch (error: any) {
-    console.error('❌ Error deleting booking:', error);
-    alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
-  } finally {
-    setProcessingIds(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(bookingId);
-      return newSet;
-    });
-  }
-};
+  };
 
   // ✅ ENHANCED EQUIPMENT AVAILABILITY CHECK
   const getEquipmentAvailability = (equipmentId: string) => {
@@ -345,6 +508,7 @@ const BookingManagement: React.FC = () => {
     };
   };
 
+  // ✅ OPTIMIZED FILTERING
   const filteredBookings = bookings.filter(booking => {
     const searchLower = searchTerm.toLowerCase();
     const matchesSearch = 
@@ -533,6 +697,85 @@ const BookingManagement: React.FC = () => {
     );
   };
 
+  // ✅ PAGINATION COMPONENT
+  const renderPagination = () => {
+    if (loading || totalCount <= pageSize) return null;
+    
+    const totalPages = Math.ceil(totalCount / pageSize);
+    if (totalPages <= 1) return null;
+
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mt-6">
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-gray-700">
+            {loadingCount ? (
+              <div className="flex items-center">
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                {getText('Counting...', 'Menghitung...')}
+              </div>
+            ) : (
+              getText(
+                `Showing ${((currentPage - 1) * pageSize) + 1} to ${Math.min(currentPage * pageSize, totalCount)} of ${totalCount} bookings`,
+                `Menampilkan ${((currentPage - 1) * pageSize) + 1} hingga ${Math.min(currentPage * pageSize, totalCount)} dari ${totalCount} pemesanan`
+              )
+            )}
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1 || loading}
+              className="flex items-center px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              {getText('Previous', 'Sebelumnya')}
+            </button>
+            
+            <div className="flex items-center space-x-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    disabled={loading}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      currentPage === pageNum
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-700 hover:bg-gray-50 border border-gray-300 disabled:opacity-50'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+            
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages || loading}
+              className="flex items-center px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {getText('Next', 'Selanjutnya')}
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ✅ ACCESS CONTROL
   if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
     return (
       <div className="flex items-center justify-center h-64">
@@ -564,7 +807,7 @@ const BookingManagement: React.FC = () => {
             </p>
           </div>
           <div className="hidden md:block text-right">
-            <div className="text-2xl font-bold">{bookings.length}</div>
+            <div className="text-2xl font-bold">{totalCount || bookings.length}</div>
             <div className="text-sm opacity-80">{getText('Total Bookings', 'Total Pemesanan')}</div>
           </div>
         </div>
@@ -664,6 +907,7 @@ const BookingManagement: React.FC = () => {
               }}
               disabled={loading}
               className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors duration-200 disabled:opacity-50"
+              title={getText('Refresh', 'Segarkan')}
             >
               <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -712,7 +956,10 @@ const BookingManagement: React.FC = () => {
                       {getText('No bookings found', 'Tidak ada pemesanan ditemukan')}
                     </h3>
                     <p className="text-gray-600">
-                      {getText('Try adjusting your search filters', 'Coba sesuaikan filter pencarian Anda')}
+                      {searchTerm || statusFilter !== 'all' || dateFilter !== 'all' ? 
+                        getText('Try adjusting your search filters', 'Coba sesuaikan filter pencarian Anda') :
+                        getText('No bookings available', 'Belum ada pemesanan tersedia')
+                      }
                     </p>
                   </td>
                 </tr>
@@ -760,10 +1007,16 @@ const BookingManagement: React.FC = () => {
                           </div>
                           <div className="flex items-center text-sm text-gray-600">
                             <Clock className="h-4 w-4 mr-1 text-gray-400" />
-                            <span>{format(new Date(booking.start_time), 'MMM d, HH:mm')}</span>
+                            <span>
+                              {booking.start_time ? format(new Date(booking.start_time), 'MMM d, HH:mm') : 'N/A'}
+                            </span>
                           </div>
                           <div className="text-xs text-gray-500">
-                            {getText('to', 'hingga')} {format(new Date(booking.end_time), 'HH:mm')}
+                            {booking.end_time ? (
+                              <>
+                                {getText('to', 'hingga')} {format(new Date(booking.end_time), 'HH:mm')}
+                              </>
+                            ) : 'N/A'}
                           </div>
                         </div>
                       </td>
@@ -772,7 +1025,7 @@ const BookingManagement: React.FC = () => {
                         <div className="space-y-2">
                           <div className="flex items-center text-sm">
                             <GraduationCap className="h-4 w-4 mr-1 text-gray-400" />
-                            <span className="text-gray-900">{booking.sks} SKS</span>
+                            <span className="text-gray-900">{booking.sks || 0} SKS</span>
                             <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-800 text-xs rounded">
                               {booking.class_type === 'theory' ? getText('Theory', 'Teori') : getText('Practical', 'Praktik')}
                             </span>
@@ -793,7 +1046,11 @@ const BookingManagement: React.FC = () => {
                           )}
                           
                           <div className="text-xs text-gray-500">
-                            {getText('Created', 'Dibuat')}: {format(new Date(booking.created_at), 'MMM d, HH:mm')}
+                            {booking.created_at ? (
+                              <>
+                                {getText('Created', 'Dibuat')}: {format(new Date(booking.created_at), 'MMM d, HH:mm')}
+                              </>
+                            ) : 'N/A'}
                           </div>
                         </div>
                       </td>
@@ -830,7 +1087,11 @@ const BookingManagement: React.FC = () => {
                                 className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors duration-200 disabled:opacity-50"
                                 title={getText('Approve', 'Setujui')}
                               >
-                                <Check className="h-4 w-4" />
+                                {processingIds.has(booking.id) ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Check className="h-4 w-4" />
+                                )}
                               </button>
                               <button
                                 onClick={() => handleStatusUpdate(booking.id, 'rejected')}
@@ -838,14 +1099,19 @@ const BookingManagement: React.FC = () => {
                                 className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200 disabled:opacity-50"
                                 title={getText('Reject', 'Tolak')}
                               >
-                                <X className="h-4 w-4" />
+                                {processingIds.has(booking.id) ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <X className="h-4 w-4" />
+                                )}
                               </button>
                             </>
                           )}
 
                           <button
                             onClick={() => setShowDeleteConfirm(booking.id)}
-                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200"
+                            disabled={processingIds.has(booking.id)}
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200 disabled:opacity-50"
                             title={getText('Delete', 'Hapus')}
                           >
                             <Trash2 className="h-4 w-4" />
@@ -860,6 +1126,9 @@ const BookingManagement: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Pagination */}
+      {renderPagination()}
 
       {/* Detail Modal */}
       {showDetailModal && selectedBooking && (
@@ -974,13 +1243,13 @@ const BookingManagement: React.FC = () => {
                         <div>
                           <span className="text-sm text-purple-700">{getText('Start Time', 'Waktu Mulai')}:</span>
                           <p className="text-sm font-medium text-purple-900">
-                            {format(new Date(selectedBooking.start_time), 'MMM d, yyyy HH:mm')}
+                            {selectedBooking.start_time ? format(new Date(selectedBooking.start_time), 'MMM d, yyyy HH:mm') : 'N/A'}
                           </p>
                         </div>
                         <div>
                           <span className="text-sm text-purple-700">{getText('End Time', 'Waktu Selesai')}:</span>
                           <p className="text-sm font-medium text-purple-900">
-                            {format(new Date(selectedBooking.end_time), 'MMM d, yyyy HH:mm')}
+                            {selectedBooking.end_time ? format(new Date(selectedBooking.end_time), 'MMM d, yyyy HH:mm') : 'N/A'}
                           </p>
                         </div>
                       </div>
@@ -988,7 +1257,7 @@ const BookingManagement: React.FC = () => {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <span className="text-sm text-purple-700">{getText('SKS', 'SKS')}:</span>
-                          <p className="text-sm font-medium text-purple-900">{selectedBooking.sks} SKS</p>
+                          <p className="text-sm font-medium text-purple-900">{selectedBooking.sks || 0} SKS</p>
                         </div>
                         <div>
                           <span className="text-sm text-purple-700">{getText('Class Type', 'Jenis Kelas')}:</span>
@@ -1028,130 +1297,131 @@ const BookingManagement: React.FC = () => {
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-gray-700">{getText('Created', 'Dibuat')}:</span>
                         <span className="text-sm text-gray-900">
-                          {format(new Date(selectedBooking.created_at), 'MMM d, yyyy HH:mm')}
+                          {selectedBooking.created_at ? format(new Date(selectedBooking.created_at), 'MMM d, yyyy HH:mm') : 'N/A'}
                         </span>
                       </div>
                       
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-gray-700">{getText('Last Updated', 'Terakhir Diperbarui')}:</span>
                         <span className="text-sm text-gray-900">
-                          {format(new Date(selectedBooking.updated_at), 'MMM d, yyyy HH:mm')}
+                          {selectedBooking.updated_at ? format(new Date(selectedBooking.updated_at), 'MMM d, yyyy HH:mm') : 'N/A'}
                         </span>
                       </div>
                     </div>
                   </div>
 
+                  {/* Attachments */}
                   {selectedBooking.attachments && selectedBooking.attachments.length > 0 && (
-  <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
-    <h4 className="font-medium text-purple-900 mb-3 flex items-center">
-      <FileText className="h-5 w-5 mr-2" />
-      {getText('Booking Documents', 'Dokumen Pemesanan')}
-      <span className="ml-2 text-sm text-purple-600">({selectedBooking.attachments.length} files)</span>
-    </h4>
-    
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-      {selectedBooking.attachments.map((attachment, index) => {
-        const isPDF = attachment.startsWith('data:application/pdf') || attachment.toLowerCase().includes('.pdf');
-        
-        return (
-          <div key={index} className="relative group">
-            <div 
-              onClick={() => window.open(attachment, '_blank')}
-              className="cursor-pointer bg-white rounded-lg border border-purple-200 p-3 hover:shadow-md transition-all duration-200 hover:scale-105"
-            >
-              {isPDF ? (
-                <div className="flex flex-col items-center">
-                  <div className="h-16 w-16 bg-red-100 rounded-lg flex items-center justify-center mb-2">
-                    <FileText className="h-8 w-8 text-red-600" />
-                  </div>
-                  <span className="text-xs text-center text-gray-700 font-medium">
-                    PDF Document
-                  </span>
-                </div>
-              ) : (
-                <div className="relative">
-                  <img
-                    src={attachment}
-                    alt={`Booking Document ${index + 1}`}
-                    className="w-full h-16 object-cover rounded-lg mb-2"
-                  />
-                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg transition-all duration-200 flex items-center justify-center">
-                    <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-                  </div>
-                  <span className="text-xs text-center text-gray-700 font-medium block">
-                    Image File
-                  </span>
-                </div>
-              )}
-            </div>
-            
-            {/* Quick View Button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                const modal = document.createElement('div');
-                modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4';
-                modal.onclick = () => document.body.removeChild(modal);
-                
-                if (isPDF) {
-                  modal.innerHTML = `
-                    <div class="bg-white rounded-lg p-4 max-w-4xl w-full h-full max-h-[90vh] overflow-auto">
-                      <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-lg font-semibold">PDF Document</h3>
-                        <button onclick="document.body.removeChild(this.closest('.fixed'))" class="text-gray-500 hover:text-gray-700">
-                          <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                          </svg>
+                    <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
+                      <h4 className="font-medium text-purple-900 mb-3 flex items-center">
+                        <FileText className="h-5 w-5 mr-2" />
+                        {getText('Booking Documents', 'Dokumen Pemesanan')}
+                        <span className="ml-2 text-sm text-purple-600">({selectedBooking.attachments.length} files)</span>
+                      </h4>
+                      
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {selectedBooking.attachments.map((attachment, index) => {
+                          const isPDF = attachment.startsWith('data:application/pdf') || attachment.toLowerCase().includes('.pdf');
+                          
+                          return (
+                            <div key={index} className="relative group">
+                              <div 
+                                onClick={() => window.open(attachment, '_blank')}
+                                className="cursor-pointer bg-white rounded-lg border border-purple-200 p-3 hover:shadow-md transition-all duration-200 hover:scale-105"
+                              >
+                                {isPDF ? (
+                                  <div className="flex flex-col items-center">
+                                    <div className="h-16 w-16 bg-red-100 rounded-lg flex items-center justify-center mb-2">
+                                      <FileText className="h-8 w-8 text-red-600" />
+                                    </div>
+                                    <span className="text-xs text-center text-gray-700 font-medium">
+                                      PDF Document
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div className="relative">
+                                    <img
+                                      src={attachment}
+                                      alt={`Booking Document ${index + 1}`}
+                                      className="w-full h-16 object-cover rounded-lg mb-2"
+                                    />
+                                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg transition-all duration-200 flex items-center justify-center">
+                                      <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                                    </div>
+                                    <span className="text-xs text-center text-gray-700 font-medium block">
+                                      Image File
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {/* Quick View Button */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const modal = document.createElement('div');
+                                  modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4';
+                                  modal.onclick = () => document.body.removeChild(modal);
+                                  
+                                  if (isPDF) {
+                                    modal.innerHTML = `
+                                      <div class="bg-white rounded-lg p-4 max-w-4xl w-full h-full max-h-[90vh] overflow-auto">
+                                        <div class="flex justify-between items-center mb-4">
+                                          <h3 class="text-lg font-semibold">PDF Document</h3>
+                                          <button onclick="document.body.removeChild(this.closest('.fixed'))" class="text-gray-500 hover:text-gray-700">
+                                            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                          </button>
+                                        </div>
+                                        <iframe src="${attachment}" class="w-full h-full" frameborder="0"></iframe>
+                                      </div>
+                                    `;
+                                  } else {
+                                    modal.innerHTML = `
+                                      <div class="relative max-w-4xl max-h-[90vh]">
+                                        <img src="${attachment}" alt="Document" class="max-w-full max-h-full object-contain rounded-lg" />
+                                        <button onclick="document.body.removeChild(this.closest('.fixed'))" class="absolute top-4 right-4 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-75">
+                                          <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                          </svg>
+                                        </button>
+                                      </div>
+                                    `;
+                                  }
+                                  
+                                  document.body.appendChild(modal);
+                                }}
+                                className="absolute top-1 right-1 bg-purple-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-purple-700"
+                                title={getText('Quick View', 'Lihat Cepat')}
+                              >
+                                <Eye className="h-3 w-3" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      
+                      {/* Download All Button */}
+                      <div className="mt-4 pt-4 border-t border-purple-200">
+                        <button
+                          onClick={() => {
+                            selectedBooking.attachments?.forEach((attachment, index) => {
+                              const link = document.createElement('a');
+                              link.href = attachment;
+                              link.download = `booking_document_${index + 1}${attachment.startsWith('data:application/pdf') ? '.pdf' : '.jpg'}`;
+                              link.click();
+                            });
+                            alert.success(getText('Documents downloaded', 'Dokumen berhasil diunduh'));
+                          }}
+                          className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors duration-200"
+                        >
+                          <Download className="h-4 w-4" />
+                          <span>{getText('Download All Documents', 'Unduh Semua Dokumen')}</span>
                         </button>
                       </div>
-                      <iframe src="${attachment}" class="w-full h-full" frameborder="0"></iframe>
                     </div>
-                  `;
-                } else {
-                  modal.innerHTML = `
-                    <div class="relative max-w-4xl max-h-[90vh]">
-                      <img src="${attachment}" alt="Document" class="max-w-full max-h-full object-contain rounded-lg" />
-                      <button onclick="document.body.removeChild(this.closest('.fixed'))" class="absolute top-4 right-4 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-75">
-                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                  `;
-                }
-                
-                document.body.appendChild(modal);
-              }}
-              className="absolute top-1 right-1 bg-purple-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-purple-700"
-              title={getText('Quick View', 'Lihat Cepat')}
-            >
-              <Eye className="h-3 w-3" />
-            </button>
-          </div>
-        );
-      })}
-    </div>
-    
-    {/* Download All Button */}
-    <div className="mt-4 pt-4 border-t border-purple-200">
-      <button
-        onClick={() => {
-          selectedBooking.attachments?.forEach((attachment, index) => {
-            const link = document.createElement('a');
-            link.href = attachment;
-            link.download = `booking_document_${index + 1}${attachment.startsWith('data:application/pdf') ? '.pdf' : '.jpg'}`;
-            link.click();
-          });
-          alert.success(getText('Documents downloaded', 'Dokumen berhasil diunduh'));
-        }}
-        className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors duration-200"
-      >
-        <Download className="h-4 w-4" />
-        <span>{getText('Download All Documents', 'Unduh Semua Dokumen')}</span>
-      </button>
-    </div>
-  </div>
-)}
+                  )}
 
                   {/* Actions */}
                   {selectedBooking.status === 'pending' && (
@@ -1229,7 +1499,8 @@ const BookingManagement: React.FC = () => {
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => setShowDeleteConfirm(null)}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-200"
+                disabled={processingIds.has(showDeleteConfirm || '')}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors duration-200"
               >
                 {getText('Cancel', 'Batal')}
               </button>
