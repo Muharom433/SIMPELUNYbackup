@@ -701,8 +701,8 @@ const BookingManagement: React.FC = () => {
                       <div>
                         <div className="font-semibold text-emerald-900">{equipmentName}</div>
                         <div className="text-sm text-emerald-700">{equipmentCode}</div>
+                      </div>
                     </div>
-                  </div>
                     
                     <div className="text-right">
                       <div className="font-bold text-emerald-900 text-lg">{requestedQuantity}</div>
@@ -727,11 +727,13 @@ const BookingManagement: React.FC = () => {
                           <span className="text-xs font-medium">
                             {getText('Sufficient quantity available', 'Jumlah mencukupi')}
                           </span>
+                        </div>
                       ) : (
                         <div className="flex items-center text-red-700">
                           <XCircle className="h-4 w-4 mr-1" />
                           <span className="text-xs font-medium">
-                            {`${getText('Insufficient quantity!', 'Jumlah tidak mencukupi!')} (${getText('Need', 'Butuh')} ${requestedQuantity}, ${getText('Available', 'Tersedia')} ${availability.available})`}
+                            {getText('Insufficient quantity!', 'Jumlah tidak mencukupi!')}{' '}
+                            ({getText('Need', 'Butuh')} {requestedQuantity}, {getText('Available', 'Tersedia')} {availability.available})
                           </span>
                         </div>
                       )}
@@ -1289,7 +1291,7 @@ const BookingManagement: React.FC = () => {
                           <span className="text-sm text-blue-900">{selectedBooking.user.study_program.name}</span>
                         </div>
                       )}
-                    </div>
+                  </div>
                   </div>
 
                   {/* Room Information */}
@@ -1368,7 +1370,7 @@ const BookingManagement: React.FC = () => {
                             {selectedBooking.class_type === 'theory' ? getText('Theory', 'Teori') : getText('Practical', 'Praktik')}
                           </p>
                         </div>
-                      </div>
+                    </div>
 
                       {selectedBooking.notes && (
                         <div>
