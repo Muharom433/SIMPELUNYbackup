@@ -556,13 +556,42 @@ const BookingManagement: React.FC = () => {
   }
 };
 
-  const getEquipmentQuantities = (booking: Booking): number[] => {
-    const equipmentList = parseEquipmentRequested(booking.equipment_requested);
-    if (booking.equipment_quantities) {
-      return equipmentList.map(() => booking.equipment_quantities);
+  // PERBAIKI JUGA FUNGSI getEquipmentQuantities
+const getEquipmentQuantities = (booking: Booking): number[] => {
+  const equipmentList = parseEquipmentRequested(booking.equipment_requested);
+  
+  // Jika tidak ada equipment, return empty array
+  if (equipmentList.length === 0) return [];
+  
+  // Jika equipment_quantities adalah number, gunakan untuk semua equipment
+  if (typeof booking.equipment_quantities === 'number' && booking.equipment_quantities > 0) {
+    return equipmentList.map(() => booking.equipment_quantities);
+  }
+  
+  // Jika equipment_quantities adalah array
+  if (Array.isArray(booking.equipment_quantities)) {
+    return booking.equipment_quantities.map(qty => Number(qty) || 1);
+  }
+  
+  // Jika equipment_quantities adalah string, coba parse
+  if (typeof booking.equipment_quantities === 'string') {
+    try {
+      const parsed = JSON.parse(booking.equipment_quantities);
+      if (Array.isArray(parsed)) {
+        return parsed.map(qty => Number(qty) || 1);
+      }
+      // Jika string tapi bukan JSON array, coba split by comma
+      const quantities = booking.equipment_quantities.split(',').map(qty => Number(qty.trim()) || 1);
+      return quantities.length === equipmentList.length ? quantities : equipmentList.map(() => 1);
+    } catch {
+      // Jika gagal parse, gunakan default 1 untuk semua
+      return equipmentList.map(() => 1);
     }
-    return equipmentList.map(() => 1);
-  };
+  }
+  
+  // Default: 1 untuk setiap equipment
+  return equipmentList.map(() => 1);
+};
 
   const getEquipmentAvailability = (equipmentId: string) => {
     const equipment = allEquipment.find(eq => eq.id === equipmentId || eq.code === equipmentId || eq.name === equipmentId);
