@@ -498,36 +498,24 @@ const BookingManagement: React.FC = () => {
   };
 
   // EQUIPMENT UTILITY FUNCTIONS
-  const parseEquipmentRequested = (equipmentStr: any): string[] => {
-  console.log('🔍 parseEquipmentRequested input:', {
-    value: equipmentStr,
-    type: typeof equipmentStr,
-    isArray: Array.isArray(equipmentStr)
-  });
-  
-  // Handle null, undefined, atau empty
-  if (!equipmentStr) {
-    console.log('📝 Empty equipment string, returning []');
-    return [];
-  }
-  
-  // Jika sudah array, return langsung
-  if (Array.isArray(equipmentStr)) {
-    console.log('📝 Already array, converting to strings');
-    return equipmentStr.map(item => String(item)).filter(item => item);
-  }
-  
-  // Jika bukan string, convert ke string dulu
-  const strValue = String(equipmentStr);
-  console.log('📝 Converted to string:', strValue);
+    const strValue = String(equipmentStr);
   
   // Jika string kosong setelah convert
-  if (!strValue || strValue === 'null' || strValue === 'undefined') {
-    console.log('📝 Empty string after conversion, returning []');
-    return [];
-  }
+  if (!strValue || strValue === 'null' || strValue === 'undefined') return [];
   
-
+  try {
+    // Try parsing as JSON first
+    const parsed = JSON.parse(strValue);
+    if (Array.isArray(parsed)) {
+      return parsed.map(item => String(item)).filter(item => item);
+    }
+    // Jika JSON parse berhasil tapi bukan array, treat as single item
+    return [String(parsed)].filter(item => item);
+  } catch {
+    // Fallback to comma-separated values
+    return strValue.split(',').map(item => String(item).trim()).filter(item => item);
+  }
+};
 
   const parseAttachments = (attachmentStr: string): string[] => {
     if (!attachmentStr) return [];
