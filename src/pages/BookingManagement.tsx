@@ -27,6 +27,7 @@ import {
   Trash2,
   Download,
   GraduationCap,
+  Award,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -881,7 +882,7 @@ const BookingManagement: React.FC = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
         {[
           {
             label: getText('Pending', 'Menunggu'),
@@ -1558,10 +1559,7 @@ const BookingManagement: React.FC = () => {
                           {getText('Borrow', 'Pinjam')}
                         </button>
                         <button
-                          onClick={() => {
-                            handleStatusUpdate(selectedBooking.id, 'rejected');
-                            setShowDetailModal(false);
-                          }}
+                          onClick={() => handleStatusUpdate(selectedBooking.id, 'rejected')}
                           disabled={processingIds.has(selectedBooking.id)}
                           className="flex-1 flex items-center justify-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors duration-200"
                         >
