@@ -70,8 +70,6 @@ interface Booking {
   user_info: any;
   created_at: string;
   updated_at: string;
-  borrowed_at?: string;
-  approved_at?: string;
   user?: {
     id: string;
     full_name: string;
