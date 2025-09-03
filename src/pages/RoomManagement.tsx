@@ -399,7 +399,7 @@ const RoomManagement: React.FC = () => {
                     user:users!user_id(full_name, identity_number)
                 `)
                 .eq('room_id', roomId)
-                .eq('status', 'approved')
+                .in('status', ['approved','booked'])
                 .gte('start_time', startOfDay)
                 .lte('start_time', endOfDay)
                 .order('start_time');
