@@ -202,8 +202,6 @@ const BookingManagement: React.FC = () => {
           attachments,
           user_info,
           created_at,
-          updated_at,
-          borrowed_at,
           approved_at,
           user:users(
             id,
