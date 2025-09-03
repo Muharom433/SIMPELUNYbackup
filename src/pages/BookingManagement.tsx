@@ -202,7 +202,7 @@ const BookingManagement: React.FC = () => {
           attachments,
           user_info,
           created_at,
-          approved_at,
+          updated_at,
           user:users(
             id,
             full_name,
@@ -315,14 +315,10 @@ const BookingManagement: React.FC = () => {
       }
 
       // Update booking status
-      const updateData: any = { 
+      const updateData = { 
         status: newStatus,
         updated_at: new Date().toISOString()
       };
-
-      if (newStatus === 'approved') {
-        updateData.approved_at = new Date().toISOString();
-      }
 
       const { error: bookingError } = await supabase
         .from('bookings')
@@ -409,6 +405,7 @@ const BookingManagement: React.FC = () => {
         .from('bookings')
         .update({ 
           status: 'borrowed',
+          updated_at: new Date().toISOString()
         })
         .eq('id', bookingId);
 
@@ -489,11 +486,11 @@ const BookingManagement: React.FC = () => {
       }
       
     } catch (error: any) {
-            console.error('❌ Error deleting booking:', error);
+      console.error('❌ Error deleting booking:', error);
       alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
     } finally {
       setProcessingIds(prev => {
-        const newSet = new Set(prev);
+                const newSet = new Set(prev);
         newSet.delete(bookingId);
         return newSet;
       });
@@ -731,6 +728,9 @@ const BookingManagement: React.FC = () => {
                           {getText('Currently borrowed', 'Sedang dipinjam')}
                         </span>
                       </div>
+                      <div className="text-xs text-blue-600 mt-1">
+                        {getText('Last updated', 'Terakhir diperbarui')}: {selectedBooking.updated_at ? format(new Date(selectedBooking.updated_at), 'MMM d, yyyy HH:mm') : 'N/A'}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -804,14 +804,14 @@ const BookingManagement: React.FC = () => {
                   pageNum = i + 1;
                 } else if (currentPage <= 3) {
                   pageNum = i + 1;
-                                  } else if (currentPage >= totalPages - 2) {
+                } else if (currentPage >= totalPages - 2) {
                   pageNum = totalPages - 4 + i;
                 } else {
                   pageNum = currentPage - 2 + i;
                 }
                 
                 return (
-                  <button
+                                    <button
                     key={pageNum}
                     onClick={() => setCurrentPage(pageNum)}
                     disabled={loading}
@@ -1105,10 +1105,10 @@ const BookingManagement: React.FC = () => {
                               {booking.start_time ? format(new Date(booking.start_time), 'MMM d, HH:mm') : 'N/A'}
                             </span>
                           </div>
-                                                    <div className="text-xs text-gray-500">
+                          <div className="text-xs text-gray-500">
                             {booking.end_time ? (
                               <>
-                                {getText('to', 'hingga')} {format(new Date(booking.end_time), 'HH:mm')}
+                                                                {getText('to', 'hingga')} {format(new Date(booking.end_time), 'HH:mm')}
                               </>
                             ) : 'N/A'}
                           </div>
@@ -1147,10 +1147,10 @@ const BookingManagement: React.FC = () => {
                             ) : 'N/A'}
                           </div>
 
-                          {booking.status === 'borrowed' && booking.borrowed_at && (
+                          {booking.status === 'borrowed' && (
                             <div className="text-xs text-blue-600 flex items-center">
                               <HandHeart className="h-3 w-3 mr-1" />
-                              {getText('Borrowed', 'Dipinjam')}: {format(new Date(booking.borrowed_at), 'MMM d, HH:mm')}
+                              {getText('Status', 'Status')}: {getStatusText(booking.status)}
                             </div>
                           )}
                         </div>
@@ -1375,11 +1375,11 @@ const BookingManagement: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Enhanced Status Information with Timeline */}
+                  {/* Status Information */}
                   <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
                     <h4 className="font-medium text-gray-900 mb-3 flex items-center">
                       <Info className="h-5 w-5 mr-2" />
-                      {getText('Status Information & Timeline', 'Informasi Status & Timeline')}
+                      {getText('Status Information', 'Informasi Status')}
                     </h4>
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
@@ -1387,12 +1387,12 @@ const BookingManagement: React.FC = () => {
                         <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(selectedBooking.status)}`}>
                           {getStatusText(selectedBooking.status)}
                         </span>
-                                            </div>
+                      </div>
                       
-                      {/* Status Timeline */}
+                      {/* Simplified Timeline */}
                       <div className="border-l-2 border-gray-200 pl-4 space-y-3">
                         <div className="flex items-center space-x-2">
-                          <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                                                    <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
                           <div className="flex-1">
                             <div className="text-sm font-medium text-gray-900">{getText('Created', 'Dibuat')}</div>
                             <div className="text-xs text-gray-500">
@@ -1401,36 +1401,21 @@ const BookingManagement: React.FC = () => {
                           </div>
                         </div>
 
-                        {selectedBooking.approved_at && (
-                          <div className="flex items-center space-x-2">
-                            <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                            <div className="flex-1">
-                              <div className="text-sm font-medium text-gray-900">{getText('Approved', 'Disetujui')}</div>
-                              <div className="text-xs text-gray-500">
-                                {format(new Date(selectedBooking.approved_at), 'MMM d, yyyy HH:mm')}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {selectedBooking.borrowed_at && (
-                          <div className="flex items-center space-x-2">
-                            <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                            <div className="flex-1">
-                              <div className="text-sm font-medium text-gray-900">{getText('Borrowed', 'Dipinjam')}</div>
-                              <div className="text-xs text-gray-500">
-                                {format(new Date(selectedBooking.borrowed_at), 'MMM d, yyyy HH:mm')}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
                         <div className="flex items-center space-x-2">
-                          <div className="w-3 h-3 bg-gray-300 rounded-full"></div>
+                          <div className={`w-3 h-3 rounded-full ${
+                            selectedBooking.status === 'pending' ? 'bg-yellow-500' :
+                            selectedBooking.status === 'approved' ? 'bg-green-500' :
+                            selectedBooking.status === 'borrowed' ? 'bg-blue-500' :
+                            selectedBooking.status === 'rejected' ? 'bg-red-500' :
+                            selectedBooking.status === 'completed' ? 'bg-purple-500' : 'bg-gray-300'
+                          }`}></div>
                           <div className="flex-1">
                             <div className="text-sm font-medium text-gray-900">{getText('Last Updated', 'Terakhir Diperbarui')}</div>
                             <div className="text-xs text-gray-500">
                               {selectedBooking.updated_at ? format(new Date(selectedBooking.updated_at), 'MMM d, yyyy HH:mm') : 'N/A'}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1">
+                              Status: {getStatusText(selectedBooking.status)}
                             </div>
                           </div>
                         </div>
@@ -1655,7 +1640,7 @@ const BookingManagement: React.FC = () => {
                 <p className="text-sm text-gray-600">
                   {getText('Mark equipment as borrowed', 'Tandai peralatan sebagai dipinjam')}
                 </p>
-                            </div>
+              </div>
             </div>
             
             <div className="mb-6">
@@ -1668,7 +1653,7 @@ const BookingManagement: React.FC = () => {
                 </div>
                 <ul className="text-sm text-blue-800 space-y-1 ml-6">
                   <li>• {getText('Status changes from "Approved" to "Borrowed"', 'Status berubah dari "Disetujui" ke "Dipinjam"')}</li>
-                  <li>• {getText('Equipment quantities will be reduced', 'Kuantitas peralatan akan dikurangi')}</li>
+                                    <li>• {getText('Equipment quantities will be reduced', 'Kuantitas peralatan akan dikurangi')}</li>
                   <li>• {getText('Borrowing timestamp will be recorded', 'Waktu peminjaman akan dicatat')}</li>
                   <li>• {getText('User can now use the equipment', 'Pengguna sekarang dapat menggunakan peralatan')}</li>
                 </ul>
