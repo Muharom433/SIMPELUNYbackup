@@ -92,7 +92,7 @@ export const useRoomData = (targetDate: string) => {
         `)
         .gte('start_time', startUTC)
         .lt('start_time', endUTC)
-        .eq('status', 'approved');
+        .eq('status', ['approved','borrowed']);
 
       if (bookingsError) throw bookingsError;
 
