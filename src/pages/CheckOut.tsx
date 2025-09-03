@@ -200,7 +200,7 @@ const CheckOut: React.FC = () => {
       let bookingsQuery = supabase
         .from('bookings')
         .select('*')
-        .eq('status', 'approved')
+        .eq('status', 'borrowed')
         .order('created_at', { ascending: false });
 
       if (checkedOutBookingIds.length > 0) {
