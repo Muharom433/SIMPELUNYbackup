@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Calendar,
   Search,
@@ -39,162 +39,32 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, isAfter, isBefore } from 'date-fns';
 
 // -----------------------------------------------------------
-// MOCK DEPENDENCIES UNTUK MEMBUAT FILE INI MANDIRI
+// MOCK DEPENDENSI UNTUK MEMBUAT FILE INI MANDIRI
+// Perhatikan: Dalam aplikasi nyata, file-file ini akan diimpor dari lokasi aslinya.
 // -----------------------------------------------------------
 
-// --- MOCK SUPABASE CLIENT ---
 const createClient = () => {
-  const data = [
+  let mockBookings = [
     {
-      id: "booking-1",
-      user_id: "user-1",
-      room_id: "room-1",
-      start_time: "2024-11-20T08:00:00Z",
-      end_time: "2024-11-20T10:00:00Z",
-      purpose: "Rapat Departemen",
-      sks: 0,
-      class_type: "theory",
-      status: "approved",
-      equipment_requested: "pc,projector",
-      equipment_quantities: 1,
-      equipment_details: null,
-      notes: null,
-      attachments: "https://placehold.co/600x400/FF0000/FFFFFF?text=DOC1,https://placehold.co/600x400/00FF00/000000?text=DOC2",
-      user_info: { full_name: "Budi Santoso", identity_number: "20201001", email: "budi@example.com" },
-      created_at: "2024-11-18T10:00:00Z",
-      updated_at: "2024-11-19T10:00:00Z",
-      user_name: "Budi Santoso",
-      user_identity: "20201001",
-      user_email: "budi@example.com",
-      user_role: "lecturer",
-      study_program_name: null,
-      study_program_code: null,
-      room_name: "Ruang A",
-      room_code: "A-101",
-      room_capacity: 50,
-      department_name: "Informatika",
+      id: "booking-1", user_id: "user-1", room_id: "room-1", start_time: "2024-11-20T08:00:00Z", end_time: "2024-11-20T10:00:00Z", purpose: "Rapat Departemen", sks: 0, class_type: "theory", status: "approved", equipment_requested: "pc,projector", equipment_quantities: 1, equipment_details: null, notes: null, attachments: "https://placehold.co/600x400/FF0000/FFFFFF?text=DOC1,https://placehold.co/600x400/00FF00/000000?text=DOC2", created_at: "2024-11-18T10:00:00Z", updated_at: "2024-11-19T10:00:00Z", user_info: { full_name: "Budi Santoso", identity_number: "20201001", email: "budi@example.com", role: "lecturer", study_program: { name: "Informatika", code: "INF" } }, user: { full_name: "Budi Santoso", identity_number: "20201001", email: "budi@example.com", role: "lecturer", study_program: { name: "Informatika", code: "INF" } }, room: { name: "Ruang A", code: "A-101", capacity: 50, department: { name: "Informatika" } }
     },
     {
-      id: "booking-2",
-      user_id: "user-2",
-      room_id: "room-2",
-      start_time: "2024-11-21T13:00:00Z",
-      end_time: "2024-11-21T15:00:00Z",
-      purpose: "Workshop UI/UX",
-      sks: 2,
-      class_type: "practical",
-      status: "pending",
-      equipment_requested: "projector,whiteboard",
-      equipment_quantities: 1,
-      equipment_details: null,
-      notes: "Mohon siapkan proyektor dan papan tulis.",
-      attachments: "",
-      user_info: { full_name: "Siti Rahayu", identity_number: "20212002", email: "siti@example.com" },
-      created_at: "2024-11-19T11:00:00Z",
-      updated_at: "2024-11-19T11:00:00Z",
-      user_name: "Siti Rahayu",
-      user_identity: "20212002",
-      user_email: "siti@example.com",
-      user_role: "student",
-      study_program_name: "Desain Komunikasi Visual",
-      study_program_code: "DKV",
-      room_name: "Ruang B",
-      room_code: "B-205",
-      room_capacity: 30,
-      department_name: "Desain",
+      id: "booking-2", user_id: "user-2", room_id: "room-2", start_time: "2024-11-21T13:00:00Z", end_time: "2024-11-21T15:00:00Z", purpose: "Workshop UI/UX", sks: 2, class_type: "practical", status: "pending", equipment_requested: "projector,whiteboard", equipment_quantities: 1, equipment_details: null, notes: "Mohon siapkan proyektor dan papan tulis.", attachments: "", created_at: "2024-11-19T11:00:00Z", updated_at: "2024-11-19T11:00:00Z", user_info: { full_name: "Siti Rahayu", identity_number: "20212002", email: "siti@example.com", role: "student", study_program: { name: "Desain Komunikasi Visual", code: "DKV" } }, user: { full_name: "Siti Rahayu", identity_number: "20212002", email: "siti@example.com", role: "student", study_program: { name: "Desain Komunikasi Visual", code: "DKV" } }, room: { name: "Ruang B", code: "B-205", capacity: 30, department: { name: "Desain" } }
     },
     {
-      id: "booking-3",
-      user_id: "user-3",
-      room_id: "room-3",
-      start_time: "2024-11-15T09:00:00Z",
-      end_time: "2024-11-15T11:00:00Z",
-      purpose: "Praktikum Fisika Dasar",
-      sks: 3,
-      class_type: "practical",
-      status: "completed",
-      equipment_requested: "lab_tools,microscope",
-      equipment_quantities: 1,
-      equipment_details: null,
-      notes: null,
-      attachments: "",
-      user_info: { full_name: "Joko Susilo", identity_number: "20223003", email: "joko@example.com" },
-      created_at: "2024-11-10T12:00:00Z",
-      updated_at: "2024-11-15T11:00:00Z",
-      user_name: "Joko Susilo",
-      user_identity: "20223003",
-      user_email: "joko@example.com",
-      user_role: "student",
-      study_program_name: "Fisika",
-      study_program_code: "FIS",
-      room_name: "Laboratorium Fisika",
-      room_code: "LAB-FIS",
-      room_capacity: 25,
-      department_name: "Sains",
+      id: "booking-3", user_id: "user-3", room_id: "room-3", start_time: "2024-11-15T09:00:00Z", end_time: "2024-11-15T11:00:00Z", purpose: "Praktikum Fisika Dasar", sks: 3, class_type: "practical", status: "completed", equipment_requested: "lab_tools,microscope", equipment_quantities: 1, equipment_details: null, notes: null, attachments: "", created_at: "2024-11-10T12:00:00Z", updated_at: "2024-11-15T11:00:00Z", user_info: { full_name: "Joko Susilo", identity_number: "20223003", email: "joko@example.com", role: "student", study_program: { name: "Fisika", code: "FIS" } }, user: { full_name: "Joko Susilo", identity_number: "20223003", email: "joko@example.com", role: "student", study_program: { name: "Fisika", code: "FIS" } }, room: { name: "Laboratorium Fisika", code: "LAB-FIS", capacity: 25, department: { name: "Sains" } }
     },
     {
-      id: "booking-4",
-      user_id: "user-4",
-      room_id: "room-1",
-      start_time: "2024-11-20T11:00:00Z",
-      end_time: "2024-11-20T13:00:00Z",
-      purpose: "Presentasi Kelompok",
-      sks: 0,
-      class_type: "theory",
-      status: "pending",
-      equipment_requested: "projector,pc",
-      equipment_quantities: 1,
-      equipment_details: null,
-      notes: "Harap pastikan proyektor berfungsi.",
-      attachments: "",
-      user_info: { full_name: "Ani Wijaya", identity_number: "20234004", email: "ani@example.com" },
-      created_at: "2024-11-19T13:00:00Z",
-      updated_at: "2024-11-19T13:00:00Z",
-      user_name: "Ani Wijaya",
-      user_identity: "20234004",
-      user_email: "ani@example.com",
-      user_role: "student",
-      study_program_name: "Manajemen",
-      study_program_code: "MAN",
-      room_name: "Ruang A",
-      room_code: "A-101",
-      room_capacity: 50,
-      department_name: "Bisnis",
+      id: "booking-4", user_id: "user-4", room_id: "room-1", start_time: "2024-11-20T11:00:00Z", end_time: "2024-11-20T13:00:00Z", purpose: "Presentasi Kelompok", sks: 0, class_type: "theory", status: "pending", equipment_requested: "projector,pc", equipment_quantities: 1, equipment_details: null, notes: "Harap pastikan proyektor berfungsi.", attachments: "", created_at: "2024-11-19T13:00:00Z", updated_at: "2024-11-19T13:00:00Z", user_info: { full_name: "Ani Wijaya", identity_number: "20234004", email: "ani@example.com", role: "student", study_program: { name: "Manajemen", code: "MAN" } }, user: { full_name: "Ani Wijaya", identity_number: "20234004", email: "ani@example.com", role: "student", study_program: { name: "Manajemen", code: "MAN" } }, room: { name: "Ruang A", code: "A-101", capacity: 50, department: { name: "Bisnis" } }
     },
     {
-      id: "booking-5",
-      user_id: "user-1",
-      room_id: "room-2",
-      start_time: "2024-11-22T09:00:00Z",
-      end_time: "2024-11-22T12:00:00Z",
-      purpose: "Rapat Himpunan Mahasiswa",
-      sks: 0,
-      class_type: "theory",
-      status: "pending",
-      equipment_requested: "projector",
-      equipment_quantities: 1,
-      equipment_details: null,
-      notes: null,
-      attachments: "",
-      user_info: { full_name: "Budi Santoso", identity_number: "20201001", email: "budi@example.com" },
-      created_at: "2024-11-19T15:00:00Z",
-      updated_at: "2024-11-19T15:00:00Z",
-      user_name: "Budi Santoso",
-      user_identity: "20201001",
-      user_email: "budi@example.com",
-      user_role: "lecturer",
-      study_program_name: null,
-      study_program_code: null,
-      room_name: "Ruang B",
-      room_code: "B-205",
-      room_capacity: 30,
-      department_name: "Desain",
+      id: "booking-5", user_id: "user-1", room_id: "room-2", start_time: "2024-11-22T09:00:00Z", end_time: "2024-11-22T12:00:00Z", purpose: "Rapat Himpunan Mahasiswa", sks: 0, class_type: "theory", status: "pending", equipment_requested: "projector", equipment_quantities: 1, equipment_details: null, notes: null, attachments: "", created_at: "2024-11-19T15:00:00Z", updated_at: "2024-11-19T15:00:00Z", user_info: { full_name: "Budi Santoso", identity_number: "20201001", email: "budi@example.com", role: "lecturer", study_program: null }, user: { full_name: "Budi Santoso", identity_number: "20201001", email: "budi@example.com", role: "lecturer", study_program: null }, room: { name: "Ruang B", code: "B-205", capacity: 30, department: { name: "Desain" } }
     },
   ];
-  let equipment = [
+  let mockEquipment = [
     { id: "pc", name: "Komputer PC", code: "PC-001", quantity: 50, unit: "unit" },
     { id: "projector", name: "Proyektor", code: "P-001", quantity: 20, unit: "unit" },
     { id: "whiteboard", name: "Papan Tulis", code: "WT-001", quantity: 15, unit: "unit" },
@@ -206,7 +76,7 @@ const createClient = () => {
     switch (funcName) {
       case 'get_bookings_paginated': {
         const { page_number, page_size, status_filter } = args;
-        const filteredData = data.filter(b => status_filter === 'all' || b.status === status_filter);
+        const filteredData = mockBookings.filter(b => status_filter === 'all' || b.status === status_filter);
         const start = (page_number - 1) * page_size;
         const end = start + page_size;
         const paginatedData = filteredData.slice(start, end);
@@ -214,32 +84,30 @@ const createClient = () => {
       }
       case 'update_booking_status_with_equipment': {
         const { booking_id, new_status } = args;
-        const booking = data.find(b => b.id === booking_id);
+        const booking = mockBookings.find(b => b.id === booking_id);
         if (!booking) return { data: null, error: new Error('Booking not found') };
         
         const oldStatus = booking.status;
         booking.status = new_status;
 
-        // Logika untuk mengurangi/mengembalikan kuantitas peralatan
         if ((new_status === 'approved' || new_status === 'borrowed') && oldStatus === 'pending') {
           const equipmentIds = booking.equipment_requested.split(',').map(s => s.trim());
           equipmentIds.forEach(eqId => {
-            const eq = equipment.find(e => e.id === eqId);
+            const eq = mockEquipment.find(e => e.id === eqId);
             if (eq) eq.quantity -= booking.equipment_quantities || 1;
           });
         }
         if (new_status === 'rejected' && (oldStatus === 'approved' || oldStatus === 'borrowed')) {
           const equipmentIds = booking.equipment_requested.split(',').map(s => s.trim());
           equipmentIds.forEach(eqId => {
-            const eq = equipment.find(e => e.id === eqId);
+            const eq = mockEquipment.find(e => e.id === eqId);
             if (eq) eq.quantity += booking.equipment_quantities || 1;
           });
         }
-
         return { data: { success: true }, error: null };
       }
       case 'get_booking_statistics': {
-        const stats = data.reduce((acc, booking) => {
+        const stats = mockBookings.reduce((acc, booking) => {
           acc[booking.status] = (acc[booking.status] || 0) + 1;
           acc.total = (acc.total || 0) + 1;
           return acc;
@@ -248,18 +116,18 @@ const createClient = () => {
       }
       case 'delete_booking_with_equipment_restoration': {
         const { booking_id } = args;
-        const bookingIndex = data.findIndex(b => b.id === booking_id);
+        const bookingIndex = mockBookings.findIndex(b => b.id === booking_id);
         if (bookingIndex === -1) return { data: null, error: new Error('Booking not found') };
         
-        const booking = data[bookingIndex];
+        const booking = mockBookings[bookingIndex];
         const equipmentIds = booking.equipment_requested.split(',').map(s => s.trim());
         if ((booking.status === 'approved' || booking.status === 'borrowed') && equipmentIds.length > 0) {
           equipmentIds.forEach(eqId => {
-            const eq = equipment.find(e => e.id === eqId);
+            const eq = mockEquipment.find(e => e.id === eqId);
             if (eq) eq.quantity += booking.equipment_quantities || 1;
           });
         }
-        data.splice(bookingIndex, 1);
+        mockBookings.splice(bookingIndex, 1);
         return { data: { success: true }, error: null };
       }
       default:
@@ -271,16 +139,18 @@ const createClient = () => {
     select: (query) => ({
       order: () => ({
         range: (start, end) => ({
-          then: (callback) => callback({ data: data.slice(start, end), error: null })
+          then: (callback) => callback({ data: mockBookings.slice(start, end), error: null })
         }),
+        then: (callback) => callback({ data: mockBookings.slice(0, 25), error: null })
       }),
+      then: (callback) => callback({ data: mockBookings.slice(0, 25), error: null })
     }),
     update: (updates) => ({
       eq: (column, value) => ({
         then: (callback) => {
-          const bookingIndex = data.findIndex(b => b[column] === value);
+          const bookingIndex = mockBookings.findIndex(b => b[column] === value);
           if (bookingIndex !== -1) {
-            data[bookingIndex] = { ...data[bookingIndex], ...updates };
+            mockBookings[bookingIndex] = { ...mockBookings[bookingIndex], ...updates };
           }
           callback({ data: null, error: null });
         },
@@ -289,9 +159,9 @@ const createClient = () => {
     delete: () => ({
       eq: (column, value) => ({
         then: (callback) => {
-          const bookingIndex = data.findIndex(b => b[column] === value);
+          const bookingIndex = mockBookings.findIndex(b => b[column] === value);
           if (bookingIndex !== -1) {
-            data.splice(bookingIndex, 1);
+            mockBookings.splice(bookingIndex, 1);
           }
           callback({ data: null, error: null });
         },
@@ -316,9 +186,12 @@ const supabase = createClient();
 const useAuth = () => ({
   profile: { role: 'super_admin' },
 });
-const useLanguage = () => ({
-  getText: (en, id) => id,
-});
+
+const useLanguage = () => {
+  const [language, setLanguage] = useState('id'); // Default ke Bahasa Indonesia
+  const getText = (en, id) => language === 'id' ? id : en;
+  return { language, setLanguage, getText };
+};
 
 // --- MOCK ALERT HELPER ---
 const alert = {
@@ -327,7 +200,6 @@ const alert = {
   warning: (message) => console.warn('WARNING:', message),
 };
 
-// --- MOCK EquipmentQuantityManager ---
 const EquipmentQuantityManager = {};
 
 // -----------------------------------------------------------
@@ -344,7 +216,7 @@ interface Booking {
   purpose: string;
   sks: number;
   class_type: 'theory' | 'practical';
-  status: 'pending' | 'approved' | 'rejected' | 'completed' | 'borrowed';
+  status: 'pending' | 'approved' | 'rejected' | 'completed' | 'borrowed'; // Menambahkan status 'borrowed'
   equipment_requested: string;
   equipment_quantities: number;
   equipment_details: any;
@@ -387,7 +259,7 @@ const BookingManagement: React.FC = () => {
     approved: 0,
     rejected: 0,
     completed: 0,
-    borrowed: 0,
+    borrowed: 0, // Menambahkan status 'borrowed'
     total: 0
   });
 
@@ -886,7 +758,7 @@ const BookingManagement: React.FC = () => {
   };
 
   // ✅ OPTIMIZED FILTERING (CLIENT-SIDE FOR REAL-TIME RESPONSIVENESS)
-  const filteredBookings = React.useMemo(() => {
+  const filteredBookings = useMemo(() => {
     return bookings.filter(booking => {
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = !searchTerm ||
@@ -913,8 +785,8 @@ const BookingManagement: React.FC = () => {
         switch (dateFilter) {
           case 'today': matchesDate = bookingDate.toDateString() === today.toDateString(); break;
           case 'tomorrow': matchesDate = bookingDate.toDateString() === tomorrow.toDateString(); break;
-          case 'week': matchesDate = bookingDate >= today && bookingDate <= nextWeek; break;
-          case 'past': matchesDate = bookingDate < today; break;
+          case 'week': matchesDate = isAfter(bookingDate, today) && isBefore(bookingDate, nextWeek); break;
+          case 'past': matchesDate = isBefore(bookingDate, today); break;
         }
       }
 
@@ -929,7 +801,7 @@ const BookingManagement: React.FC = () => {
       case 'approved': return 'bg-green-100 text-green-800';
       case 'rejected': return 'bg-red-100 text-red-800';
       case 'completed': return 'bg-blue-100 text-blue-800';
-      case 'borrowed': return 'bg-purple-100 text-purple-800'; // Warna baru untuk status 'borrowed'
+      case 'borrowed': return 'bg-purple-100 text-purple-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -940,7 +812,7 @@ const BookingManagement: React.FC = () => {
       case 'approved': return CheckCircle;
       case 'rejected': return XCircle;
       case 'completed': return Award;
-      case 'borrowed': return Zap; // Ikon baru untuk status 'borrowed'
+      case 'borrowed': return Zap;
       default: return AlertIcon;
     }
   };
@@ -1207,7 +1079,7 @@ const BookingManagement: React.FC = () => {
             icon: Award,
           },
           {
-            label: getText('Borrowed', 'Dipinjam'), // Menambahkan stat 'Borrowed'
+            label: getText('Borrowed', 'Dipinjam'),
             count: bookingStats.borrowed,
             color: 'bg-purple-500',
             icon: Zap,
@@ -1471,7 +1343,7 @@ const BookingManagement: React.FC = () => {
                                   <Check className="h-4 w-4" />
                                 )}
                               </button>
-                              {/* Menambahkan tombol "Borrow" */}
+                              {/* Menambahkan tombol "Borrow" di sini */}
                               <button
                                 onClick={() => handleStatusUpdate(booking.id, 'borrowed')}
                                 disabled={processingIds.has(booking.id)}
@@ -1835,7 +1707,6 @@ const BookingManagement: React.FC = () => {
                           )}
                           {getText('Approve', 'Setujui')}
                         </button>
-                        {/* Menambahkan tombol "Borrow" di modal detail */}
                         <button
                           onClick={() => {
                             handleStatusUpdate(selectedBooking.id, 'borrowed');
