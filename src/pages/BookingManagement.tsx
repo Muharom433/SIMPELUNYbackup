@@ -409,8 +409,6 @@ const BookingManagement: React.FC = () => {
         .from('bookings')
         .update({ 
           status: 'borrowed',
-          borrowed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
         })
         .eq('id', bookingId);
 
