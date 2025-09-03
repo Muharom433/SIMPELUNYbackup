@@ -527,8 +527,6 @@ const BookingManagement: React.FC = () => {
   }
 };
   
-
-
   const parseAttachments = (attachmentStr: string): string[] => {
     if (!attachmentStr) return [];
     try {
