@@ -556,8 +556,7 @@ const BookingManagement: React.FC = () => {
   }
 };
 
-  // PERBAIKI JUGA FUNGSI getEquipmentQuantities
-const getEquipmentQuantities = (booking: Booking): number[] => {
+  const getEquipmentQuantities = (booking: Booking): number[] => {
   const equipmentList = parseEquipmentRequested(booking.equipment_requested);
   
   // Jika tidak ada equipment, return empty array
