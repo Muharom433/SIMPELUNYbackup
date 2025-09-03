@@ -562,30 +562,34 @@ const BookingManagement: React.FC = () => {
   // Jika tidak ada equipment, return empty array
   if (equipmentList.length === 0) return [];
   
-  // Jika equipment_quantities adalah number, gunakan untuk semua equipment
-  if (typeof booking.equipment_quantities === 'number' && booking.equipment_quantities > 0) {
-    return equipmentList.map(() => booking.equipment_quantities);
-  }
-  
-  // Jika equipment_quantities adalah array
+  // Jika equipment_quantities adalah array (yang diharapkan)
   if (Array.isArray(booking.equipment_quantities)) {
-    return booking.equipment_quantities.map(qty => Number(qty) || 1);
+    const quantities = booking.equipment_quantities.map(qty => Number(qty) || 1);
+    // Pastikan panjang array sama dengan equipment list
+    if (quantities.length === equipmentList.length) {
+      return quantities;
+    }
+    // Jika tidak sama, ambil sebanyak equipment yang ada
+    return equipmentList.map((_, index) => quantities[index] || 1);
   }
   
-  // Jika equipment_quantities adalah string, coba parse
+  // Jika equipment_quantities adalah string JSON array
   if (typeof booking.equipment_quantities === 'string') {
     try {
       const parsed = JSON.parse(booking.equipment_quantities);
       if (Array.isArray(parsed)) {
-        return parsed.map(qty => Number(qty) || 1);
+        const quantities = parsed.map(qty => Number(qty) || 1);
+        return equipmentList.map((_, index) => quantities[index] || 1);
       }
-      // Jika string tapi bukan JSON array, coba split by comma
-      const quantities = booking.equipment_quantities.split(',').map(qty => Number(qty.trim()) || 1);
-      return quantities.length === equipmentList.length ? quantities : equipmentList.map(() => 1);
-    } catch {
-      // Jika gagal parse, gunakan default 1 untuk semua
-      return equipmentList.map(() => 1);
+    } catch (error) {
+      console.log('Failed to parse equipment_quantities as JSON:', error);
     }
+  }
+  
+  // Jika equipment_quantities adalah single number
+  if (typeof booking.equipment_quantities === 'number' && booking.equipment_quantities > 0) {
+    // Gunakan number yang sama untuk semua equipment
+    return equipmentList.map(() => booking.equipment_quantities);
   }
   
   // Default: 1 untuk setiap equipment
