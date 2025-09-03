@@ -457,63 +457,75 @@ const BookingManagement: React.FC = () => {
 
   // HANDLE DELETE
   const handleDelete = async (bookingId: string) => {
-    try {
-      setProcessingIds(prev => new Set(prev).add(bookingId));
-      
-      console.log('🗑️ Deleting booking...');
-      
-      const booking = bookings.find(b => b.id === bookingId);
-      if (!booking) {
-        throw new Error('Booking not found');
-      }
+  try {
+    setProcessingIds(prev => new Set(prev).add(bookingId));
+    
+    console.log('🗑️ Deleting booking...');
+    
+    const booking = bookings.find(b => b.id === bookingId);
+    if (!booking) {
+      throw new Error('Booking not found');
+    }
 
-      // Restore equipment quantities if booking was approved or borrowed
-      const equipmentList = parseEquipmentRequested(booking.equipment_requested);
-      if ((booking.status === 'approved' || booking.status === 'borrowed') && equipmentList.length > 0) {
-        for (let i = 0; i < equipmentList.length; i++) {
-          const equipmentId = equipmentList[i];
-          const quantity = booking.equipment_quantities || 1;
-          
-          await supabase.rpc('increase_equipment_quantity', {
-            equipment_id: equipmentId,
-            increase_by: quantity
-          });
+    // Restore equipment quantities if booking was approved or borrowed
+    const equipmentList = parseEquipmentRequested(booking.equipment_requested);
+    const quantities = getEquipmentQuantities(booking);
+    
+    if ((booking.status === 'approved' || booking.status === 'borrowed') && equipmentList.length > 0) {
+      for (let i = 0; i < equipmentList.length; i++) {
+        const equipmentId = equipmentList[i];
+        const quantity = quantities[i] || 1; // Ambil quantity sesuai index
+        
+        console.log(`📈 Restoring equipment ${i}:`, { equipmentId, quantity });
+        
+        // PENTING: Kirim quantity sebagai INTEGER, bukan array
+        const { error } = await supabase.rpc('increase_equipment_quantity', {
+          equipment_id: equipmentId,
+          increase_by: quantity // Ini harus INTEGER, bukan array
+        });
+        
+        if (error) {
+          console.error(`❌ Failed to restore equipment ${equipmentId}:`, error);
+          // Don't throw error here, just log it
+        } else {
+          console.log(`✅ Successfully restored equipment ${equipmentId} by ${quantity}`);
         }
       }
-
-      // Delete the booking
-      const { error } = await supabase
-        .from('bookings')
-        .delete()
-        .eq('id', bookingId);
-
-      if (error) throw error;
-      
-      alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
-      setShowDeleteConfirm(null);
-      
-      // Refresh data
-      await Promise.all([
-        fetchBookings(),
-        fetchAllEquipment(),
-        fetchBookingStats()
-      ]);
-      
-      if (selectedBooking?.id === bookingId) {
-        setShowDetailModal(false);
-      }
-      
-    } catch (error: any) {
-      console.error('❌ Error deleting booking:', error);
-      alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
-    } finally {
-      setProcessingIds(prev => {
-                const newSet = new Set(prev);
-        newSet.delete(bookingId);
-        return newSet;
-      });
     }
-  };
+
+    // Delete the booking
+    const { error } = await supabase
+      .from('bookings')
+      .delete()
+      .eq('id', bookingId);
+
+    if (error) throw error;
+    
+    alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
+    setShowDeleteConfirm(null);
+    
+    // Refresh data
+    await Promise.all([
+      fetchBookings(),
+      fetchAllEquipment(),
+      fetchBookingStats()
+    ]);
+    
+    if (selectedBooking?.id === bookingId) {
+      setShowDetailModal(false);
+    }
+    
+  } catch (error: any) {
+    console.error('❌ Error deleting booking:', error);
+    alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
+  } finally {
+    setProcessingIds(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(bookingId);
+      return newSet;
+    });
+  }
+};
 
   // EQUIPMENT UTILITY FUNCTIONS
   const parseEquipmentRequested = (equipmentStr: any): string[] => {
