@@ -1,4 +1,4 @@
-// src/hooks/useRoomData.ts - COMPLETE FILE dengan APPROVED only logic
+// src/hooks/useRoomData.ts - UPDATED untuk approved dan booked
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRoomStore, EnhancedRoomStatus } from '../stores/roomStore';
@@ -63,7 +63,7 @@ export const useRoomData = (targetDate: string) => {
 
       if (roomsError) throw roomsError;
 
-      // 2. FETCH BOOKINGS - HANYA yang APPROVED untuk conflict detection
+      // 2. FETCH BOOKINGS - APPROVED dan BOOKED untuk conflict detection
       const { startUTC, endUTC } = getDateRangeForBookings(date);
       
       const { data: bookingsData, error: bookingsError } = await supabase
@@ -92,7 +92,7 @@ export const useRoomData = (targetDate: string) => {
         `)
         .gte('start_time', startUTC)
         .lt('start_time', endUTC)
-        .in('status', ['active', 'overdue']);
+        .in('status', ['approved', 'booked']); // APPROVED dan BOOKED
 
       if (bookingsError) throw bookingsError;
 
@@ -175,12 +175,13 @@ export const useRoomData = (targetDate: string) => {
 
       if (examsError) throw examsError;
 
-      // 6. FETCH CURRENT BOOKINGS - HANYA yang APPROVED untuk "In Use"
+      // 6. FETCH CURRENT BOOKINGS - APPROVED dan BOOKED untuk "In Use"
       const now = new Date();
       const currentTimeUTC = now.toISOString();
+      const today = getLocalDateString(now);
       
       let currentBookingsData = [];
-      if (date === getLocalDateString(now)) {
+      if (date === today) {
         const { data: currentData, error: currentError } = await supabase
           .from('bookings')
           .select(`
@@ -204,14 +205,14 @@ export const useRoomData = (targetDate: string) => {
           `)
           .lte('start_time', currentTimeUTC)
           .gte('end_time', currentTimeUTC)
-          .eq('status', 'approved');
+          .in('status', ['approved', 'booked']); // APPROVED dan BOOKED
 
         if (!currentError) {
           currentBookingsData = currentData || [];
         }
       }
 
-      // 7. FETCH FUTURE BOOKINGS - HANYA yang APPROVED
+      // 7. FETCH FUTURE BOOKINGS - APPROVED dan BOOKED
       const nextDay = new Date(date);
       nextDay.setDate(nextDay.getDate() + 1);
       const nextDayRange = getDateRangeForBookings(getLocalDateString(nextDay));
@@ -224,20 +225,21 @@ export const useRoomData = (targetDate: string) => {
           start_time,
           end_time,
           purpose,
+          status,
           user:users!user_id(
             full_name,
             study_program:study_programs(name)
           )
         `)
         .gte('start_time', nextDayRange.startUTC)
-        .eq('status', 'approved')
+        .in('status', ['approved', 'booked']) // APPROVED dan BOOKED
         .order('start_time', { ascending: true });
 
       if (futureError) console.warn('Future bookings fetch error:', futureError);
 
       // 8. PROCESS DATA dengan timezone handling yang benar
       const enhancedRooms: EnhancedRoomStatus[] = (roomsData || []).map(room => {
-        // Group bookings by room
+        // Group bookings by room (approved dan booked)
         const roomBookings = (bookingsData || []).filter(booking => booking.room_id === room.id);
         
         // Group sessions by room
@@ -253,7 +255,7 @@ export const useRoomData = (targetDate: string) => {
           exam.room_id === room.id
         );
 
-        // Current booking untuk room ini
+        // Current booking untuk room ini (hanya untuk hari ini)
         const currentBooking = currentBookingsData.find(booking => booking.room_id === room.id);
 
         // Future bookings untuk room ini
@@ -271,23 +273,31 @@ export const useRoomData = (targetDate: string) => {
             date: format(convertUTCToLocal(roomFutureBookings[0].start_time), 'yyyy-MM-dd'),
             time: `${format(convertUTCToLocal(roomFutureBookings[0].start_time), 'HH:mm')} - ${format(convertUTCToLocal(roomFutureBookings[0].end_time), 'HH:mm')}`,
             purpose: roomFutureBookings[0].purpose,
-            user: roomFutureBookings[0].user?.full_name
-          } : undefined,
+            user: roomFutureBookings[0].user?.full_name,
+            status: roomFutureBookings[0].status // Tambahkan status info
+          } : null,
           thisWeek: roomFutureBookings.filter(b => convertUTCToLocal(b.start_time) <= thisWeekEnd).length,
           thisMonth: roomFutureBookings.filter(b => convertUTCToLocal(b.start_time) <= thisMonthEnd).length,
-          upcoming: roomFutureBookings.slice(0, 5)
+          upcoming: roomFutureBookings.slice(0, 5).map(booking => ({
+            ...booking,
+            start_time_local: format(convertUTCToLocal(booking.start_time), 'HH:mm'),
+            end_time_local: format(convertUTCToLocal(booking.end_time), 'HH:mm')
+          }))
         };
 
-        // Determine status
-        const hasCurrentBooking = !!currentBooking;
+        // Determine status - PERBAIKAN LOGIC
+        const isToday = date === today;
+        const hasCurrentBooking = isToday && !!currentBooking;
         const hasScheduledContent = roomBookings.length > 0 || roomSessions.length > 0 || 
                                   roomLectures.length > 0 || roomExams.length > 0;
 
+        // Status untuk hari ini
         const todayStatus: 'In Use' | 'Scheduled' | 'Available' = 
           hasCurrentBooking ? 'In Use' : 
-          hasScheduledContent ? 'Scheduled' : 
+          (isToday && hasScheduledContent) ? 'Scheduled' : 
           'Available';
 
+        // Status untuk target date
         const targetDateStatus: 'Scheduled' | 'Available' = 
           hasScheduledContent ? 'Scheduled' : 'Available';
 
@@ -310,10 +320,14 @@ export const useRoomData = (targetDate: string) => {
             end_time: currentBooking.end_time,
             start_time_local: format(convertUTCToLocal(currentBooking.start_time), 'HH:mm'),
             end_time_local: format(convertUTCToLocal(currentBooking.end_time), 'HH:mm'),
+            status: currentBooking.status, // Tambahkan status
             user: currentBooking.user ? {
               full_name: currentBooking.user.full_name,
               identity_number: currentBooking.user.identity_number
-            } : undefined
+            } : (currentBooking.user_info ? {
+              full_name: currentBooking.user_info.full_name,
+              identity_number: currentBooking.user_info.identity_number
+            } : undefined)
           } : undefined,
           
           targetDateBookings: roomBookings.map(booking => ({
@@ -323,7 +337,7 @@ export const useRoomData = (targetDate: string) => {
             start_time_local: format(convertUTCToLocal(booking.start_time), 'HH:mm'),
             end_time_local: format(convertUTCToLocal(booking.end_time), 'HH:mm'),
             purpose: booking.purpose,
-            status: booking.status,
+            status: booking.status, // Status akan menunjukkan 'approved' atau 'booked'
             user: booking.user ? {
               id: booking.user.id,
               full_name: booking.user.full_name,
@@ -380,7 +394,7 @@ export const useRoomData = (targetDate: string) => {
               supervisor: session.supervisor,
               examiner: session.examiner,
               secretary: session.secretary,
-              student: session.student ? {
+                            student: session.student ? {
                 id: session.student.id,
                 full_name: session.student.full_name,
                 identity_number: session.student.identity_number,
@@ -402,6 +416,7 @@ export const useRoomData = (targetDate: string) => {
       
       const stats = getCacheStats();
       console.log(`✅ Room data fetched successfully for ${date} (local). Cache hit rate: ${stats.hitRate.toFixed(1)}%`);
+      console.log(`📊 Bookings status filter: approved & booked only`);
       
       return enhancedRooms;
 
