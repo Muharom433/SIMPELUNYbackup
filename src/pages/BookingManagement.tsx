@@ -190,9 +190,7 @@ interface Booking {
 
 const BookingManagement: React.FC = () => {
   const profile = dummyProfile;
-  const {
-    getText
-  } = { getText };
+  const { getText } = { getText };
   const alert = mockAlert;
 
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -222,21 +220,66 @@ const BookingManagement: React.FC = () => {
   const initializeData = async () => {
     setLoading(true);
     await new Promise((resolve) => setTimeout(resolve, 500));
-    setBookings(initialBookings);
-    setTotalCount(initialBookings.length);
+    const filteredAndSortedBookings = initialBookings
+      .filter((booking) => {
+        const searchLower = searchTerm.toLowerCase();
+        const matchesSearch =
+          !searchTerm ||
+          (booking.user?.full_name && booking.user.full_name.toLowerCase().includes(searchLower)) ||
+          (booking.user?.identity_number && booking.user.identity_number.toLowerCase().includes(searchLower)) ||
+          (booking.purpose && booking.purpose.toLowerCase().includes(searchLower)) ||
+          (booking.room?.name && booking.room.name.toLowerCase().includes(searchLower)) ||
+          (booking.room?.code && booking.room.code.toLowerCase().includes(searchLower));
+
+        const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
+        let matchesDate = true;
+        if (dateFilter !== 'all') {
+          const bookingDate = new Date(booking.start_time);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const tomorrow = new Date(today);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          const nextWeek = new Date(today);
+          nextWeek.setDate(nextWeek.getDate() + 7);
+
+          switch (dateFilter) {
+            case 'today':
+              matchesDate = bookingDate.toDateString() === today.toDateString();
+              break;
+            case 'tomorrow':
+              matchesDate = bookingDate.toDateString() === tomorrow.toDateString();
+              break;
+            case 'week':
+              matchesDate = bookingDate >= today && bookingDate <= nextWeek;
+              break;
+            case 'past':
+              matchesDate = bookingDate < today;
+              break;
+          }
+        }
+        return matchesSearch && matchesStatus && matchesDate;
+      })
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    setBookings(filteredAndSortedBookings);
     setAllEquipment(dummyEquipment);
-    const stats = initialBookings.reduce((acc, booking) => {
-      acc[booking.status] = (acc[booking.status] || 0) + 1;
-      acc.total = (acc.total || 0) + 1;
-      return acc;
-    }, { pending: 0, approved: 0, rejected: 0, completed: 0, borrowed: 0, total: 0 });
+
+    const stats = initialBookings.reduce(
+      (acc, booking) => {
+        acc[booking.status] = (acc[booking.status] || 0) + 1;
+        acc.total = (acc.total || 0) + 1;
+        return acc;
+      },
+      { pending: 0, approved: 0, rejected: 0, completed: 0, borrowed: 0, total: 0 }
+    );
     setBookingStats(stats);
+    setTotalCount(initialBookings.length);
     setLoading(false);
   };
 
   useEffect(() => {
     initializeData();
-  }, []);
+  }, [currentPage, searchTerm, statusFilter, dateFilter]);
 
   const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 'rejected' | 'borrowed') => {
     setProcessingIds((prev) => new Set(prev).add(bookingId));
@@ -245,9 +288,14 @@ const BookingManagement: React.FC = () => {
         booking.id === bookingId ? { ...booking, status: newStatus, updated_at: new Date().toISOString() } : booking
       );
       setBookings(updatedBookings);
-      const statusText = newStatus === 'approved' ? getText('approved', 'disetujui') : newStatus === 'borrowed' ? getText('borrowed', 'dipinjam') : getText('rejected', 'ditolak');
+      const statusText =
+        newStatus === 'approved'
+          ? getText('approved', 'disetujui')
+          : newStatus === 'borrowed'
+            ? getText('borrowed', 'dipinjam')
+            : getText('rejected', 'ditolak');
       alert.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
-      setSelectedBooking(updatedBookings.find(b => b.id === bookingId));
+      setSelectedBooking(updatedBookings.find((b) => b.id === bookingId));
     } catch (error) {
       alert.error(getText('Failed to update booking status', 'Gagal memperbarui status pemesanan'));
     } finally {
@@ -279,9 +327,7 @@ const BookingManagement: React.FC = () => {
   };
 
   const getEquipmentAvailability = (equipmentId: string) => {
-    const equipment = allEquipment.find(
-      (eq) => eq.id === equipmentId || eq.code === equipmentId || eq.name === equipmentId
-    );
+    const equipment = allEquipment.find((eq) => eq.id === equipmentId || eq.code === equipmentId || eq.name === equipmentId);
     if (!equipment) return { available: 0, total: 0 };
     return {
       available: equipment.quantity,
