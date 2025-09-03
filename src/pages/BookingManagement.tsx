@@ -731,11 +731,6 @@ const BookingManagement: React.FC = () => {
                           {getText('Currently borrowed', 'Sedang dipinjam')}
                         </span>
                       </div>
-                      {selectedBooking.borrowed_at && (
-                        <div className="text-xs text-blue-600 mt-1">
-                          {getText('Borrowed on', 'Dipinjam pada')}: {format(new Date(selectedBooking.borrowed_at), 'MMM d, yyyy HH:mm')}
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
