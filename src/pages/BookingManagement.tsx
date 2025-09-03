@@ -354,88 +354,106 @@ const BookingManagement: React.FC = () => {
 
   // HANDLE BORROW UPDATE (APPROVED -> BORROWED)
   const handleBorrowUpdate = async (bookingId: string) => {
-    try {
-      setProcessingIds(prev => new Set(prev).add(bookingId));
-      
-      console.log('📦 Processing borrow request...');
-      
-      const booking = bookings.find(b => b.id === bookingId);
-      if (!booking) {
-        throw new Error('Booking not found');
-      }
-
-      if (booking.status !== 'approved') {
-        throw new Error('Only approved bookings can be borrowed');
-      }
-
-      // Check equipment availability before borrowing
-      const equipmentList = parseEquipmentRequested(booking.equipment_requested);
-      if (equipmentList.length > 0) {
-        for (let i = 0; i < equipmentList.length; i++) {
-          const equipmentId = equipmentList[i];
-          const quantity = booking.equipment_quantities || 1;
-          
-          const availability = getEquipmentAvailability(equipmentId);
-          
-          if (availability.available < quantity) {
-            throw new Error(`Insufficient equipment quantity for ${equipmentId}. Available: ${availability.available}, Required: ${quantity}`);
-          }
-        }
-      }
-
-      // Decrease equipment quantities when borrowed
-      if (equipmentList.length > 0) {
-        for (let i = 0; i < equipmentList.length; i++) {
-          const equipmentId = equipmentList[i];
-          const quantity = booking.equipment_quantities || 1;
-          
-          const { error } = await supabase.rpc('decrease_equipment_quantity', {
-            equipment_id: equipmentId,
-            decrease_by: quantity
-          });
-          
-          if (error) {
-            throw new Error(`Failed to update equipment ${equipmentId}: ${error.message}`);
-          }
-        }
-      }
-
-      // Update booking status to borrowed
-      const { error: bookingError } = await supabase
-        .from('bookings')
-        .update({ 
-          status: 'borrowed',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', bookingId);
-
-      if (bookingError) throw bookingError;
-      
-      alert.success(getText('Equipment borrowed successfully', 'Peralatan berhasil dipinjam'));
-      setShowBorrowConfirm(null);
-      
-      // Refresh data
-      await Promise.all([
-        fetchBookings(),
-        fetchAllEquipment(),
-        fetchBookingStats()
-      ]);
-      
-      if (selectedBooking?.id === bookingId) {
-        setShowDetailModal(false);
-      }
-      
-    } catch (error: any) {
-      console.error('❌ Error processing borrow request:', error);
-      alert.error(error.message || getText('Failed to process borrow request', 'Gagal memproses permintaan peminjaman'));
-    } finally {
-      setProcessingIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(bookingId);
-        return newSet;
-      });
+  try {
+    setProcessingIds(prev => new Set(prev).add(bookingId));
+    
+    console.log('📦 Processing borrow request...');
+    
+    const booking = bookings.find(b => b.id === bookingId);
+    if (!booking) {
+      throw new Error('Booking not found');
     }
-  };
+
+    if (booking.status !== 'approved') {
+      throw new Error('Only approved bookings can be borrowed');
+    }
+
+    // Parse equipment dan quantities
+    const equipmentList = parseEquipmentRequested(booking.equipment_requested);
+    const quantities = getEquipmentQuantities(booking);
+    
+    console.log('📋 Equipment and quantities:', {
+      equipmentList,
+      quantities,
+      rawEquipmentRequested: booking.equipment_requested,
+      rawEquipmentQuantities: booking.equipment_quantities
+    });
+
+    // Check equipment availability before borrowing
+    if (equipmentList.length > 0) {
+      for (let i = 0; i < equipmentList.length; i++) {
+        const equipmentId = equipmentList[i];
+        const quantity = quantities[i] || 1; // Ambil quantity sesuai index
+        
+        console.log(`🔍 Checking equipment ${i}:`, { equipmentId, quantity });
+        
+        const availability = getEquipmentAvailability(equipmentId);
+        
+        if (availability.available < quantity) {
+          throw new Error(`Insufficient equipment quantity for ${equipmentId}. Available: ${availability.available}, Required: ${quantity}`);
+        }
+      }
+    }
+
+    // Decrease equipment quantities when borrowed
+    if (equipmentList.length > 0) {
+      for (let i = 0; i < equipmentList.length; i++) {
+        const equipmentId = equipmentList[i];
+        const quantity = quantities[i] || 1; // Ambil quantity sesuai index
+        
+        console.log(`📉 Decreasing equipment ${i}:`, { equipmentId, quantity });
+        
+        // PENTING: Kirim quantity sebagai INTEGER, bukan array
+        const { error } = await supabase.rpc('decrease_equipment_quantity', {
+          equipment_id: equipmentId,
+          decrease_by: quantity // Ini harus INTEGER, bukan array
+        });
+        
+        if (error) {
+          console.error(`❌ Failed to decrease equipment ${equipmentId}:`, error);
+          throw new Error(`Failed to update equipment ${equipmentId}: ${error.message}`);
+        }
+        
+        console.log(`✅ Successfully decreased equipment ${equipmentId} by ${quantity}`);
+      }
+    }
+
+    // Update booking status to borrowed
+    const { error: bookingError } = await supabase
+      .from('bookings')
+      .update({ 
+        status: 'borrowed',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', bookingId);
+
+    if (bookingError) throw bookingError;
+    
+    alert.success(getText('Equipment borrowed successfully', 'Peralatan berhasil dipinjam'));
+    setShowBorrowConfirm(null);
+    
+    // Refresh data
+    await Promise.all([
+      fetchBookings(),
+      fetchAllEquipment(),
+      fetchBookingStats()
+    ]);
+    
+    if (selectedBooking?.id === bookingId) {
+      setShowDetailModal(false);
+    }
+    
+  } catch (error: any) {
+    console.error('❌ Error processing borrow request:', error);
+    alert.error(error.message || getText('Failed to process borrow request', 'Gagal memproses permintaan peminjaman'));
+  } finally {
+    setProcessingIds(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(bookingId);
+      return newSet;
+    });
+  }
+};
 
   // HANDLE DELETE
   const handleDelete = async (bookingId: string) => {
