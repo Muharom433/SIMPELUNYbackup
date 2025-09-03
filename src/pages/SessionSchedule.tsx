@@ -336,7 +336,7 @@ const SessionScheduleProgressive = () => {
         .select('room_id, start_time, end_time')
         .gte('start_time', startUTC)
         .lt('start_time', endUTC)
-        .eq('status', 'approved');
+        .in('status', ['approved','borrowed']);
 
       if (bookingError) {
         console.error('Error checking booking conflicts:', bookingError);
