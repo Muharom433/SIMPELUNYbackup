@@ -742,7 +742,6 @@ const BookingManagement: React.FC = () => {
             })}
           </div>
           
-          {/* Overall Equipment Status Summary */}
           <div className="mt-4 pt-4 border-t border-emerald-200">
             {(() => {
               const allSufficient = equipmentList.every((equipmentId, index) => {
