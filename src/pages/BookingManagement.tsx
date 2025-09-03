@@ -498,15 +498,36 @@ const BookingManagement: React.FC = () => {
   };
 
   // EQUIPMENT UTILITY FUNCTIONS
-  const parseEquipmentRequested = (equipmentStr: string): string[] => {
-    if (!equipmentStr) return [];
-    try {
-      const parsed = JSON.parse(equipmentStr);
-      return Array.isArray(parsed) ? parsed : [equipmentStr];
-    } catch {
-      return equipmentStr.split(',').map(item => item.trim()).filter(item => item);
-    }
-  };
+  const parseEquipmentRequested = (equipmentStr: any): string[] => {
+  console.log('🔍 parseEquipmentRequested input:', {
+    value: equipmentStr,
+    type: typeof equipmentStr,
+    isArray: Array.isArray(equipmentStr)
+  });
+  
+  // Handle null, undefined, atau empty
+  if (!equipmentStr) {
+    console.log('📝 Empty equipment string, returning []');
+    return [];
+  }
+  
+  // Jika sudah array, return langsung
+  if (Array.isArray(equipmentStr)) {
+    console.log('📝 Already array, converting to strings');
+    return equipmentStr.map(item => String(item)).filter(item => item);
+  }
+  
+  // Jika bukan string, convert ke string dulu
+  const strValue = String(equipmentStr);
+  console.log('📝 Converted to string:', strValue);
+  
+  // Jika string kosong setelah convert
+  if (!strValue || strValue === 'null' || strValue === 'undefined') {
+    console.log('📝 Empty string after conversion, returning []');
+    return [];
+  }
+  
+
 
   const parseAttachments = (attachmentStr: string): string[] => {
     if (!attachmentStr) return [];
