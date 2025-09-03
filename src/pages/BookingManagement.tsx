@@ -29,6 +29,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { useLanguage } from '../contexts/LanguageContext';
 
 // Dummy data and functions to make the component self-contained and runnable
 const dummyProfile = { role: 'super_admin' };
