@@ -369,7 +369,7 @@ const BookingManagement: React.FC = () => {
     }
   };
 
-  const renderEquipmentSection = (selectedBooking: Booking) => {
+  const renderEquipmentSection = (selectedBooking) => {
     const equipmentList = selectedBooking.equipment_requested || [];
     if (equipmentList.length === 0) {
       return null;
@@ -591,7 +591,7 @@ const BookingManagement: React.FC = () => {
             icon: CheckCircle,
           },
           {
-            label: getText('Rejected', 'Ditolak'),
+            label: 'Rejected',
             count: bookingStats.rejected,
             color: 'bg-red-500',
             icon: XCircle,
