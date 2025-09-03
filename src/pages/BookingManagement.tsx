@@ -701,8 +701,8 @@ const BookingManagement: React.FC = () => {
                       <div>
                         <div className="font-semibold text-emerald-900">{equipmentName}</div>
                         <div className="text-sm text-emerald-700">{equipmentCode}</div>
-                      </div>
                     </div>
+                  </div>
                     
                     <div className="text-right">
                       <div className="font-bold text-emerald-900 text-lg">{requestedQuantity}</div>
@@ -727,7 +727,6 @@ const BookingManagement: React.FC = () => {
                           <span className="text-xs font-medium">
                             {getText('Sufficient quantity available', 'Jumlah mencukupi')}
                           </span>
-                        </div>
                       ) : (
                         <div className="flex items-center text-red-700">
                           <XCircle className="h-4 w-4 mr-1" />
@@ -742,6 +741,7 @@ const BookingManagement: React.FC = () => {
             })}
           </div>
           
+          {/* Overall Equipment Status Summary */}
           <div className="mt-4 pt-4 border-t border-emerald-200">
             {(() => {
               const allSufficient = equipmentList.every((equipmentId, index) => {
@@ -937,9 +937,10 @@ const BookingManagement: React.FC = () => {
               <div className={`${stat.color} p-3 rounded-xl`}>
                 <stat.icon className="h-6 w-6 text-white" />
               </div>
-            </div>
           </div>
-        ))}
+
+        </div>
+      ))}
       </div>
 
       {/* Controls */}
@@ -1377,7 +1378,6 @@ const BookingManagement: React.FC = () => {
                           </p>
                         </div>
                       )}
-                    </div>
                   </div>
 
                   {/* Status Information */}
