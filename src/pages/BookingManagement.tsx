@@ -527,15 +527,34 @@ const BookingManagement: React.FC = () => {
   }
 };
   
-  const parseAttachments = (attachmentStr: string): string[] => {
-    if (!attachmentStr) return [];
-    try {
-      const parsed = JSON.parse(attachmentStr);
-      return Array.isArray(parsed) ? parsed : [attachmentStr];
-    } catch {
-      return attachmentStr.split(',').map(item => item.trim()).filter(item => item);
+ const parseAttachments = (attachmentStr: any): string[] => {
+  // Handle null, undefined, atau empty
+  if (!attachmentStr) return [];
+  
+  // Jika sudah array, return langsung
+  if (Array.isArray(attachmentStr)) {
+    return attachmentStr.map(item => String(item)).filter(item => item);
+  }
+  
+  // Jika bukan string, convert ke string dulu
+  const strValue = String(attachmentStr);
+  
+  // Jika string kosong setelah convert
+  if (!strValue || strValue === 'null' || strValue === 'undefined') return [];
+  
+  try {
+    // Try parsing as JSON first
+    const parsed = JSON.parse(strValue);
+    if (Array.isArray(parsed)) {
+      return parsed.map(item => String(item)).filter(item => item);
     }
-  };
+    // Jika JSON parse berhasil tapi bukan array, treat as single item
+    return [String(parsed)].filter(item => item);
+  } catch {
+    // Fallback to comma-separated values
+    return strValue.split(',').map(item => String(item).trim()).filter(item => item);
+  }
+};
 
   const getEquipmentQuantities = (booking: Booking): number[] => {
     const equipmentList = parseEquipmentRequested(booking.equipment_requested);
