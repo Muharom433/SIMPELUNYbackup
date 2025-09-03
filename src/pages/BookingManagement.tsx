@@ -368,7 +368,6 @@ const BookingManagement: React.FC = () => {
           const stats = allBookings.reduce((acc, booking) => {
             acc[booking.status] = (acc[booking.status] || 0) + 1;
             acc.total = (acc.total || 0) + 1;
-            return acc;
           }, { pending: 0, approved: 0, rejected: 0, completed: 0, borrowed: 0, total: 0 }); // Menambahkan 'borrowed' di sini
           
           setBookingStats(stats);
@@ -709,8 +708,8 @@ const BookingManagement: React.FC = () => {
                       <div className="font-bold text-emerald-900 text-lg">{requestedQuantity}</div>
                       <div className="text-xs text-emerald-600">{equipmentUnit}</div>
                     </div>
-                  </div>
-                  
+                </div>
+                
                   {/* Current Availability Status */}
                   <div className="mt-3 p-3 bg-gray-50 rounded-lg border">
                     <div className="text-xs font-medium text-gray-600 mb-2">CURRENT AVAILABILITY</div>
@@ -733,9 +732,7 @@ const BookingManagement: React.FC = () => {
                         <div className="flex items-center text-red-700">
                           <XCircle className="h-4 w-4 mr-1" />
                           <span className="text-xs font-medium">
-                            {getText('Insufficient quantity!', 'Jumlah tidak mencukupi!')} 
-                            <span className="ml-1">
-                              ({getText('Need', 'Butuh')} {requestedQuantity}, {getText('Available', 'Tersedia')} {availability.available})
+                            {`${getText('Insufficient quantity!', 'Jumlah tidak mencukupi!')} (${getText('Need', 'Butuh')} ${requestedQuantity}, ${getText('Available', 'Tersedia')} ${availability.available})`}
                           </span>
                         </div>
                       )}
@@ -889,7 +886,6 @@ const BookingManagement: React.FC = () => {
               )}
             </div>
             <div className="text-sm opacity-80">{getText('Total Bookings', 'Total Pemesanan')}</div>
-          </div>
         </div>
       </div>
 
@@ -961,7 +957,7 @@ const BookingManagement: React.FC = () => {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
-            </div>
+          </div>
 
             {/* Status Filter */}
             <select
@@ -1038,7 +1034,7 @@ const BookingManagement: React.FC = () => {
                       <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mr-2" />
                       <span className="text-gray-600">{getText('Loading bookings...', 'Memuat pemesanan...')}</span>
                     </div>
-                  </td>
+                </td>
                 </tr>
               ) : filteredBookings.length === 0 ? (
                 <tr>
@@ -1053,7 +1049,7 @@ const BookingManagement: React.FC = () => {
                         getText('No bookings available', 'Belum ada pemesanan tersedia')
                       }
                     </p>
-                  </td>
+                </td>
                 </tr>
               ) : (
                 filteredBookings.map((booking) => {
@@ -1084,7 +1080,7 @@ const BookingManagement: React.FC = () => {
                             <p className="text-sm text-blue-600 truncate font-medium mt-1">
                               {booking.purpose}
                             </p>
-                          </div>
+                      </div>
                       </td>
 
                       <td className="px-6 py-4">
@@ -1110,8 +1106,8 @@ const BookingManagement: React.FC = () => {
                               </>
                             ) : 'N/A'}
                           </div>
-                        </div>
-                      </td>
+                      </div>
+                    </td>
 
                       <td className="px-6 py-4">
                         <div className="space-y-2">
@@ -1359,7 +1355,7 @@ const BookingManagement: React.FC = () => {
                             {selectedBooking.end_time ? format(new Date(selectedBooking.end_time), 'MMM d, yyyy HH:mm') : 'N/A'}
                           </p>
                         </div>
-                      </div>
+                    </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
@@ -1480,9 +1476,8 @@ const BookingManagement: React.FC = () => {
                                               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                                             </svg>
                                           </button>
-                                        </div>
-                                        <iframe src="${attachment}" class="w-full h-full" frameborder="0"></iframe>
                                       </div>
+                                      <iframe src="${attachment}" class="w-full h-full" frameborder="0"></iframe>
                                     `;
                                   } else {
                                     modal.innerHTML = `
@@ -1526,12 +1521,11 @@ const BookingManagement: React.FC = () => {
                           <Download className="h-4 w-4" />
                           <span>{getText('Download All Documents', 'Unduh Semua Dokumen')}</span>
                         </button>
-                      </div>
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {/* Actions */}
-                  {selectedBooking.status === 'pending' && (
+                {/* Actions */}
                     <div className="bg-yellow-50 rounded-xl p-4 border border-yellow-200">
                       <h4 className="font-medium text-yellow-900 mb-3 flex items-center">
                         <Zap className="h-5 w-5 mr-2" />
