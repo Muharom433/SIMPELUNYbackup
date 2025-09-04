@@ -207,14 +207,35 @@ const selectedRoom = useMemo(() => {
 const fetchSchedules = async () => {
   try {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('lecture_schedules')
-      .select('*')
-      .order('day', { ascending: true })
-      .order('start_time', { ascending: true });
-    
-    if (error) throw error;
-    setSchedules(data || []);
+    const pageSize = 1000;
+    let allData: LectureSchedule[] = [];
+    let from = 0;
+    let to = pageSize - 1;
+    let keepFetching = true;
+    while (keepFetching) {
+      const { data, error } = await supabase
+        .from('lecture_schedules')
+        .select('*')
+        .order('day', { ascending: true })
+        .order('start_time', { ascending: true })
+        .range(from, to);
+      if (error) throw error;
+      if (data && data.length > 0) {
+        allData = allData.concat(data);
+        if (data.length < pageSize) {
+          // Data batch kurang dari pageSize berarti sudah habis
+          keepFetching = false;
+        } else {
+          // Siapkan range untuk batch berikutnya
+          from += pageSize;
+          to += pageSize;
+        }
+      } else {
+        // Tidak ada data lagi
+        keepFetching = false;
+      }
+    }
+    setSchedules(allData);
   } catch (error: any) {
     console.error('Error fetching schedules:', error);
     alert.error(error.message || 'Failed to load lecture schedules');
