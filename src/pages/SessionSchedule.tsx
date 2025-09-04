@@ -1392,66 +1392,244 @@ const SessionScheduleProgressive = () => {
     return errors;
   };
 
-  const handleSubmitWithValidation = async () => {
-    const supervisorValue = supervisorInputRef.current?.value || '';
-    const examinerValue = examinerInputRef.current?.value || '';
-    const secretaryValue = secretaryInputRef.current?.value || '';
-    const titleValue = titleInputRef.current?.value || '';
-    if (supervisorValue) form.setValue('supervisor', supervisorValue);
-    if (examinerValue) form.setValue('examiner', examinerValue);
-    if (secretaryValue) form.setValue('secretary', secretaryValue);
-    if (titleValue) form.setValue('title', titleValue);
+  // Modifikasi handleSubmitWithValidation untuk menambahkan cross-check menggunakan fungsi yang sudah ada
+const handleSubmitWithValidation = async () => {
+  const supervisorValue = supervisorInputRef.current?.value || '';
+  const examinerValue = examinerInputRef.current?.value || '';
+  const secretaryValue = secretaryInputRef.current?.value || '';
+  const titleValue = titleInputRef.current?.value || '';
+  if (supervisorValue) form.setValue('supervisor', supervisorValue);
+  if (examinerValue) form.setValue('examiner', examinerValue);
+  if (secretaryValue) form.setValue('secretary', secretaryValue);
+  if (titleValue) form.setValue('title', titleValue);
+  
+  const nimValue = studentInputRef.current?.value || '';
+  const nameValue = studentNameRef.current?.value || '';
+  
+  if (nimValue && nimValue !== formData.student_nim) {
+    setFormData(prev => ({ ...prev, student_nim: nimValue }));
+  }
+  if (nameValue && nameValue !== formData.student_name) {
+    setFormData(prev => ({ ...prev, student_name: nameValue }));
+  }
+  
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
+  const validationErrors = validateAllFields();
+  
+  if (validationErrors.length > 0) {
+    const errorMessage = getText(
+      `Please complete the following fields:\n• ${validationErrors.join('\n• ')}`,
+      `Silakan lengkapi field berikut:\n• ${validationErrors.join('\n• ')}`
+    );
     
-    const nimValue = studentInputRef.current?.value || '';
-    const nameValue = studentNameRef.current?.value || '';
+    alert.error(errorMessage);
     
-    if (nimValue && nimValue !== formData.student_nim) {
-      setFormData(prev => ({ ...prev, student_nim: nimValue }));
-    }
-    if (nameValue && nameValue !== formData.student_name) {
-      setFormData(prev => ({ ...prev, student_name: nameValue }));
-    }
-    
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    const validationErrors = validateAllFields();
-    
-    if (validationErrors.length > 0) {
-      const errorMessage = getText(
-        `Please complete the following fields:\n• ${validationErrors.join('\n• ')}`,
-        `Silakan lengkapi field berikut:\n• ${validationErrors.join('\n• ')}`
-      );
-      
-      alert.error(errorMessage);
-      
-      if (!formData.student_nim || !formData.student_name || !formData.study_program_id) {
-        setCurrentStep(1);
-      } else if (!form.getValues('date') || !form.getValues('start_time') || !form.getValues('end_time')) {
-        setCurrentStep(2);
-      } else {
-        setCurrentStep(3);
-      }
-      
-      return;
-    }
-    
-    const existingSession = await checkDuplicateStudent(form.getValues('student_id'), nimValue);
-    if (existingSession) {
-      const existingDate = format(parseISO(existingSession.date), 'EEEE, dd MMMM yyyy');
-      const existingTime = `${existingSession.start_time} - ${existingSession.end_time}`;
-      
-      alert.error(
-        getText(
-          `⚠️ Duplicate Student Found!\n\nStudent ${nameValue} (${nimValue}) already has a scheduled session:\n📅 Date: ${existingDate}\n⏰ Time: ${existingTime}\n🏢 Room: ${existingSession.room?.name || 'Unknown'}\n\nPlease select a different student or edit the existing session.`,
-          `⚠️ Mahasiswa Duplikat Ditemukan!\n\nMahasiswa ${nameValue} (${nimValue}) sudah memiliki jadwal sidang:\n📅 Tanggal: ${existingDate}\n⏰ Waktu: ${existingTime}\n🏢 Ruangan: ${existingSession.room?.name || 'Tidak diketahui'}\n\nSilakan pilih mahasiswa lain atau edit jadwal yang sudah ada.`
-        )
-      );
+    if (!formData.student_nim || !formData.student_name || !formData.study_program_id) {
       setCurrentStep(1);
-      return;
+    } else if (!form.getValues('date') || !form.getValues('start_time') || !form.getValues('end_time')) {
+      setCurrentStep(2);
+    } else {
+      setCurrentStep(3);
     }
     
-    form.handleSubmit(handleSubmit)();
-  };
+    return;
+  }
+  
+  const existingSession = await checkDuplicateStudent(form.getValues('student_id'), nimValue);
+  if (existingSession) {
+    const existingDate = format(parseISO(existingSession.date), 'EEEE, dd MMMM yyyy');
+    const existingTime = `${existingSession.start_time} - ${existingSession.end_time}`;
+    
+    alert.error(
+      getText(
+        `⚠️ Duplicate Student Found!\n\nStudent ${nameValue} (${nimValue}) already has a scheduled session:\n📅 Date: ${existingDate}\n⏰ Time: ${existingTime}\n🏢 Room: ${existingSession.room?.name || 'Unknown'}\n\nPlease select a different student or edit the existing session.`,
+        `⚠️ Mahasiswa Duplikat Ditemukan!\n\nMahasiswa ${nameValue} (${nimValue}) sudah memiliki jadwal sidang:\n📅 Tanggal: ${existingDate}\n⏰ Waktu: ${existingTime}\n🏢 Ruangan: ${existingSession.room?.name || 'Tidak diketahui'}\n\nSilakan pilih mahasiswa lain atau edit jadwal yang sudah ada.`
+      )
+    );
+    setCurrentStep(1);
+    return;
+  }
+
+  // ✅ CROSS-CHECK: Validasi final menggunakan fungsi checkRoomAvailability yang sudah ada
+  const roomId = form.getValues('room_id');
+  const date = form.getValues('date');
+  const startTime = form.getValues('start_time');
+  const endTime = form.getValues('end_time');
+  
+  console.log(`🔍 Final cross-check for Room ID: ${roomId}, Date: ${date}, Time: ${startTime}-${endTime}`);
+  
+  // Panggil fungsi checkRoomAvailability untuk mendapatkan ruangan yang tersedia
+  await checkRoomAvailability(date, startTime, endTime);
+  
+  // Cek apakah ruangan yang dipilih masih tersedia setelah pengecekan terbaru
+  const selectedRoom = rooms.find(room => room.id === roomId);
+  const isRoomStillAvailable = availableRooms.some(room => room.id === roomId);
+  
+  if (!selectedRoom) {
+    alert.error(getText(
+      '❌ Room Not Found!\n\nThe selected room could not be found. Please refresh the page and try again.',
+      '❌ Ruangan Tidak Ditemukan!\n\nRuangan yang dipilih tidak dapat ditemukan. Silakan refresh halaman dan coba lagi.'
+    ));
+    setCurrentStep(3);
+    return;
+  }
+  
+  if (!selectedRoom.is_available) {
+    alert.error(getText(
+      `❌ Room Disabled!\n\nRoom: ${selectedRoom.name} - ${selectedRoom.code}\n\nThis room is currently disabled for booking. Please select a different room.`,
+      `❌ Ruangan Dinonaktifkan!\n\nRuangan: ${selectedRoom.name} - ${selectedRoom.code}\n\nRuangan ini saat ini dinonaktifkan untuk pemesanan. Silakan pilih ruangan lain.`
+    ));
+    setCurrentStep(3);
+    return;
+  }
+  
+  if (!isRoomStillAvailable) {
+    // Buat detail konflik berdasarkan pengecekan yang dilakukan di checkRoomAvailability
+    let conflictDetails = [];
+    
+    // 1. Cek bentrok dengan sesi sidang final lain
+    const finalSessionConflicts = allSessions.filter(session => {
+      if (editingSession && session.id === editingSession.id) return false;
+      if (session.room_id !== roomId || session.date !== date) return false;
+      
+      // Cek irisan waktu: 07:30-09:09 beririsan dengan 08:00-10:00
+      const hasTimeOverlap = startTime < session.end_time && endTime > session.start_time;
+      return hasTimeOverlap;
+    });
+    
+    finalSessionConflicts.forEach(session => {
+      conflictDetails.push(getText(
+        `• Final Session: ${session.student?.full_name || 'Unknown'} (${session.start_time}-${session.end_time})`,
+        `• Sidang Akhir: ${session.student?.full_name || 'Tidak Dikenal'} (${session.start_time}-${session.end_time})`
+      ));
+    });
+    
+    // 2. Cek bentrok dengan jadwal kuliah (berdasarkan hari)
+    const dateObj = new Date(date);
+    const dayNamesIndonesian = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const dayName = dayNamesIndonesian[dateObj.getDay()];
+    
+    // Simulasi pengecekan jadwal kuliah (karena ini async, kita perlu menunggu hasil)
+    try {
+      const { data: lectureSchedules } = await supabase
+        .from('lecture_schedules')
+        .select('room, start_time, end_time, course_name, lecturer_name')
+        .eq('day', dayName);
+      
+      if (lectureSchedules) {
+        lectureSchedules.forEach(schedule => {
+          if (schedule.room.toLowerCase() === selectedRoom.name.toLowerCase()) {
+            const hasTimeOverlap = startTime < schedule.end_time && endTime > schedule.start_time;
+            if (hasTimeOverlap) {
+              conflictDetails.push(getText(
+                `• Lecture: ${schedule.course_name || 'Unknown Course'} (${schedule.start_time}-${schedule.end_time})`,
+                `• Kuliah: ${schedule.course_name || 'Mata Kuliah Tidak Dikenal'} (${schedule.start_time}-${schedule.end_time})`
+              ));
+            }
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error checking lecture schedules:', error);
+    }
+    
+    // 3. Cek bentrok dengan booking yang disetujui
+    try {
+      const { startUTC, endUTC } = getDateRangeForBookings(date);
+      const startTimeUTC = convertLocalToUTC(`${date}T${startTime}:00`);
+      const endTimeUTC = convertLocalToUTC(`${date}T${endTime}:00`);
+      
+      const { data: bookingConflicts } = await supabase
+        .from('bookings')
+        .select(`
+          room_id, start_time, end_time, purpose,
+          user:users(full_name)
+        `)
+        .eq('room_id', roomId)
+        .gte('start_time', startUTC)
+        .lt('start_time', endUTC)
+        .in('status', ['approved', 'borrowed']);
+      
+      if (bookingConflicts) {
+        bookingConflicts.forEach(booking => {
+          const bookingStart = new Date(booking.start_time);
+          const bookingEnd = new Date(booking.end_time);
+          const sessionStart = new Date(startTimeUTC);
+          const sessionEnd = new Date(endTimeUTC);
+          
+          if (sessionStart < bookingEnd && sessionEnd > bookingStart) {
+            const bookingStartLocal = convertUTCToLocal(booking.start_time);
+            const bookingEndLocal = convertUTCToLocal(booking.end_time);
+            
+            conflictDetails.push(getText(
+              `• Booking: ${booking.user?.full_name || 'Unknown User'} (${format(bookingStartLocal, 'HH:mm')}-${format(bookingEndLocal, 'HH:mm')})`,
+              `• Pemesanan: ${booking.user?.full_name || 'Pengguna Tidak Dikenal'} (${format(bookingStartLocal, 'HH:mm')}-${format(bookingEndLocal, 'HH:mm')})`
+            ));
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error checking booking conflicts:', error);
+    }
+    
+    // 4. Cek bentrok dengan jadwal ujian
+    try {
+      const { data: examSchedules } = await supabase
+        .from('exams')
+        .select('room_id, start_time, end_time, course_name, exam_type')
+        .eq('room_id', roomId)
+        .eq('date', date);
+      
+      if (examSchedules) {
+        examSchedules.forEach(exam => {
+          const hasTimeOverlap = startTime < exam.end_time && endTime > exam.start_time;
+          if (hasTimeOverlap) {
+            conflictDetails.push(getText(
+              `• Exam: ${exam.course_name || 'Unknown Course'} - ${exam.exam_type || 'Exam'} (${exam.start_time}-${exam.end_time})`,
+              `• Ujian: ${exam.course_name || 'Mata Kuliah Tidak Dikenal'} - ${exam.exam_type || 'Ujian'} (${exam.start_time}-${exam.end_time})`
+            ));
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error checking exam schedules:', error);
+    }
+    
+    // Tampilkan pesan error dengan detail konflik
+    const conflictMessage = getText(
+      `❌ Room Time Conflict!\n\nRoom: ${selectedRoom.name} - ${selectedRoom.code}\nDate: ${format(new Date(date), 'EEEE, dd MMMM yyyy')}\nRequested Time: ${startTime} - ${endTime}\n\n⚠️ Time conflicts detected with:\n${conflictDetails.join('\n')}\n\nPlease choose a different room or time slot.`,
+      `❌ Bentrok Waktu Ruangan!\n\nRuangan: ${selectedRoom.name} - ${selectedRoom.code}\nTanggal: ${format(new Date(date), 'EEEE, dd MMMM yyyy')}\nWaktu yang Diminta: ${startTime} - ${endTime}\n\n⚠️ Terdeteksi bentrok waktu dengan:\n${conflictDetails.join('\n')}\n\nSilakan pilih ruangan atau waktu yang berbeda.`
+    );
+    
+    alert.error(conflictMessage);
+    setCurrentStep(3); // Kembali ke step pemilihan ruangan
+    return;
+  }
+  
+  console.log('✅ Room is available, proceeding with submission...');
+  
+  // Jika tidak ada konflik, lanjutkan dengan submit normal
+  form.handleSubmit(handleSubmit)();
+};
+
+// Tambahkan juga helper function untuk mengecek irisan waktu (time overlap)
+const hasTimeOverlap = (start1, end1, start2, end2) => {
+  // Contoh: 07:30-09:09 beririsan dengan 08:00-10:00
+  // start1 < end2 && end1 > start2
+  return start1 < end2 && end1 > start2;
+};
+
+// Contoh penggunaan helper function di dalam pengecekan:
+const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd) => {
+  const overlap = hasTimeOverlap(sessionStart, sessionEnd, existingStart, existingEnd);
+  
+  if (overlap) {
+    console.log(`⚠️ Time overlap detected: ${sessionStart}-${sessionEnd} conflicts with ${existingStart}-${existingEnd}`);
+  }
+  
+  return overlap;
+};
 
   // StudentInformationStep
   const StudentInformationStep = () => {
