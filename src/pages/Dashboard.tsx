@@ -455,7 +455,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                   <iframe
                     width="100%"
                     height="100%"
-                    src="https://youtube.com/shorts/BaNVrv_9ABQ?si=z3rkc7hX6U9v0ifk"
+                    src="https://www.youtube.com/embed/SI0p9klzU8A?si=fy6mcyL2hwp6Hf8E"
                     title="SIMPEL Kuliah Demo Video"
                     frameBorder="0"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
