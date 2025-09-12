@@ -236,7 +236,9 @@ window.addEventListener('scroll', handleScroll, { passive: true });
       {/* Floating Information */}
       {/* Enhanced Floating Information */}
 {showFloatingInfo && (
-  <div className="fixed bottom-6 right-6 z-40 animate-bounce">
+   <div className={`fixed bottom-6 right-6 z-40 transition-all duration-500 ${
+    showFloatingInfo ? 'animate-bounce opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
+  }`}>
     <div className="relative group">
       {/* Glow Effect */}
       <div className="absolute -inset-1 bg-gradient-to-r from-orange-400 via-pink-500 to-purple-600 rounded-2xl blur opacity-75 group-hover:opacity-100 transition duration-1000 group-hover:duration-200 animate-pulse"></div>
