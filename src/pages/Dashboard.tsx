@@ -235,14 +235,14 @@ window.addEventListener('scroll', handleScroll, { passive: true });
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Floating Information */}
       {/* Enhanced Floating Information */}
-{/* Enhanced Floating Information */}
+{/* Enhanced Floating Information - Centered */}
 {showFloatingInfo && (
   <div 
-    className="fixed bottom-6 right-6 z-50 animate-bounce"
+    className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 animate-bounce"
     style={{ 
       transition: 'all 0.5s ease-out',
       opacity: showFloatingInfo ? 1 : 0,
-      transform: showFloatingInfo ? 'translateY(0)' : 'translateY(20px)'
+      transform: showFloatingInfo ? 'translateX(-50%) translateY(0)' : 'translateX(-50%) translateY(20px)'
     }}
   >
     <div className="relative group">
@@ -254,18 +254,16 @@ window.addEventListener('scroll', handleScroll, { passive: true });
         {/* Animated Background Pattern */}
         <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent transform -skew-x-12 animate-shimmer"></div>
         
-        {/* Close Button - Centered at Top */}
-        <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 z-10">
-          <button
-            onClick={() => setShowFloatingInfo(false)}
-            className="bg-white/90 hover:bg-white p-1.5 rounded-full shadow-lg transition-all duration-200 hover:scale-110 group/close"
-          >
-            <X className="w-3 h-3 text-gray-600 group-hover/close:text-gray-800" />
-          </button>
-        </div>
+        {/* Close Button - Top Right Corner */}
+        <button
+          onClick={() => setShowFloatingInfo(false)}
+          className="absolute -top-2 -right-2 bg-white/90 hover:bg-white p-1.5 rounded-full shadow-lg transition-all duration-200 hover:scale-110 z-10"
+        >
+          <X className="w-3 h-3 text-gray-600 hover:text-gray-800" />
+        </button>
         
         {/* Content */}
-        <div className="relative px-5 py-4 flex items-center space-x-3">
+        <div className="relative px-6 py-4 flex items-center space-x-4">
           {/* Animated Icon */}
           <div className="relative">
             <div className="absolute inset-0 bg-white/20 rounded-full animate-ping"></div>
@@ -285,7 +283,7 @@ window.addEventListener('scroll', handleScroll, { passive: true });
           </div>
           
           {/* Sparkle Effect */}
-          <div className="absolute top-1 right-2 w-2 h-2 bg-white rounded-full animate-ping opacity-60"></div>
+          <div className="absolute top-1 right-8 w-2 h-2 bg-white rounded-full animate-ping opacity-60"></div>
           <div className="absolute bottom-1 left-3 w-1 h-1 bg-white rounded-full animate-pulse opacity-80"></div>
         </div>
       </div>
