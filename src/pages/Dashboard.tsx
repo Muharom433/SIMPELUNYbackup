@@ -24,6 +24,7 @@ import {
   Smartphone,
   Shield,
   ChevronRight,
+  ChevronLeft, // Tambahkan import ini
   Play,
   GraduationCap,
   Wrench,
@@ -44,14 +45,14 @@ import {
   X,
   RefreshCw,
   Phone,
-  Mail
+  Mail,
+  ChevronDown // Tambahkan import ini untuk floating info
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
 import peopleImage from '../assets/people.svg';
 import buildImage from '../assets/Build.png';
 import shapeImage from '../assets/Shape.png';
-
 
 interface DashboardStats {
   totalBookings: number;
@@ -122,6 +123,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [scrollY, setScrollY] = useState(0);
+  const [showFloatingInfo, setShowFloatingInfo] = useState(true); // State untuk floating info
 
   useEffect(() => {
     // Update time every second
@@ -129,8 +131,19 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       setCurrentTime(new Date());
     }, 1000);
 
-    // Handle scroll for animations
-    const handleScroll = () => setScrollY(window.scrollY);
+    // Handle scroll for animations and floating info
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      setScrollY(currentScrollY);
+      
+      // Hide floating info after scrolling 200px
+      if (currentScrollY > 200) {
+        setShowFloatingInfo(false);
+      } else {
+        setShowFloatingInfo(true);
+      }
+    };
+    
     window.addEventListener('scroll', handleScroll);
 
     // Mock recent activity data
@@ -220,6 +233,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
+      {/* Floating Information */}
+      {showFloatingInfo && (
+        <div className="fixed bottom-8 right-8 z-40 animate-bounce">
+          <div className="bg-white/90 backdrop-blur-lg rounded-2xl shadow-xl border border-white/20 px-6 py-4 flex items-center space-x-3">
+            <div className="flex items-center space-x-2 text-gray-700">
+              <ChevronDown className="w-5 h-5 animate-pulse" />
+              <span className="text-sm font-medium">
+                {getText('Scroll untuk tutorial', 'Scroll untuk tutorial')}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Hero Section */}
       <div className="relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden" style={{background: 'linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)'}}>
         {/* Background Faded Abstract Shapes with Glassmorphism */}
@@ -516,7 +543,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   );
 };
 
-// ReportsSection Component for public reports display
+// ReportsSection Component for public reports display - IMPROVED MOBILE RESPONSIVENESS
 const ReportsSection = () => {
   const { getText } = useLanguage();
   const [reports, setReports] = useState([]);
@@ -610,7 +637,7 @@ const ReportsSection = () => {
     return icons[category] || AlertCircle;
   };
 
-  const getStatusColor = (status) => {
+    const getStatusColor = (status) => {
     const colors = {
       new: 'text-blue-600',
       in_progress: 'text-orange-600',
@@ -633,7 +660,7 @@ const ReportsSection = () => {
   if (loading) {
     return (
       <div className="py-24 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-center items-center h-64">
             <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
           </div>
@@ -643,76 +670,133 @@ const ReportsSection = () => {
   }
 
   return (
-    <div className="py-24 bg-gray-50">
-      <div className="max-w-7xl mx-auto px-6">
+    <div className="py-12 sm:py-16 lg:py-24 bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="text-center mb-16">
-          <div className="inline-flex items-center px-4 py-2 bg-orange-100 text-orange-700 rounded-full text-sm font-medium mb-4">
-            <MessageSquare className="w-4 h-4 mr-2" />
+        <div className="text-center mb-8 sm:mb-12 lg:mb-16">
+          <div className="inline-flex items-center px-3 sm:px-4 py-2 bg-orange-100 text-orange-700 rounded-full text-xs sm:text-sm font-medium mb-4">
+            <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
             {getText('Community Reports', 'Laporan Komunitas')}
           </div>
           
-          <h2 className="text-4xl lg:text-5xl font-bold text-gray-900 mb-6">
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl xl:text-5xl font-bold text-gray-900 mb-4 sm:mb-6 px-4">
             {getText('Recent Issues & Updates', 'Masalah & Pembaruan Terkini')}
           </h2>
         </div>
 
-        {/* Modern Table */}
-        <div className="bg-white/70 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 overflow-hidden">
-          <div className="p-8">
-            <div className="space-y-6">
+        {/* Mobile-First Responsive Cards */}
+        <div className="bg-white/70 backdrop-blur-lg rounded-2xl sm:rounded-3xl shadow-xl border border-white/20 overflow-hidden">
+          <div className="p-4 sm:p-6 lg:p-8">
+            <div className="space-y-4 sm:space-y-6">
               {reports.map((report, index) => {
                 const CategoryIcon = getCategoryIcon(report.category);
                 return (
                   <div 
                     key={report.id}
-                    className="group flex items-center justify-between p-6 rounded-2xl hover:bg-orange-50/50 transition-all duration-300 border border-transparent hover:border-orange-200/50"
+                    className="group p-4 sm:p-6 rounded-xl sm:rounded-2xl hover:bg-orange-50/50 transition-all duration-300 border border-transparent hover:border-orange-200/50"
                   >
-                    {/* Priority Dot & Icon */}
-                    <div className="flex items-center space-x-4">
-                      <div className={`w-3 h-3 rounded-full ${getPriorityDot(report.priority)}`}></div>
-                      <div className="p-3 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl">
-                        <CategoryIcon className="h-5 w-5 text-white" />
+                    {/* Mobile Layout - Stacked */}
+                    <div className="block sm:hidden space-y-3">
+                      {/* Top Row - Priority, Icon, Status */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className={`w-3 h-3 rounded-full ${getPriorityDot(report.priority)}`}></div>
+                          <div className="p-2 bg-gradient-to-br from-orange-500 to-red-500 rounded-lg">
+                            <CategoryIcon className="h-4 w-4 text-white" />
+                          </div>
+                        </div>
+                        <span className={`text-xs font-medium ${getStatusColor(report.status)} capitalize px-2 py-1 bg-white rounded-full`}>
+                          {report.status.replace('_', ' ')}
+                        </span>
                       </div>
-                    </div>
 
-                    {/* Issue Info */}
-                    <div className="flex-1 ml-6">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-1 group-hover:text-orange-700 transition-colors">
+                      {/* Title */}
+                      <h3 className="text-base font-semibold text-gray-900 group-hover:text-orange-700 transition-colors leading-tight">
                         {report.title}
                       </h3>
-                      <div className="flex items-center space-x-6 text-sm text-gray-500">
+
+                      {/* Info Grid - 2 columns on mobile */}
+                      <div className="grid grid-cols-1 gap-2 text-xs text-gray-500">
                         <div className="flex items-center">
-                          <MapPin className="h-4 w-4 mr-1" />
-                          {report.location || report.room?.name}
+                          <MapPin className="h-3 w-3 mr-1 flex-shrink-0" />
+                          <span className="truncate">{report.location || report.room?.name}</span>
                         </div>
-                        <div className="flex items-center">
-                          <User className="h-4 w-4 mr-1" />
-                          {report.is_anonymous ? 'Anonymous' : report.reporter_name}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center">
+                            <User className="h-3 w-3 mr-1 flex-shrink-0" />
+                            <span className="truncate">{report.is_anonymous ? 'Anonymous' : report.reporter_name}</span>
+                          </div>
+                          <div className="flex items-center ml-2">
+                            <Clock className="h-3 w-3 mr-1 flex-shrink-0" />
+                            <span>{new Date(report.created_at).toLocaleDateString()}</span>
+                          </div>
                         </div>
-                        <div className="flex items-center">
-                          <Clock className="h-4 w-4 mr-1" />
-                          {new Date(report.created_at).toLocaleDateString()}
-                        </div>
+                      </div>
+
+                      {/* Action Button */}
+                      <div className="flex justify-end pt-2">
+                        <button
+                          onClick={() => {
+                            setSelectedReport(report);
+                            setShowModal(true);
+                            fetchComments(report.id);
+                          }}
+                          className="flex items-center space-x-2 px-3 py-2 text-xs font-medium text-orange-600 bg-orange-100 hover:bg-orange-200 rounded-lg transition-all duration-200"
+                        >
+                          <Eye className="h-3 w-3" />
+                          <span>View Details</span>
+                        </button>
                       </div>
                     </div>
 
-                    {/* Status & Actions */}
-                    <div className="flex items-center space-x-4">
-                      <span className={`text-sm font-medium ${getStatusColor(report.status)} capitalize`}>
-                        {report.status.replace('_', ' ')}
-                      </span>
-                      
-                      <button
-                        onClick={() => {
-                          setSelectedReport(report);
-                          setShowModal(true);
-                          fetchComments(report.id);
-                        }}
-                        className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-100 rounded-lg transition-all duration-200"
-                      >
-                        <Eye className="h-5 w-5" />
-                      </button>
+                    {/* Desktop Layout - Horizontal */}
+                    <div className="hidden sm:flex items-center justify-between">
+                      {/* Priority Dot & Icon */}
+                      <div className="flex items-center space-x-4">
+                        <div className={`w-3 h-3 rounded-full ${getPriorityDot(report.priority)}`}></div>
+                        <div className="p-3 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl">
+                          <CategoryIcon className="h-5 w-5 text-white" />
+                        </div>
+                      </div>
+
+                      {/* Issue Info */}
+                      <div className="flex-1 ml-6">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-1 group-hover:text-orange-700 transition-colors">
+                          {report.title}
+                        </h3>
+                        <div className="flex items-center space-x-6 text-sm text-gray-500">
+                          <div className="flex items-center">
+                            <MapPin className="h-4 w-4 mr-1" />
+                            {report.location || report.room?.name}
+                          </div>
+                          <div className="flex items-center">
+                            <User className="h-4 w-4 mr-1" />
+                            {report.is_anonymous ? 'Anonymous' : report.reporter_name}
+                          </div>
+                          <div className="flex items-center">
+                            <Clock className="h-4 w-4 mr-1" />
+                            {new Date(report.created_at).toLocaleDateString()}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Status & Actions */}
+                      <div className="flex items-center space-x-4">
+                        <span className={`text-sm font-medium ${getStatusColor(report.status)} capitalize`}>
+                          {report.status.replace('_', ' ')}
+                        </span>
+                        
+                        <button
+                          onClick={() => {
+                            setSelectedReport(report);
+                            setShowModal(true);
+                            fetchComments(report.id);
+                          }}
+                          className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-100 rounded-lg transition-all duration-200"
+                        >
+                          <Eye className="h-5 w-5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -721,65 +805,114 @@ const ReportsSection = () => {
           </div>
         </div>
 
-        {/* Aesthetic Pagination */}
+        {/* Mobile-Friendly Pagination */}
         {totalPages > 1 && (
-          <div className="flex justify-center mt-12">
-            <div className="flex items-center space-x-2 bg-white/70 backdrop-blur-lg rounded-2xl p-2 border border-white/20">
+          <div className="flex justify-center mt-8 sm:mt-12">
+            <div className="flex items-center space-x-1 sm:space-x-2 bg-white/70 backdrop-blur-lg rounded-xl sm:rounded-2xl p-2 border border-white/20">
               <button
                 onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                 disabled={currentPage === 1}
                 className="p-2 rounded-lg text-gray-600 hover:bg-orange-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
               >
-                <ChevronLeft className="h-5 w-5" />
+                <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" />
               </button>
               
-              {[...Array(totalPages)].map((_, i) => (
-                <button
-                  key={i + 1}
-                  onClick={() => setCurrentPage(i + 1)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                    currentPage === i + 1
-                      ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg'
-                      : 'text-gray-600 hover:bg-orange-100'
-                  }`}
-                >
-                  {i + 1}
-                </button>
-              ))}
+              {/* Show fewer page numbers on mobile */}
+              {totalPages <= 5 ? (
+                // Show all pages if 5 or fewer
+                [...Array(totalPages)].map((_, i) => (
+                  <button
+                    key={i + 1}
+                    onClick={() => setCurrentPage(i + 1)}
+                    className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 ${
+                      currentPage === i + 1
+                        ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg'
+                        : 'text-gray-600 hover:bg-orange-100'
+                    }`}
+                  >
+                    {i + 1}
+                  </button>
+                ))
+              ) : (
+                // Show condensed pagination for many pages
+                <>
+                  {currentPage > 2 && (
+                    <>
+                      <button
+                        onClick={() => setCurrentPage(1)}
+                        className="px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium text-gray-600 hover:bg-orange-100 transition-all duration-200"
+                      >
+                        1
+                      </button>
+                      {currentPage > 3 && <span className="text-gray-400 px-1">...</span>}
+                    </>
+                  )}
+                  
+                  {[...Array(3)].map((_, i) => {
+                    const pageNum = currentPage - 1 + i;
+                    if (pageNum < 1 || pageNum > totalPages) return null;
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 ${
+                          currentPage === pageNum
+                            ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg'
+                            : 'text-gray-600 hover:bg-orange-100'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                  
+                  {currentPage < totalPages - 1 && (
+                    <>
+                      {currentPage < totalPages - 2 && <span className="text-gray-400 px-1">...</span>}
+                      <button
+                        onClick={() => setCurrentPage(totalPages)}
+                        className="px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium text-gray-600 hover:bg-orange-100 transition-all duration-200"
+                      >
+                        {totalPages}
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
               
               <button
                 onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                 disabled={currentPage === totalPages}
                 className="p-2 rounded-lg text-gray-600 hover:bg-orange-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
               >
-                <ChevronRight className="h-5 w-5" />
+                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" />
               </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Detail Modal */}
+      {/* Mobile-Optimized Detail Modal */}
       {showModal && selectedReport && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-8">
-              <div className="flex items-center justify-between mb-8">
-                <h3 className="text-2xl font-bold text-gray-900">Report Details</h3>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+            <div className="p-4 sm:p-6 lg:p-8">
+              <div className="flex items-center justify-between mb-6 sm:mb-8">
+                <h3 className="text-lg sm:text-2xl font-bold text-gray-900">Report Details</h3>
                 <button
                   onClick={() => setShowModal(false)}
                   className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-all duration-200"
                 >
-                  <X className="h-6 w-6" />
+                  <X className="h-5 w-5 sm:h-6 sm:w-6" />
                 </button>
               </div>
 
               {/* Report Info */}
-              <div className="bg-gradient-to-br from-orange-50 to-red-50 rounded-2xl p-6 mb-8">
-                <h4 className="text-xl font-semibold text-gray-900 mb-4">{selectedReport.title}</h4>
-                <p className="text-gray-700 mb-4">{selectedReport.description}</p>
+              <div className="bg-gradient-to-br from-orange-50 to-red-50 rounded-xl sm:rounded-2xl p-4 sm:p-6 mb-6 sm:mb-8">
+                <h4 className="text-lg sm:text-xl font-semibold text-gray-900 mb-3 sm:mb-4">{selectedReport.title}</h4>
+                <p className="text-sm sm:text-base text-gray-700 mb-4">{selectedReport.description}</p>
                 
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs sm:text-sm">
                   <div><span className="font-medium">Category:</span> {selectedReport.category}</div>
                   <div><span className="font-medium">Priority:</span> {selectedReport.priority}</div>
                   <div><span className="font-medium">Status:</span> {selectedReport.status}</div>
@@ -788,48 +921,48 @@ const ReportsSection = () => {
               </div>
 
               {/* Comments Section */}
-              <div className="space-y-6">
-                <h5 className="text-lg font-semibold text-gray-900">Comments</h5>
+              <div className="space-y-4 sm:space-y-6">
+                <h5 className="text-base sm:text-lg font-semibold text-gray-900">Comments</h5>
                 
-                {comments.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No comments yet. Be the first to comment!</p>
+                                {comments.length === 0 ? (
+                  <div className="text-center py-6 sm:py-8 text-gray-500">
+                    <MessageSquare className="h-8 w-8 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 opacity-50" />
+                    <p className="text-sm sm:text-base">No comments yet. Be the first to comment!</p>
                   </div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-3 sm:space-y-4 max-h-60 sm:max-h-80 overflow-y-auto">
                     {comments.map((comment) => (
-                      <div key={comment.id} className="bg-gray-50 rounded-2xl p-4">
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="font-medium text-gray-900">{comment.commenter_name}</span>
+                      <div key={comment.id} className="bg-gray-50 rounded-xl sm:rounded-2xl p-3 sm:p-4">
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start mb-2 space-y-1 sm:space-y-0">
+                          <span className="font-medium text-gray-900 text-sm sm:text-base">{comment.commenter_name}</span>
                           <span className="text-xs text-gray-500">
                             {new Date(comment.created_at).toLocaleString()}
                           </span>
                         </div>
-                        <p className="text-gray-700">{comment.comment}</p>
+                        <p className="text-gray-700 text-sm sm:text-base leading-relaxed">{comment.comment}</p>
                       </div>
                     ))}
                   </div>
                 )}
 
-                {/* Add Comment Form */}
-                <div className="bg-gray-50 rounded-2xl p-6">
-                  <h6 className="font-medium text-gray-900 mb-4">Add Your Comment</h6>
+                {/* Add Comment Form - Mobile Optimized */}
+                <div className="bg-gray-50 rounded-xl sm:rounded-2xl p-4 sm:p-6">
+                  <h6 className="font-medium text-gray-900 mb-3 sm:mb-4 text-sm sm:text-base">Add Your Comment</h6>
                   
-                  <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="space-y-3 sm:space-y-0 sm:grid sm:grid-cols-2 sm:gap-4 mb-4">
                     <input
                       type="text"
                       value={commenterInfo.name}
                       onChange={(e) => setCommenterInfo(prev => ({ ...prev, name: e.target.value }))}
                       placeholder="Your Name"
-                      className="px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      className="w-full px-3 sm:px-4 py-2 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
                     />
                     <input
                       type="email"
                       value={commenterInfo.email}
                       onChange={(e) => setCommenterInfo(prev => ({ ...prev, email: e.target.value }))}
                       placeholder="Email (Optional)"
-                      className="px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      className="w-full px-3 sm:px-4 py-2 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
                     />
                   </div>
                   
@@ -837,16 +970,16 @@ const ReportsSection = () => {
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
                     placeholder="Write your comment..."
-                    rows={4}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 mb-4"
+                    rows={3}
+                    className="w-full px-3 sm:px-4 py-2 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 mb-4 resize-none"
                   />
                   
                   <button
                     onClick={addComment}
                     disabled={!newComment.trim() || !commenterInfo.name.trim()}
-                    className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                    className="w-full sm:w-auto flex items-center justify-center space-x-2 px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg sm:rounded-xl hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                   >
-                    <Send className="h-4 w-4" />
+                    <Send className="h-3 w-3 sm:h-4 sm:w-4" />
                     <span>Post Comment</span>
                   </button>
                 </div>
