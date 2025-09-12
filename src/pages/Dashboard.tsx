@@ -235,10 +235,16 @@ window.addEventListener('scroll', handleScroll, { passive: true });
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Floating Information */}
       {/* Enhanced Floating Information */}
+{/* Enhanced Floating Information */}
 {showFloatingInfo && (
-   <div className={`fixed bottom-6 right-6 z-40 transition-all duration-500 ${
-    showFloatingInfo ? 'animate-bounce opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
-  }`}>
+  <div 
+    className="fixed bottom-6 right-6 z-50 animate-bounce"
+    style={{ 
+      transition: 'all 0.5s ease-out',
+      opacity: showFloatingInfo ? 1 : 0,
+      transform: showFloatingInfo ? 'translateY(0)' : 'translateY(20px)'
+    }}
+  >
     <div className="relative group">
       {/* Glow Effect */}
       <div className="absolute -inset-1 bg-gradient-to-r from-orange-400 via-pink-500 to-purple-600 rounded-2xl blur opacity-75 group-hover:opacity-100 transition duration-1000 group-hover:duration-200 animate-pulse"></div>
@@ -248,8 +254,18 @@ window.addEventListener('scroll', handleScroll, { passive: true });
         {/* Animated Background Pattern */}
         <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent transform -skew-x-12 animate-shimmer"></div>
         
+        {/* Close Button - Centered at Top */}
+        <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 z-10">
+          <button
+            onClick={() => setShowFloatingInfo(false)}
+            className="bg-white/90 hover:bg-white p-1.5 rounded-full shadow-lg transition-all duration-200 hover:scale-110 group/close"
+          >
+            <X className="w-3 h-3 text-gray-600 group-hover/close:text-gray-800" />
+          </button>
+        </div>
+        
         {/* Content */}
-        <div className="relative px-5 py-3 flex items-center space-x-3">
+        <div className="relative px-5 py-4 flex items-center space-x-3">
           {/* Animated Icon */}
           <div className="relative">
             <div className="absolute inset-0 bg-white/20 rounded-full animate-ping"></div>
