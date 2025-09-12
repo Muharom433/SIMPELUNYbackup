@@ -132,18 +132,19 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     }, 1000);
 
     // Handle scroll for animations and floating info
-   const handleScroll = () => {
-    const currentScrollY = window.scrollY;
-    setScrollY(currentScrollY);
-    
-    // Hide floating info after scrolling 300px and don't show again
-    if (currentScrollY > 300 && showFloatingInfo) {
-      setShowFloatingInfo(false);
-    }
-  };
+   // Handle scroll for animations and floating info
+const handleScroll = () => {
+  const currentScrollY = window.scrollY;
+  setScrollY(currentScrollY);
+  
+  // Hide floating info after scrolling 200px and don't show again
+  if (currentScrollY > 200 && !hasScrolled) {
+    setShowFloatingInfo(false);
+    setHasScrolled(true);
+  }
+};
 
-    
-    window.addEventListener('scroll', handleScroll);
+window.addEventListener('scroll', handleScroll, { passive: true });
 
     // Mock recent activity data
     const mockActivity: RecentActivity[] = [
