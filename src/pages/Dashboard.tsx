@@ -233,18 +233,46 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Floating Information */}
-      {showFloatingInfo && (
-        <div className="fixed bottom-8 right-8 z-40 animate-bounce">
-          <div className="bg-white/90 backdrop-blur-lg rounded-2xl shadow-xl border border-white/20 px-6 py-4 flex items-center space-x-3">
-            <div className="flex items-center space-x-2 text-gray-700">
-              <ChevronDown className="w-5 h-5 animate-pulse" />
-              <span className="text-sm font-medium">
-                {getText('Scroll untuk tutorial', 'Scroll untuk tutorial')}
-              </span>
+      {/* Enhanced Floating Information */}
+{showFloatingInfo && (
+  <div className="fixed bottom-6 right-6 z-40 animate-bounce">
+    <div className="relative group">
+      {/* Glow Effect */}
+      <div className="absolute -inset-1 bg-gradient-to-r from-orange-400 via-pink-500 to-purple-600 rounded-2xl blur opacity-75 group-hover:opacity-100 transition duration-1000 group-hover:duration-200 animate-pulse"></div>
+      
+      {/* Main Container */}
+      <div className="relative bg-gradient-to-r from-orange-500 via-red-500 to-pink-600 rounded-2xl shadow-2xl border border-white/30 overflow-hidden">
+        {/* Animated Background Pattern */}
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent transform -skew-x-12 animate-shimmer"></div>
+        
+        {/* Content */}
+        <div className="relative px-5 py-3 flex items-center space-x-3">
+          {/* Animated Icon */}
+          <div className="relative">
+            <div className="absolute inset-0 bg-white/20 rounded-full animate-ping"></div>
+            <div className="relative bg-white/30 backdrop-blur-sm rounded-full p-2">
+              <ChevronDown className="w-4 h-4 text-white animate-bounce" />
             </div>
           </div>
+          
+          {/* Text with Gradient */}
+          <div className="flex flex-col">
+            <span className="text-white font-bold text-sm tracking-wide drop-shadow-lg">
+              {getText('Scroll untuk tutorial', 'Scroll untuk tutorial')}
+            </span>
+            <span className="text-white/80 text-xs font-medium">
+              {getText('Lihat video demo', 'Lihat video demo')}
+            </span>
+          </div>
+          
+          {/* Sparkle Effect */}
+          <div className="absolute top-1 right-2 w-2 h-2 bg-white rounded-full animate-ping opacity-60"></div>
+          <div className="absolute bottom-1 left-3 w-1 h-1 bg-white rounded-full animate-pulse opacity-80"></div>
         </div>
-      )}
+      </div>
+    </div>
+  </div>
+)}
 
       {/* Hero Section */}
       <div className="relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden" style={{background: 'linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)'}}>
