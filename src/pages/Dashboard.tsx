@@ -133,14 +133,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
     // Handle scroll for animations and floating info
    const handleScroll = () => {
-  const currentScrollY = window.scrollY;
-  setScrollY(currentScrollY);
-  
-  // Hide floating info after scrolling 300px and don't show again
-  if (currentScrollY > 300 && showFloatingInfo) {
-    setShowFloatingInfo(false);
-  }
-};
+    const currentScrollY = window.scrollY;
+    setScrollY(currentScrollY);
+    
+    // Hide floating info after scrolling 300px and don't show again
+    if (currentScrollY > 300 && showFloatingInfo) {
+      setShowFloatingInfo(false);
+    }
+  };
 
     
     window.addEventListener('scroll', handleScroll);
