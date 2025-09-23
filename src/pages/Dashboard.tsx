@@ -123,8 +123,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [scrollY, setScrollY] = useState(0);
-  const [showFloatingInfo, setShowFloatingInfo] = useState(true);
-  const [hasScrolled, setHasScrolled] = useState(false); // Tambahkan state ini
+  const [floatingInfoOpacity, setFloatingInfoOpacity] = useState(1);
+  const [lastScrollY, setLastScrollY] = useState(0);
+  const [heroHeight, setHeroHeight] = useState(0);
 
   useEffect(() => {
     // Update time every second
@@ -132,16 +133,42 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       setCurrentTime(new Date());
     }, 1000);
 
+    // Calculate hero section height
+    const calculateHeroHeight = () => {
+      const heroElement = document.querySelector('.hero-section');
+      if (heroElement) {
+        setHeroHeight(heroElement.clientHeight);
+      }
+    };
+
+    calculateHeroHeight();
+    window.addEventListener('resize', calculateHeroHeight);
+
     // Handle scroll for animations and floating info
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
       setScrollY(currentScrollY);
-      
-      // Hide floating info after scrolling 100px dengan fade out
-      if (currentScrollY > 100 && !hasScrolled) {
-        setShowFloatingInfo(false);
-        setHasScrolled(true);
+
+      // Calculate opacity based on scroll position within hero section
+      const heroOpacity = Math.max(0, 1 - (currentScrollY / 200));
+      setFloatingInfoOpacity(heroOpacity);
+
+      // Determine scroll direction for fade in/out effects
+      if (currentScrollY > lastScrollY) {
+        // Scrolling down - fade out
+        if (currentScrollY > 100) {
+          const fadeOutOpacity = Math.max(0, 1 - ((currentScrollY - 100) / 100));
+          setFloatingInfoOpacity(fadeOutOpacity);
+        }
+      } else {
+        // Scrolling up - fade in
+        if (currentScrollY < heroHeight) {
+          const fadeInOpacity = Math.min(1, (heroHeight - currentScrollY) / 300);
+          setFloatingInfoOpacity(fadeInOpacity);
+        }
       }
+
+      setLastScrollY(currentScrollY);
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -175,8 +202,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     return () => {
       clearInterval(timer);
       window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', calculateHeroHeight);
     };
-  }, [hasScrolled]); // Tambahkan hasScrolled ke dependency array
+  }, [lastScrollY, heroHeight]);
 
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString('en-US', { 
@@ -233,30 +261,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
-      {/* Simple Floating Arrow - Revised Version */}
-      {showFloatingInfo && (
-        <div 
-          className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50"
-          style={{ 
-            transition: 'all 0.5s ease-out',
-            opacity: showFloatingInfo ? 1 : 0,
-            transform: `translateX(-50%) translateY(${showFloatingInfo ? '0' : '20px'})`
-          }}
-        >
-          <div className="relative">
-            {/* Glow Effect */}
-            <div className="absolute -inset-3 bg-blue-400 rounded-full blur opacity-30 animate-pulse"></div>
-            
-            {/* Animated Arrow */}
-            <div className="relative bg-white/90 backdrop-blur-sm rounded-full p-3 shadow-2xl border border-white/50">
-              <ChevronDown className="w-6 h-6 text-blue-600 animate-bounce" />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Hero Section */}
-      <div className="relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden" style={{background: 'linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)'}}>
+      {/* Hero Section dengan container untuk floating info */}
+      <div className="hero-section relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden" style={{background: 'linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)'}}>
         {/* Background Faded Abstract Shapes with Glassmorphism */}
         <div className="absolute inset-0">
           {/* Large abstract shape - top right */}
@@ -336,6 +342,27 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
               animation: 'blob 7s infinite 4s'
             }}
           ></div>
+        </div>
+
+        {/* Floating Arrow - Now positioned relative to hero section */}
+        <div 
+          className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-50"
+          style={{ 
+            transition: 'all 0.3s ease-out',
+            opacity: floatingInfoOpacity,
+            transform: `translateX(-50%) translateY(${floatingInfoOpacity > 0 ? '0' : '20px'})`,
+            display: floatingInfoOpacity > 0 ? 'block' : 'none'
+          }}
+        >
+          <div className="relative">
+            {/* Glow Effect */}
+            <div className="absolute -inset-3 bg-blue-400 rounded-full blur opacity-30 animate-pulse"></div>
+            
+            {/* Animated Arrow */}
+            <div className="relative bg-white/90 backdrop-blur-sm rounded-full p-3 shadow-2xl border border-white/50">
+              <ChevronDown className="w-6 h-6 text-blue-600 animate-bounce" />
+            </div>
+          </div>
         </div>
 
         <div className="relative px-6 py-16 sm:px-12 lg:px-16">
@@ -930,7 +957,7 @@ const ReportsSection = () => {
               <div className="space-y-4 sm:space-y-6">
                 <h5 className="text-base sm:text-lg font-semibold text-gray-900">Comments</h5>
                 
-                                {comments.length === 0 ? (
+                {comments.length === 0 ? (
                   <div className="text-center py-6 sm:py-8 text-gray-500">
                     <MessageSquare className="h-8 w-8 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 opacity-50" />
                     <p className="text-sm sm:text-base">No comments yet. Be the first to comment!</p>
