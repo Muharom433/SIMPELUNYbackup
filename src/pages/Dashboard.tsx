@@ -123,9 +123,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [scrollY, setScrollY] = useState(0);
-  const [floatingInfoOpacity, setFloatingInfoOpacity] = useState(1);
-  const [lastScrollY, setLastScrollY] = useState(0);
-  const [heroHeight, setHeroHeight] = useState(0);
+  const [showOverlay, setShowOverlay] = useState(true);
 
   useEffect(() => {
     // Update time every second
@@ -133,42 +131,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       setCurrentTime(new Date());
     }, 1000);
 
-    // Calculate hero section height
-    const calculateHeroHeight = () => {
-      const heroElement = document.querySelector('.hero-section');
-      if (heroElement) {
-        setHeroHeight(heroElement.clientHeight);
-      }
-    };
-
-    calculateHeroHeight();
-    window.addEventListener('resize', calculateHeroHeight);
-
-    // Handle scroll for animations and floating info
+    // Handle scroll for animations
     const handleScroll = () => {
-      const currentScrollY = window.scrollY;
-      setScrollY(currentScrollY);
-
-      // Calculate opacity based on scroll position within hero section
-      const heroOpacity = Math.max(0, 1 - (currentScrollY / 200));
-      setFloatingInfoOpacity(heroOpacity);
-
-      // Determine scroll direction for fade in/out effects
-      if (currentScrollY > lastScrollY) {
-        // Scrolling down - fade out
-        if (currentScrollY > 100) {
-          const fadeOutOpacity = Math.max(0, 1 - ((currentScrollY - 100) / 100));
-          setFloatingInfoOpacity(fadeOutOpacity);
-        }
-      } else {
-        // Scrolling up - fade in
-        if (currentScrollY < heroHeight) {
-          const fadeInOpacity = Math.min(1, (heroHeight - currentScrollY) / 300);
-          setFloatingInfoOpacity(fadeInOpacity);
-        }
-      }
-
-      setLastScrollY(currentScrollY);
+      setScrollY(window.scrollY);
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -202,9 +167,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     return () => {
       clearInterval(timer);
       window.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', calculateHeroHeight);
     };
-  }, [lastScrollY, heroHeight]);
+  }, []);
+
+  const handleOverlayClick = () => {
+    setShowOverlay(false);
+  };
 
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString('en-US', { 
@@ -261,8 +229,47 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
-      {/* Hero Section dengan container untuk floating info */}
-      <div className="hero-section relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden" style={{background: 'linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)'}}>
+      {/* Overlay dengan Gradasi Gelap */}
+      {showOverlay && (
+        <div 
+          className="fixed inset-0 z-50 cursor-pointer"
+          onClick={handleOverlayClick}
+          style={{
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.5) 30%, rgba(0,0,0,0.7) 60%, rgba(0,0,0,0.9) 100%)',
+            backdropFilter: 'blur(2px)'
+          }}
+        >
+          {/* Konten Overlay di Tengah */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            {/* Animasi Panah Bouncy */}
+            <div className="text-center mb-8">
+              <div className="relative">
+                {/* Glow Effect */}
+                <div className="absolute -inset-4 bg-blue-400 rounded-full blur-xl opacity-30 animate-pulse"></div>
+                
+                {/* Panah dengan Animasi Bounce */}
+                <div className="relative bg-white/20 backdrop-blur-md rounded-full p-6 shadow-2xl border border-white/30">
+                  <ChevronDown className="w-12 h-12 text-white animate-bounce" />
+                </div>
+              </div>
+            </div>
+
+            {/* Text Instruction */}
+            <div className="text-center text-white/90">
+              <p className="text-lg font-semibold mb-2">Scroll untuk melanjutkan</p>
+              <p className="text-sm opacity-80">Klik di mana saja untuk menutup</p>
+            </div>
+
+            {/* Decorative Elements */}
+            <div className="absolute bottom-10 left-10 w-20 h-20 rounded-full bg-blue-400/20 blur-xl animate-pulse"></div>
+            <div className="absolute top-10 right-10 w-16 h-16 rounded-full bg-purple-400/20 blur-xl animate-pulse delay-1000"></div>
+            <div className="absolute top-1/3 left-1/4 w-24 h-24 rounded-full bg-green-400/20 blur-xl animate-pulse delay-500"></div>
+          </div>
+        </div>
+      )}
+
+      {/* Hero Section */}
+      <div className="relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden" style={{background: 'linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)'}}>
         {/* Background Faded Abstract Shapes with Glassmorphism */}
         <div className="absolute inset-0">
           {/* Large abstract shape - top right */}
@@ -342,27 +349,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
               animation: 'blob 7s infinite 4s'
             }}
           ></div>
-        </div>
-
-        {/* Floating Arrow - Now positioned relative to hero section */}
-        <div 
-          className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-50"
-          style={{ 
-            transition: 'all 0.3s ease-out',
-            opacity: floatingInfoOpacity,
-            transform: `translateX(-50%) translateY(${floatingInfoOpacity > 0 ? '0' : '20px'})`,
-            display: floatingInfoOpacity > 0 ? 'block' : 'none'
-          }}
-        >
-          <div className="relative">
-            {/* Glow Effect */}
-            <div className="absolute -inset-3 bg-blue-400 rounded-full blur opacity-30 animate-pulse"></div>
-            
-            {/* Animated Arrow */}
-            <div className="relative bg-white/90 backdrop-blur-sm rounded-full p-3 shadow-2xl border border-white/50">
-              <ChevronDown className="w-6 h-6 text-blue-600 animate-bounce" />
-            </div>
-          </div>
         </div>
 
         <div className="relative px-6 py-16 sm:px-12 lg:px-16">
@@ -571,12 +557,29 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           bottom: 0;
           left: 0;
         }
+
+        /* Animasi bounce khusus untuk overlay */
+        @keyframes bounce-smooth {
+          0%, 20%, 50%, 80%, 100% {
+            transform: translateY(0);
+          }
+          40% {
+            transform: translateY(-10px);
+          }
+          60% {
+            transform: translateY(-5px);
+          }
+        }
+
+        .animate-bounce {
+          animation: bounce-smooth 2s infinite;
+        }
       `}</style>
     </div>
   );
 };
 
-// ReportsSection Component for public reports display - IMPROVED MOBILE RESPONSIVENESS
+// ReportsSection Component untuk public reports display
 const ReportsSection = () => {
   const { getText } = useLanguage();
   const [reports, setReports] = useState([]);
@@ -646,7 +649,6 @@ const ReportsSection = () => {
           commenter_name: commenterInfo.name,
           commenter_email: commenterInfo.email,
           comment: newComment,
-          
         });
 
       if (error) throw error;
@@ -670,7 +672,7 @@ const ReportsSection = () => {
     return icons[category] || AlertCircle;
   };
 
-    const getStatusColor = (status) => {
+  const getStatusColor = (status) => {
     const colors = {
       new: 'text-blue-600',
       in_progress: 'text-orange-600',
