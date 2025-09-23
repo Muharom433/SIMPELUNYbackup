@@ -256,7 +256,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
             {/* Text Instruction */}
             <div className="text-center text-white/90">
-              <p className="text-lg font-semibold mb-2">Scroll untuk melanjutkan</p>
+              <p className="text-lg font-semibold mb-2">Scroll untuk melihat tutorial</p>
               <p className="text-sm opacity-80">Klik di mana saja untuk menutup</p>
             </div>
 
