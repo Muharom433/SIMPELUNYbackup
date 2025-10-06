@@ -74,6 +74,7 @@ interface Booking {
     id: string;
     full_name: string;
     identity_number: string;
+    phone_number: string;
     email: string;
     role: string;
     study_program?: {
