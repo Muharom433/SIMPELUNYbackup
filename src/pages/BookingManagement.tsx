@@ -207,6 +207,7 @@ const BookingManagement: React.FC = () => {
             id,
             full_name,
             identity_number,
+            phone_number,
             email,
             role,
             study_program:study_programs(
@@ -1180,7 +1181,7 @@ const BookingManagement: React.FC = () => {
                               )}
                             </div>
                             <p className="text-sm text-gray-500 truncate">
-                              {booking.user?.identity_number || booking.user_info?.identity_number || 'No ID'}
+                              {booking.user?.phone_number || booking.user_info?.phone_number || 'No ID'}
                             </p>
                             <p className="text-sm text-blue-600 truncate font-medium mt-1">
                               {booking.purpose}
@@ -1368,7 +1369,7 @@ const BookingManagement: React.FC = () => {
                       <div className="flex items-center">
                         <span className="text-sm text-blue-700 w-24">{getText('ID', 'ID')}:</span>
                         <span className="text-sm text-blue-900">
-                          {selectedBooking.user?.identity_number || selectedBooking.user_info?.identity_number || 'No ID'}
+                          {selectedBooking.user?.phone_number|| selectedBooking.user_info?.phone_number || 'No ID'}
                         </span>
                       </div>
                       {selectedBooking.user?.email && (
