@@ -362,7 +362,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                     Best Faculty Management System
                   </div>
                   <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold leading-tight">
-                    Faculty of lala
+                    Faculty of
                     <span className="block bg-clip-text text-transparent" style={{background: 'linear-gradient(to right, #8b4513, #654321)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'}}>
                       Vocational
                     </span>
