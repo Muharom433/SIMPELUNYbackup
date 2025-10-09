@@ -379,7 +379,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 <div className="flex items-center space-x-6 text-sm" style={{color: '#654321'}}>
                   <div className="flex items-center space-x-2">
                     <MapPin className="w-4 h-4" />
-                    <span>Facultyasjgdhjasgdhjsa of Vocational</span>
+                    <span>Faculty of Vocational</span>
                   </div>
                 </div>
               </div>
