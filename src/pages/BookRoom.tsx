@@ -1,1380 +1,1001 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
+import React, { useState, useEffect } from 'react';
 import {
-  Calendar, Clock, Users, Building, MapPin, Package, User, Phone, Mail, Hash,
-  GraduationCap, ChevronDown, Search, Eye, X, Upload, FileText, Download,
-  Loader2, CheckCircle, AlertTriangle, Zap, Star, ArrowRight, Plus, Minus,
-  RefreshCw, Filter, Grid, List, SortAsc, SortDesc, MoreHorizontal, Info,
-  BookOpen, Award, Target, TrendingUp, Activity, BarChart3, PieChart, ChevronUp
+  Calendar,
+  Clock,
+  Users,
+  Building,
+  TrendingUp,
+  AlertCircle,
+  CheckCircle,
+  Package,
+  MapPin,
+  Zap,
+  BookOpen,
+  Timer,
+  Activity,
+  BarChart3,
+  PieChart,
+  ArrowUp,
+  ArrowDown,
+  Eye,
+  Plus,
+  Star,
+  Award,
+  Smartphone,
+  Shield,
+  ChevronRight,
+  ChevronLeft,
+  Play,
+  GraduationCap,
+  Wrench,
+  ClipboardCheck,
+  CalendarCheck,
+  CheckSquare,
+  FileText,
+  Settings,
+  User,
+  Home,
+  Target,
+  BookMarked,
+  Lightbulb,
+  MessageSquare,
+  Send,
+  Camera,
+  AlertTriangle,
+  X,
+  RefreshCw,
+  Phone,
+  Mail,
+  ChevronDown
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { enUS, id as localeId } from 'date-fns/locale';
-import { alert } from '../components/Alert/AlertHelper';
-import { format, addMinutes, parseISO, isAfter, isBefore, addDays } from 'date-fns';
-import { useRoomData } from '../hooks/useRoomData';
-import { useRealTimeRoomUpdates } from '../hooks/useRealTimeRoomUpdates';
 import { useLanguage } from '../contexts/LanguageContext';
+import peopleImage from '../assets/people.svg';
+import buildImage from '../assets/Build.png';
+import shapeImage from '../assets/Shape.png';
 
-// ========================
-// TIMEZONE UTILITY FUNCTIONS
-// ========================
-const convertLocalToUTC = (localDateTimeString: string) => {
-  const localDate = new Date(localDateTimeString);
-  return localDate.toISOString();
-};
+interface DashboardStats {
+  totalBookings: number;
+  pendingBookings: number;
+  availableRooms: number;
+  totalUsers: number;
+  todayBookings: number;
+  equipmentAvailable: number;
+  activeBookings: number;
+  completedBookings: number;
+}
 
-const convertUTCToLocal = (utcTimeString: string) => {
-  return new Date(utcTimeString);
-};
+interface RecentActivity {
+  id: string;
+  type: 'booking' | 'equipment' | 'approval' | 'checkout';
+  message: string;
+  timestamp: string;
+  status: 'success' | 'warning' | 'error' | 'info';
+}
 
-const getLocalDateString = (date = new Date()) => {
-  return format(date, 'yyyy-MM-dd');
-};
-
-// ========================
-// SCHEMA: Discriminated Union (booking | claim)
-// ========================
-
-const baseSchema = z.object({
-  // Mode
-  mode: z.enum(['booking', 'claim']),
-
-  // Personal Information
-  full_name: z.string().min(2, 'Full name must be at least 2 characters'),
-  identity_number: z.string().min(5, 'Identity number must be at least 5 characters'),
-  phone_number: z.string().min(10, 'Phone number must be at least 10 characters'),
-  study_program_id: z.string().min(1, 'Please select a study program'),
-
-  // Common booking fields
-  purpose: z.enum(['Class/Lecture', 'Other'], { required_error: 'Purpose is required' }),
-  sks: z.number().min(1, 'SKS must be at least 1').max(6, 'SKS cannot exceed 6'),
-  class_type: z.enum(['theory', 'practical']),
-
-  // These two are optional in base; enforced in booking mode
-  start_datetime: z.string().optional(),
-  end_datetime: z.string().optional(),
-
-  // Equipment & Notes
-  equipment_requested: z.array(z.string()).optional().default([]),
-  equipment_quantities: z.record(z.string(), z.number().min(1, 'Quantity must be at least 1')).optional().default({}),
-  notes: z.string().optional().default(''),
-  attachments: z.array(z.string()).optional().default([]),
-});
-
-// Booking mode schema
-const bookingModeSchema = baseSchema.extend({
-  mode: z.literal('booking'),
-}).superRefine((data, ctx) => {
-  // Validate start/end presence
-  if (!data.start_datetime) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Start date and time is required',
-      path: ['start_datetime'],
-    });
-  }
-  if (!data.end_datetime) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'End date and time is required',
-      path: ['end_datetime'],
-    });
-  }
-
-  if (data.start_datetime && data.end_datetime) {
-    const startDate = new Date(data.start_datetime);
-    const endDate = new Date(data.end_datetime);
-
-    if (endDate <= startDate) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "End date and time must be after start date and time",
-        path: ["end_datetime"],
-      });
-    }
-
-    // Validate max 7 days
-    const daysDifference = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
-    if (daysDifference > 7) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Booking duration cannot exceed 7 days",
-        path: ["end_datetime"],
-      });
-    }
-  }
-
-  // Attachments required if purpose is 'Other'
-  if (data.purpose === 'Other' && (!data.attachments || data.attachments.length === 0)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Attachments are required when purpose is 'Other'",
-      path: ['attachments'],
-    });
-  }
-
-  // Equipment quantities must exist for each selected equipment
-  if (data.equipment_requested && data.equipment_requested.length > 0) {
-    for (const equipmentId of data.equipment_requested) {
-      const quantity = data.equipment_quantities?.[equipmentId];
-      if (!quantity || quantity < 1) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Please specify quantity for selected equipment`,
-          path: ["equipment_quantities", equipmentId],
-        });
-      }
-    }
-  }
-});
-
-// Claim mode schema
-const claimModeSchema = baseSchema.extend({
-  mode: z.literal('claim'),
-  lecture_id: z.string().min(1, 'Pilih mata kuliah'),
-}).superRefine((data, ctx) => {
-  // Attachments required only if purpose 'Other'
-  if (data.purpose === 'Other' && (!data.attachments || data.attachments.length === 0)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Attachments are required when purpose is 'Other'",
-      path: ['attachments'],
-    });
-  }
-  // Equipment quantities must exist for each selected equipment
-  if (data.equipment_requested && data.equipment_requested.length > 0) {
-    for (const equipmentId of data.equipment_requested) {
-      const quantity = data.equipment_quantities?.[equipmentId];
-      if (!quantity || quantity < 1) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Please specify quantity for selected equipment`,
-          path: ["equipment_quantities", equipmentId],
-        });
-      }
-    }
-  }
-});
-
-const formSchema = z.discriminatedUnion('mode', [bookingModeSchema, claimModeSchema]);
-type BookingForm = z.infer<typeof formSchema>;
-
-// ========================
-// INTERFACES
-// ========================
 interface User {
-  id: string;
+  role: 'super_admin' | 'department_admin' | 'student' | 'lecturer';
   full_name: string;
-  identity_number: string;
-  email?: string;
-  phone_number?: string;
-  study_program_id?: string;
-  study_program?: {
-    id: string;
-    name: string;
-    code: string;
-  };
+  department_id?: string;
 }
 
-interface StudyProgram {
-  id: string;
-  name: string;
-  code: string;
-  department_id: string;
+interface DashboardProps {
+  user?: User | null;
 }
 
-interface Equipment {
+// Add interfaces for reports
+interface PublicReport {
   id: string;
-  name: string;
-  code: string;
+  title: string;
+  description: string;
   category: string;
-  is_mandatory: boolean;
-  is_available: boolean;
-  quantity: number;
-  unit?: string;
+  priority: string;
+  status: string;
+  location: string;
+  reporter_name: string;
+  is_anonymous: boolean;
+  attachments: string[];
+  created_at: string;
+  updated_at: string;
 }
 
-interface Room {
+interface ReportComment {
   id: string;
-  name: string;
-  code: string;
-  capacity: number;
-  is_available: boolean;
-  department?: { name?: string };
-  currentBooking?: any;
-  targetDateBookings?: any[];
-    scheduleDetails?: {
-    lectures?: any[];
-    exams?: any[];
-    sessions?: any[];
-  };
+  report_id: string;
+  commenter_name: string;
+  commenter_email: string;
+  comment: string;
+  created_at: string;
 }
 
-type Lecture = {
-  id: string;
-  date: string;          // 'yyyy-MM-dd'
-  start_time: string;    // 'HH:mm'
-  end_time: string;      // 'HH:mm'
-  course_name: string;
-  study_program_id?: string;
-  room_name?: string;    // nama ruang dari jadwal kuliah
-  lecturer_name?: string;
-};
-
-// ========================
-// HELPERS: Klaim Mata Kuliah
-// ========================
-
-// Normalisasi nama ruang untuk pencocokan sederhana
-function normalizeRoomName(name?: string) {
-  return (name || '')
-    .toLowerCase()
-    .replace(/\s+/g, '')
-    .replace(/[^a-z0-9]/g, '');
-}
-
-// Cari room_id berdasarkan nama ruang jadwal:
-// 1) room_aliases.alias -> room_id
-// 2) cocokkan normalized name dengan rooms.name
-async function findRoomIdByName(roomName?: string): Promise<string | null> {
-  if (!roomName) return null;
-
-  // Cari di alias
-  const { data: aliasData, error: aliasErr } = await supabase
-    .from('room_aliases')
-    .select('room_id, alias')
-    .eq('alias', roomName)
-    .maybeSingle();
-
-  if (aliasErr) {
-    console.warn('findRoomIdByName alias error:', aliasErr);
-  }
-  if (aliasData?.room_id) return aliasData.room_id;
-
-  // Ambil semua rooms, lalu cocokkan secara normalized
-  const { data: rooms, error: roomErr } = await supabase
-    .from('rooms')
-    .select('id, name');
-
-  if (roomErr) {
-    console.warn('findRoomIdByName rooms error:', roomErr);
-    return null;
-  }
-
-  const target = normalizeRoomName(roomName);
-  const matched = (rooms || []).find(r => normalizeRoomName(r.name) === target);
-  return matched?.id || null;
-}
-
-// Ambil daftar mata kuliah "hari ini"
-// Opsional filter by study_program_id (dari form user)
-async function fetchTodayLectures(studyProgramId?: string): Promise<Lecture[]> {
-  const today = format(new Date(), 'yyyy-MM-dd');
-  let query = supabase
-    .from('lecture_schedules')
-    .select('id, date, start_time, end_time, course_name, study_program_id, room_name, lecturer_name')
-    .eq('date', today)
-    .order('start_time', { ascending: true });
-
-  if (studyProgramId) {
-    query = query.eq('study_program_id', studyProgramId);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.error('fetchTodayLectures error:', error);
-    return [];
-  }
-  return Array.isArray(data) ? data : [];
-}
-
-// ========================
-// KOMPONEN: BookRoom (dengan 2 mode: booking & claim)
-// ========================
-const BookRoom = () => {
+const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const { getText } = useLanguage();
-
-  // Form dengan schema union (booking | claim)
-  const form = useForm<BookingForm>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      mode: 'booking',
-      // Booking defaults
-      start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
-      end_datetime: format(addMinutes(new Date(), 120), "yyyy-MM-dd'T'HH:mm"),
-      // Common defaults
-      purpose: 'Class/Lecture',
-      sks: 2,
-      class_type: 'theory',
-      equipment_requested: [],
-      equipment_quantities: {},
-      attachments: [],
-      notes: '',
-    } as any,
+  const [stats, setStats] = useState<DashboardStats>({
+    totalBookings: 1247,
+    pendingBookings: 23,
+    availableRooms: 18,
+    totalUsers: 450,
+    todayBookings: 12,
+    equipmentAvailable: 35,
+    activeBookings: 8,
+    completedBookings: 1180,
   });
-
-  // Watchers
-  const mode = form.watch('mode');
-  const watchStartDateTime = form.watch('start_datetime');
-  const watchEndDateTime = form.watch('end_datetime');
-  const watchSks = form.watch('sks');
-  const watchClassType = form.watch('class_type');
-  const watchPurpose = form.watch('purpose');
-  const watchAttachments = form.watch('attachments');
-  const watchEquipmentRequested = form.watch('equipment_requested');
-  const watchEquipmentQuantities = form.watch('equipment_quantities');
-
-  // State umum
-  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
-  const [studyPrograms, setStudyPrograms] = useState<StudyProgram[]>([]);
-  const [availableEquipment, setAvailableEquipment] = useState<Equipment[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  // State daftar room dan filter
-  const [targetBookingDate, setTargetBookingDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'Available' | 'In Use' | 'Conflict' | 'Scheduled'>('all');
-  const [showInUse, setShowInUse] = useState(false);
-  const [sortBy, setSortBy] = useState<'name' | 'capacity' | 'status'>('name');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-
-  // Hooks rooms
-  const { rooms, loading: roomsLoading, error: roomsError, fetchRoomData } = useRoomData(targetBookingDate);
-  useRealTimeRoomUpdates(targetBookingDate);
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [scrollY, setScrollY] = useState(0);
+  const [showFloatingInfo, setShowFloatingInfo] = useState(true);
+  const [hasScrolled, setHasScrolled] = useState(false); // Tambahkan state ini
 
   useEffect(() => {
-    fetchRoomData(targetBookingDate, true);
-  }, []);
+    // Update time every second
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
 
-  // Refs input personal info
-  const identityInputRef = useRef<HTMLInputElement | null>(null);
-  const fullNameInputRef = useRef<HTMLInputElement | null>(null);
-  const phoneInputRef = useRef<HTMLInputElement | null>(null);
-  const studyProgramDisplayRef = useRef<HTMLInputElement | null>(null);
-
-  // State klaim
-  const [todayLectures, setTodayLectures] = useState<Lecture[]>([]);
-  const [claimLoading, setClaimLoading] = useState(false);
-  const [selectedLecture, setSelectedLecture] = useState<Lecture | null>(null);
-  const [claimRoomId, setClaimRoomId] = useState<string | null>(null);
-  const [claimRoomNotFound, setClaimRoomNotFound] = useState(false);
-
-  // Durasi booking (untuk tampilan mode booking)
-  const bookingDuration = useMemo(() => {
-    if (!watchStartDateTime || !watchEndDateTime) return null;
-    const start = new Date(watchStartDateTime);
-    const end = new Date(watchEndDateTime);
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return null;
-    const diffMs = end.getTime() - start.getTime();
-    const totalHours = Math.round((diffMs / (1000 * 60 * 60)) * 10) / 10;
-    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-    return { days, hours, minutes, totalHours };
-  }, [watchStartDateTime, watchEndDateTime]);
-
-  // Update targetBookingDate saat start_datetime berubah (mode booking)
-  useEffect(() => {
-    if (mode !== 'booking') return;
-    if (watchStartDateTime) {
-      const newDate = format(parseISO(watchStartDateTime), 'yyyy-MM-dd');
-      if (newDate !== targetBookingDate) {
-        setTargetBookingDate(newDate);
-        if (selectedRoom) {
-          setSelectedRoom(null);
-          setAvailableEquipment([]);
-        }
-        fetchRoomData(newDate);
+    // Handle scroll for animations and floating info
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      setScrollY(currentScrollY);
+      
+      // Hide floating info after scrolling 100px dengan fade out
+      if (currentScrollY > 100 && !hasScrolled) {
+        setShowFloatingInfo(false);
+        setHasScrolled(true);
       }
-    }
-  }, [mode, watchStartDateTime, targetBookingDate, selectedRoom, fetchRoomData]);
+    };
 
-  // Auto kalkulasi end_datetime berdasarkan SKS + class_type (mode booking)
-  useEffect(() => {
-    if (mode !== 'booking') return;
-    const useManualEndTime = false; // simpel: selalu auto
-    if (!useManualEndTime && watchStartDateTime && watchSks > 0 && watchClassType) {
-      const duration = watchClassType === 'theory' ? watchSks * 50 : watchSks * 170;
-      const startDateTime = new Date(watchStartDateTime);
-      if (!isNaN(startDateTime.getTime())) {
-        const endDateTime = addMinutes(startDateTime, duration);
-        const formattedEndDateTime = format(endDateTime, "yyyy-MM-dd'T'HH:mm");
-        if (form.getValues('end_datetime') !== formattedEndDateTime) {
-          form.setValue('end_datetime', formattedEndDateTime);
-        }
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    // Mock recent activity data
+    const mockActivity: RecentActivity[] = [
+      {
+        id: '1',
+        type: 'booking',
+        message: 'Room A101 booked for Database Systems lecture',
+        timestamp: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+        status: 'success'
+      },
+      {
+        id: '2',
+        type: 'equipment',
+        message: 'Projector PROJ-001 returned successfully',
+        timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+        status: 'success'
+      },
+      {
+        id: '3',
+        type: 'approval',
+        message: 'Booking approval pending for Room B205',
+        timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        status: 'warning'
       }
-    }
-  }, [mode, watchStartDateTime, watchSks, watchClassType, form]);
-
-  // Ambil program studi
-  const fetchStudyPrograms = async () => {
-    try {
-      const { data, error } = await supabase.from('study_programs').select('*').order('name');
-      if (error) throw error;
-      setStudyPrograms(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error('Error fetching study programs:', error);
-      setStudyPrograms([]);
-    }
-  };
-
-  useEffect(() => {
-    fetchStudyPrograms();
-  }, []);
-
-  // Ambil mata kuliah hari ini saat mode klaim
-   // Ambil mata kuliah hari ini saat mode klaim
-  useEffect(() => {
-    if (mode !== 'claim') return;
-    setClaimLoading(true);
-    setSelectedLecture(null);
-    setClaimRoomId(null);
-    setClaimRoomNotFound(false);
-
-    let isMounted = true;
-    (async () => {
-      try {
-        const sp = form.getValues('study_program_id') || undefined;
-        const list = await fetchTodayLectures(sp);
-        if (!isMounted) return;
-        setTodayLectures(list);
-      } catch (e) {
-        console.error('Failed to fetch today lectures', e);
-        if (isMounted) setTodayLectures([]);
-      } finally {
-        if (isMounted) setClaimLoading(false);
-      }
-    })();
+    ];
+    setRecentActivity(mockActivity);
 
     return () => {
-      isMounted = false;
+      clearInterval(timer);
+      window.removeEventListener('scroll', handleScroll);
     };
-  }, [mode, form]); // form cukup agar getValues dapat diakses
+  }, [hasScrolled]); // Tambahkan hasScrolled ke dependency array
 
-  // Handler saat user memilih mata kuliah untuk diklaim
-  const handleSelectLecture = useCallback(async (lecture: Lecture) => {
-    setSelectedLecture(lecture);
-    setClaimRoomNotFound(false);
-    setClaimRoomId(null);
-
-    try {
-      const mappedId = await findRoomIdByName(lecture.room_name);
-      if (mappedId) {
-        setClaimRoomId(mappedId);
-        // Ambil peralatan untuk ruangan hasil mapping
-        await fetchEquipmentForRoom(mappedId);
-      } else {
-        setClaimRoomNotFound(true);
-        setAvailableEquipment([]);
-        // User bisa memilih ruangan manual via UI yang sudah ada (room dropdown)
-      }
-    } catch (err) {
-      console.error('handleSelectLecture error:', err);
-      setClaimRoomNotFound(true);
-    }
-  }, []);
-
-  // Mengambil daftar peralatan untuk ruangan tertentu (digunakan pada klaim dan booking)
-  const fetchEquipmentForRoom = useCallback(async (roomId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('equipment')
-        .select('*')
-        .or(`rooms_id.eq.${roomId},rooms_id.is.null`)
-        .eq('is_available', true)
-        .gt('quantity', 0)
-        .order('name');
-
-      if (error) throw error;
-
-      const equipmentData: Equipment[] = Array.isArray(data) ? data as Equipment[] : [];
-      setAvailableEquipment(equipmentData);
-
-      // Reset pilihan peralatan agar tidak membawa state ruangan sebelumnya
-      form.setValue('equipment_requested', []);
-      form.setValue('equipment_quantities', {});
-
-      // Tambahkan peralatan wajib (default qty = 1)
-      const mandatory = equipmentData.filter(eq => eq.is_mandatory);
-      if (mandatory.length > 0) {
-        const ids = mandatory.map(eq => eq.id);
-        const qty: Record<string, number> = {};
-        mandatory.forEach(eq => { qty[eq.id] = 1; });
-
-        form.setValue('equipment_requested', ids);
-        form.setValue('equipment_quantities', qty);
-      }
-    } catch (err) {
-      console.error('fetchEquipmentForRoom error:', err);
-      setAvailableEquipment([]);
-      form.setValue('equipment_requested', []);
-      form.setValue('equipment_quantities', {});
-    }
-  }, [form]);
-
-  // Hitung total item peralatan (untuk ringkasan)
-  const getTotalEquipmentItems = useCallback(() => {
-    const quantities = watchEquipmentQuantities || {};
-    const requested = watchEquipmentRequested || [];
-    const safeRequested = Array.isArray(requested) ? requested : [];
-    return safeRequested.reduce((total, id) => total + (quantities[id] || 1), 0);
-  }, [watchEquipmentQuantities, watchEquipmentRequested]);
-
-  // Helper untuk menggabungkan tanggal (yyyy-MM-dd) dan jam (HH:mm) jadi ISO UTC
-  const toUTCFromLocalDateTimeParts = (datePart: string, timePart: string) => {
-    // Asumsi zona WIB/WITA/WIT ≈ +07:00 (sesuai implementasi existing)
-    // Contoh: "2025-01-10T10:00+07:00"
-    const local = `${datePart}T${timePart}:00+07:00`;
-    return new Date(local).toISOString();
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString('en-US', { 
+      hour12: false, 
+      hour: '2-digit', 
+      minute: '2-digit',
+      second: '2-digit'
+    });
   };
 
-  // Submit mendukung 2 mode: booking (existing) dan claim (baru)
-  const onSubmit = useCallback(async (data: BookingForm) => {
-    setLoading(true);
-    try {
-      if (data.mode === 'claim') {
-        // Klaim mata kuliah
-        if (!selectedLecture) {
-          alert.error(getText('Please select a lecture to claim', 'Silakan pilih mata kuliah untuk diklaim'));
-          return;
-        }
-
-        // Tentukan room_id hasil mapping atau dari pilihan manual (fallback)
-        let roomIdForClaim = claimRoomId || selectedRoom?.id || null;
-        if (!roomIdForClaim) {
-          // Coba mapping lagi jika sebelumnya gagal
-          roomIdForClaim = await findRoomIdByName(selectedLecture.room_name || undefined);
-        }
-        if (!roomIdForClaim) {
-          alert.error(getText('Room not found. Please select a room manually.', 'Ruang tidak ditemukan. Silakan pilih ruangan secara manual.'));
-          return;
-        }
-
-        // Waktu dari jadwal kuliah (tanggal + jam)
-        const startTimeUTC = toUTCFromLocalDateTimeParts(selectedLecture.date, selectedLecture.start_time);
-        const endTimeUTC = toUTCFromLocalDateTimeParts(selectedLecture.date, selectedLecture.end_time);
-
-        // Siapkan peralatan
-        const equipmentRequested = Array.isArray(data.equipment_requested) ? data.equipment_requested : [];
-        const eqQtyObj = data.equipment_quantities || {};
-        const equipmentQuantities = equipmentRequested.map(eId => eqQtyObj[eId] || 1);
-        const attachments = Array.isArray(data.attachments) ? data.attachments : [];
-
-        // Optional: Cegah klaim ganda untuk lecture yang sama (tergantung kebijakan)
-        // const { data: existingClaim } = await supabase
-        //   .from('bookings')
-        //   .select('id')
-        //   .eq('lecture_id', selectedLecture.id)
-        //   .maybeSingle();
-        // if (existingClaim) {
-        //   alert.error(getText('This lecture
-                // if (existingClaim) {
-        //   alert.error(getText('This lecture has already been claimed', 'Mata kuliah ini sudah diklaim'));
-        //   return;
-        // }
-
-        // Payload klaim
-        const bookingDataClaim = {
-          start_time: startTimeUTC,
-          end_time: endTimeUTC,
-          purpose: data.purpose, // umumnya 'Class/Lecture'
-          sks: data.sks,
-          class_type: data.class_type,
-          room_id: roomIdForClaim,
-          equipment_requested: equipmentRequested,
-          equipment_quantities: equipmentQuantities,
-          notes: data.notes || '',
-          attachments,
-          status: 'pending',
-          // Pastikan kolom ini ada di DB Anda:
-          booking_type: 'claim',     // enum/text di kolom bookings.booking_type
-          lecture_id: selectedLecture.id, // FK ke lecture_schedules.id
-          user_info: {
-            full_name: data.full_name,
-            identity_number: data.identity_number,
-            phone_number: data.phone_number,
-            study_program_id: data.study_program_id,
-          },
-          // Opsional metadata tambahan
-          meta: {
-            course_name: selectedLecture.course_name,
-            room_name: selectedLecture.room_name,
-            lecturer_name: selectedLecture.lecturer_name,
-          },
-        };
-
-        const { error: insertErrClaim } = await supabase.from('bookings').insert(bookingDataClaim);
-        if (insertErrClaim) throw insertErrClaim;
-
-        alert.success(getText('Lecture claimed successfully!', 'Klaim mata kuliah berhasil!'));
-
-        // Reset minimal untuk mode klaim (biarkan data personal tetap jika diinginkan)
-        form.reset({
-          mode: 'claim',
-          purpose: 'Class/Lecture',
-          sks: 2,
-          class_type: 'theory',
-          equipment_requested: [],
-          equipment_quantities: {},
-          attachments: [],
-          notes: '',
-        } as any);
-
-        setSelectedLecture(null);
-        setClaimRoomId(null);
-        setClaimRoomNotFound(false);
-        setSelectedRoom(null);
-        setAvailableEquipment([]);
-        fetchRoomData(targetBookingDate, true);
-        return; // selesai klaim
-      }
-
-      // Mode booking (alur seperti sebelumnya)
-      if (!selectedRoom) {
-        alert.error(getText('Please select a room', 'Silakan pilih ruangan'));
-        return;
-      }
-
-      const startTimeUTC = new Date((data.start_datetime as string) + '+07:00').toISOString();
-      const endTimeUTC = new Date((data.end_datetime as string) + '+07:00').toISOString();
-
-      const equipmentRequested = Array.isArray(data.equipment_requested) ? data.equipment_requested : [];
-      const equipmentQuantitiesObj = data.equipment_quantities || {};
-      const equipmentQuantities = equipmentRequested.map(equipmentId => equipmentQuantitiesObj[equipmentId] || 1);
-      const attachments = Array.isArray(data.attachments) ? data.attachments : [];
-
-      const bookingData = {
-        start_time: startTimeUTC,
-        end_time: endTimeUTC,
-        purpose: data.purpose,
-        sks: data.sks,
-        class_type: data.class_type,
-        room_id: selectedRoom.id,
-        equipment_requested: equipmentRequested,
-        equipment_quantities: equipmentQuantities,
-        notes: data.notes || '',
-        attachments,
-        status: 'pending',
-        // Pastikan kolom ini ada jika ingin dibedakan
-        booking_type: 'booking',
-        user_info: {
-          full_name: data.full_name,
-          identity_number: data.identity_number,
-          phone_number: data.phone_number,
-          study_program_id: data.study_program_id,
-        },
-      };
-
-      const { error: insertErr } = await supabase.from('bookings').insert(bookingData);
-      if (insertErr) throw insertErr;
-
-      alert.success(getText('Booking submitted successfully!', 'Pemesanan berhasil diajukan!'));
-
-      // Reset form (mode booking default)
-      form.reset({
-        mode: 'booking',
-        start_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
-        end_datetime: format(addMinutes(new Date(), 120), "yyyy-MM-dd'T'HH:mm"),
-        purpose: 'Class/Lecture',
-        sks: 2,
-        class_type: 'theory',
-        equipment_requested: [],
-        equipment_quantities: {},
-        attachments: [],
-        notes: '',
-      } as any);
-
-      setSelectedRoom(null);
-      setAvailableEquipment([]);
-      fetchRoomData(targetBookingDate, true);
-    } catch (error: any) {
-      console.error('Error submitting booking/claim:', error);
-      alert.error(error.message || getText('Failed to submit', 'Gagal mengirim'));
-    } finally {
-      setLoading(false);
+  const getQuickActions = () => {
+    if (!user) {
+      return [
+        { icon: Home, label: getText('Dashboard', 'Dasbor'), path: '/', color: 'text-blue-600 bg-blue-50 hover:bg-blue-100', description: getText('View system overview', 'Lihat gambaran sistem') },
+        { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book', color: 'text-green-600 bg-green-50 hover:bg-green-100', description: getText('Reserve a room', 'Reservasi ruangan') },
+        { icon: Package, label: getText('Tool Lending', 'Peminjaman Alat'), path: '/tools', color: 'text-amber-600 bg-amber-50 hover:bg-amber-100', description: getText('Borrow equipment', 'Pinjam peralatan') },
+        { icon: CheckCircle, label: getText('Check Out', 'Pengembalian'), path: '/checkout', color: 'text-orange-600 bg-orange-50 hover:bg-orange-100', description: getText('Return items', 'Kembalikan barang') },
+      ];
     }
-  }, [selectedLecture, claimRoomId, selectedRoom, form, getText, targetBookingDate, fetchRoomData]);
-    // ========================
-  // EQUIPMENT HANDLERS
-  // ========================
-  const handleEquipmentToggle = useCallback((equipmentId: string, isChecked: boolean) => {
-    const currentEquipment = form.getValues('equipment_requested') || [];
-    const currentQuantities = form.getValues('equipment_quantities') || {};
-    const safeCurrentEquipment = Array.isArray(currentEquipment) ? currentEquipment : [];
 
-    if (isChecked) {
-      // Tambah equipment
-      const updatedEquipment = [...new Set([...safeCurrentEquipment, equipmentId])];
-      const updatedQuantities = {
-        ...currentQuantities,
-        [equipmentId]: currentQuantities[equipmentId] || 1,
-      };
-      form.setValue('equipment_requested', updatedEquipment);
-      form.setValue('equipment_quantities', updatedQuantities);
-    } else {
-      // Hapus equipment
-      const updatedEquipment = safeCurrentEquipment.filter(id => id !== equipmentId);
-      const updatedQuantities = { ...currentQuantities };
-      delete updatedQuantities[equipmentId];
-      form.setValue('equipment_requested', updatedEquipment);
-      form.setValue('equipment_quantities', updatedQuantities);
+    if (user.role === 'super_admin') {
+      return [
+        { icon: BarChart3, label: getText('System Analytics', 'Analitik Sistem'), path: '/', color: 'text-blue-600 bg-blue-50 hover:bg-blue-100', description: getText('View detailed analytics', 'Lihat analitik detail') },
+        { icon: Building, label: getText('Room Management', 'Manajemen Ruangan'), path: '/rooms', color: 'text-green-600 bg-green-50 hover:bg-green-100', description: getText('Manage rooms', 'Kelola ruangan') },
+        { icon: Users, label: getText('User Management', 'Manajemen Pengguna'), path: '/users', color: 'text-amber-600 bg-amber-50 hover:bg-amber-100', description: getText('Manage users', 'Kelola pengguna') },
+        { icon: Calendar, label: getText('Booking Management', 'Manajemen Pemesanan'), path: '/bookings', color: 'text-orange-600 bg-orange-50 hover:bg-orange-100', description: getText('Handle bookings', 'Tangani pemesanan') },
+        { icon: ClipboardCheck, label: getText('Validation Queue', 'Antrian Validasi'), path: '/validation', color: 'text-purple-600 bg-purple-50 hover:bg-purple-100', description: getText('Validate returns', 'Validasi pengembalian') },
+        { icon: MapPin, label: getText('Departments', 'Departemen'), path: '/departments', color: 'text-pink-600 bg-pink-50 hover:bg-pink-100', description: getText('Manage departments', 'Kelola departemen') },
+        { icon: GraduationCap, label: getText('Study Programs', 'Program Studi'), path: '/study-programs', color: 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100', description: getText('Manage programs', 'Kelola program') },
+        { icon: FileText, label: getText('Reports', 'Laporan'), path: '/reports', color: 'text-cyan-600 bg-cyan-50 hover:bg-cyan-100', description: getText('Generate reports', 'Buat laporan') },
+      ];
     }
-  }, [form]);
 
-  const handleQuantityChange = useCallback((equipmentId: string, newQuantity: number) => {
-    const equipment = availableEquipment.find(eq => eq.id === equipmentId);
-    if (!equipment) return;
-    const qty = Math.max(1, Math.min(newQuantity, equipment.quantity));
-    const currentQuantities = form.getValues('equipment_quantities') || {};
-    form.setValue('equipment_quantities', { ...currentQuantities, [equipmentId]: qty });
-  }, [availableEquipment, form]);
-
-  const incrementQuantity = useCallback((equipmentId: string) => {
-    const currentQuantities = form.getValues('equipment_quantities') || {};
-    const current = currentQuantities[equipmentId] || 1;
-    handleQuantityChange(equipmentId, current + 1);
-  }, [form, handleQuantityChange]);
-
-  const decrementQuantity = useCallback((equipmentId: string) => {
-    const currentQuantities = form.getValues('equipment_quantities') || {};
-    const current = currentQuantities[equipmentId] || 1;
-    handleQuantityChange(equipmentId, current - 1);
-  }, [form, handleQuantityChange]);
-
-  // ========================
-  // ATTACHMENTS HANDLERS
-  // ========================
-  const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files) return;
-
-    const currentAttachments = form.getValues('attachments') || [];
-    const safeCurrentAttachments = Array.isArray(currentAttachments) ? currentAttachments : [];
-
-    Array.from(files).forEach((file) => {
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
-      if (!allowedTypes.includes(file.type)) {
-        alert.error(getText('Please select an image file (JPG, PNG) or PDF document', 'Silakan pilih file gambar (JPG, PNG) atau dokumen PDF'));
-        return;
-      }
-      if (file.size > 10 * 1024 * 1024) {
-        alert.error(getText('File size must be less than 10MB', 'Ukuran file harus kurang dari 10MB'));
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const result = e.target?.result;
-        if (result) {
-          const newAttachments = [...safeCurrentAttachments, result as string];
-          form.setValue('attachments', newAttachments, { shouldValidate: true });
-          alert.success(getText('File uploaded successfully', 'File berhasil diunggah'));
-        }
-      };
-      reader.readAsDataURL(file);
-    });
-  }, [form, getText]);
-
-  const removeAttachment = useCallback((index: number) => {
-    const currentAttachments = form.getValues('attachments') || [];
-    const safeCurrentAttachments = Array.isArray(currentAttachments) ? currentAttachments : [];
-    const updatedAttachments = safeCurrentAttachments.filter((_, i) => i !== index);
-    form.setValue('attachments', updatedAttachments, { shouldValidate: true });
-  }, [form]);
-
-  // ========================
-  // SIMPLE ROOM SELECTION HELPERS
-  // ========================
-  const handleSelectRoomById = useCallback(async (roomId: string) => {
-    const room = (rooms || []).find((r: any) => r.id === roomId) || null;
-    setSelectedRoom(room);
-    setClaimRoomNotFound(false);
-    if (room) {
-      await fetchEquipmentForRoom(room.id);
-    } else {
-      setAvailableEquipment([]);
-      form.setValue('equipment_requested', []);
-      form.setValue('equipment_quantities', {});
+    if (user.role === 'department_admin') {
+      return [
+        { icon: PieChart, label: getText('Dashboard', 'Dasbor'), path: '/', color: 'text-blue-600 bg-blue-50 hover:bg-blue-100', description: getText('Department overview', 'Gambaran departemen') },
+        { icon: CalendarCheck, label: getText('Exam Management', 'Manajemen Ujian'), path: '/exams', color: 'text-green-600 bg-green-50 hover:bg-green-100', description: getText('Manage exam schedules', 'Kelola jadwal ujian') },
+        { icon: Users, label: getText('User Management', 'Manajemen Pengguna'), path: '/users', color: 'text-amber-600 bg-amber-50 hover:bg-amber-100', description: getText('Manage department users', 'Kelola pengguna departemen') },
+        { icon: User, label: getText('Profile', 'Profil'), path: '/profile', color: 'text-orange-600 bg-orange-50 hover:bg-orange-100', description: getText('Update profile', 'Perbarui profil') },
+      ];
     }
-  }, [rooms, fetchEquipmentForRoom, form]);
 
-  // ========================
-  // RENDER UI
-  // ========================
+    // Student and lecturer
+    return [
+      { icon: Home, label: getText('Dashboard', 'Dasbor'), path: '/', color: 'text-blue-600 bg-blue-50 hover:bg-blue-100', description: getText('View overview', 'Lihat gambaran') },
+      { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book', color: 'text-green-600 bg-green-50 hover:bg-green-100', description: getText('Reserve a room', 'Reservasi ruangan') },
+      { icon: Package, label: getText('Tool Lending', 'Peminjaman Alat'), path: '/tools', color: 'text-amber-600 bg-amber-50 hover:bg-amber-100', description: getText('Borrow equipment', 'Pinjam peralatan') },
+      { icon: CheckCircle, label: getText('Check Out', 'Pengembalian'), path: '/checkout', color: 'text-orange-600 bg-orange-50 hover:bg-orange-100', description: getText('Return items', 'Kembalikan barang') },
+      { icon: User, label: getText('Profile', 'Profil'), path: '/profile', color: 'text-purple-600 bg-purple-50 hover:bg-purple-100', description: getText('Update profile', 'Perbarui profil') },
+    ];
+  };
+
+  const quickActions = getQuickActions();
+
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      <form onSubmit={form.handleSubmit(onSubmit)}>
-        {/* Mode Toggle */}
-        <div className="bg-white rounded-xl border p-4 mb-6">
-          <div className="font-semibold mb-3">{getText('Select Mode', 'Pilih Mode')}</div>
-          <div className="flex gap-6">
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="radio"
-                value="booking"
-                checked={mode === 'booking'}
-                onChange={() => form.setValue('mode', 'booking')}
-              />
-              <span>{getText('Booking Class (outside schedule)', 'Booking Kelas (di luar jadwal)')}</span>
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="radio"
-                value="claim"
-                checked={mode === 'claim'}
-                onChange={() => form.setValue('mode', 'claim')}
-              />
-              <span>{getText('Claim Course (today schedule)', 'Klaim Mata Kuliah (jadwal hari ini)')}</span>
-            </label>
-          </div>
-        </div>
-
-        {/* Personal Information */}
-        <div className="bg-white rounded-xl border p-4 mb-6">
-          <div className="font-semibold mb-4">{getText('Personal Information', 'Informasi Pribadi')}</div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm mb-1">{getText('Identity Number (NIM/NIP)', 'Nomor Identitas (NIM/NIP)')} *</label>
-              <input
-                type="text"
-                className="w-full border rounded px-3 py-2"
-                {...form.register('identity_number')}
-              />
-              {form.formState.errors.identity_number && (
-                <p className="text-red-600 text-sm mt-1">{form.formState.errors.identity_number.message}</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-sm mb-1">{getText('Full Name', 'Nama Lengkap')} *</label>
-              <input
-                type="text"
-                className="w-full border rounded px-3 py-2"
-                {...form.register('full_name')}
-              />
-              {form.formState.errors.full_name && (
-                <p className="text-red-600 text-sm mt-1">{form.formState.errors.full_name.message}</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-sm mb-1">{getText('Phone Number', 'Nomor Telepon')} *</label>
-              <input
-                type="tel"
-                className="w-full border rounded px-3 py-2"
-                {...form.register('phone_number')}
-              />
-              {form.formState.errors.phone_number && (
-                <p className="text-red-600 text-sm mt-1">{form.formState.errors.phone_number.message}</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-sm mb-1">{getText('Study Program', 'Program Studi')} *</label>
-              <select
-                className="w-full border rounded px-3 py-2"
-                value={form.getValues('study_program_id')}
-                onChange={(e) => form.setValue('study_program_id', e.target.value, { shouldValidate: true })}
-              >
-                <option value="">{getText('Select study program', 'Pilih program studi')}</option>
-                {studyPrograms.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name} {p.code ? `(${p.code})` : ''}</option>
-                ))}
-              </select>
-              {form.formState.errors.study_program_id && (
-                <p className="text-red-600 text-sm mt-1">{form.formState.errors.study_program_id.message}</p>
-              )}
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
+      {/* Simple Floating Arrow - Revised Version */}
+      {showFloatingInfo && (
+        <div 
+          className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50"
+          style={{ 
+            transition: 'all 0.5s ease-out',
+            opacity: showFloatingInfo ? 1 : 0,
+            transform: translateX(-50%) translateY(${showFloatingInfo ? '0' : '20px'})
+          }}
+        >
+          <div className="relative">
+            {/* Glow Effect */}
+            <div className="absolute -inset-3 bg-blue-400 rounded-full blur opacity-30 animate-pulse"></div>
+            
+            {/* Animated Arrow */}
+            <div className="relative bg-white/90 backdrop-blur-sm rounded-full p-3 shadow-2xl border border-white/50">
+              <ChevronDown className="w-6 h-6 text-blue-600 animate-bounce" />
             </div>
           </div>
         </div>
+      )}
 
-        {/* Mode: Claim Course */}
-        {mode === 'claim' && (
-          <div className="bg-white rounded-xl border p-4 mb-6">
-            <div className="font-semibold mb-4">{getText('Claim Today’s Course', 'Klaim Mata Kuliah Hari Ini')}</div>
+      {/* Hero Section */}
+      <div className="relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden" style={{background: 'linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)'}}>
+        {/* Background Faded Abstract Shapes with Glassmorphism */}
+        <div className="absolute inset-0">
+          {/* Large abstract shape - top right */}
+          <div 
+            className="absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full opacity-60 backdrop-blur-xl filter blur-sm"
+            style={{
+              background: 'radial-gradient(circle at 30% 30%, #daa06d 0%, #e8d5c4 40%, transparent 70%)'
+            }}
+          ></div>
+          {/* Medium oval shape - center right */}
+          <div 
+            className="absolute top-1/4 -right-20 w-[400px] h-[300px] rounded-full opacity-50 backdrop-blur-lg filter blur-md"
+            style={{
+              background: 'radial-gradient(ellipse at 20% 40%, #c4926b 0%, #f0e6d6 50%, transparent 80%)',
+              transform: 'rotate(25deg)'
+            }}
+          ></div>
+          {/* Abstract blob - bottom right */}
+          <div 
+            className="absolute bottom-0 right-0 w-[350px] h-[350px] opacity-55 backdrop-blur-lg filter blur-sm"
+            style={{
+              background: 'radial-gradient(circle at 40% 60%, #b8956f 0%, #e8d5c4 60%, transparent 85%)',
+              borderRadius: '60% 40% 70% 30%'
+            }}
+          ></div>
+          {/* Flowing shape - top left */}
+          <div 
+            className="absolute -top-20 -left-32 w-[450px] h-[300px] opacity-45 backdrop-blur-xl filter blur-lg"
+            style={{
+              background: 'radial-gradient(ellipse at 70% 50%, #daa06d 0%, #f5f0ea 45%, transparent 75%)',
+              borderRadius: '40% 60% 50% 80%',
+              transform: 'rotate(-15deg)'
+            }}
+          ></div>
+          {/* Curved shape - bottom left */}
+          <div 
+            className="absolute bottom-10 -left-24 w-[300px] h-[200px] opacity-40 backdrop-blur-md filter blur-md"
+            style={{
+              background: 'radial-gradient(ellipse at 60% 30%, #c4926b 0%, #f0e6d6 55%, transparent 80%)',
+              borderRadius: '70% 30% 40% 60%',
+              transform: 'rotate(20deg)'
+            }}
+          ></div>
+          {/* Extra flowing element - center */}
+          <div 
+            className="absolute top-1/2 left-1/4 w-[250px] h-[400px] opacity-30 backdrop-blur-lg filter blur-xl"
+            style={{
+              background: 'linear-gradient(135deg, #e8d5c4 0%, #f5f0ea 50%, transparent 100%)',
+              borderRadius: '50% 80% 30% 70%',
+              transform: 'rotate(45deg)'
+            }}
+          ></div>
+        </div>
+        {/* Animated Background Elements */}
+        <div className="absolute inset-0">
+          <div 
+            className="absolute top-20 left-10 w-72 h-72 rounded-full mix-blend-multiply filter blur-xl opacity-20"
+            style={{ 
+              background: '#daa06d',
+              transform: translateY(${scrollY * 0.5}px),
+              animation: 'blob 7s infinite'
+            }}
+          ></div>
+          <div 
+            className="absolute top-40 right-10 w-72 h-72 rounded-full mix-blend-multiply filter blur-xl opacity-20"
+            style={{ 
+              background: '#c4926b',
+              transform: translateY(${scrollY * 0.3}px),
+              animation: 'blob 7s infinite 2s'
+            }}
+          ></div>
+          <div 
+            className="absolute bottom-20 left-20 w-72 h-72 rounded-full mix-blend-multiply filter blur-xl opacity-20"
+            style={{ 
+              background: '#b8956f',
+              transform: translateY(${scrollY * 0.4}px),
+              animation: 'blob 7s infinite 4s'
+            }}
+          ></div>
+        </div>
 
-            {/* List of today lectures */}
-            {claimLoading ? (
-              <div className="flex items-center gap-2 text-gray-600">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>{getText('Loading today’s lectures...', 'Memuat mata kuliah hari ini...')}</span>
+        <div className="relative px-6 py-16 sm:px-12 lg:px-16">
+          <div className="max-w-7xl mx-auto">
+            <div className="grid lg:grid-cols-2 gap-8 items-center">
+              {/* Left Content */}
+              <div className="space-y-6" style={{color: '#2c1810'}}>
+                <div className="space-y-4">
+                  <div className="inline-flex items-center px-4 py-2 bg-white bg-opacity-30 backdrop-blur-sm rounded-full text-sm font-medium">
+                    <Star className="w-4 h-4 mr-2" style={{color: '#8b4513'}} />
+                    Best Faculty Management System
+                  </div>
+                  <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold leading-tight">
+                    Faculty of 
+                    <span className="block bg-clip-text text-transparent" style={{background: 'linear-gradient(to right, #8b4513, #654321)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'}}>
+                      Vocational
+                    </span>
+                  </h1>
+                  <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold" style={{color: '#3c2415'}}>
+                    Yogyakarta State University
+                  </h2>
+                  <p className="text-sm sm:text-base lg:text-lg leading-relaxed max-w-lg" style={{color: '#4a2c1a'}}>
+                    SIMPEL kuliah or Sistem Pelayanan kuliah is an Innovation to improve our services.
+                  </p>
+                </div>
+
+                {/* Contact Info */}
+                <div className="flex items-center space-x-6 text-sm" style={{color: '#654321'}}>
+                  <div className="flex items-center space-x-2">
+                    <MapPin className="w-4 h-4" />
+                    <span>Faculty of Vocational</span>
+                  </div>
+                </div>
               </div>
-            ) : todayLectures.length === 0 ? (
-              <div className="text-gray-600">{getText('No lectures found for today', 'Tidak ada kuliah hari ini')}</div>
-            ) : (
-              <div className="space-y-2">
-                {todayLectures.map((lec) => (
-                  <div key={lec.id} className={`p-3 rounded border ${selectedLecture?.id === lec.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-semibold">{lec.course_name}</div>
-                        <div className="text-sm text-gray-600">
-                          {lec.date} • {lec.start_time} - {lec.end_time} • {lec.room_name || getText('No room', 'Tanpa ruang')}
-                        </div>
+
+              {/* Right Content - People Image with Text Bubbles */}
+              <div className="relative">
+                <div 
+                  className="relative transform transition-transform duration-1000"
+                  style={{ transform: translateY(${scrollY * 0.1}px) rotateY(${scrollY * 0.02}deg) }}
+                >
+                  {/* Main Container */}
+                  <div className="relative flex items-center justify-center min-h-[500px]">
+                    {/* People Image */}
+                    <div className="relative z-10">
+                      <img 
+                        src={peopleImage} 
+                        alt="Graduate Student" 
+                        className="w-full h-auto max-w-xs lg:max-w-md object-contain"
+                        onError={(e) => {
+                          // Fallback if image doesn't load
+                          e.currentTarget.style.display = 'none';
+                          e.currentTarget.nextElementSibling.style.display = 'flex';
+                        }}
+                      />
+                      <div className="w-full h-80 flex items-center justify-center" style={{display: 'none'}}>
+                        <Users className="w-32 h-32 text-amber-400" />
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleSelectLecture(lec)}
-                        className="px-3 py-1 rounded bg-blue-600 text-white text-sm"
-                      >
-                        {selectedLecture?.id === lec.id ? getText('Selected', 'Dipilih') : getText('Select', 'Pilih')}
-                      </button>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Room mapping result / fallback manual selection */}
-            {selectedLecture && (
-              <div className="mt-4">
-                <div className="font-medium mb-2">{getText('Room', 'Ruangan')}</div>
-                {claimRoomId && !claimRoomNotFound ? (
-                  <div className="text-green-700 text-sm">
-                    {getText('Room matched automatically from schedule', 'Ruangan terdeteksi otomatis dari jadwal')}
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="text-amber-700 text-sm">
-                      {getText('Room not found from schedule. Please select manually.', 'Ruang tidak ditemukan dari jadwal. Silakan pilih manual.')}
-                    </div>
-                    <select
-                      className="w-full border rounded px-3 py-2"
-                      value={selectedRoom?.id || ''}
-                      onChange={(e) => handleSelectRoomById(e.target.value || '')}
+                    
+                    {/* Building Text - Top Left Corner */}
+                    <div 
+                      className="absolute top-16 -left-8 lg:top-20 lg:-left-12 z-20"
+                      style={{ animation: 'float 6s ease-in-out infinite' }}
                     >
-                      <option value="">{getText('Select a room', 'Pilih ruangan')}</option>
-                      {(rooms || []).map((r: any) => (
-                        <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-            )}
-
-                        {/* Equipment for claim */}
-            {(selectedLecture && (claimRoomId || selectedRoom)) && (
-              <div className="mt-6">
-                <div className="font-semibold mb-2">
-                  {getText('Available Equipment', 'Peralatan Tersedia')}
-                </div>
-
-                {availableEquipment.length === 0 ? (
-                  <div className="text-sm text-gray-600">
-                    {getText('No equipment available for this room', 'Tidak ada peralatan untuk ruangan ini')}
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {availableEquipment.map((equipment) => {
-                      const isSelected = watchEquipmentRequested?.includes(equipment.id);
-                      const currentQuantity = watchEquipmentQuantities?.[equipment.id] || 1;
-                      const isMandatory = equipment.is_mandatory;
-
-                      return (
-                        <div
-                          key={equipment.id}
-                          className={`p-3 rounded border ${isSelected ? 'bg-blue-50 border-blue-300' : 'border-gray-200'}`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <label className="flex items-center gap-3">
-                              <input
-                                type="checkbox"
-                                disabled={isMandatory}
-                                checked={isSelected}
-                                onChange={(e) => handleEquipmentToggle(equipment.id, e.target.checked)}
-                              />
-                              <div>
-                                <div className="font-medium text-sm">{equipment.name}</div>
-                                <div className="text-xs text-gray-600">
-                                  {getText('Available', 'Tersedia')}: {equipment.quantity} {equipment.unit || 'pcs'}
-                                </div>
-                                {isMandatory && (
-                                  <div className="text-xs text-green-700">
-                                    {getText('Required equipment', 'Peralatan wajib')}
-                                  </div>
-                                )}
-                              </div>
-                            </label>
-
-                            {isSelected && (
-                              <div className="flex items-center gap-2">
-                                {!isMandatory ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      className="px-2 py-1 rounded border"
-                                      onClick={() => decrementQuantity(equipment.id)}
-                                      disabled={currentQuantity <= 1}
-                                    >
-                                      -
-                                    </button>
-                                    <span className="min-w-[2rem] text-center font-medium">{currentQuantity}</span>
-                                    <button
-                                      type="button"
-                                      className="px-2 py-1 rounded border"
-                                      onClick={() => incrementQuantity(equipment.id)}
-                                      disabled={currentQuantity >= equipment.quantity}
-                                    >
-                                      +
-                                    </button>
-                                  </>
-                                ) : (
-                                  <span className="text-sm font-semibold">1 {equipment.unit || 'pcs'}</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Validation error per item */}
-                          {form.formState.errors.equipment_quantities?.[equipment.id] && (
-                            <p className="text-xs text-red-600 mt-2">
-                              {form.formState.errors.equipment_quantities[equipment.id]?.message as string}
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Summary */}
-                {watchEquipmentRequested && watchEquipmentRequested.length > 0 && (
-                  <div className="mt-3 text-sm text-gray-800">
-                    {getText('Total items', 'Total item')}: <b>{getTotalEquipmentItems()}</b>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Purpose and attachments (if needed) */}
-            <div className="mt-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm mb-1">{getText('Purpose', 'Tujuan')} *</label>
-                  <select
-                    className="w-full border rounded px-3 py-2"
-                    {...form.register('purpose')}
-                  >
-                    <option value="Class/Lecture">{getText('Class/Lecture', 'Kuliah')}</option>
-                    <option value="Other">{getText('Other', 'Lainnya')}</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">{getText('Notes', 'Catatan')}</label>
-                  <textarea
-                    className="w-full border rounded px-3 py-2"
-                    rows={3}
-                    {...form.register('notes')}
-                  />
-                </div>
-              </div>
-
-              {watchPurpose === 'Other' && (
-                <div className="mt-4">
-                  <div className="font-medium mb-2">{getText('Attachments (PDF/JPG/PNG up to 10MB)', 'Lampiran (PDF/JPG/PNG hingga 10MB)')}</div>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    multiple
-                    onChange={handleFileUpload}
-                    className="block"
-                  />
-                  {form.formState.errors.attachments && (
-                    <p className="text-red-600 text-sm mt-2">{form.formState.errors.attachments.message as string}</p>
-                  )}
-
-                  {watchAttachments && watchAttachments.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      {watchAttachments.map((att: string, idx: number) => (
-                        <div key={idx} className="flex items-center justify-between p-2 rounded border">
-                          <div className="text-sm text-gray-700">
-                            {getText('Attachment', 'Lampiran')} #{idx + 1}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              className="text-blue-600 underline text-sm"
-                              onClick={() => window.open(att, '_blank')}
-                            >
-                              {getText('View', 'Lihat')}
-                            </button>
-                            <button
-                              type="button"
-                              className="text-red-600 underline text-sm"
-                              onClick={() => removeAttachment(idx)}
-                            >
-                              {getText('Remove', 'Hapus')}
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Mode: Booking Class */}
-        {mode === 'booking' && (
-          <div className="bg-white rounded-xl border p-4 mb-6">
-            <div className="font-semibold mb-4">{getText('Booking Details', 'Detail Pemesanan')}</div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm mb-1">{getText('Start Date & Time', 'Tanggal & Waktu Mulai')} *</label>
-                <input
-                  type="datetime-local"
-                  className="w-full border rounded px-3 py-2"
-                  {...form.register('start_datetime')}
-                  min={format(new Date(), "yyyy-MM-dd'T'HH:mm")}
-                  max={format(addDays(new Date(), 30), "yyyy-MM-dd'T'HH:mm")}
-                />
-                {form.formState.errors.start_datetime && (
-                  <p className="text-red-600 text-sm mt-1">{form.formState.errors.start_datetime.message as string}</p>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm mb-1">{getText('End Date & Time', 'Tanggal & Waktu Selesai')} *</label>
-                <input
-                  type="datetime-local"
-                  className="w-full border rounded px-3 py-2"
-                  {...form.register('end_datetime')}
-                  min={form.getValues('start_datetime') || undefined}
-                />
-                {form.formState.errors.end_datetime && (
-                  <p className="text-red-600 text-sm mt-1">{form.formState.errors.end_datetime.message as string}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm mb-1">{getText('SKS (Credits)', 'SKS (Kredit)')} *</label>
-                <select
-                  className="w-full border rounded px-3 py-2"
-                  {...form.register('sks', { valueAsNumber: true })}
-                >
-                  {[1,2,3,4,5,6].map(v => <option key={v} value={v}>{v} SKS</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm mb-1">{getText('Class Type', 'Tipe Kelas')} *</label>
-                <select
-                  className="w-full border rounded px-3 py-2"
-                  {...form.register('class_type')}
-                >
-                  <option value="theory">{getText('Theory (50 min/SKS)', 'Teori (50 menit/SKS)')}</option>
-                  <option value="practical">{getText('Practical (170 min/SKS)', 'Praktik (170 menit/SKS)')}</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm mb-1">{getText('Purpose', 'Tujuan')} *</label>
-                <select
-                  className="w-full border rounded px-3 py-2"
-                  {...form.register('purpose')}
-                >
-                  <option value="Class/Lecture">{getText('Class/Lecture', 'Kuliah')}</option>
-                  <option value="Other">{getText('Other', 'Lainnya')}</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm mb-1">{getText('Notes', 'Catatan')}</label>
-                <textarea
-                  className="w-full border rounded px-3 py-2"
-                  rows={3}
-                  {...form.register('notes')}
-                />
-              </div>
-            </div>
-
-            {bookingDuration && (
-              <div className="mt-3 text-sm text-gray-700">
-                {getText('Duration', 'Durasi')}: <b>{bookingDuration.totalHours}</b> {getText('hours', 'jam')}
-              </div>
-            )}
-
-            {/* Room selection for booking */}
-            <div className="mt-4">
-              <label className="block text-sm mb-1">{getText('Select Room', 'Pilih Ruangan')} *</label>
-              <select
-                className="w-full border rounded px-3 py-2"
-                value={selectedRoom?.id || ''}
-                onChange={(e) => handleSelectRoomById(e.target.value || '')}
-              >
-                <option value="">{getText('Select a room', 'Pilih ruangan')}</option>
-                {(rooms || []).map((r: any) => (
-                  <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Equipment for booking */}
-            {selectedRoom && (
-              <div className="mt-4">
-                <div className="font-semibold mb-2">
-                  {getText('Available Equipment', 'Peralatan Tersedia')}
-                </div>
-
-                {availableEquipment.length === 0 ? (
-                  <div className="text-sm text-gray-600">
-                    {getText('No equipment available for this room', 'Tidak ada peralatan untuk ruangan ini')}
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {availableEquipment.map((equipment) => {
-                      const isSelected = watchEquipmentRequested?.includes(equipment.id);
-                      const currentQuantity = watchEquipmentQuantities?.[equipment.id] || 1;
-                      const isMandatory = equipment.is_mandatory;
-
-                      return (
-                        <div
-                          key={equipment.id}
-                          className={`p-3 rounded border ${isSelected ? 'bg-blue-50 border-blue-300' : 'border-gray-200'}`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <label className="flex items-center gap-3">
-                              <input
-                                type="checkbox"
-                                disabled={isMandatory}
-                                checked={isSelected}
-                                onChange={(e) => handleEquipmentToggle(equipment.id, e.target.checked)}
-                              />
-                              <div>
-                                <div className="font-medium text-sm">{equipment.name}</div>
-                                <div className="text-xs text-gray-600">
-                                  {getText('Available', 'Tersedia')}: {equipment.quantity} {equipment.unit || 'pcs'}
-                                </div>
-                                {isMandatory && (
-                                  <div className="text-xs text-green-700">
-                                    {getText('Required equipment', 'Peralatan wajib')}
-                                  </div>
-                                )}
-                              </div>
-                            </label>
-
-                            {isSelected && (
-                              <div className="flex items-center gap-2">
-                                {!isMandatory ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      className="px-2 py-1 rounded border"
-                                      onClick={() => decrementQuantity(equipment.id)}
-                                      disabled={currentQuantity <= 1}
-                                    >
-                                      -
-                                    </button>
-                                    <span className="min-w-[2rem] text-center font-medium">{currentQuantity}</span>
-                                    <button
-                                      type="button"
-                                      className="px-2 py-1 rounded border"
-                                      onClick={() => incrementQuantity(equipment.id)}
-                                      disabled={currentQuantity >= equipment.quantity}
-                                    >
-                                      +
-                                    </button>
-                                  </>
-                                ) : (
-                                  <span className="text-sm font-semibold">1 {equipment.unit || 'pcs'}</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Validation error per item */}
-                          {form.formState.errors.equipment_quantities?.[equipment.id] && (
-                            <p className="text-xs text-red-600 mt-2">
-                                                            {form.formState.errors.equipment_quantities[equipment.id]?.message as string}
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Summary */}
-                {watchEquipmentRequested && watchEquipmentRequested.length > 0 && (
-                  <div className="mt-3 text-sm text-gray-800">
-                    {getText('Total items', 'Total item')}: <b>{getTotalEquipmentItems()}</b>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Attachments for booking if purpose = Other */}
-            {watchPurpose === 'Other' && (
-              <div className="mt-6">
-                <div className="font-medium mb-2">
-                  {getText('Attachments (PDF/JPG/PNG up to 10MB)', 'Lampiran (PDF/JPG/PNG hingga 10MB)')}
-                </div>
-                <input
-                  type="file"
-                  accept="image/*,.pdf"
-                  multiple
-                  onChange={handleFileUpload}
-                  className="block"
-                />
-                {form.formState.errors.attachments && (
-                  <p className="text-red-600 text-sm mt-2">{form.formState.errors.attachments.message as string}</p>
-                )}
-
-                {watchAttachments && watchAttachments.length > 0 && (
-                  <div className="mt-3 space-y-2">
-                    {watchAttachments.map((att: string, idx: number) => (
-                      <div key={idx} className="flex items-center justify-between p-2 rounded border">
-                        <div className="text-sm text-gray-700">
-                          {getText('Attachment', 'Lampiran')} #{idx + 1}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            className="text-blue-600 underline text-sm"
-                            onClick={() => window.open(att, '_blank')}
-                          >
-                            {getText('View', 'Lihat')}
-                          </button>
-                          <button
-                            type="button"
-                            className="text-red-600 underline text-sm"
-                            onClick={() => removeAttachment(idx)}
-                          >
-                            {getText('Remove', 'Hapus')}
-                          </button>
-                        </div>
+                      <img 
+                        src={buildImage} 
+                        alt="Building Career" 
+                        className="w-80 h-auto lg:w-104 drop-shadow-lg"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          e.currentTarget.nextElementSibling.style.display = 'block';
+                        }}
+                      />
+                      <div 
+                        className="bg-white rounded-2xl p-3 shadow-xl border border-gray-100"
+                        style={{display: 'none'}}
+                      >
+                        <span className="text-base font-bold text-amber-700">
+                          BUILDING CAREER
+                        </span>
                       </div>
-                    ))}
+                    </div>
+                    
+                    {/* Shaping Text - Bottom Right Corner */}
+                    <div 
+                      className="absolute bottom-2 -right-12 lg:bottom-4 lg:-right-20 z-20"
+                      style={{ animation: 'float 6s ease-in-out infinite 3s' }}
+                    >
+                      <img 
+                        src={shapeImage} 
+                        alt="Shaping Future" 
+                        className="w-80 h-auto lg:w-104 drop-shadow-lg"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          e.currentTarget.nextElementSibling.style.display = 'block';
+                        }}
+                      />
+                      <div 
+                        className="bg-white rounded-2xl p-3 shadow-xl border border-gray-100"
+                        style={{display: 'none'}}
+                      >
+                        <span className="text-base font-bold text-orange-700">
+                          SHAPING FUTURE
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                )}
+                </div>
               </div>
-            )}
+            </div>
           </div>
-        )}
-
-        {/* Submit */}
-        <div className="mt-6">
-          <button
-            type="submit"
-            className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
-            disabled={
-              loading ||
-              (mode === 'claim'
-                ? !(selectedLecture && (claimRoomId || selectedRoom))
-                : !selectedRoom)
-            }
-          >
-            {loading
-              ? getText('Submitting...', 'Mengirim...')
-              : mode === 'claim'
-              ? getText('Submit Claim', 'Kirim Klaim')
-              : getText('Submit Booking', 'Kirim Pemesanan')}
-          </button>
         </div>
-      </form>
+      </div>
+
+      {/* About Application Section */}
+      <div className="py-24 bg-white">
+        <div className="max-w-7xl mx-auto px-6 sm:px-12 lg:px-16">
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            {/* Left Content - Description */}
+            <div className="space-y-8">
+              <div className="space-y-6">
+                <div className="inline-flex items-center px-4 py-2 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                  <BookMarked className="w-4 h-4 mr-2" />
+                  {getText('About Application', 'Tentang Aplikasi')}
+                </div>
+                
+                <h2 className="text-4xl lg:text-5xl font-bold text-gray-900 leading-tight">
+                  {getText('SIMPEL Kuliah', 'SIMPEL Kuliah')}
+                  <span className="block text-blue-600">{getText('Smart Campus Solution', 'Solusi Kampus Cerdas')}</span>
+                </h2>
+                
+                <div className="space-y-6 text-gray-600 leading-relaxed">
+                  <div>
+                    <p className="text-lg">
+                      {getText(
+                        'SIMPEL Kuliah (Sistem Pelayanan Kuliah) is an innovative platform specifically designed to optimize campus facility management at the Faculty of Vocational UNY. This system provides an integrated solution for room booking, equipment lending, and digital schedule management.',
+                        'SIMPEL Kuliah (Sistem Pelayanan Kuliah) adalah platform inovatif yang dirancang khusus untuk mengoptimalkan pengelolaan fasilitas kampus di Fakultas Vokasi UNY. Sistem ini menyediakan solusi terintegrasi untuk pemesanan ruangan, peminjaman peralatan, dan manajemen jadwal secara digital.'
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Content - YouTube Video */}
+            <div className="relative">
+              <div className="relative bg-gradient-to-br from-gray-100 to-gray-200 rounded-3xl p-8 shadow-2xl">
+                <div className="aspect-video rounded-2xl overflow-hidden shadow-xl">
+                  <iframe
+                    width="100%"
+                    height="100%"
+                    src="https://www.youtube.com/embed/SI0p9klzU8A?si=fy6mcyL2hwp6Hf8E"
+                    title="SIMPEL Kuliah Demo Video"
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    allowFullScreen
+                    className="rounded-2xl"
+                  ></iframe>
+                </div>
+                
+                <div className="mt-6 text-center">
+                  <h4 className="text-lg font-semibold text-gray-900 mb-2">
+                    {getText('SIMPEL Access Tutorial', 'Tutorial Akses SIMPEL')}
+                  </h4>
+                </div>
+                
+                {/* Decorative elements */}
+                <div className="absolute -top-4 -right-4 w-20 h-20 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full opacity-20"></div>
+                <div className="absolute -bottom-6 -left-6 w-32 h-32 bg-gradient-to-br from-green-400 to-green-600 rounded-full opacity-10"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Public Reports Section */}
+      <ReportsSection />
+
+      {/* CSS Styles */}
+      <style jsx global>{`
+        @keyframes blob {
+          0% { transform: translate(0px, 0px) scale(1); }
+          33% { transform: translate(30px, -50px) scale(1.1); }
+          66% { transform: translate(-20px, 20px) scale(0.9); }
+          100% { transform: translate(0px, 0px) scale(1); }
+        }
+        
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-20px); }
+        }
+        
+        .aspect-w-4 {
+          position: relative;
+          padding-bottom: calc(5 / 4 * 100%);
+        }
+        
+        .aspect-h-5 > * {
+          position: absolute;
+          height: 100%;
+          width: 100%;
+          top: 0;
+          right: 0;
+          bottom: 0;
+          left: 0;
+        }
+      `}</style>
     </div>
   );
 };
 
-export default BookRoom;
+// ReportsSection Component for public reports display - IMPROVED MOBILE RESPONSIVENESS
+const ReportsSection = () => {
+  const { getText } = useLanguage();
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedReport, setSelectedReport] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState('');
+  const [commenterInfo, setCommenterInfo] = useState({ name: '', email: '' });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const itemsPerPage = 8;
+
+  useEffect(() => {
+    fetchReports();
+  }, [currentPage]);
+
+  const fetchReports = async () => {
+    try {
+      setLoading(true);
+      
+      // Real database query with pagination
+      const { data, error, count } = await supabase
+        .from('reports')
+        .select(`
+          *,
+          room:rooms(name)
+        `, { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage - 1);
+
+      if (error) throw error;
+      
+      setReports(data || []);
+      setTotalPages(Math.ceil((count || 0) / itemsPerPage));
+      
+    } catch (error) {
+      console.error('Error fetching reports:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchComments = async (reportId) => {
+    try {
+      const { data, error } = await supabase
+        .from('report_comments')
+        .select('*')
+        .eq('report_id', reportId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setComments(data || []);
+    } catch (error) {
+      console.error('Error fetching comments:', error);
+    }
+  };
+
+  const addComment = async () => {
+    if (!newComment.trim() || !commenterInfo.name.trim()) return;
+    
+    try {
+      const { error } = await supabase
+        .from('report_comments')
+        .insert({
+          report_id: selectedReport.id,
+          commenter_name: commenterInfo.name,
+          commenter_email: commenterInfo.email,
+          comment: newComment,
+          
+        });
+
+      if (error) throw error;
+      
+      setNewComment('');
+      setCommenterInfo({ name: '', email: '' });
+      fetchComments(selectedReport.id);
+    } catch (error) {
+      console.error('Error adding comment:', error);
+    }
+  };
+
+  const getCategoryIcon = (category) => {
+    const icons = {
+      equipment: Package,
+      room_condition: Building,
+      cleanliness: Activity,
+      safety: Shield,
+      maintenance: Wrench,
+    };
+    return icons[category] || AlertCircle;
+  };
+
+    const getStatusColor = (status) => {
+    const colors = {
+      new: 'text-blue-600',
+      in_progress: 'text-orange-600',
+      resolved: 'text-green-600',
+      closed: 'text-gray-600'
+    };
+    return colors[status] || 'text-gray-600';
+  };
+
+  const getPriorityDot = (priority) => {
+    const colors = {
+      low: 'bg-green-500',
+      medium: 'bg-yellow-500',
+      high: 'bg-red-500',
+      critical: 'bg-red-700'
+    };
+    return colors[priority] || 'bg-gray-500';
+  };
+
+  if (loading) {
+    return (
+      <div className="py-24 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-center items-center h-64">
+            <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="py-12 sm:py-16 lg:py-24 bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="text-center mb-8 sm:mb-12 lg:mb-16">
+          <div className="inline-flex items-center px-3 sm:px-4 py-2 bg-orange-100 text-orange-700 rounded-full text-xs sm:text-sm font-medium mb-4">
+            <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
+            {getText('Community Reports', 'Laporan Komunitas')}
+          </div>
+          
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl xl:text-5xl font-bold text-gray-900 mb-4 sm:mb-6 px-4">
+            {getText('Recent Issues & Updates', 'Masalah & Pembaruan Terkini')}
+          </h2>
+        </div>
+
+        {/* Mobile-First Responsive Cards */}
+        <div className="bg-white/70 backdrop-blur-lg rounded-2xl sm:rounded-3xl shadow-xl border border-white/20 overflow-hidden">
+          <div className="p-4 sm:p-6 lg:p-8">
+            <div className="space-y-4 sm:space-y-6">
+              {reports.map((report, index) => {
+                const CategoryIcon = getCategoryIcon(report.category);
+                return (
+                  <div 
+                    key={report.id}
+                    className="group p-4 sm:p-6 rounded-xl sm:rounded-2xl hover:bg-orange-50/50 transition-all duration-300 border border-transparent hover:border-orange-200/50"
+                  >
+                    {/* Mobile Layout - Stacked */}
+                    <div className="block sm:hidden space-y-3">
+                      {/* Top Row - Priority, Icon, Status */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className={w-3 h-3 rounded-full ${getPriorityDot(report.priority)}}></div>
+                          <div className="p-2 bg-gradient-to-br from-orange-500 to-red-500 rounded-lg">
+                            <CategoryIcon className="h-4 w-4 text-white" />
+                          </div>
+                        </div>
+                        <span className={text-xs font-medium ${getStatusColor(report.status)} capitalize px-2 py-1 bg-white rounded-full}>
+                          {report.status.replace('_', ' ')}
+                        </span>
+                      </div>
+
+                      {/* Title */}
+                      <h3 className="text-base font-semibold text-gray-900 group-hover:text-orange-700 transition-colors leading-tight">
+                        {report.title}
+                      </h3>
+
+                      {/* Info Grid - 2 columns on mobile */}
+                      <div className="grid grid-cols-1 gap-2 text-xs text-gray-500">
+                        <div className="flex items-center">
+                          <MapPin className="h-3 w-3 mr-1 flex-shrink-0" />
+                          <span className="truncate">{report.location || report.room?.name}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center">
+                            <User className="h-3 w-3 mr-1 flex-shrink-0" />
+                            <span className="truncate">{report.is_anonymous ? 'Anonymous' : report.reporter_name}</span>
+                          </div>
+                          <div className="flex items-center ml-2">
+                            <Clock className="h-3 w-3 mr-1 flex-shrink-0" />
+                            <span>{new Date(report.created_at).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Action Button */}
+                      <div className="flex justify-end pt-2">
+                        <button
+                          onClick={() => {
+                            setSelectedReport(report);
+                            setShowModal(true);
+                            fetchComments(report.id);
+                          }}
+                          className="flex items-center space-x-2 px-3 py-2 text-xs font-medium text-orange-600 bg-orange-100 hover:bg-orange-200 rounded-lg transition-all duration-200"
+                        >
+                          <Eye className="h-3 w-3" />
+                          <span>View Details</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Desktop Layout - Horizontal */}
+                    <div className="hidden sm:flex items-center justify-between">
+                      {/* Priority Dot & Icon */}
+                      <div className="flex items-center space-x-4">
+                        <div className={w-3 h-3 rounded-full ${getPriorityDot(report.priority)}}></div>
+                        <div className="p-3 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl">
+                          <CategoryIcon className="h-5 w-5 text-white" />
+                        </div>
+                      </div>
+
+                      {/* Issue Info */}
+                      <div className="flex-1 ml-6">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-1 group-hover:text-orange-700 transition-colors">
+                          {report.title}
+                        </h3>
+                        <div className="flex items-center space-x-6 text-sm text-gray-500">
+                          <div className="flex items-center">
+                            <MapPin className="h-4 w-4 mr-1" />
+                            {report.location || report.room?.name}
+                          </div>
+                          <div className="flex items-center">
+                            <User className="h-4 w-4 mr-1" />
+                            {report.is_anonymous ? 'Anonymous' : report.reporter_name}
+                          </div>
+                          <div className="flex items-center">
+                            <Clock className="h-4 w-4 mr-1" />
+                            {new Date(report.created_at).toLocaleDateString()}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Status & Actions */}
+                      <div className="flex items-center space-x-4">
+                        <span className={text-sm font-medium ${getStatusColor(report.status)} capitalize}>
+                          {report.status.replace('_', ' ')}
+                        </span>
+                        
+                        <button
+                          onClick={() => {
+                            setSelectedReport(report);
+                            setShowModal(true);
+                            fetchComments(report.id);
+                          }}
+                          className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-100 rounded-lg transition-all duration-200"
+                        >
+                          <Eye className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile-Friendly Pagination */}
+        {totalPages > 1 && (
+          <div className="flex justify-center mt-8 sm:mt-12">
+            <div className="flex items-center space-x-1 sm:space-x-2 bg-white/70 backdrop-blur-lg rounded-xl sm:rounded-2xl p-2 border border-white/20">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="p-2 rounded-lg text-gray-600 hover:bg-orange-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+              >
+                <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" />
+              </button>
+              
+              {/* Show fewer page numbers on mobile */}
+              {totalPages <= 5 ? (
+                // Show all pages if 5 or fewer
+                [...Array(totalPages)].map((_, i) => (
+                  <button
+                    key={i + 1}
+                    onClick={() => setCurrentPage(i + 1)}
+                    className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 ${
+                      currentPage === i + 1
+                        ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg'
+                        : 'text-gray-600 hover:bg-orange-100'
+                    }`}
+                  >
+                    {i + 1}
+                  </button>
+                ))
+              ) : (
+                // Show condensed pagination for many pages
+                <>
+                  {currentPage > 2 && (
+                    <>
+                      <button
+                        onClick={() => setCurrentPage(1)}
+                        className="px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium text-gray-600 hover:bg-orange-100 transition-all duration-200"
+                      >
+                        1
+                      </button>
+                      {currentPage > 3 && <span className="text-gray-400 px-1">...</span>}
+                    </>
+                  )}
+                  
+                  {[...Array(3)].map((_, i) => {
+                    const pageNum = currentPage - 1 + i;
+                    if (pageNum < 1 || pageNum > totalPages) return null;
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 ${
+                          currentPage === pageNum
+                            ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg'
+                            : 'text-gray-600 hover:bg-orange-100'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                  
+                  {currentPage < totalPages - 1 && (
+                    <>
+                      {currentPage < totalPages - 2 && <span className="text-gray-400 px-1">...</span>}
+                      <button
+                        onClick={() => setCurrentPage(totalPages)}
+                        className="px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium text-gray-600 hover:bg-orange-100 transition-all duration-200"
+                      >
+                        {totalPages}
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+              
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="p-2 rounded-lg text-gray-600 hover:bg-orange-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+              >
+                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Mobile-Optimized Detail Modal */}
+      {showModal && selectedReport && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+            <div className="p-4 sm:p-6 lg:p-8">
+              <div className="flex items-center justify-between mb-6 sm:mb-8">
+                <h3 className="text-lg sm:text-2xl font-bold text-gray-900">Report Details</h3>
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-all duration-200"
+                >
+                  <X className="h-5 w-5 sm:h-6 sm:w-6" />
+                </button>
+              </div>
+
+              {/* Report Info */}
+              <div className="bg-gradient-to-br from-orange-50 to-red-50 rounded-xl sm:rounded-2xl p-4 sm:p-6 mb-6 sm:mb-8">
+                <h4 className="text-lg sm:text-xl font-semibold text-gray-900 mb-3 sm:mb-4">{selectedReport.title}</h4>
+                <p className="text-sm sm:text-base text-gray-700 mb-4">{selectedReport.description}</p>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs sm:text-sm">
+                  <div><span className="font-medium">Category:</span> {selectedReport.category}</div>
+                  <div><span className="font-medium">Priority:</span> {selectedReport.priority}</div>
+                  <div><span className="font-medium">Status:</span> {selectedReport.status}</div>
+                  <div><span className="font-medium">Location:</span> {selectedReport.location}</div>
+                </div>
+              </div>
+
+              {/* Comments Section */}
+              <div className="space-y-4 sm:space-y-6">
+                <h5 className="text-base sm:text-lg font-semibold text-gray-900">Comments</h5>
+                
+                                {comments.length === 0 ? (
+                  <div className="text-center py-6 sm:py-8 text-gray-500">
+                    <MessageSquare className="h-8 w-8 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 opacity-50" />
+                    <p className="text-sm sm:text-base">No comments yet. Be the first to comment!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 sm:space-y-4 max-h-60 sm:max-h-80 overflow-y-auto">
+                    {comments.map((comment) => (
+                      <div key={comment.id} className="bg-gray-50 rounded-xl sm:rounded-2xl p-3 sm:p-4">
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start mb-2 space-y-1 sm:space-y-0">
+                          <span className="font-medium text-gray-900 text-sm sm:text-base">{comment.commenter_name}</span>
+                          <span className="text-xs text-gray-500">
+                            {new Date(comment.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="text-gray-700 text-sm sm:text-base leading-relaxed">{comment.comment}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Add Comment Form - Mobile Optimized */}
+                <div className="bg-gray-50 rounded-xl sm:rounded-2xl p-4 sm:p-6">
+                  <h6 className="font-medium text-gray-900 mb-3 sm:mb-4 text-sm sm:text-base">Add Your Comment</h6>
+                  
+                  <div className="space-y-3 sm:space-y-0 sm:grid sm:grid-cols-2 sm:gap-4 mb-4">
+                    <input
+                      type="text"
+                      value={commenterInfo.name}
+                      onChange={(e) => setCommenterInfo(prev => ({ ...prev, name: e.target.value }))}
+                      placeholder="Your Name"
+                      className="w-full px-3 sm:px-4 py-2 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                    <input
+                      type="email"
+                      value={commenterInfo.email}
+                      onChange={(e) => setCommenterInfo(prev => ({ ...prev, email: e.target.value }))}
+                      placeholder="Email (Optional)"
+                      className="w-full px-3 sm:px-4 py-2 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                  </div>
+                  
+                  <textarea
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    placeholder="Write your comment..."
+                    rows={3}
+                    className="w-full px-3 sm:px-4 py-2 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 mb-4 resize-none"
+                  />
+                  
+                  <button
+                    onClick={addComment}
+                    disabled={!newComment.trim() || !commenterInfo.name.trim()}
+                    className="w-full sm:w-auto flex items-center justify-center space-x-2 px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg sm:rounded-xl hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                  >
+                    <Send className="h-3 w-3 sm:h-4 sm:w-4" />
+                    <span>Post Comment</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Dashboard;
