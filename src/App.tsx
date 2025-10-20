@@ -26,7 +26,7 @@ import Profile from './pages/Profile';
 import { useAuth } from './hooks/useAuth';
 
 function App() {
-  const { loading } = useAuth();
+  const { loading, user } = useAuth();
 
   if (loading) {
     return (
@@ -48,7 +48,7 @@ function App() {
         <Routes>
           <Route path="/auth" element={<AuthForm />} />
           <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
+            <Route index element={<Dashboard user={user} />} />
             <Route path="book" element={<BookRoom />} />
             <Route path="checkout" element={<CheckOut />} />
             <Route path="permit-letter" element={<PermitLetter />} />
