@@ -125,6 +125,10 @@ const BookingManagement: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [showBorrowConfirm, setShowBorrowConfirm] = useState<string | null>(null);
   
+  // Schedule states
+  const [combinedSchedules, setCombinedSchedules] = useState<any[]>([]);
+  const [loadingSchedules, setLoadingSchedules] = useState(false);
+  
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(50);
@@ -164,6 +168,18 @@ const BookingManagement: React.FC = () => {
   useEffect(() => {
     fetchBookings();
   }, [currentPage, searchTerm, statusFilter, dateFilter]);
+
+  // Fetch combined schedules when detail modal is opened
+  useEffect(() => {
+    if (showDetailModal && selectedBooking && selectedBooking.room) {
+      const bookingDate = format(new Date(selectedBooking.start_time), 'yyyy-MM-dd');
+      fetchCombinedSchedulesForRoom(
+        selectedBooking.room.id,
+        selectedBooking.room.name,
+        bookingDate
+      );
+    }
+  }, [showDetailModal, selectedBooking]);
 
   // Initialize all data
   const initializeData = async () => {
@@ -301,6 +317,146 @@ const BookingManagement: React.FC = () => {
       console.error('Error fetching booking statistics:', error);
     } finally {
       setStatsLoading(false);
+    }
+  };
+
+  // FETCH COMBINED SCHEDULES FOR ROOM
+  const fetchCombinedSchedulesForRoom = async (roomId: string, roomName: string, bookingStartDate: string) => {
+    setLoadingSchedules(true);
+    try {
+      const combined: any[] = [];
+      
+      // Get day name in Indonesian
+      const dayNamesIndonesian = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+      const dayNameIndonesian = dayNamesIndonesian[new Date(bookingStartDate).getDay()];
+      
+      console.log(`📅 Fetching combined schedules for room ${roomName} on ${bookingStartDate} (${dayNameIndonesian})`);
+
+      // 1. Fetch lecture schedules
+      const { data: lectureData } = await supabase
+        .from('lecture_schedules')
+        .select('*')
+        .eq('day', dayNameIndonesian)
+        .ilike('room', `%${roomName}%`)
+        .order('start_time');
+      
+      if (lectureData) {
+        lectureData.forEach(lecture => {
+          combined.push({
+            id: lecture.id,
+            type: 'lecture',
+            start_time: lecture.start_time?.substring(0, 5) || '',
+            end_time: lecture.end_time?.substring(0, 5) || '',
+            title: lecture.course_name || getText('Lecture', 'Kuliah'),
+            subtitle: `${getText('Class', 'Kelas')} ${lecture.class} • ${lecture.subject_study}`,
+            description: `${getText('Lecturer', 'Dosen')}: ${lecture.lecturer || 'TBA'} • ${getText('Semester', 'Semester')} ${lecture.semester}`,
+            icon: BookOpen,
+            color: 'text-blue-700',
+            bgColor: 'bg-blue-50',
+            borderColor: 'border-blue-200'
+          });
+        });
+      }
+
+      // 2. Fetch exam schedules
+      const { data: examData } = await supabase
+        .from('exams')
+        .select('*')
+        .eq('room_id', roomId)
+        .eq('date', bookingStartDate)
+        .order('start_time');
+      
+      if (examData) {
+        examData.forEach(exam => {
+          combined.push({
+            id: exam.id,
+            type: 'exam',
+            start_time: exam.start_time?.substring(0, 5) || '',
+            end_time: exam.end_time?.substring(0, 5) || '',
+            title: exam.course_name || getText('UAS Exam', 'Ujian UAS'),
+            subtitle: `${exam.student_amount} ${getText('students', 'mahasiswa')} • ${getText('Semester', 'Semester')} ${exam.semester}`,
+            description: `${getText('Class', 'Kelas')} ${exam.class} • ${getText('Inspector', 'Pengawas')}: ${exam.inspector}`,
+            icon: GraduationCap,
+            color: 'text-green-700',
+            bgColor: 'bg-green-50',
+            borderColor: 'border-green-200'
+          });
+        });
+      }
+
+      // 3. Fetch final sessions
+      const { data: sessionData } = await supabase
+        .from('final_sessions')
+        .select(`
+          *,
+          student:users!student_id(full_name, identity_number)
+        `)
+        .eq('room_id', roomId)
+        .eq('date', bookingStartDate)
+        .order('start_time');
+      
+      if (sessionData) {
+        sessionData.forEach(session => {
+          combined.push({
+            id: session.id,
+            type: 'session',
+            start_time: session.start_time?.substring(0, 5) || '',
+            end_time: session.end_time?.substring(0, 5) || '',
+            title: session.student?.full_name || getText('Final Session', 'Sidang Akhir'),
+            subtitle: `ID: ${session.student?.identity_number}`,
+            description: `${getText('Supervisor', 'Pembimbing')}: ${session.supervisor} • ${getText('Examiner', 'Penguji')}: ${session.examiner}`,
+            icon: GraduationCap,
+            color: 'text-purple-700',
+            bgColor: 'bg-purple-50',
+            borderColor: 'border-purple-200'
+          });
+        });
+      }
+
+      // 4. Fetch bookings for this date
+      const startOfDay = `${bookingStartDate}T00:00:00Z`;
+      const endOfDay = `${bookingStartDate}T23:59:59Z`;
+      
+      const { data: bookingData } = await supabase
+        .from('bookings')
+        .select(`
+          *,
+          user:users!user_id(full_name, identity_number)
+        `)
+        .eq('room_id', roomId)
+        .in('status', ['approved', 'borrowed'])
+        .gte('start_time', startOfDay)
+        .lte('start_time', endOfDay)
+        .order('start_time');
+      
+      if (bookingData) {
+        bookingData.forEach(booking => {
+          const startDate = new Date(booking.start_time);
+          const endDate = new Date(booking.end_time);
+          
+          combined.push({
+            id: booking.id,
+            type: 'booking',
+            start_time: format(startDate, 'HH:mm'),
+            end_time: format(endDate, 'HH:mm'),
+            title: booking.purpose || getText('Room Booking', 'Pemesanan Ruangan'),
+            subtitle: `${booking.user?.full_name} • ${booking.user?.identity_number}`,
+            description: `${getText('Status', 'Status')}: ${booking.status === 'approved' ? getText('APPROVED', 'DISETUJUI') : getText('BORROWED', 'DIPINJAM')}`,
+            icon: Calendar,
+            color: 'text-orange-700',
+            bgColor: 'bg-orange-50',
+            borderColor: 'border-orange-200'
+          });
+        });
+      }
+
+      combined.sort((a, b) => a.start_time.localeCompare(b.start_time));
+      setCombinedSchedules(combined);
+
+    } catch (error) {
+      console.error('Error fetching combined schedules:', error);
+    } finally {
+      setLoadingSchedules(false);
     }
   };
 
@@ -1351,182 +1507,258 @@ const BookingManagement: React.FC = () => {
             </div>
 
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Left Column */}
-                <div className="space-y-6">
-                  {/* User Information */}
-                  <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
-                    <h4 className="font-medium text-blue-900 mb-3 flex items-center">
-                      <User className="h-5 w-5 mr-2" />
-                      {getText('User Information', 'Informasi Pengguna')}
-                    </h4>
-                    <div className="space-y-2">
-                      <div className="flex items-center">
-                        <span className="text-sm text-blue-700 w-24">{getText('Name', 'Nama')}:</span>
-                        <span className="text-sm font-medium text-blue-900">
-                          {selectedBooking.user?.full_name || selectedBooking.user_info?.full_name || 'Unknown User'}
-                        </span>
-                      </div>
-                      <div className="flex items-center">
-                        <span className="text-sm text-blue-700 w-24">{getText('ID', 'ID')}:</span>
-                        <span className="text-sm text-blue-900">
-                          {selectedBooking.user?.phone_number|| selectedBooking.user_info?.phone_number || 'No ID'}
-                        </span>
-                      </div>
-                      {selectedBooking.user?.email && (
-                        <div className="flex items-center">
-                          <span className="text-sm text-blue-700 w-24">{getText('Email', 'Email')}:</span>
-                          <span className="text-sm text-blue-900">{selectedBooking.user.email}</span>
-                        </div>
-                      )}
-                      {selectedBooking.user?.study_program && (
-                        <div className="flex items-center">
-                          <span className="text-sm text-blue-700 w-24">{getText('Program', 'Program')}:</span>
-                          <span className="text-sm text-blue-900">{selectedBooking.user.study_program.name}</span>
-                        </div>
-                      )}
+              {/* HEADER SECTION: 3 Columns */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                {/* Column 1: User Information */}
+                <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                  <h4 className="font-medium text-blue-900 mb-3 flex items-center">
+                    <User className="h-5 w-5 mr-2" />
+                    {getText('User Information', 'Informasi Pengguna')}
+                  </h4>
+                  <div className="space-y-2">
+                    <div className="flex items-center">
+                      <span className="text-sm text-blue-700 w-24">{getText('Name', 'Nama')}:</span>
+                      <span className="text-sm font-medium text-blue-900">
+                        {selectedBooking.user?.full_name || selectedBooking.user_info?.full_name || 'Unknown User'}
+                      </span>
                     </div>
-                  </div>
-
-                  {/* Room Information */}
-                  <div className="bg-green-50 rounded-xl p-4 border border-green-200">
-                    <h4 className="font-medium text-green-900 mb-3 flex items-center">
-                      <Building className="h-5 w-5 mr-2" />
-                      {getText('Room Information', 'Informasi Ruangan')}
-                    </h4>
-                    <div className="space-y-2">
-                      <div className="flex items-center">
-                        <span className="text-sm text-green-700 w-24">{getText('Room', 'Ruangan')}:</span>
-                        <span className="text-sm font-medium text-green-900">
-                          {selectedBooking.room?.name || 'Unknown Room'}
-                        </span>
-                      </div>
-                      <div className="flex items-center">
-                        <span className="text-sm text-green-700 w-24">{getText('Code', 'Kode')}:</span>
-                        <span className="text-sm text-green-900">{selectedBooking.room?.code || 'N/A'}</span>
-                      </div>
-                      <div className="flex items-center">
-                        <span className="text-sm text-green-700 w-24">{getText('Capacity', 'Kapasitas')}:</span>
-                        <span className="text-sm text-green-900">
-                          {selectedBooking.room?.capacity || 'N/A'} {getText('people', 'orang')}
-                        </span>
-                      </div>
-                      {selectedBooking.room?.department && (
-                        <div className="flex items-center">
-                          <span className="text-sm text-green-700 w-24">{getText('Department', 'Departemen')}:</span>
-                          <span className="text-sm text-green-900">{selectedBooking.room.department.name}</span>
-                        </div>
-                      )}
+                    <div className="flex items-center">
+                      <span className="text-sm text-blue-700 w-24">{getText('ID', 'ID')}:</span>
+                      <span className="text-sm text-blue-900">
+                        {selectedBooking.user?.phone_number|| selectedBooking.user_info?.phone_number || 'No ID'}
+                      </span>
                     </div>
+                    {selectedBooking.user?.email && (
+                      <div className="flex items-center">
+                        <span className="text-sm text-blue-700 w-24">{getText('Email', 'Email')}:</span>
+                        <span className="text-sm text-blue-900">{selectedBooking.user.email}</span>
+                      </div>
+                    )}
+                    {selectedBooking.user?.study_program && (
+                      <div className="flex items-center">
+                        <span className="text-sm text-blue-700 w-24">{getText('Program', 'Program')}:</span>
+                        <span className="text-sm text-blue-900">{selectedBooking.user.study_program.name}</span>
+                      </div>
+                    )}
                   </div>
-
-                  {/* Equipment Section */}
-                  {renderEquipmentSection(selectedBooking)}
                 </div>
 
-                {/* Right Column */}
-                <div className="space-y-6">
-                  {/* Booking Details */}
-                  <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
-                    <h4 className="font-medium text-purple-900 mb-3 flex items-center">
-                      <Calendar className="h-5 w-5 mr-2" />
-                      {getText('Booking Details', 'Detail Pemesanan')}
-                    </h4>
-                    <div className="space-y-3">
+                {/* Column 2: Room Information */}
+                <div className="bg-green-50 rounded-xl p-4 border border-green-200">
+                  <h4 className="font-medium text-green-900 mb-3 flex items-center">
+                    <Building className="h-5 w-5 mr-2" />
+                    {getText('Room Information', 'Informasi Ruangan')}
+                  </h4>
+                  <div className="space-y-2">
+                    <div className="flex items-center">
+                      <span className="text-sm text-green-700 w-24">{getText('Room', 'Ruangan')}:</span>
+                      <span className="text-sm font-medium text-green-900">
+                        {selectedBooking.room?.name || 'Unknown Room'}
+                      </span>
+                    </div>
+                    <div className="flex items-center">
+                      <span className="text-sm text-green-700 w-24">{getText('Code', 'Kode')}:</span>
+                      <span className="text-sm text-green-900">{selectedBooking.room?.code || 'N/A'}</span>
+                    </div>
+                    <div className="flex items-center">
+                      <span className="text-sm text-green-700 w-24">{getText('Capacity', 'Kapasitas')}:</span>
+                      <span className="text-sm text-green-900">
+                        {selectedBooking.room?.capacity || 'N/A'} {getText('people', 'orang')}
+                      </span>
+                    </div>
+                    {selectedBooking.room?.department && (
+                      <div className="flex items-center">
+                        <span className="text-sm text-green-700 w-24">{getText('Department', 'Departemen')}:</span>
+                        <span className="text-sm text-green-900">{selectedBooking.room.department.name}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Column 3: Booking Details */}
+                <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
+                  <h4 className="font-medium text-purple-900 mb-3 flex items-center">
+                    <Calendar className="h-5 w-5 mr-2" />
+                    {getText('Booking Details', 'Detail Pemesanan')}
+                  </h4>
+                  <div className="space-y-3">
+                    <div>
+                      <span className="text-sm text-purple-700">{getText('Purpose', 'Tujuan')}:</span>
+                      <p className="text-sm font-medium text-purple-900 mt-1">{selectedBooking.purpose}</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 gap-3">
                       <div>
-                        <span className="text-sm text-purple-700">{getText('Purpose', 'Tujuan')}:</span>
-                        <p className="text-sm font-medium text-purple-900 mt-1">{selectedBooking.purpose}</p>
+                        <span className="text-sm text-purple-700">{getText('Start Time', 'Waktu Mulai')}:</span>
+                        <p className="text-xs font-medium text-purple-900">
+                          {selectedBooking.start_time ? format(new Date(selectedBooking.start_time), 'MMM d HH:mm') : 'N/A'}
+                        </p>
                       </div>
-                      
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <span className="text-sm text-purple-700">{getText('Start Time', 'Waktu Mulai')}:</span>
-                          <p className="text-sm font-medium text-purple-900">
-                            {selectedBooking.start_time ? format(new Date(selectedBooking.start_time), 'MMM d, yyyy HH:mm') : 'N/A'}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-sm text-purple-700">{getText('End Time', 'Waktu Selesai')}:</span>
-                          <p className="text-sm font-medium text-purple-900">
-                            {selectedBooking.end_time ? format(new Date(selectedBooking.end_time), 'MMM d, yyyy HH:mm') : 'N/A'}
-                          </p>
-                        </div>
+                      <div>
+                        <span className="text-sm text-purple-700">{getText('End Time', 'Waktu Selesai')}:</span>
+                        <p className="text-xs font-medium text-purple-900">
+                          {selectedBooking.end_time ? format(new Date(selectedBooking.end_time), 'MMM d HH:mm') : 'N/A'}
+                        </p>
                       </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <span className="text-sm text-purple-700">{getText('SKS', 'SKS')}:</span>
-                          <p className="text-sm font-medium text-purple-900">{selectedBooking.sks || 0} SKS</p>
-                        </div>
-                        <div>
-                          <span className="text-sm text-purple-700">{getText('Class Type', 'Jenis Kelas')}:</span>
-                          <p className="text-sm font-medium text-purple-900">
-                            {selectedBooking.class_type === 'theory' ? getText('Theory', 'Teori') : getText('Practical', 'Praktik')}
-                          </p>
-                        </div>
-                      </div>
-
-                      {selectedBooking.notes && (
-                        <div>
-                          <span className="text-sm text-purple-700">{getText('Notes', 'Catatan')}:</span>
-                          <p className="text-sm text-purple-900 mt-1 p-3 bg-white rounded-lg border border-purple-200">
-                            {selectedBooking.notes}
-                          </p>
-                        </div>
-                      )}
                     </div>
-                  </div>
 
-                  {/* Status Information */}
-                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                    <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                      <Info className="h-5 w-5 mr-2" />
-                      {getText('Status Information', 'Informasi Status')}
-                    </h4>
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-700">{getText('Current Status', 'Status Saat Ini')}:</span>
-                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(selectedBooking.status)}`}>
-                          {getStatusText(selectedBooking.status)}
-                        </span>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <span className="text-sm text-purple-700">{getText('SKS', 'SKS')}:</span>
+                        <p className="text-xs font-medium text-purple-900">{selectedBooking.sks || 0}</p>
                       </div>
-                      
-                      {/* Simplified Timeline */}
-                      <div className="border-l-2 border-gray-200 pl-4 space-y-3">
-                        <div className="flex items-center space-x-2">
-                                                    <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                          <div className="flex-1">
-                            <div className="text-sm font-medium text-gray-900">{getText('Created', 'Dibuat')}</div>
-                            <div className="text-xs text-gray-500">
-                              {selectedBooking.created_at ? format(new Date(selectedBooking.created_at), 'MMM d, yyyy HH:mm') : 'N/A'}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <div className={`w-3 h-3 rounded-full ${
-                            selectedBooking.status === 'pending' ? 'bg-yellow-500' :
-                            selectedBooking.status === 'approved' ? 'bg-green-500' :
-                            selectedBooking.status === 'borrowed' ? 'bg-blue-500' :
-                            selectedBooking.status === 'rejected' ? 'bg-red-500' :
-                            selectedBooking.status === 'completed' ? 'bg-purple-500' : 'bg-gray-300'
-                          }`}></div>
-                          <div className="flex-1">
-                            <div className="text-sm font-medium text-gray-900">{getText('Last Updated', 'Terakhir Diperbarui')}</div>
-                            <div className="text-xs text-gray-500">
-                              {selectedBooking.updated_at ? format(new Date(selectedBooking.updated_at), 'MMM d, yyyy HH:mm') : 'N/A'}
-                            </div>
-                            <div className="text-xs text-gray-400 mt-1">
-                              Status: {getStatusText(selectedBooking.status)}
-                            </div>
-                          </div>
-                        </div>
+                      <div>
+                        <span className="text-sm text-purple-700">{getText('Type', 'Tipe')}:</span>
+                        <p className="text-xs font-medium text-purple-900">
+                          {selectedBooking.class_type === 'theory' ? getText('Theory', 'Teori') : getText('Practical', 'Praktik')}
+                        </p>
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
 
-                  {/* Attachments */}
-                  {selectedBooking.attachments && parseAttachments(selectedBooking.attachments).length > 0 && (
+              {/* FULL WIDTH SECTION: Room Schedule */}
+              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-200 overflow-hidden mb-6">
+                <div className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-white bg-opacity-20 rounded-lg">
+                        <Calendar className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-lg font-semibold">{getText('Room Schedule', 'Jadwal Ruangan')}</h4>
+                        <p className="text-indigo-100 text-sm">
+                          {format(new Date(selectedBooking.start_time), 'EEEE, MMMM d, yyyy')}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="bg-white bg-opacity-20 rounded-lg px-3 py-1">
+                      <span className="text-sm font-semibold">
+                        {combinedSchedules.length}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4">
+                  {loadingSchedules ? (
+                    <div className="flex justify-center items-center h-32">
+                      <RefreshCw className="animate-spin h-6 w-6 text-indigo-600"/>
+                    </div>
+                  ) : combinedSchedules.length > 0 ? (
+                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                      {combinedSchedules.map((schedule, index) => {
+                        const IconComponent = schedule.icon;
+                        return (
+                          <div 
+                            key={`${schedule.type}-${schedule.id}-${index}`} 
+                            className={`${schedule.bgColor} rounded-lg p-3 border ${schedule.borderColor}`}
+                          >
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-center space-x-2">
+                                <div className={`p-1.5 bg-white rounded`}>
+                                  <IconComponent className={`h-3.5 w-3.5 ${schedule.color}`} />
+                                </div>
+                                <span className={`text-xs font-medium ${schedule.color} bg-white px-2 py-0.5 rounded-full`}>
+                                  {schedule.type === 'lecture' ? getText('Lecture', 'Kuliah') : 
+                                   schedule.type === 'exam' ? getText('Exam', 'UAS') :
+                                   schedule.type === 'session' ? getText('Session', 'Sidang') :
+                                   getText('Booking', 'Booking')}
+                                </span>
+                                <span className="font-semibold text-gray-900 text-sm">
+                                  {schedule.end_time ? 
+                                    `${schedule.start_time} - ${schedule.end_time}` : 
+                                    schedule.start_time
+                                  }
+                                </span>
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-1">
+                              <div className="font-semibold text-gray-900 text-sm">
+                                {schedule.title}
+                              </div>
+                              {schedule.subtitle && (
+                                <div className={`text-xs ${schedule.color} font-medium`}>
+                                  {schedule.subtitle}
+                                </div>
+                              )}
+                              {schedule.description && (
+                                <div className="text-xs text-gray-600">
+                                  {schedule.description}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <Calendar className="h-10 w-10 mx-auto mb-2 opacity-50"/>
+                      <p className="text-sm">{getText('No schedule for this room on this date', 'Tidak ada jadwal untuk ruangan ini pada tanggal ini')}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Status Information & Equipment Row */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                {/* Status Information */}
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                  <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                    <Info className="h-5 w-5 mr-2" />
+                    {getText('Status Information', 'Informasi Status')}
+                  </h4>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-700">{getText('Current Status', 'Status Saat Ini')}:</span>
+                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(selectedBooking.status)}`}>
+                        {getStatusText(selectedBooking.status)}
+                      </span>
+                    </div>
+                    
+                    {/* Simplified Timeline */}
+                    <div className="border-l-2 border-gray-200 pl-4 space-y-3">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-gray-900">{getText('Created', 'Dibuat')}</div>
+                          <div className="text-xs text-gray-500">
+                            {selectedBooking.created_at ? format(new Date(selectedBooking.created_at), 'MMM d, yyyy HH:mm') : 'N/A'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-2">
+                        <div className={`w-3 h-3 rounded-full ${
+                          selectedBooking.status === 'pending' ? 'bg-yellow-500' :
+                          selectedBooking.status === 'approved' ? 'bg-green-500' :
+                          selectedBooking.status === 'borrowed' ? 'bg-blue-500' :
+                          selectedBooking.status === 'rejected' ? 'bg-red-500' :
+                          selectedBooking.status === 'completed' ? 'bg-purple-500' : 'bg-gray-300'
+                        }`}></div>
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-gray-900">{getText('Last Updated', 'Terakhir Diperbarui')}</div>
+                          <div className="text-xs text-gray-500">
+                            {selectedBooking.updated_at ? format(new Date(selectedBooking.updated_at), 'MMM d, yyyy HH:mm') : 'N/A'}
+                          </div>
+                          <div className="text-xs text-gray-400 mt-1">
+                            Status: {getStatusText(selectedBooking.status)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Equipment Section */}
+                {renderEquipmentSection(selectedBooking)}
+              </div>
+
+              {/* FULL WIDTH SECTION: Attachments */}
+              {selectedBooking.attachments && parseAttachments(selectedBooking.attachments).length > 0 && (
                     <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
                       <h4 className="font-medium text-purple-900 mb-3 flex items-center">
                         <FileText className="h-5 w-5 mr-2" />
@@ -1636,8 +1868,8 @@ const BookingManagement: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Enhanced Actions Section */}
-                  {(() => {
+              {/* FULL WIDTH SECTION: Enhanced Actions */}
+              {(() => {
                     const availableActions = getAvailableActions(selectedBooking);
                     if (availableActions.length === 0) return null;
 
@@ -1720,8 +1952,6 @@ const BookingManagement: React.FC = () => {
                       </div>
                     );
                   })()}
-                </div>
-              </div>
             </div>
           </div>
         </div>
