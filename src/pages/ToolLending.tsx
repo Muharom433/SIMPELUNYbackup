@@ -1155,7 +1155,7 @@ const ToolLending: React.FC = () => {
                                             </p>
                                             <div></div>
                                             <hr></hr>
-                                            <h3><a href="https://wa.me/+62895380131878">+62 858-6955-4147</a><</h3>
+                                            <h3><a href="https://wa.me/+62895380131878">+62 858-6955-4147</a></h3>
                                         </div>
                                     </div>
                                 </div>
