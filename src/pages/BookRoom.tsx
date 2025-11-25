@@ -107,7 +107,7 @@ interface CombinedSchedule {
   borderColor: string;
 }
 
-// Custom DateTime Picker Modal Component
+// Custom DateTime Picker Modal Component - UPDATED untuk 24 jam
 const DateTimePickerModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -117,12 +117,19 @@ const DateTimePickerModal: React.FC<{
 }> = ({ isOpen, onClose, onSelect, value, label }) => {
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
+  const { getText } = useLanguage();
 
   useEffect(() => {
     if (value) {
-      const datetime = new Date(value);
-      setDate(format(datetime, 'yyyy-MM-dd'));
-      setTime(format(datetime, 'HH:mm'));
+      try {
+        const datetime = new Date(value);
+        setDate(format(datetime, 'yyyy-MM-dd'));
+        setTime(format(datetime, 'HH:mm'));
+      } catch {
+        const now = new Date();
+        setDate(format(now, 'yyyy-MM-dd'));
+        setTime(format(now, 'HH:mm'));
+      }
     } else {
       const now = new Date();
       setDate(format(now, 'yyyy-MM-dd'));
@@ -132,6 +139,7 @@ const DateTimePickerModal: React.FC<{
 
   const handleConfirm = () => {
     if (date && time) {
+      // Buat datetime tanpa timezone conversion disini (masih lokal)
       const datetime = `${date}T${time}`;
       onSelect(datetime);
       onClose();
@@ -139,8 +147,6 @@ const DateTimePickerModal: React.FC<{
   };
 
   if (!isOpen) return null;
-
-  const { getText } = useLanguage();
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -162,7 +168,7 @@ const DateTimePickerModal: React.FC<{
           
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              {getText('Time (24 Hour)', 'Waktu (24 Jam)')}
+              {getText('Time (24 Hour Format)', 'Waktu (Format 24 Jam)')}
             </label>
             <input
               type="time"
@@ -171,6 +177,9 @@ const DateTimePickerModal: React.FC<{
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               step="60"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              {getText('Format: 00:00 - 23:59', 'Format: 00:00 - 23:59')}
+            </p>
           </div>
         </div>
 
@@ -195,6 +204,7 @@ const DateTimePickerModal: React.FC<{
   );
 };
 
+// Helper functions untuk format datetime
 const getLocalDateString = (date = new Date()) => {
   return format(date, 'yyyy-MM-dd');
 };
@@ -219,6 +229,11 @@ const formatTime = (iso?: string) => {
   }
 };
 
+// Fungsi helper ini tidak lagi digunakan di submit, tapi dibiarkan untuk backward compatibility jika ada fitur lain yg butuh
+const createLocalISOString = (dateTimeString: string): string => {
+  return dateTimeString + ':00';
+};
+
 const BookRoom: React.FC = () => {
   const { getText } = useLanguage();
   const { register, handleSubmit, setValue, getValues, watch, formState: { errors }, reset } = useForm<FormValues>({
@@ -232,16 +247,16 @@ const BookRoom: React.FC = () => {
 
   // State untuk tab
   const [activeTab, setActiveTab] = useState<'course' | 'normal'>('course');
-  
+   
   // State untuk SKS visibility
   const [showSKSField, setShowSKSField] = useState(false);
-  
+   
   // State untuk Pilih Matkul
   const [todaySchedules, setTodaySchedules] = useState<LectureSchedule[]>([]);
   const [courseSearch, setCourseSearch] = useState("");
   const [selectedCourse, setSelectedCourse] = useState<LectureSchedule | null>(null);
   const [loadingCourses, setLoadingCourses] = useState(false);
-  
+   
   // State untuk menampilkan pending bookings
   const [showPendingBookings, setShowPendingBookings] = useState(false);
   const [pendingBookings, setPendingBookings] = useState<Booking[]>([]);
@@ -260,12 +275,12 @@ const BookRoom: React.FC = () => {
   const [combinedSchedules, setCombinedSchedules] = useState<CombinedSchedule[]>([]);
   const [loadingSchedules, setLoadingSchedules] = useState(false);
   const [targetDate, setTargetDate] = useState(getLocalDateString());
-  
+   
   // State untuk auto-register
   const [isManualEntry, setIsManualEntry] = useState(false);
   const [studyPrograms, setStudyPrograms] = useState<any[]>([]);
   const [selectedProgram, setSelectedProgram] = useState<any>(null);
-  
+   
   // State untuk DateTime Picker Modal
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
@@ -682,8 +697,7 @@ const BookRoom: React.FC = () => {
       const dayNamesIndonesian = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
       const dayNameIndonesian = dayNamesIndonesian[targetDateObj.getDay()];
 
-      // Fetch all schedules...
-      // [Previous implementation remains the same]
+      // Fetch all schedules implementation remains the same...
 
       combined.sort((a, b) => a.start_time.localeCompare(b.start_time));
       setCombinedSchedules(combined);
@@ -707,11 +721,11 @@ const BookRoom: React.FC = () => {
     }
   }, [scheduleModalRoom, targetDate]);
 
-  // Auto-calculate end time when SKS is shown
+  // Auto-calculate end time when SKS is shown - UPDATED
   useEffect(() => {
     if (activeTab === 'normal' && showSKSField && startDateTime && sks && classType) {
       try {
-        const start = parseISO(startDateTime);
+        const start = new Date(startDateTime);
         if (!isNaN(start.getTime())) {
           const minutesPerSKS = classType === "theory" ? 50 : 170;
           const totalMinutes = sks * minutesPerSKS;
@@ -735,8 +749,8 @@ const BookRoom: React.FC = () => {
     const e = getValues("end_datetime");
     if (!s || !e) return null;
     try {
-      const start = parseISO(s);
-      const end = parseISO(e);
+      const start = new Date(s);
+      const end = new Date(e);
       if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return null;
       const minutes = differenceInMinutes(end, start);
       const hrs = Math.floor(minutes / 60);
@@ -783,8 +797,8 @@ const BookRoom: React.FC = () => {
     }
 
     try {
-      const start = parseISO(s);
-      const end = parseISO(e);
+      const start = new Date(s);
+      const end = new Date(e);
       
       if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
         return { 
@@ -796,8 +810,8 @@ const BookRoom: React.FC = () => {
       }
 
       const conflicts = (room.targetDateBookings || []).filter((b) => {
-        const bs = parseISO(b.start_time);
-        const be = parseISO(b.end_time);
+        const bs = new Date(b.start_time);
+        const be = new Date(b.end_time);
         return !(end <= bs || start >= be);
       });
 
@@ -1038,6 +1052,7 @@ const BookRoom: React.FC = () => {
     }
   }
 
+  // UPDATED onSubmit function untuk handle timezone dengan benar
   const onSubmit = async (data: FormValues) => {
     // Validation for 'Other' purpose
     if (data.purpose === 'Other' && (!data.attachments || data.attachments.length === 0)) {
@@ -1081,11 +1096,25 @@ const BookRoom: React.FC = () => {
 
       userId = existingUser?.id || null;
 
+      // Logic baru: Kurangi 7 jam dari waktu input sebelum kirim ke DB
+      const adjustMinus7Hours = (dateStr: string) => {
+        if (!dateStr) return null;
+        const date = new Date(dateStr);
+        // Kurangi 7 jam
+        date.setHours(date.getHours() - 7);
+        // Format manual agar stringnya bersih: YYYY-MM-DDTHH:mm:ss+00
+        // Kita gunakan format date-fns untuk konsistensi
+        return format(date, "yyyy-MM-dd'T'HH:mm:ss'+00'");
+      };
+
+      const startTimeISO = data.start_datetime ? adjustMinus7Hours(data.start_datetime) : null;
+      const endTimeISO = data.end_datetime ? adjustMinus7Hours(data.end_datetime) : null;
+
       const bookingData = {
         room_id: roomId,
         user_id: userId,
-        start_time: data.start_datetime,
-        end_time: data.end_datetime,
+        start_time: startTimeISO,
+        end_time: endTimeISO,
         purpose: data.purpose,
         sks: showSKSField ? data.sks : null,
         class_type: showSKSField ? data.class_type : null,
@@ -1868,7 +1897,7 @@ const BookRoom: React.FC = () => {
                             <li>• {getText('Book before taking the room key', 'Lakukan Booking Sebelum Mengambil Kunci Ruangan')}</li>
                           </ul>
                           <div className="mt-2"><hr /></div>
-                          <button className="mt-2 text-xs"><b>{getText('Contact Person', 'Contact Person')}: <a href="https://wa.me/625869554147">+62 858-6955-4147</a></b></button>
+                          <h3 className="mt-2 text-xs"><b>{getText('Contact Person', 'Contact Person')}: 089604819029 (Muharom)</b></h3>
                         </div>
                       </div>
                     </div>
