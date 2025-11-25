@@ -107,7 +107,7 @@ interface CombinedSchedule {
   borderColor: string;
 }
 
-// Custom DateTime Picker Modal Component - UPDATED untuk 24 jam
+// Custom DateTime Picker Modal Component
 const DateTimePickerModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -139,7 +139,6 @@ const DateTimePickerModal: React.FC<{
 
   const handleConfirm = () => {
     if (date && time) {
-      // Buat datetime tanpa timezone conversion disini (masih lokal)
       const datetime = `${date}T${time}`;
       onSelect(datetime);
       onClose();
@@ -204,7 +203,7 @@ const DateTimePickerModal: React.FC<{
   );
 };
 
-// Helper functions untuk format datetime
+// Helper functions
 const getLocalDateString = (date = new Date()) => {
   return format(date, 'yyyy-MM-dd');
 };
@@ -229,11 +228,6 @@ const formatTime = (iso?: string) => {
   }
 };
 
-// Fungsi helper ini tidak lagi digunakan di submit, tapi dibiarkan untuk backward compatibility jika ada fitur lain yg butuh
-const createLocalISOString = (dateTimeString: string): string => {
-  return dateTimeString + ':00';
-};
-
 const BookRoom: React.FC = () => {
   const { getText } = useLanguage();
   const { register, handleSubmit, setValue, getValues, watch, formState: { errors }, reset } = useForm<FormValues>({
@@ -245,23 +239,16 @@ const BookRoom: React.FC = () => {
     },
   });
 
-  // State untuk tab
   const [activeTab, setActiveTab] = useState<'course' | 'normal'>('course');
-   
-  // State untuk SKS visibility
   const [showSKSField, setShowSKSField] = useState(false);
-   
-  // State untuk Pilih Matkul
   const [todaySchedules, setTodaySchedules] = useState<LectureSchedule[]>([]);
   const [courseSearch, setCourseSearch] = useState("");
   const [selectedCourse, setSelectedCourse] = useState<LectureSchedule | null>(null);
   const [loadingCourses, setLoadingCourses] = useState(false);
-   
-  // State untuk menampilkan pending bookings
   const [showPendingBookings, setShowPendingBookings] = useState(false);
   const [pendingBookings, setPendingBookings] = useState<Booking[]>([]);
   const [loadingPendingBookings, setLoadingPendingBookings] = useState(false);
-
+  
   const [rooms, setRooms] = useState<Room[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -275,13 +262,11 @@ const BookRoom: React.FC = () => {
   const [combinedSchedules, setCombinedSchedules] = useState<CombinedSchedule[]>([]);
   const [loadingSchedules, setLoadingSchedules] = useState(false);
   const [targetDate, setTargetDate] = useState(getLocalDateString());
-   
-  // State untuk auto-register
+  
   const [isManualEntry, setIsManualEntry] = useState(false);
   const [studyPrograms, setStudyPrograms] = useState<any[]>([]);
   const [selectedProgram, setSelectedProgram] = useState<any>(null);
-   
-  // State untuk DateTime Picker Modal
+  
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
 
@@ -464,7 +449,7 @@ const BookRoom: React.FC = () => {
     }
   }
 
-  // Fetch rooms from Supabase
+  // Enhanced room fetching with complete schedule checking
   async function fetchRooms(selectedDate: string) {
     setLoadingRooms(true);
     try {
@@ -514,6 +499,7 @@ const BookRoom: React.FC = () => {
         },
       }));
 
+      // Fetch all schedule data
       await Promise.all([
         fetchRoomBookings(mappedRooms, selectedDate),
         fetchLectureSchedules(mappedRooms, selectedDate),
@@ -595,7 +581,7 @@ const BookRoom: React.FC = () => {
     }
   }
 
-  // Fetch session schedules
+  // Fetch session schedules (final sessions)
   async function fetchSessionSchedules(roomsList: Room[], selectedDate: string) {
     try {
       const { data: sessionData, error } = await supabase
@@ -697,13 +683,134 @@ const BookRoom: React.FC = () => {
       const dayNamesIndonesian = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
       const dayNameIndonesian = dayNamesIndonesian[targetDateObj.getDay()];
 
-      // Fetch all schedules implementation remains the same...
+      // 1. Fetch lecture schedules
+      const { data: lectureData, error: lectureError } = await supabase
+        .from('lecture_schedules')
+        .select('*')
+        .eq('day', dayNameIndonesian)
+        .ilike('room', `%${roomName}%`)
+        .order('start_time');
 
-      combined.sort((a, b) => a.start_time.localeCompare(b.start_time));
+      if (!lectureError && lectureData) {
+        lectureData.forEach(lecture => {
+          combined.push({
+            id: lecture.id,
+            type: 'lecture',
+            start_time: lecture.start_time?.substring(0, 5) || '',
+            end_time: lecture.end_time?.substring(0, 5) || '',
+            title: lecture.course_name || getText('Lecture', 'Kuliah'),
+            subtitle: `${getText('Class', 'Kelas')} ${lecture.class} • ${lecture.subject_study}`,
+            description: `${getText('Lecturer', 'Dosen')}: ${lecture.lecturer || 'TBA'} • ${getText('Semester', 'Semester')} ${lecture.semester}`,
+            icon: BookOpen,
+            color: 'text-blue-700',
+            bgColor: 'bg-blue-50',
+            borderColor: 'border-blue-200'
+          });
+        });
+      }
+
+      // 2. Fetch exam schedules
+      const { data: examData, error: examError } = await supabase
+        .from('exams')
+        .select('*')
+        .eq('room_id', roomId)
+        .eq('date', selectedDate)
+        .order('start_time');
+
+      if (!examError && examData) {
+        examData.forEach(exam => {
+          combined.push({
+            id: exam.id,
+            type: 'exam',
+            start_time: exam.is_take_home ? getText('Take Home', 'Take Home') : exam.start_time?.substring(0, 5) || '',
+            end_time: exam.is_take_home ? '' : exam.end_time?.substring(0, 5) || '',
+            title: `${exam.course_name || getText('UAS Exam', 'Ujian UAS')}`,
+            subtitle: `${exam.student_amount} ${getText('students', 'mahasiswa')} • ${getText('Semester', 'Semester')} ${exam.semester}`,
+            description: `${getText('Class', 'Kelas')} ${exam.class} • ${getText('Inspector', 'Pengawas')}: ${exam.inspector}`,
+            icon: GraduationCap,
+            color: 'text-green-700',
+            bgColor: 'bg-green-50',
+            borderColor: 'border-green-200'
+          });
+        });
+      }
+
+      // 3. Fetch final sessions
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('final_sessions')
+        .select(`
+          *,
+          student:users!student_id(full_name, identity_number)
+        `)
+        .eq('room_id', roomId)
+        .eq('date', selectedDate)
+        .order('start_time');
+
+      if (!sessionError && sessionData) {
+        sessionData.forEach(session => {
+          combined.push({
+            id: session.id,
+            type: 'session',
+            start_time: session.start_time?.substring(0, 5) || '',
+            end_time: session.end_time?.substring(0, 5) || '',
+            title: `${session.student?.full_name || getText('Final Session', 'Sidang Akhir')}`,
+            subtitle: `ID: ${session.student?.identity_number}`,
+            description: `${getText('Supervisor', 'Pembimbing')}: ${session.supervisor} • ${getText('Examiner', 'Penguji')}: ${session.examiner}`,
+            icon: UserCheck,
+            color: 'text-purple-700',
+            bgColor: 'bg-purple-50',
+            borderColor: 'border-purple-200'
+          });
+        });
+      }
+
+      // 4. Fetch bookings
+      const startOfDay = `${selectedDate}T00:00:00Z`;
+      const endOfDay = `${selectedDate}T23:59:59Z`;
+
+      const { data: bookingData, error: bookingError } = await supabase
+        .from('bookings')
+        .select(`
+          *,
+          user:users!user_id(full_name, identity_number)
+        `)
+        .eq('room_id', roomId)
+        .in('status', ['approved', 'borrowed'])
+        .gte('start_time', startOfDay)
+        .lte('start_time', endOfDay)
+        .order('start_time');
+
+      if (!bookingError && bookingData) {
+        bookingData.forEach(booking => {
+          const startDate = new Date(booking.start_time);
+          const endDate = new Date(booking.end_time);
+
+          combined.push({
+            id: booking.id,
+            type: 'booking',
+            start_time: format(startDate, 'HH:mm'),
+            end_time: format(endDate, 'HH:mm'),
+            title: `${booking.purpose || getText('Room Booking', 'Pemesanan Ruangan')}`,
+            subtitle: `${booking.user?.full_name} • ${booking.user?.identity_number}`,
+            description: `${getText('Status', 'Status')}: ${getText('APPROVED', 'DISETUJUI')}`,
+            icon: CalendarIcon,
+            color: 'text-orange-700',
+            bgColor: 'bg-orange-50',
+            borderColor: 'border-orange-200'
+          });
+        });
+      }
+
+      combined.sort((a, b) => {
+        const aTime = a.start_time === getText('Take Home', 'Take Home') ? '00:00' : a.start_time;
+        const bTime = b.start_time === getText('Take Home', 'Take Home') ? '00:00' : b.start_time;
+        return aTime.localeCompare(bTime);
+      });
       setCombinedSchedules(combined);
 
     } catch (error) {
       console.error('Error fetching schedules:', error);
+      alert.error(getText("Failed to load schedule for this room.", "Gagal memuat jadwal untuk ruangan ini."));
     } finally {
       setLoadingSchedules(false);
     }
@@ -721,7 +828,7 @@ const BookRoom: React.FC = () => {
     }
   }, [scheduleModalRoom, targetDate]);
 
-  // Auto-calculate end time when SKS is shown - UPDATED
+  // Auto-calculate end time when SKS is shown
   useEffect(() => {
     if (activeTab === 'normal' && showSKSField && startDateTime && sks && classType) {
       try {
@@ -761,13 +868,15 @@ const BookRoom: React.FC = () => {
     }
   }, [startDateTime, endDateTime]);
 
+  // ENHANCED: Improved room status checking with complete schedule validation
   function getOptimizedRoomStatus(room: Room) {
     if (!room.is_available) {
       return { 
         status: "Unavailable", 
         reason: getText("Room is disabled", "Ruangan dinonaktifkan"), 
         color: "bg-gray-100 text-gray-800 border-gray-200",
-        hasSchedule: false 
+        hasSchedule: false,
+        isAvailable: false
       };
     }
 
@@ -785,14 +894,16 @@ const BookRoom: React.FC = () => {
           status: "Scheduled", 
           reason: getText("Room has scheduled activities", "Ruangan memiliki aktivitas terjadwal"),
           color: "bg-yellow-100 text-yellow-800 border-yellow-200",
-          hasSchedule: true 
+          hasSchedule: true,
+          isAvailable: false
         };
       }
       return { 
         status: "Available", 
         reason: "",
         color: "bg-green-100 text-green-800 border-green-200",
-        hasSchedule: false 
+        hasSchedule: false,
+        isAvailable: true
       };
     }
 
@@ -805,32 +916,21 @@ const BookRoom: React.FC = () => {
           status: "Unavailable", 
           reason: getText("Invalid date/time", "Tanggal/waktu tidak valid"), 
           color: "bg-gray-100 text-gray-800 border-gray-200",
-          hasSchedule: false 
+          hasSchedule: false,
+          isAvailable: false
         };
       }
 
-      const conflicts = (room.targetDateBookings || []).filter((b) => {
-        const bs = new Date(b.start_time);
-        const be = new Date(b.end_time);
-        return !(end <= bs || start >= be);
-      });
-
-      if (conflicts.length > 0) {
+      // Check if room is available for the selected time slot
+      const isAvailable = isRoomAvailableForTimeSlot(room, s, e);
+      
+      if (!isAvailable) {
         return { 
           status: "Conflict", 
-          reason: getText("Conflicting booking exists", "Ada pemesanan lain yang bentrok"), 
-          conflicts,
-          color: "bg-orange-100 text-orange-800 border-orange-200",
-          hasSchedule: true 
-        };
-      }
-
-      if (hasScheduledContent) {
-        return { 
-          status: "Scheduled", 
-          reason: getText("Room has scheduled activities", "Ruangan memiliki aktivitas terjadwal"),
-          color: "bg-yellow-100 text-yellow-800 border-yellow-200",
-          hasSchedule: true 
+          reason: getText("Time conflict with existing schedule", "Bentrok dengan jadwal yang ada"),
+          color: "bg-red-100 text-red-800 border-red-200",
+          hasSchedule: true,
+          isAvailable: false
         };
       }
 
@@ -838,14 +938,16 @@ const BookRoom: React.FC = () => {
         status: "Available", 
         reason: "",
         color: "bg-green-100 text-green-800 border-green-200",
-        hasSchedule: false 
+        hasSchedule: hasScheduledContent,
+        isAvailable: true
       };
     } catch {
       return { 
         status: "Unavailable", 
         reason: getText("Error processing schedule", "Error memproses jadwal"), 
         color: "bg-gray-100 text-gray-800 border-gray-200",
-        hasSchedule: false 
+        hasSchedule: false,
+        isAvailable: false
       };
     }
   }
@@ -936,9 +1038,140 @@ const BookRoom: React.FC = () => {
     }, 100);
   }
 
+  // ENHANCED: Complete room availability check
+  function isRoomAvailableForTimeSlot(room: Room, startTime: string, endTime: string): boolean {
+    try {
+      const start = new Date(startTime);
+      const end = new Date(endTime);
+      
+      if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
+        return false;
+      }
+
+      // Adjust for timezone (subtract 7 hours for database check)
+      const dbStart = new Date(start);
+      const dbEnd = new Date(end);
+      dbStart.setHours(dbStart.getHours() - 7);
+      dbEnd.setHours(dbEnd.getHours() - 7);
+
+      // 1. Check booking conflicts (these are already in UTC in database)
+      if (room.targetDateBookings && room.targetDateBookings.length > 0) {
+        const hasConflict = room.targetDateBookings.some((booking) => {
+          const bookingStart = new Date(booking.start_time);
+          const bookingEnd = new Date(booking.end_time);
+          
+          // Add 7 hours to convert from database UTC to local time
+          bookingStart.setHours(bookingStart.getHours() + 7);
+          bookingEnd.setHours(bookingEnd.getHours() + 7);
+          
+          return !(end <= bookingStart || start >= bookingEnd);
+        });
+        if (hasConflict) return false;
+      }
+
+      // 2. Check lecture schedule conflicts
+      if (room.scheduleDetails?.lectures && room.scheduleDetails.lectures.length > 0) {
+        const hasConflict = room.scheduleDetails.lectures.some((lecture) => {
+          try {
+            // Parse lecture times (format: "HH:mm:ss")
+            const [lectureStartHour, lectureStartMin] = lecture.start_time.split(':').map(Number);
+            const [lectureEndHour, lectureEndMin] = lecture.end_time.split(':').map(Number);
+            
+            // Create date objects for today with lecture times
+            const lectureStart = new Date(start);
+            lectureStart.setHours(lectureStartHour, lectureStartMin, 0, 0);
+            
+            const lectureEnd = new Date(start);
+            lectureEnd.setHours(lectureEndHour, lectureEndMin, 0, 0);
+            
+            return !(end <= lectureStart || start >= lectureEnd);
+          } catch {
+            return false;
+          }
+        });
+        if (hasConflict) return false;
+      }
+
+      // 3. Check exam schedule conflicts
+      if (room.scheduleDetails?.exams && room.scheduleDetails.exams.length > 0) {
+        const hasConflict = room.scheduleDetails.exams.some((exam) => {
+          try {
+            // Parse exam times (format: "HH:mm:ss")
+            const [examStartHour, examStartMin] = exam.start_time.split(':').map(Number);
+            const [examEndHour, examEndMin] = exam.end_time.split(':').map(Number);
+            
+            // Create date objects for today with exam times
+            const examStart = new Date(start);
+            examStart.setHours(examStartHour, examStartMin, 0, 0);
+            
+            const examEnd = new Date(start);
+            examEnd.setHours(examEndHour, examEndMin, 0, 0);
+            
+            return !(end <= examStart || start >= examEnd);
+          } catch {
+            return false;
+          }
+        });
+        if (hasConflict) return false;
+      }
+
+      // 4. Check session schedule conflicts (final sessions)
+      if (room.scheduleDetails?.sessions && room.scheduleDetails.sessions.length > 0) {
+        const hasConflict = room.scheduleDetails.sessions.some((session) => {
+          try {
+            // Parse session times (format: "HH:mm:ss")
+            const [sessionStartHour, sessionStartMin] = session.start_time.split(':').map(Number);
+            const [sessionEndHour, sessionEndMin] = session.end_time.split(':').map(Number);
+            
+            // Create date objects for today with session times
+            const sessionStart = new Date(start);
+            sessionStart.setHours(sessionStartHour, sessionStartMin, 0, 0);
+            
+            const sessionEnd = new Date(start);
+            sessionEnd.setHours(sessionEndHour, sessionEndMin, 0, 0);
+            
+            return !(end <= sessionStart || start >= sessionEnd);
+          } catch {
+            return false;
+          }
+        });
+        if (hasConflict) return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Error checking room availability:", error);
+      return false;
+    }
+  }
+
+  // Helper function untuk ambil tipe ruangan dari nama ruangan
+  function getRoomType(roomName: string): string {
+    const name = roomName.toUpperCase();
+    if (name.includes('GK')) return 'GK';
+    if (name.includes('GLA')) return 'GLA';
+    if (name.includes('LAB')) return 'Lab';
+    if (name.includes('KULIAH') || name.includes('KELAS')) return 'Kuliah';
+    return 'Other';
+  }
+
+  // Helper function untuk dapatkan prioritas tipe ruangan
+  function getRoomTypePriority(roomType: string): number {
+    const priorityMap: { [key: string]: number } = {
+      'GK': 1,
+      'GLA': 2,
+      'Kuliah': 3,
+      'Lab': 4,
+      'Other': 5
+    };
+    return priorityMap[roomType] || 5;
+  }
+
+  // ENHANCED: Filtered rooms untuk tab normal - hanya tampilkan yang available
   const filteredAndSortedRooms = useMemo(() => {
     let filtered = rooms;
 
+    // Apply search filter
     if (searchTerm && searchTerm.trim() !== '') {
       const searchLower = searchTerm.toLowerCase().trim();
       filtered = filtered.filter(room => {
@@ -954,30 +1187,57 @@ const BookRoom: React.FC = () => {
       });
     }
 
+    // Filter by in-use status
     if (!showInUse) {
       filtered = filtered.filter(room => !room.inUse);
     }
 
-    filtered.sort((a, b) => {
-      const statusA = getOptimizedRoomStatus(a).status;
-      const statusB = getOptimizedRoomStatus(b).status;
-      
-      if (statusA === statusB) {
+    // IMPORTANT: For "normal" tab with selected time, only show available rooms
+    if (activeTab === 'normal' && startDateTime && endDateTime) {
+      // Filter to only show available rooms
+      filtered = filtered.filter(room => {
+        const status = getOptimizedRoomStatus(room);
+        return status.isAvailable === true;
+      });
+
+      // Sort available rooms by type and capacity
+      filtered.sort((a, b) => {
+        // Priority 1: Room type (GK > GLA > Kuliah > Lab)
+        const aType = getRoomType(a.name);
+        const bType = getRoomType(b.name);
+        const aTypePriority = getRoomTypePriority(aType);
+        const bTypePriority = getRoomTypePriority(bType);
+        
+        if (aTypePriority !== bTypePriority) {
+          return aTypePriority - bTypePriority;
+        }
+
+        // Priority 2: Capacity (large to small)
         return (b.capacity ?? 0) - (a.capacity ?? 0);
-      }
-      
-      const priority: { [key: string]: number } = {
-        'Available': 1,
-        'Scheduled': 2, 
-        'Conflict': 3,
-        'Unavailable': 4
-      };
-      
-      return (priority[statusA] || 5) - (priority[statusB] || 5);
-    });
+      });
+    } else {
+      // Default sorting when time is not selected
+      filtered.sort((a, b) => {
+        const statusA = getOptimizedRoomStatus(a).status;
+        const statusB = getOptimizedRoomStatus(b).status;
+        
+        if (statusA === statusB) {
+          return (b.capacity ?? 0) - (a.capacity ?? 0);
+        }
+        
+        const priority: { [key: string]: number } = {
+          'Available': 1,
+          'Scheduled': 2, 
+          'Conflict': 3,
+          'Unavailable': 4
+        };
+        
+        return (priority[statusA] || 5) - (priority[statusB] || 5);
+      });
+    }
 
     return filtered;
-  }, [rooms, searchTerm, showInUse, startDateTime, endDateTime]);
+  }, [rooms, searchTerm, showInUse, startDateTime, endDateTime, activeTab]);
 
   const filteredCourses = useMemo(() => {
     if (!courseSearch) return todaySchedules;
@@ -1027,6 +1287,16 @@ const BookRoom: React.FC = () => {
   }
 
   function handleRoomSelect(room: Room) {
+    // Check if room is available before selecting
+    const status = getOptimizedRoomStatus(room);
+    if (!status.isAvailable) {
+      alert.error(
+        getText("This room is not available for the selected time", "Ruangan ini tidak tersedia untuk waktu yang dipilih"),
+        ""
+      );
+      return;
+    }
+    
     setSelectedRoom(room);
     setValue("room_id", room.id);
   }
@@ -1052,7 +1322,7 @@ const BookRoom: React.FC = () => {
     }
   }
 
-  // UPDATED onSubmit function untuk handle timezone dengan benar
+  // Submit handler dengan pengurangan 7 jam untuk database
   const onSubmit = async (data: FormValues) => {
     // Validation for 'Other' purpose
     if (data.purpose === 'Other' && (!data.attachments || data.attachments.length === 0)) {
@@ -1096,14 +1366,12 @@ const BookRoom: React.FC = () => {
 
       userId = existingUser?.id || null;
 
-      // Logic baru: Kurangi 7 jam dari waktu input sebelum kirim ke DB
+      // Kurangi 7 jam dari waktu input sebelum kirim ke DB
       const adjustMinus7Hours = (dateStr: string) => {
         if (!dateStr) return null;
         const date = new Date(dateStr);
         // Kurangi 7 jam
         date.setHours(date.getHours() - 7);
-        // Format manual agar stringnya bersih: YYYY-MM-DDTHH:mm:ss+00
-        // Kita gunakan format date-fns untuk konsistensi
         return format(date, "yyyy-MM-dd'T'HH:mm:ss'+00'");
       };
 
@@ -1522,6 +1790,21 @@ const BookRoom: React.FC = () => {
                           )}
                         </div>
 
+                        {/* Info: Only available rooms will be shown */}
+                        {startDateTime && endDateTime && (
+                          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <div className="flex items-center space-x-2 text-sm text-blue-800">
+                              <Info className="h-4 w-4" />
+                              <span>
+                                {getText(
+                                  'Only rooms without schedule conflicts will be displayed below',
+                                  'Hanya ruangan tanpa bentrok jadwal yang akan ditampilkan di bawah'
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
                         <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
                           <div className="flex items-center space-x-2 text-sm text-green-800">
                             <Clock className="h-4 w-4" />
@@ -1536,6 +1819,11 @@ const BookRoom: React.FC = () => {
                         <div className="flex items-center space-x-3 mb-6">
                           <Building className="h-6 w-6 text-green-600" />
                           <h2 className="text-xl font-bold text-gray-800">{getText('Select Room', 'Pilih Ruangan')}</h2>
+                          {startDateTime && endDateTime && (
+                            <span className="bg-green-100 text-green-800 text-sm px-3 py-1 rounded-full font-medium">
+                              {filteredAndSortedRooms.length} {getText('available', 'tersedia')}
+                            </span>
+                          )}
                         </div>
 
                         {selectedRoom && (
@@ -1592,20 +1880,7 @@ const BookRoom: React.FC = () => {
                           )}
                         </div>
 
-                        <div className="mb-4">
-                          <label className="flex items-center space-x-2 cursor-pointer">
-                            <input 
-                              type="checkbox" 
-                              checked={showInUse} 
-                              onChange={(e) => setShowInUse(e.target.checked)} 
-                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" 
-                            />
-                            <span className="text-sm text-gray-700">
-                              {getText('Show rooms in use', 'Tampilkan ruangan yang sedang digunakan')}
-                            </span>
-                          </label>
-                        </div>
-
+                        {/* Room list - only showing available rooms when time is selected */}
                         <div className="space-y-3 max-h-80 overflow-y-auto">
                           {loadingRooms ? (
                             <div className="text-center py-8">
@@ -1616,25 +1891,26 @@ const BookRoom: React.FC = () => {
                             <div className="text-center py-8">
                               <Building className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                               <p className="text-gray-600">
-                                {searchTerm 
-                                  ? getText('No rooms match your search', 'Tidak ada ruangan yang cocok dengan pencarian')
-                                  : getText('No rooms available', 'Tidak ada ruangan tersedia')}
+                                {startDateTime && endDateTime
+                                  ? getText('No available rooms for the selected time', 'Tidak ada ruangan tersedia untuk waktu yang dipilih')
+                                  : searchTerm 
+                                    ? getText('No rooms match your search', 'Tidak ada ruangan yang cocok dengan pencarian')
+                                    : getText('Please select date and time first', 'Silakan pilih tanggal dan waktu terlebih dahulu')}
                               </p>
                             </div>
                           ) : (
                             filteredAndSortedRooms.map((room) => {
                               const status = getOptimizedRoomStatus(room);
-                              const isUnavailable = status.status === "Unavailable";
-                              const isConflict = status.status === "Conflict";
+                              const isAvailable = status.isAvailable;
                               const isSelected = selectedRoom?.id === room.id;
                               const cardClasses = `p-4 rounded-lg border-2 transition-all duration-200 ${
                                 isSelected ? "border-blue-500 bg-blue-50" : 
-                                isUnavailable ? "opacity-60 cursor-not-allowed border-gray-200" : 
+                                !isAvailable ? "opacity-60 cursor-not-allowed border-gray-200" : 
                                 "cursor-pointer hover:shadow-md hover:border-blue-300 border-gray-200"
                               } bg-white/50`;
                               
                               return (
-                                <div key={room.id} className={cardClasses} onClick={() => !isUnavailable && handleRoomSelect(room)}>
+                                <div key={room.id} className={cardClasses} onClick={() => isAvailable && handleRoomSelect(room)}>
                                   <div className="flex items-center justify-between mb-2">
                                     <div>
                                       <h4 className="font-semibold text-gray-900">{room.name}</h4>
@@ -1897,7 +2173,18 @@ const BookRoom: React.FC = () => {
                             <li>• {getText('Book before taking the room key', 'Lakukan Booking Sebelum Mengambil Kunci Ruangan')}</li>
                           </ul>
                           <div className="mt-2"><hr /></div>
-                          <h3 className="mt-2 text-xs"><b>{getText('Contact Person', 'Contact Person')}: 089604819029 (Muharom)</b></h3>
+                           <div className="mt-3 pt-3 border-t border-blue-300">
+                            <button
+                              type="button"
+                              onClick={() => window.open('https://wa.me/6285869554147', '_blank')}
+                              className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-lg transition-colors shadow-sm"
+                            >
+                              <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                              </svg>
+                              <span>{getText('Contact Person: 085869554147', 'Contact Person: 085869554147')}</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1924,6 +2211,101 @@ const BookRoom: React.FC = () => {
           value={endDateTime}
           label={getText('Select End Date & Time', 'Pilih Tanggal & Waktu Selesai')}
         />
+
+        {/* Schedule Modal */}
+        {showScheduleModal && scheduleModalRoom && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden">
+              <div className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white p-5 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-white bg-opacity-20 rounded-lg">
+                    <Building className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold">{scheduleModalRoom.name}</h3>
+                    <p className="text-blue-100 text-sm">{scheduleModalRoom.code || getText('No code', 'Tidak ada kode')}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowScheduleModal(false)}
+                  className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-lg transition-colors flex-shrink-0"
+                  title={getText('Close', 'Tutup')}
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+
+              <div className="p-5 overflow-y-auto flex-1">
+                {loadingSchedules ? (
+                  <div className="flex justify-center items-center h-48">
+                    <div className="text-center">
+                      <RefreshCw className="animate-spin h-8 w-8 text-blue-500 mx-auto mb-2" />
+                      <p className="text-sm text-gray-600">{getText('Loading schedule...', 'Memuat jadwal...')}</p>
+                    </div>
+                  </div>
+                ) : combinedSchedules.length > 0 ? (
+                  <div className="space-y-4">
+                    {combinedSchedules.map((schedule, index) => {
+                      const IconComponent = schedule.icon;
+                      return (
+                        <div
+                          key={`${schedule.type}-${schedule.id}-${index}`}
+                          className={`${schedule.bgColor} rounded-lg p-4 border-2 ${schedule.borderColor} hover:shadow-md transition-all duration-200`}
+                        >
+                          <div className="flex items-start space-x-3 mb-3">
+                            <div className="p-2 bg-white rounded-lg shadow-sm flex-shrink-0">
+                              <IconComponent className={`h-5 w-5 ${schedule.color}`} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center space-x-2 mb-1 flex-wrap gap-2">
+                                <span className={`text-xs font-bold ${schedule.color} bg-white px-2.5 py-1 rounded-full uppercase tracking-wider flex-shrink-0`}>
+                                  {schedule.type === 'lecture' ? getText('Lecture', 'Kuliah') :
+                                    schedule.type === 'exam' ? getText('Exam', 'UAS') :
+                                      schedule.type === 'session' ? getText('Session', 'Sidang') :
+                                        getText('Booking', 'Booking')}
+                                </span>
+                                <span className="font-bold text-gray-800 text-sm">
+                                  {schedule.end_time ?
+                                    `${schedule.start_time} - ${schedule.end_time}` :
+                                    schedule.start_time
+                                  }
+                                </span>
+                              </div>
+                              <div className="font-bold text-gray-900 text-base leading-snug">
+                                {schedule.title}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1 ml-11">
+                            {schedule.subtitle && (
+                              <div className={`text-sm ${schedule.color} font-semibold`}>
+                                {schedule.subtitle}
+                              </div>
+                            )}
+                            {schedule.description && (
+                              <div className="text-sm text-gray-700">
+                                {schedule.description}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-16 text-gray-500">
+                    <CalendarIcon className="h-16 w-16 mx-auto mb-4 opacity-40" />
+                    <p className="text-lg font-semibold mb-2">{getText('No schedule', 'Tidak ada jadwal')}</p>
+                    <p className="text-sm text-gray-600">
+                      {getText('This room has no activities scheduled for this date', 'Ruangan ini tidak memiliki aktivitas terjadwal untuk tanggal ini')}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );
