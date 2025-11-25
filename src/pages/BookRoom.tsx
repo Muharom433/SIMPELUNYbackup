@@ -1868,7 +1868,7 @@ const BookRoom: React.FC = () => {
                             <li>• {getText('Book before taking the room key', 'Lakukan Booking Sebelum Mengambil Kunci Ruangan')}</li>
                           </ul>
                           <div className="mt-2"><hr /></div>
-                          <h3 className="mt-2 text-xs"><b>{getText('Contact Person', 'Contact Person')}: <a href="https://wa.me/+62895380131878">+62 858-6955-4147</a></b></h3>
+                          <h3 className="mt-2 text-xs"><b>{getText('Contact Person', 'Contact Person')}: <a href="https://wa.me/+625869554147">+62 858-6955-4147</a></b></h3>
                         </div>
                       </div>
                     </div>
