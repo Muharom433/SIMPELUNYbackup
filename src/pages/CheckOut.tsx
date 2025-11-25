@@ -1320,7 +1320,7 @@ const CheckOut: React.FC = () => {
                       </ul>
                       <div></div>
                         <hr></hr>
-                        <h3><b><a href="https://wa.me/+62895380131878">+62 858-6955-4147</a></b></h3>
+                        <button><b><a href="https://wa.me/+625869554147">+62 858-6955-4147</a></b></button>
                     </div>
                   </div>
                 </div>
