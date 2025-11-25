@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-
 import {
   Calendar,
   Search,
@@ -42,6 +41,7 @@ import {
   HandHeart,
   ArrowRight,
   Bell,
+  Camera,
 } from 'lucide-react';
 
 import { supabase } from '../lib/supabase';
@@ -49,7 +49,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { BookingWithDetails } from '../types';
 import { alert } from '../components/Alert/AlertHelper';
-import { format, isAfter, isBefore, parseISO } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import EquipmentQuantityManager from '../lib/equipmentQuantityManager';
 
 interface Booking {
@@ -93,6 +93,392 @@ interface Booking {
   };
 }
 
+// Edit Booking Modal Component
+interface EditBookingModalProps {
+  booking: Booking;
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (bookingId: string, updates: any) => Promise<void>;
+  rooms: any[];
+  allUsers: any[];
+  allEquipment: any[];
+}
+
+const EditBookingModal: React.FC<EditBookingModalProps> = ({
+  booking,
+  isOpen,
+  onClose,
+  onSave,
+  rooms,
+  allUsers,
+  allEquipment
+}) => {
+  const { getText } = useLanguage();
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    user_id: booking.user_id || '',
+    room_id: booking.room_id || '',
+    start_time: '',
+    end_time: '',
+    purpose: booking.purpose || '',
+    status: booking.status || 'pending',
+    sks: booking.sks || 3,
+    class_type: booking.class_type || 'theory',
+    notes: booking.notes || ''
+  });
+  
+  const [searchUser, setSearchUser] = useState('');
+  const [searchRoom, setSearchRoom] = useState('');
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [showRoomDropdown, setShowRoomDropdown] = useState(false);
+  const [selectedRoom, setSelectedRoom] = useState<any>(null);
+  const [roomEquipment, setRoomEquipment] = useState<any[]>([]);
+
+  // Format datetime untuk input (tanpa timezone conversion)
+  useEffect(() => {
+    if (booking) {
+      // Parse datetime langsung tanpa konversi timezone
+      const startTime = booking.start_time ? 
+        format(parseISO(booking.start_time), "yyyy-MM-dd'T'HH:mm") : '';
+      const endTime = booking.end_time ? 
+        format(parseISO(booking.end_time), "yyyy-MM-dd'T'HH:mm") : '';
+      
+      setFormData({
+        ...formData,
+        user_id: booking.user_id || '',
+        room_id: booking.room_id || '',
+        start_time: startTime,
+        end_time: endTime,
+        purpose: booking.purpose || '',
+        status: booking.status || 'pending',
+        sks: booking.sks || 3,
+        class_type: booking.class_type || 'theory',
+        notes: booking.notes || ''
+      });
+      
+      // Set initial room
+      const room = rooms.find(r => r.id === booking.room_id);
+      if (room) {
+        setSelectedRoom(room);
+        setSearchRoom(room.name);
+        fetchRoomEquipment(room.id);
+      }
+      
+      // Set initial user
+      const user = allUsers.find(u => u.id === booking.user_id);
+      if (user) {
+        setSearchUser(`${user.full_name} (${user.identity_number})`);
+      }
+    }
+  }, [booking]);
+
+  // Fetch room equipment when room changes
+  const fetchRoomEquipment = async (roomId: string) => {
+    try {
+      const { data: equipment, error } = await supabase
+        .from('equipment')
+        .select('*')
+        .eq('rooms_id', roomId)
+        .order('name');
+      
+      if (error) throw error;
+      setRoomEquipment(equipment || []);
+    } catch (error) {
+      console.error('Error fetching room equipment:', error);
+      setRoomEquipment([]);
+    }
+  };
+
+  const handleRoomChange = (room: any) => {
+    setSelectedRoom(room);
+    setFormData({ ...formData, room_id: room.id });
+    setSearchRoom(room.name);
+    setShowRoomDropdown(false);
+    fetchRoomEquipment(room.id);
+  };
+
+  const handleUserChange = (user: any) => {
+    setFormData({ ...formData, user_id: user.id });
+    setSearchUser(`${user.full_name} (${user.identity_number})`);
+    setShowUserDropdown(false);
+  };
+
+  const handleSubmit = async () => {
+    setLoading(true);
+    try {
+      // Prepare update data dengan format waktu yang benar
+      const updates = {
+        ...formData,
+        start_time: formData.start_time ? `${formData.start_time}:00` : null,
+        end_time: formData.end_time ? `${formData.end_time}:00` : null,
+        equipment_requested: roomEquipment.map(eq => eq.id),
+        equipment_quantities: roomEquipment.map(eq => eq.default_quantity || 1),
+        updated_at: new Date().toISOString()
+      };
+      
+      await onSave(booking.id, updates);
+      onClose();
+    } catch (error) {
+      console.error('Error updating booking:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredUsers = allUsers.filter(user =>
+    user.full_name?.toLowerCase().includes(searchUser.toLowerCase()) ||
+    user.identity_number?.toLowerCase().includes(searchUser.toLowerCase())
+  );
+
+  const filteredRooms = rooms.filter(room =>
+    room.name?.toLowerCase().includes(searchRoom.toLowerCase()) ||
+    room.code?.toLowerCase().includes(searchRoom.toLowerCase())
+  );
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold">{getText('Edit Booking', 'Edit Pemesanan')}</h2>
+              <p className="mt-1 opacity-90">
+                {getText('Update booking information', 'Perbarui informasi pemesanan')}
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+          <div className="space-y-6">
+            {/* User Selection */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {getText('User', 'Pengguna')}
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchUser}
+                  onChange={(e) => {
+                    setSearchUser(e.target.value);
+                    setShowUserDropdown(true);
+                  }}
+                  onFocus={() => setShowUserDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowUserDropdown(false), 200)}
+                  placeholder={getText('Search user...', 'Cari pengguna...')}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+                {showUserDropdown && filteredUsers.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                    {filteredUsers.slice(0, 10).map((user) => (
+                      <div
+                        key={user.id}
+                        onClick={() => handleUserChange(user)}
+                        className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b last:border-b-0"
+                      >
+                        <div className="font-medium">{user.full_name}</div>
+                        <div className="text-sm text-gray-600">{user.identity_number}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Room Selection with Equipment Preview */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {getText('Room', 'Ruangan')}
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchRoom}
+                  onChange={(e) => {
+                    setSearchRoom(e.target.value);
+                    setShowRoomDropdown(true);
+                  }}
+                  onFocus={() => setShowRoomDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowRoomDropdown(false), 200)}
+                  placeholder={getText('Search room...', 'Cari ruangan...')}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+                {showRoomDropdown && filteredRooms.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                    {filteredRooms.map((room) => (
+                      <div
+                        key={room.id}
+                        onClick={() => handleRoomChange(room)}
+                        className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b last:border-b-0"
+                      >
+                        <div className="font-medium">{room.name}</div>
+                        <div className="text-sm text-gray-600">
+                          {room.code} • {room.capacity} {getText('seats', 'kursi')}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              {/* Show room equipment */}
+              {roomEquipment.length > 0 && (
+                <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="text-sm font-medium text-blue-900 mb-2">
+                    {getText('Room Equipment (will be updated):', 'Peralatan Ruangan (akan diperbarui):')}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {roomEquipment.map((eq) => (
+                      <span key={eq.id} className="px-2 py-1 bg-white text-blue-700 rounded text-xs">
+                        {eq.name} ({eq.quantity} {eq.unit})
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Date Time Fields */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {getText('Start Date & Time', 'Tanggal & Waktu Mulai')}
+                </label>
+                <input
+                  type="datetime-local"
+                  value={formData.start_time}
+                  onChange={(e) => setFormData({...formData, start_time: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {getText('End Date & Time', 'Tanggal & Waktu Selesai')}
+                </label>
+                <input
+                  type="datetime-local"
+                  value={formData.end_time}
+                  onChange={(e) => setFormData({...formData, end_time: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Purpose and Status */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {getText('Purpose', 'Tujuan')}
+                </label>
+                <input
+                  type="text"
+                  value={formData.purpose}
+                  onChange={(e) => setFormData({...formData, purpose: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {getText('Status', 'Status')}
+                </label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({...formData, status: e.target.value as any})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="pending">{getText('Pending', 'Menunggu')}</option>
+                  <option value="approved">{getText('Approved', 'Disetujui')}</option>
+                  <option value="borrowed">{getText('Borrowed', 'Dipinjam')}</option>
+                  <option value="rejected">{getText('Rejected', 'Ditolak')}</option>
+                  <option value="completed">{getText('Completed', 'Selesai')}</option>
+                </select>
+              </div>
+            </div>
+
+            {/* SKS and Class Type */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {getText('SKS', 'SKS')}
+                </label>
+                <select
+                  value={formData.sks}
+                  onChange={(e) => setFormData({...formData, sks: Number(e.target.value)})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  {[1, 2, 3, 4, 5, 6].map(n => (
+                    <option key={n} value={n}>{n} SKS</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {getText('Class Type', 'Tipe Kelas')}
+                </label>
+                <select
+                  value={formData.class_type}
+                  onChange={(e) => setFormData({...formData, class_type: e.target.value as any})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="theory">{getText('Theory', 'Teori')}</option>
+                  <option value="practical">{getText('Practical', 'Praktik')}</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {getText('Notes', 'Catatan')}
+              </label>
+              <textarea
+                value={formData.notes}
+                onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                rows={3}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-end space-x-3 pt-6 border-t">
+              <button
+                onClick={onClose}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+              >
+                {getText('Cancel', 'Batal')}
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={loading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2 inline" />
+                    {getText('Saving...', 'Menyimpan...')}
+                  </>
+                ) : (
+                  getText('Save Changes', 'Simpan Perubahan')
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Main BookingManagement Component
 const BookingManagement: React.FC = () => {
   const { profile } = useAuth();
   const { getText } = useLanguage();
@@ -125,9 +511,11 @@ const BookingManagement: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [showBorrowConfirm, setShowBorrowConfirm] = useState<string | null>(null);
   
-  // Schedule states
-  const [combinedSchedules, setCombinedSchedules] = useState<any[]>([]);
-  const [loadingSchedules, setLoadingSchedules] = useState(false);
+  // Edit modal states
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [allRooms, setAllRooms] = useState<any[]>([]);
   
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
@@ -164,22 +552,16 @@ const BookingManagement: React.FC = () => {
     };
   }, []);
 
+  // Fetch all users and rooms for edit modal
+  useEffect(() => {
+    fetchAllUsers();
+    fetchAllRooms();
+  }, []);
+
   // Refetch data when filters or pagination change
   useEffect(() => {
     fetchBookings();
   }, [currentPage, searchTerm, statusFilter, dateFilter]);
-
-  // Fetch combined schedules when detail modal is opened
-  useEffect(() => {
-    if (showDetailModal && selectedBooking && selectedBooking.room) {
-      const bookingDate = format(new Date(selectedBooking.start_time), 'yyyy-MM-dd');
-      fetchCombinedSchedulesForRoom(
-        selectedBooking.room.id,
-        selectedBooking.room.name,
-        bookingDate
-      );
-    }
-  }, [showDetailModal, selectedBooking]);
 
   // Initialize all data
   const initializeData = async () => {
@@ -190,7 +572,57 @@ const BookingManagement: React.FC = () => {
     ]);
   };
 
-  // FETCH BOOKINGS
+  // Fetch all users function
+  const fetchAllUsers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select(`
+          id,
+          full_name,
+          identity_number,
+          phone_number,
+          email,
+          role,
+          study_program:study_programs(
+            name,
+            code
+          )
+        `)
+        .order('full_name');
+      
+      if (error) throw error;
+      setAllUsers(data || []);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+    }
+  };
+
+  // Fetch all rooms function
+  const fetchAllRooms = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('rooms')
+        .select(`
+          id,
+          name,
+          code,
+          capacity,
+          is_available,
+          department:departments(
+            name
+          )
+        `)
+        .order('name');
+      
+      if (error) throw error;
+      setAllRooms(data || []);
+    } catch (error) {
+      console.error('Error fetching rooms:', error);
+    }
+  };
+
+  // FETCH BOOKINGS - No timezone conversion
   const fetchBookings = async () => {
     try {
       setLoading(true);
@@ -320,143 +752,37 @@ const BookingManagement: React.FC = () => {
     }
   };
 
-  // FETCH COMBINED SCHEDULES FOR ROOM
-  const fetchCombinedSchedulesForRoom = async (roomId: string, roomName: string, bookingStartDate: string) => {
-    setLoadingSchedules(true);
+  // HANDLE EDIT BOOKING
+  const handleEditBooking = async (bookingId: string, updates: any) => {
     try {
-      const combined: any[] = [];
+      console.log('Updating booking with data:', updates);
       
-      // Get day name in Indonesian
-      const dayNamesIndonesian = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
-      const dayNameIndonesian = dayNamesIndonesian[new Date(bookingStartDate).getDay()];
-      
-      console.log(`📅 Fetching combined schedules for room ${roomName} on ${bookingStartDate} (${dayNameIndonesian})`);
-
-      // 1. Fetch lecture schedules
-      const { data: lectureData } = await supabase
-        .from('lecture_schedules')
-        .select('*')
-        .eq('day', dayNameIndonesian)
-        .ilike('room', `%${roomName}%`)
-        .order('start_time');
-      
-      if (lectureData) {
-        lectureData.forEach(lecture => {
-          combined.push({
-            id: lecture.id,
-            type: 'lecture',
-            start_time: lecture.start_time?.substring(0, 5) || '',
-            end_time: lecture.end_time?.substring(0, 5) || '',
-            title: lecture.course_name || getText('Lecture', 'Kuliah'),
-            subtitle: `${getText('Class', 'Kelas')} ${lecture.class} • ${lecture.subject_study}`,
-            description: `${getText('Lecturer', 'Dosen')}: ${lecture.lecturer || 'TBA'} • ${getText('Semester', 'Semester')} ${lecture.semester}`,
-            icon: BookOpen,
-            color: 'text-blue-700',
-            bgColor: 'bg-blue-50',
-            borderColor: 'border-blue-200'
-          });
-        });
-      }
-
-      // 2. Fetch exam schedules
-      const { data: examData } = await supabase
-        .from('exams')
-        .select('*')
-        .eq('room_id', roomId)
-        .eq('date', bookingStartDate)
-        .order('start_time');
-      
-      if (examData) {
-        examData.forEach(exam => {
-          combined.push({
-            id: exam.id,
-            type: 'exam',
-            start_time: exam.start_time?.substring(0, 5) || '',
-            end_time: exam.end_time?.substring(0, 5) || '',
-            title: exam.course_name || getText('UAS Exam', 'Ujian UAS'),
-            subtitle: `${exam.student_amount} ${getText('students', 'mahasiswa')} • ${getText('Semester', 'Semester')} ${exam.semester}`,
-            description: `${getText('Class', 'Kelas')} ${exam.class} • ${getText('Inspector', 'Pengawas')}: ${exam.inspector}`,
-            icon: GraduationCap,
-            color: 'text-green-700',
-            bgColor: 'bg-green-50',
-            borderColor: 'border-green-200'
-          });
-        });
-      }
-
-      // 3. Fetch final sessions
-      const { data: sessionData } = await supabase
-        .from('final_sessions')
-        .select(`
-          *,
-          student:users!student_id(full_name, identity_number)
-        `)
-        .eq('room_id', roomId)
-        .eq('date', bookingStartDate)
-        .order('start_time');
-      
-      if (sessionData) {
-        sessionData.forEach(session => {
-          combined.push({
-            id: session.id,
-            type: 'session',
-            start_time: session.start_time?.substring(0, 5) || '',
-            end_time: session.end_time?.substring(0, 5) || '',
-            title: session.student?.full_name || getText('Final Session', 'Sidang Akhir'),
-            subtitle: `ID: ${session.student?.identity_number}`,
-            description: `${getText('Supervisor', 'Pembimbing')}: ${session.supervisor} • ${getText('Examiner', 'Penguji')}: ${session.examiner}`,
-            icon: GraduationCap,
-            color: 'text-purple-700',
-            bgColor: 'bg-purple-50',
-            borderColor: 'border-purple-200'
-          });
-        });
-      }
-
-      // 4. Fetch bookings for this date
-      const startOfDay = `${bookingStartDate}T00:00:00Z`;
-      const endOfDay = `${bookingStartDate}T23:59:59Z`;
-      
-      const { data: bookingData } = await supabase
+      // Update booking in database
+      const { error } = await supabase
         .from('bookings')
-        .select(`
-          *,
-          user:users!user_id(full_name, identity_number)
-        `)
-        .eq('room_id', roomId)
-        .in('status', ['approved', 'borrowed'])
-        .gte('start_time', startOfDay)
-        .lte('start_time', endOfDay)
-        .order('start_time');
+        .update(updates)
+        .eq('id', bookingId);
       
-      if (bookingData) {
-        bookingData.forEach(booking => {
-          const startDate = new Date(booking.start_time);
-          const endDate = new Date(booking.end_time);
-          
-          combined.push({
-            id: booking.id,
-            type: 'booking',
-            start_time: format(startDate, 'HH:mm'),
-            end_time: format(endDate, 'HH:mm'),
-            title: booking.purpose || getText('Room Booking', 'Pemesanan Ruangan'),
-            subtitle: `${booking.user?.full_name} • ${booking.user?.identity_number}`,
-            description: `${getText('Status', 'Status')}: ${booking.status === 'approved' ? getText('APPROVED', 'DISETUJUI') : getText('BORROWED', 'DIPINJAM')}`,
-            icon: Calendar,
-            color: 'text-orange-700',
-            bgColor: 'bg-orange-50',
-            borderColor: 'border-orange-200'
-          });
-        });
-      }
-
-      combined.sort((a, b) => a.start_time.localeCompare(b.start_time));
-      setCombinedSchedules(combined);
-
-    } catch (error) {
-      console.error('Error fetching combined schedules:', error);
-    } finally {
-      setLoadingSchedules(false);
+      if (error) throw error;
+      
+      alert.success(
+        getText('Booking updated successfully', 'Pemesanan berhasil diperbarui')
+      );
+      
+      // Refresh data
+      await Promise.all([
+        fetchBookings(),
+        fetchBookingStats()
+      ]);
+      
+      setShowEditModal(false);
+      setEditingBooking(null);
+      
+    } catch (error: any) {
+      console.error('Error updating booking:', error);
+      alert.error(
+        error.message || getText('Failed to update booking', 'Gagal memperbarui pemesanan')
+      );
     }
   };
 
@@ -512,277 +838,235 @@ const BookingManagement: React.FC = () => {
 
   // HANDLE BORROW UPDATE (APPROVED -> BORROWED)
   const handleBorrowUpdate = async (bookingId: string) => {
-  try {
-    setProcessingIds(prev => new Set(prev).add(bookingId));
-    
-    console.log('📦 Processing borrow request...');
-    
-    const booking = bookings.find(b => b.id === bookingId);
-    if (!booking) {
-      throw new Error('Booking not found');
-    }
+    try {
+      setProcessingIds(prev => new Set(prev).add(bookingId));
+      
+      console.log('📦 Processing borrow request...');
+      
+      const booking = bookings.find(b => b.id === bookingId);
+      if (!booking) {
+        throw new Error('Booking not found');
+      }
 
-    if (booking.status !== 'approved') {
-      throw new Error('Only approved bookings can be borrowed');
-    }
+      if (booking.status !== 'approved') {
+        throw new Error('Only approved bookings can be borrowed');
+      }
 
-    // Parse equipment dan quantities
-    const equipmentList = parseEquipmentRequested(booking.equipment_requested);
-    const quantities = getEquipmentQuantities(booking);
-    
-    console.log('📋 Equipment and quantities:', {
-      equipmentList,
-      quantities,
-      rawEquipmentRequested: booking.equipment_requested,
-      rawEquipmentQuantities: booking.equipment_quantities
-    });
-
-    // Check equipment availability before borrowing
-    if (equipmentList.length > 0) {
-      for (let i = 0; i < equipmentList.length; i++) {
-        const equipmentId = equipmentList[i];
-        const quantity = quantities[i] || 1; // Ambil quantity sesuai index
-        
-        console.log(`🔍 Checking equipment ${i}:`, { equipmentId, quantity });
-        
-        const availability = getEquipmentAvailability(equipmentId);
-        
-        if (availability.available < quantity) {
-          throw new Error(`Insufficient equipment quantity for ${equipmentId}. Available: ${availability.available}, Required: ${quantity}`);
+      // Parse equipment dan quantities
+      const equipmentList = parseEquipmentRequested(booking.equipment_requested);
+      const quantities = getEquipmentQuantities(booking);
+      
+      // Check equipment availability before borrowing
+      if (equipmentList.length > 0) {
+        for (let i = 0; i < equipmentList.length; i++) {
+          const equipmentId = equipmentList[i];
+          const quantity = quantities[i] || 1;
+          
+          const availability = getEquipmentAvailability(equipmentId);
+          
+          if (availability.available < quantity) {
+            throw new Error(`Insufficient equipment quantity for ${equipmentId}. Available: ${availability.available}, Required: ${quantity}`);
+          }
         }
       }
-    }
 
-    // Decrease equipment quantities when borrowed
-    if (equipmentList.length > 0) {
-      for (let i = 0; i < equipmentList.length; i++) {
-        const equipmentId = equipmentList[i];
-        const quantity = quantities[i] || 1; // Ambil quantity sesuai index
-        
-        console.log(`📉 Decreasing equipment ${i}:`, { equipmentId, quantity });
-        
-        // PENTING: Kirim quantity sebagai INTEGER, bukan array
-        const { error } = await supabase.rpc('decrease_equipment_quantity', {
-          equipment_id: equipmentId,
-          decrease_by: quantity // Ini harus INTEGER, bukan array
-        });
-        
-        if (error) {
-          console.error(`❌ Failed to decrease equipment ${equipmentId}:`, error);
-          throw new Error(`Failed to update equipment ${equipmentId}: ${error.message}`);
+      // Decrease equipment quantities when borrowed
+      if (equipmentList.length > 0) {
+        for (let i = 0; i < equipmentList.length; i++) {
+          const equipmentId = equipmentList[i];
+          const quantity = quantities[i] || 1;
+          
+          const { error } = await supabase.rpc('decrease_equipment_quantity', {
+            equipment_id: equipmentId,
+            decrease_by: quantity
+          });
+          
+          if (error) {
+            console.error(`❌ Failed to decrease equipment ${equipmentId}:`, error);
+            throw new Error(`Failed to update equipment ${equipmentId}: ${error.message}`);
+          }
         }
-        
-        console.log(`✅ Successfully decreased equipment ${equipmentId} by ${quantity}`);
       }
-    }
 
-    // Update booking status to borrowed
-    const { error: bookingError } = await supabase
-      .from('bookings')
-      .update({ 
-        status: 'borrowed',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', bookingId);
+      // Update booking status to borrowed
+      const { error: bookingError } = await supabase
+        .from('bookings')
+        .update({ 
+          status: 'borrowed',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', bookingId);
 
-    if (bookingError) throw bookingError;
-    
-    alert.success(getText('Equipment borrowed successfully', 'Peralatan berhasil dipinjam'));
-    setShowBorrowConfirm(null);
-    
-    // Refresh data
-    await Promise.all([
-      fetchBookings(),
-      fetchAllEquipment(),
-      fetchBookingStats()
-    ]);
-    
-    if (selectedBooking?.id === bookingId) {
-      setShowDetailModal(false);
+      if (bookingError) throw bookingError;
+      
+      alert.success(getText('Equipment borrowed successfully', 'Peralatan berhasil dipinjam'));
+      setShowBorrowConfirm(null);
+      
+      // Refresh data
+      await Promise.all([
+        fetchBookings(),
+        fetchAllEquipment(),
+        fetchBookingStats()
+      ]);
+      
+      if (selectedBooking?.id === bookingId) {
+        setShowDetailModal(false);
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Error processing borrow request:', error);
+      alert.error(error.message || getText('Failed to process borrow request', 'Gagal memproses permintaan peminjaman'));
+    } finally {
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(bookingId);
+        return newSet;
+      });
     }
-    
-  } catch (error: any) {
-    console.error('❌ Error processing borrow request:', error);
-    alert.error(error.message || getText('Failed to process borrow request', 'Gagal memproses permintaan peminjaman'));
-  } finally {
-    setProcessingIds(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(bookingId);
-      return newSet;
-    });
-  }
-};
+  };
 
   // HANDLE DELETE
   const handleDelete = async (bookingId: string) => {
-  try {
-    setProcessingIds(prev => new Set(prev).add(bookingId));
-    
-    console.log('🗑️ Deleting booking...');
-    
-    const booking = bookings.find(b => b.id === bookingId);
-    if (!booking) {
-      throw new Error('Booking not found');
-    }
+    try {
+      setProcessingIds(prev => new Set(prev).add(bookingId));
+      
+      console.log('🗑️ Deleting booking...');
+      
+      const booking = bookings.find(b => b.id === bookingId);
+      if (!booking) {
+        throw new Error('Booking not found');
+      }
 
-    // Restore equipment quantities if booking was approved or borrowed
-    const equipmentList = parseEquipmentRequested(booking.equipment_requested);
-    const quantities = getEquipmentQuantities(booking);
-    
-    if ((booking.status === 'approved' || booking.status === 'borrowed') && equipmentList.length > 0) {
-      for (let i = 0; i < equipmentList.length; i++) {
-        const equipmentId = equipmentList[i];
-        const quantity = quantities[i] || 1; // Ambil quantity sesuai index
-        
-        console.log(`📈 Restoring equipment ${i}:`, { equipmentId, quantity });
-        
-        // PENTING: Kirim quantity sebagai INTEGER, bukan array
-        const { error } = await supabase.rpc('increase_equipment_quantity', {
-          equipment_id: equipmentId,
-          increase_by: quantity // Ini harus INTEGER, bukan array
-        });
-        
-        if (error) {
-          console.error(`❌ Failed to restore equipment ${equipmentId}:`, error);
-          // Don't throw error here, just log it
-        } else {
-          console.log(`✅ Successfully restored equipment ${equipmentId} by ${quantity}`);
+      // Restore equipment quantities if booking was approved or borrowed
+      const equipmentList = parseEquipmentRequested(booking.equipment_requested);
+      const quantities = getEquipmentQuantities(booking);
+      
+      if ((booking.status === 'approved' || booking.status === 'borrowed') && equipmentList.length > 0) {
+        for (let i = 0; i < equipmentList.length; i++) {
+          const equipmentId = equipmentList[i];
+          const quantity = quantities[i] || 1;
+          
+          const { error } = await supabase.rpc('increase_equipment_quantity', {
+            equipment_id: equipmentId,
+            increase_by: quantity
+          });
+          
+          if (error) {
+            console.error(`❌ Failed to restore equipment ${equipmentId}:`, error);
+          }
         }
       }
-    }
 
-    // Delete the booking
-    const { error } = await supabase
-      .from('bookings')
-      .delete()
-      .eq('id', bookingId);
+      // Delete the booking
+      const { error } = await supabase
+        .from('bookings')
+        .delete()
+        .eq('id', bookingId);
 
-    if (error) throw error;
-    
-    alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
-    setShowDeleteConfirm(null);
-    
-    // Refresh data
-    await Promise.all([
-      fetchBookings(),
-      fetchAllEquipment(),
-      fetchBookingStats()
-    ]);
-    
-    if (selectedBooking?.id === bookingId) {
-      setShowDetailModal(false);
+      if (error) throw error;
+      
+      alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
+      setShowDeleteConfirm(null);
+      
+      // Refresh data
+      await Promise.all([
+        fetchBookings(),
+        fetchAllEquipment(),
+        fetchBookingStats()
+      ]);
+      
+      if (selectedBooking?.id === bookingId) {
+        setShowDetailModal(false);
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Error deleting booking:', error);
+      alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
+    } finally {
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(bookingId);
+        return newSet;
+      });
     }
-    
-  } catch (error: any) {
-    console.error('❌ Error deleting booking:', error);
-    alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
-  } finally {
-    setProcessingIds(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(bookingId);
-      return newSet;
-    });
-  }
-};
+  };
 
   // EQUIPMENT UTILITY FUNCTIONS
   const parseEquipmentRequested = (equipmentStr: any): string[] => {
-  // Handle null, undefined, atau empty
-  if (!equipmentStr) return [];
-  
-  // Jika sudah array, return langsung
-  if (Array.isArray(equipmentStr)) {
-    return equipmentStr.map(item => String(item)).filter(item => item);
-  }
-  
-  // Jika bukan string, convert ke string dulu
-  const strValue = String(equipmentStr);
-  
-  // Jika string kosong setelah convert
-  if (!strValue || strValue === 'null' || strValue === 'undefined') return [];
-  
-  try {
-    // Try parsing as JSON first
-    const parsed = JSON.parse(strValue);
-    if (Array.isArray(parsed)) {
-      return parsed.map(item => String(item)).filter(item => item);
+    if (!equipmentStr) return [];
+    
+    if (Array.isArray(equipmentStr)) {
+      return equipmentStr.map(item => String(item)).filter(item => item);
     }
-    // Jika JSON parse berhasil tapi bukan array, treat as single item
-    return [String(parsed)].filter(item => item);
-  } catch {
-    // Fallback to comma-separated values
-    return strValue.split(',').map(item => String(item).trim()).filter(item => item);
-  }
-};
-  
- const parseAttachments = (attachmentStr: any): string[] => {
-  // Handle null, undefined, atau empty
-  if (!attachmentStr) return [];
-  
-  // Jika sudah array, return langsung
-  if (Array.isArray(attachmentStr)) {
-    return attachmentStr.map(item => String(item)).filter(item => item);
-  }
-  
-  // Jika bukan string, convert ke string dulu
-  const strValue = String(attachmentStr);
-  
-  // Jika string kosong setelah convert
-  if (!strValue || strValue === 'null' || strValue === 'undefined') return [];
-  
-  try {
-    // Try parsing as JSON first
-    const parsed = JSON.parse(strValue);
-    if (Array.isArray(parsed)) {
-      return parsed.map(item => String(item)).filter(item => item);
+    
+    const strValue = String(equipmentStr);
+    
+    if (!strValue || strValue === 'null' || strValue === 'undefined') return [];
+    
+    try {
+      const parsed = JSON.parse(strValue);
+      if (Array.isArray(parsed)) {
+        return parsed.map(item => String(item)).filter(item => item);
+      }
+      return [String(parsed)].filter(item => item);
+    } catch {
+      return strValue.split(',').map(item => String(item).trim()).filter(item => item);
     }
-    // Jika JSON parse berhasil tapi bukan array, treat as single item
-    return [String(parsed)].filter(item => item);
-  } catch {
-    // Fallback to comma-separated values
-    return strValue.split(',').map(item => String(item).trim()).filter(item => item);
-  }
-};
+  };
+  
+  const parseAttachments = (attachmentStr: any): string[] => {
+    if (!attachmentStr) return [];
+    
+    if (Array.isArray(attachmentStr)) {
+      return attachmentStr.map(item => String(item)).filter(item => item);
+    }
+    
+    const strValue = String(attachmentStr);
+    
+    if (!strValue || strValue === 'null' || strValue === 'undefined') return [];
+    
+    try {
+      const parsed = JSON.parse(strValue);
+      if (Array.isArray(parsed)) {
+        return parsed.map(item => String(item)).filter(item => item);
+      }
+      return [String(parsed)].filter(item => item);
+    } catch {
+      return strValue.split(',').map(item => String(item).trim()).filter(item => item);
+    }
+  };
 
   const getEquipmentQuantities = (booking: Booking): number[] => {
-  const equipmentList = parseEquipmentRequested(booking.equipment_requested);
-  
-  // Jika tidak ada equipment, return empty array
-  if (equipmentList.length === 0) return [];
-  
-  // Jika equipment_quantities adalah array (yang diharapkan)
-  if (Array.isArray(booking.equipment_quantities)) {
-    const quantities = booking.equipment_quantities.map(qty => Number(qty) || 1);
-    // Pastikan panjang array sama dengan equipment list
-    if (quantities.length === equipmentList.length) {
-      return quantities;
-    }
-    // Jika tidak sama, ambil sebanyak equipment yang ada
-    return equipmentList.map((_, index) => quantities[index] || 1);
-  }
-  
-  // Jika equipment_quantities adalah string JSON array
-  if (typeof booking.equipment_quantities === 'string') {
-    try {
-      const parsed = JSON.parse(booking.equipment_quantities);
-      if (Array.isArray(parsed)) {
-        const quantities = parsed.map(qty => Number(qty) || 1);
-        return equipmentList.map((_, index) => quantities[index] || 1);
+    const equipmentList = parseEquipmentRequested(booking.equipment_requested);
+    
+    if (equipmentList.length === 0) return [];
+    
+    if (Array.isArray(booking.equipment_quantities)) {
+      const quantities = booking.equipment_quantities.map(qty => Number(qty) || 1);
+      if (quantities.length === equipmentList.length) {
+        return quantities;
       }
-    } catch (error) {
-      console.log('Failed to parse equipment_quantities as JSON:', error);
+      return equipmentList.map((_, index) => quantities[index] || 1);
     }
-  }
-  
-  // Jika equipment_quantities adalah single number
-  if (typeof booking.equipment_quantities === 'number' && booking.equipment_quantities > 0) {
-    // Gunakan number yang sama untuk semua equipment
-    return equipmentList.map(() => booking.equipment_quantities);
-  }
-  
-  // Default: 1 untuk setiap equipment
-  return equipmentList.map(() => 1);
-};
+    
+    if (typeof booking.equipment_quantities === 'string') {
+      try {
+        const parsed = JSON.parse(booking.equipment_quantities);
+        if (Array.isArray(parsed)) {
+          const quantities = parsed.map(qty => Number(qty) || 1);
+          return equipmentList.map((_, index) => quantities[index] || 1);
+        }
+      } catch (error) {
+        console.log('Failed to parse equipment_quantities as JSON:', error);
+      }
+    }
+    
+    if (typeof booking.equipment_quantities === 'number' && booking.equipment_quantities > 0) {
+      return equipmentList.map(() => booking.equipment_quantities as number);
+    }
+    
+    return equipmentList.map(() => 1);
+  };
 
   const getEquipmentAvailability = (equipmentId: string) => {
     const equipment = allEquipment.find(eq => eq.id === equipmentId || eq.code === equipmentId || eq.name === equipmentId);
@@ -792,6 +1076,38 @@ const BookingManagement: React.FC = () => {
       available: equipment.quantity,
       total: equipment.quantity,
     };
+  };
+
+  // Format datetime untuk display (tanpa konversi timezone)
+  const formatDateTimeDisplay = (iso?: string) => {
+    if (!iso) return 'N/A';
+    try {
+      // Parse ISO string langsung tanpa konversi timezone
+      const date = parseISO(iso);
+      return format(date, 'MMM d, yyyy HH:mm');
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  const formatTimeDisplay = (iso?: string) => {
+    if (!iso) return 'N/A';
+    try {
+      const date = parseISO(iso);
+      return format(date, 'HH:mm');
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  const formatDateDisplay = (iso?: string) => {
+    if (!iso) return 'N/A';
+    try {
+      const date = parseISO(iso);
+      return format(date, 'MMM d, HH:mm');
+    } catch {
+      return 'N/A';
+    }
   };
 
   // FILTERING
@@ -987,7 +1303,7 @@ const BookingManagement: React.FC = () => {
                         </span>
                       </div>
                       <div className="text-xs text-blue-600 mt-1">
-                        {getText('Last updated', 'Terakhir diperbarui')}: {selectedBooking.updated_at ? format(new Date(selectedBooking.updated_at), 'MMM d, yyyy HH:mm') : 'N/A'}
+                        {getText('Last updated', 'Terakhir diperbarui')}: {formatDateTimeDisplay(selectedBooking.updated_at)}
                       </div>
                     </div>
                   )}
@@ -1069,7 +1385,7 @@ const BookingManagement: React.FC = () => {
                 }
                 
                 return (
-                                    <button
+                  <button
                     key={pageNum}
                     onClick={() => setCurrentPage(pageNum)}
                     disabled={loading}
@@ -1360,13 +1676,13 @@ const BookingManagement: React.FC = () => {
                           <div className="flex items-center text-sm text-gray-600">
                             <Clock className="h-4 w-4 mr-1 text-gray-400" />
                             <span>
-                              {booking.start_time ? format(new Date(booking.start_time), 'MMM d, HH:mm') : 'N/A'}
+                              {formatDateDisplay(booking.start_time)}
                             </span>
                           </div>
                           <div className="text-xs text-gray-500">
                             {booking.end_time ? (
                               <>
-                                                                {getText('to', 'hingga')} {format(new Date(booking.end_time), 'HH:mm')}
+                                {getText('to', 'hingga')} {formatTimeDisplay(booking.end_time)}
                               </>
                             ) : 'N/A'}
                           </div>
@@ -1400,7 +1716,7 @@ const BookingManagement: React.FC = () => {
                           <div className="text-xs text-gray-500">
                             {booking.created_at ? (
                               <>
-                                {getText('Created', 'Dibuat')}: {format(new Date(booking.created_at), 'MMM d, HH:mm')}
+                                {getText('Created', 'Dibuat')}: {formatDateDisplay(booking.created_at)}
                               </>
                             ) : 'N/A'}
                           </div>
@@ -1437,6 +1753,18 @@ const BookingManagement: React.FC = () => {
                             title={getText('View Details', 'Lihat Detail')}
                           >
                             <Eye className="h-4 w-4" />
+                          </button>
+
+                          {/* Edit Button */}
+                          <button
+                            onClick={() => {
+                              setEditingBooking(booking);
+                              setShowEditModal(true);
+                            }}
+                            className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors duration-200"
+                            title={getText('Edit Booking', 'Edit Pemesanan')}
+                          >
+                            <Edit className="h-4 w-4" />
                           </button>
 
                           {availableActions.map((action, index) => (
@@ -1485,6 +1813,22 @@ const BookingManagement: React.FC = () => {
       {/* Pagination */}
       {renderPagination()}
 
+      {/* Edit Modal */}
+      {showEditModal && editingBooking && (
+        <EditBookingModal
+          booking={editingBooking}
+          isOpen={showEditModal}
+          onClose={() => {
+            setShowEditModal(false);
+            setEditingBooking(null);
+          }}
+          onSave={handleEditBooking}
+          rooms={allRooms}
+          allUsers={allUsers}
+          allEquipment={allEquipment}
+        />
+      )}
+
       {/* Detail Modal */}
       {showDetailModal && selectedBooking && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1507,258 +1851,182 @@ const BookingManagement: React.FC = () => {
             </div>
 
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
-              {/* HEADER SECTION: 3 Columns */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                {/* Column 1: User Information */}
-                <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
-                  <h4 className="font-medium text-blue-900 mb-3 flex items-center">
-                    <User className="h-5 w-5 mr-2" />
-                    {getText('User Information', 'Informasi Pengguna')}
-                  </h4>
-                  <div className="space-y-2">
-                    <div className="flex items-center">
-                      <span className="text-sm text-blue-700 w-24">{getText('Name', 'Nama')}:</span>
-                      <span className="text-sm font-medium text-blue-900">
-                        {selectedBooking.user?.full_name || selectedBooking.user_info?.full_name || 'Unknown User'}
-                      </span>
-                    </div>
-                    <div className="flex items-center">
-                      <span className="text-sm text-blue-700 w-24">{getText('ID', 'ID')}:</span>
-                      <span className="text-sm text-blue-900">
-                        {selectedBooking.user?.phone_number|| selectedBooking.user_info?.phone_number || 'No ID'}
-                      </span>
-                    </div>
-                    {selectedBooking.user?.email && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Left Column */}
+                <div className="space-y-6">
+                  {/* User Information */}
+                  <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                    <h4 className="font-medium text-blue-900 mb-3 flex items-center">
+                      <User className="h-5 w-5 mr-2" />
+                      {getText('User Information', 'Informasi Pengguna')}
+                    </h4>
+                    <div className="space-y-2">
                       <div className="flex items-center">
-                        <span className="text-sm text-blue-700 w-24">{getText('Email', 'Email')}:</span>
-                        <span className="text-sm text-blue-900">{selectedBooking.user.email}</span>
+                        <span className="text-sm text-blue-700 w-24">{getText('Name', 'Nama')}:</span>
+                        <span className="text-sm font-medium text-blue-900">
+                          {selectedBooking.user?.full_name || selectedBooking.user_info?.full_name || 'Unknown User'}
+                        </span>
                       </div>
-                    )}
-                    {selectedBooking.user?.study_program && (
                       <div className="flex items-center">
-                        <span className="text-sm text-blue-700 w-24">{getText('Program', 'Program')}:</span>
-                        <span className="text-sm text-blue-900">{selectedBooking.user.study_program.name}</span>
+                        <span className="text-sm text-blue-700 w-24">{getText('ID', 'ID')}:</span>
+                        <span className="text-sm text-blue-900">
+                          {selectedBooking.user?.phone_number|| selectedBooking.user_info?.phone_number || 'No ID'}
+                        </span>
                       </div>
-                    )}
+                      {selectedBooking.user?.email && (
+                        <div className="flex items-center">
+                          <span className="text-sm text-blue-700 w-24">{getText('Email', 'Email')}:</span>
+                          <span className="text-sm text-blue-900">{selectedBooking.user.email}</span>
+                        </div>
+                      )}
+                      {selectedBooking.user?.study_program && (
+                        <div className="flex items-center">
+                          <span className="text-sm text-blue-700 w-24">{getText('Program', 'Program')}:</span>
+                          <span className="text-sm text-blue-900">{selectedBooking.user.study_program.name}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                {/* Column 2: Room Information */}
-                <div className="bg-green-50 rounded-xl p-4 border border-green-200">
-                  <h4 className="font-medium text-green-900 mb-3 flex items-center">
-                    <Building className="h-5 w-5 mr-2" />
-                    {getText('Room Information', 'Informasi Ruangan')}
-                  </h4>
-                  <div className="space-y-2">
-                    <div className="flex items-center">
-                      <span className="text-sm text-green-700 w-24">{getText('Room', 'Ruangan')}:</span>
-                      <span className="text-sm font-medium text-green-900">
-                        {selectedBooking.room?.name || 'Unknown Room'}
-                      </span>
-                    </div>
-                    <div className="flex items-center">
-                      <span className="text-sm text-green-700 w-24">{getText('Code', 'Kode')}:</span>
-                      <span className="text-sm text-green-900">{selectedBooking.room?.code || 'N/A'}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <span className="text-sm text-green-700 w-24">{getText('Capacity', 'Kapasitas')}:</span>
-                      <span className="text-sm text-green-900">
-                        {selectedBooking.room?.capacity || 'N/A'} {getText('people', 'orang')}
-                      </span>
-                    </div>
-                    {selectedBooking.room?.department && (
+                  {/* Room Information */}
+                  <div className="bg-green-50 rounded-xl p-4 border border-green-200">
+                    <h4 className="font-medium text-green-900 mb-3 flex items-center">
+                      <Building className="h-5 w-5 mr-2" />
+                      {getText('Room Information', 'Informasi Ruangan')}
+                    </h4>
+                    <div className="space-y-2">
                       <div className="flex items-center">
-                        <span className="text-sm text-green-700 w-24">{getText('Department', 'Departemen')}:</span>
-                        <span className="text-sm text-green-900">{selectedBooking.room.department.name}</span>
+                        <span className="text-sm text-green-700 w-24">{getText('Room', 'Ruangan')}:</span>
+                        <span className="text-sm font-medium text-green-900">
+                          {selectedBooking.room?.name || 'Unknown Room'}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Column 3: Booking Details */}
-                <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
-                  <h4 className="font-medium text-purple-900 mb-3 flex items-center">
-                    <Calendar className="h-5 w-5 mr-2" />
-                    {getText('Booking Details', 'Detail Pemesanan')}
-                  </h4>
-                  <div className="space-y-3">
-                    <div>
-                      <span className="text-sm text-purple-700">{getText('Purpose', 'Tujuan')}:</span>
-                      <p className="text-sm font-medium text-purple-900 mt-1">{selectedBooking.purpose}</p>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 gap-3">
-                      <div>
-                        <span className="text-sm text-purple-700">{getText('Start Time', 'Waktu Mulai')}:</span>
-                        <p className="text-xs font-medium text-purple-900">
-                          {selectedBooking.start_time ? format(new Date(selectedBooking.start_time), 'MMM d HH:mm') : 'N/A'}
-                        </p>
+                      <div className="flex items-center">
+                        <span className="text-sm text-green-700 w-24">{getText('Code', 'Kode')}:</span>
+                        <span className="text-sm text-green-900">{selectedBooking.room?.code || 'N/A'}</span>
                       </div>
-                      <div>
-                        <span className="text-sm text-purple-700">{getText('End Time', 'Waktu Selesai')}:</span>
-                        <p className="text-xs font-medium text-purple-900">
-                          {selectedBooking.end_time ? format(new Date(selectedBooking.end_time), 'MMM d HH:mm') : 'N/A'}
-                        </p>
+                      <div className="flex items-center">
+                        <span className="text-sm text-green-700 w-24">{getText('Capacity', 'Kapasitas')}:</span>
+                        <span className="text-sm text-green-900">
+                          {selectedBooking.room?.capacity || 'N/A'} {getText('people', 'orang')}
+                        </span>
                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <span className="text-sm text-purple-700">{getText('SKS', 'SKS')}:</span>
-                        <p className="text-xs font-medium text-purple-900">{selectedBooking.sks || 0}</p>
-                      </div>
-                      <div>
-                        <span className="text-sm text-purple-700">{getText('Type', 'Tipe')}:</span>
-                        <p className="text-xs font-medium text-purple-900">
-                          {selectedBooking.class_type === 'theory' ? getText('Theory', 'Teori') : getText('Practical', 'Praktik')}
-                        </p>
-                      </div>
+                      {selectedBooking.room?.department && (
+                        <div className="flex items-center">
+                          <span className="text-sm text-green-700 w-24">{getText('Department', 'Departemen')}:</span>
+                          <span className="text-sm text-green-900">{selectedBooking.room.department.name}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-              </div>
 
-              {/* FULL WIDTH SECTION: Room Schedule */}
-              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-200 overflow-hidden mb-6">
-                <div className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="p-2 bg-white bg-opacity-20 rounded-lg">
-                        <Calendar className="h-5 w-5" />
-                      </div>
+                  {/* Equipment Section */}
+                  {renderEquipmentSection(selectedBooking)}
+                </div>
+
+                {/* Right Column */}
+                <div className="space-y-6">
+                  {/* Booking Details */}
+                  <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
+                    <h4 className="font-medium text-purple-900 mb-3 flex items-center">
+                      <Calendar className="h-5 w-5 mr-2" />
+                      {getText('Booking Details', 'Detail Pemesanan')}
+                    </h4>
+                    <div className="space-y-3">
                       <div>
-                        <h4 className="text-lg font-semibold">{getText('Room Schedule', 'Jadwal Ruangan')}</h4>
-                        <p className="text-indigo-100 text-sm">
-                          {format(new Date(selectedBooking.start_time), 'EEEE, MMMM d, yyyy')}
-                        </p>
+                        <span className="text-sm text-purple-700">{getText('Purpose', 'Tujuan')}:</span>
+                        <p className="text-sm font-medium text-purple-900 mt-1">{selectedBooking.purpose}</p>
                       </div>
-                    </div>
-                    <div className="bg-white bg-opacity-20 rounded-lg px-3 py-1">
-                      <span className="text-sm font-semibold">
-                        {combinedSchedules.length}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-4">
-                  {loadingSchedules ? (
-                    <div className="flex justify-center items-center h-32">
-                      <RefreshCw className="animate-spin h-6 w-6 text-indigo-600"/>
-                    </div>
-                  ) : combinedSchedules.length > 0 ? (
-                    <div className="space-y-3 max-h-96 overflow-y-auto">
-                      {combinedSchedules.map((schedule, index) => {
-                        const IconComponent = schedule.icon;
-                        return (
-                          <div 
-                            key={`${schedule.type}-${schedule.id}-${index}`} 
-                            className={`${schedule.bgColor} rounded-lg p-3 border ${schedule.borderColor}`}
-                          >
-                            <div className="flex items-start justify-between mb-2">
-                              <div className="flex items-center space-x-2">
-                                <div className={`p-1.5 bg-white rounded`}>
-                                  <IconComponent className={`h-3.5 w-3.5 ${schedule.color}`} />
-                                </div>
-                                <span className={`text-xs font-medium ${schedule.color} bg-white px-2 py-0.5 rounded-full`}>
-                                  {schedule.type === 'lecture' ? getText('Lecture', 'Kuliah') : 
-                                   schedule.type === 'exam' ? getText('Exam', 'UAS') :
-                                   schedule.type === 'session' ? getText('Session', 'Sidang') :
-                                   getText('Booking', 'Booking')}
-                                </span>
-                                <span className="font-semibold text-gray-900 text-sm">
-                                  {schedule.end_time ? 
-                                    `${schedule.start_time} - ${schedule.end_time}` : 
-                                    schedule.start_time
-                                  }
-                                </span>
-                              </div>
-                            </div>
-                            
-                            <div className="space-y-1">
-                              <div className="font-semibold text-gray-900 text-sm">
-                                {schedule.title}
-                              </div>
-                              {schedule.subtitle && (
-                                <div className={`text-xs ${schedule.color} font-medium`}>
-                                  {schedule.subtitle}
-                                </div>
-                              )}
-                              {schedule.description && (
-                                <div className="text-xs text-gray-600">
-                                  {schedule.description}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-gray-500">
-                      <Calendar className="h-10 w-10 mx-auto mb-2 opacity-50"/>
-                      <p className="text-sm">{getText('No schedule for this room on this date', 'Tidak ada jadwal untuk ruangan ini pada tanggal ini')}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Status Information & Equipment Row */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                {/* Status Information */}
-                <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                  <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                    <Info className="h-5 w-5 mr-2" />
-                    {getText('Status Information', 'Informasi Status')}
-                  </h4>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-700">{getText('Current Status', 'Status Saat Ini')}:</span>
-                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(selectedBooking.status)}`}>
-                        {getStatusText(selectedBooking.status)}
-                      </span>
-                    </div>
-                    
-                    {/* Simplified Timeline */}
-                    <div className="border-l-2 border-gray-200 pl-4 space-y-3">
-                      <div className="flex items-center space-x-2">
-                        <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                        <div className="flex-1">
-                          <div className="text-sm font-medium text-gray-900">{getText('Created', 'Dibuat')}</div>
-                          <div className="text-xs text-gray-500">
-                            {selectedBooking.created_at ? format(new Date(selectedBooking.created_at), 'MMM d, yyyy HH:mm') : 'N/A'}
-                          </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <span className="text-sm text-purple-700">{getText('Start Time', 'Waktu Mulai')}:</span>
+                          <p className="text-sm font-medium text-purple-900">
+                            {formatDateTimeDisplay(selectedBooking.start_time)}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-sm text-purple-700">{getText('End Time', 'Waktu Selesai')}:</span>
+                          <p className="text-sm font-medium text-purple-900">
+                            {formatDateTimeDisplay(selectedBooking.end_time)}
+                          </p>
                         </div>
                       </div>
 
-                      <div className="flex items-center space-x-2">
-                        <div className={`w-3 h-3 rounded-full ${
-                          selectedBooking.status === 'pending' ? 'bg-yellow-500' :
-                          selectedBooking.status === 'approved' ? 'bg-green-500' :
-                          selectedBooking.status === 'borrowed' ? 'bg-blue-500' :
-                          selectedBooking.status === 'rejected' ? 'bg-red-500' :
-                          selectedBooking.status === 'completed' ? 'bg-purple-500' : 'bg-gray-300'
-                        }`}></div>
-                        <div className="flex-1">
-                          <div className="text-sm font-medium text-gray-900">{getText('Last Updated', 'Terakhir Diperbarui')}</div>
-                          <div className="text-xs text-gray-500">
-                            {selectedBooking.updated_at ? format(new Date(selectedBooking.updated_at), 'MMM d, yyyy HH:mm') : 'N/A'}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <span className="text-sm text-purple-700">{getText('SKS', 'SKS')}:</span>
+                          <p className="text-sm font-medium text-purple-900">{selectedBooking.sks || 0} SKS</p>
+                        </div>
+                        <div>
+                          <span className="text-sm text-purple-700">{getText('Class Type', 'Jenis Kelas')}:</span>
+                          <p className="text-sm font-medium text-purple-900">
+                            {selectedBooking.class_type === 'theory' ? getText('Theory', 'Teori') : getText('Practical', 'Praktik')}
+                          </p>
+                        </div>
+                      </div>
+
+                      {selectedBooking.notes && (
+                        <div>
+                          <span className="text-sm text-purple-700">{getText('Notes', 'Catatan')}:</span>
+                          <p className="text-sm text-purple-900 mt-1 p-3 bg-white rounded-lg border border-purple-200">
+                            {selectedBooking.notes}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Status Information */}
+                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                    <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                      <Info className="h-5 w-5 mr-2" />
+                      {getText('Status Information', 'Informasi Status')}
+                    </h4>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">{getText('Current Status', 'Status Saat Ini')}:</span>
+                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(selectedBooking.status)}`}>
+                          {getStatusText(selectedBooking.status)}
+                        </span>
+                      </div>
+                      
+                      {/* Simplified Timeline */}
+                      <div className="border-l-2 border-gray-200 pl-4 space-y-3">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                          <div className="flex-1">
+                            <div className="text-sm font-medium text-gray-900">{getText('Created', 'Dibuat')}</div>
+                            <div className="text-xs text-gray-500">
+                              {formatDateTimeDisplay(selectedBooking.created_at)}
+                            </div>
                           </div>
-                          <div className="text-xs text-gray-400 mt-1">
-                            Status: {getStatusText(selectedBooking.status)}
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <div className={`w-3 h-3 rounded-full ${
+                            selectedBooking.status === 'pending' ? 'bg-yellow-500' :
+                            selectedBooking.status === 'approved' ? 'bg-green-500' :
+                            selectedBooking.status === 'borrowed' ? 'bg-blue-500' :
+                            selectedBooking.status === 'rejected' ? 'bg-red-500' :
+                            selectedBooking.status === 'completed' ? 'bg-purple-500' : 'bg-gray-300'
+                          }`}></div>
+                          <div className="flex-1">
+                            <div className="text-sm font-medium text-gray-900">{getText('Last Updated', 'Terakhir Diperbarui')}</div>
+                            <div className="text-xs text-gray-500">
+                              {formatDateTimeDisplay(selectedBooking.updated_at)}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1">
+                              Status: {getStatusText(selectedBooking.status)}
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Equipment Section */}
-                {renderEquipmentSection(selectedBooking)}
-              </div>
-
-              {/* FULL WIDTH SECTION: Attachments */}
-              {selectedBooking.attachments && parseAttachments(selectedBooking.attachments).length > 0 && (
+                  {/* Attachments */}
+                  {selectedBooking.attachments && parseAttachments(selectedBooking.attachments).length > 0 && (
                     <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
                       <h4 className="font-medium text-purple-900 mb-3 flex items-center">
                         <FileText className="h-5 w-5 mr-2" />
@@ -1868,8 +2136,8 @@ const BookingManagement: React.FC = () => {
                     </div>
                   )}
 
-              {/* FULL WIDTH SECTION: Enhanced Actions */}
-              {(() => {
+                  {/* Enhanced Actions Section */}
+                  {(() => {
                     const availableActions = getAvailableActions(selectedBooking);
                     if (availableActions.length === 0) return null;
 
@@ -1952,6 +2220,8 @@ const BookingManagement: React.FC = () => {
                       </div>
                     );
                   })()}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1985,7 +2255,7 @@ const BookingManagement: React.FC = () => {
                 </div>
                 <ul className="text-sm text-blue-800 space-y-1 ml-6">
                   <li>• {getText('Status changes from "Approved" to "Borrowed"', 'Status berubah dari "Disetujui" ke "Dipinjam"')}</li>
-                                    <li>• {getText('Equipment quantities will be reduced', 'Kuantitas peralatan akan dikurangi')}</li>
+                  <li>• {getText('Equipment quantities will be reduced', 'Kuantitas peralatan akan dikurangi')}</li>
                   <li>• {getText('Borrowing timestamp will be recorded', 'Waktu peminjaman akan dicatat')}</li>
                   <li>• {getText('User can now use the equipment', 'Pengguna sekarang dapat menggunakan peralatan')}</li>
                 </ul>
