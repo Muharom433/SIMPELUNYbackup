@@ -1320,7 +1320,7 @@ const CheckOut: React.FC = () => {
                       </ul>
                       <div></div>
                         <hr></hr>
-                        <h3><b>Contact Person  : 089604819029 (Muharom)</b></h3>
+                        <h3><b><a href="https://wa.me/+62895380131878">+62 858-6955-4147</a><</b></h3>
                     </div>
                   </div>
                 </div>
