@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useForm } from "react-hook-form";
-import { parseISO, format, differenceInMinutes } from "date-fns";
+import { parseISO, format, differenceInMinutes, isAfter, isBefore, startOfDay, isSameDay } from "date-fns";
 import { id } from "date-fns/locale";
 import {
   Calendar,
@@ -29,6 +29,8 @@ import {
   Upload,
   FileText,
   Camera,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { alert } from '../components/Alert/AlertHelper';
@@ -107,77 +109,284 @@ interface CombinedSchedule {
   borderColor: string;
 }
 
-// Custom DateTime Picker Modal Component
+// Enhanced Custom DateTime Picker Modal Component dengan format Indonesia
 const DateTimePickerModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
   onSelect: (datetime: string) => void;
   value?: string;
   label: string;
-}> = ({ isOpen, onClose, onSelect, value, label }) => {
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("");
+  minDateTime?: string;
+  isEndTime?: boolean;
+}> = ({ isOpen, onClose, onSelect, value, label, minDateTime, isEndTime }) => {
   const { getText } = useLanguage();
+  
+  // State untuk date picker
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [selectedDay, setSelectedDay] = useState(new Date().getDate());
+  
+  // State untuk time picker
+  const [selectedHour, setSelectedHour] = useState("08");
+  const [selectedMinute, setSelectedMinute] = useState("00");
+  
+  const monthNames = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ];
+  
+  const dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 
   useEffect(() => {
     if (value) {
       try {
         const datetime = new Date(value);
-        setDate(format(datetime, 'yyyy-MM-dd'));
-        setTime(format(datetime, 'HH:mm'));
+        setSelectedYear(datetime.getFullYear());
+        setSelectedMonth(datetime.getMonth());
+        setSelectedDay(datetime.getDate());
+        setSelectedHour(format(datetime, 'HH'));
+        setSelectedMinute(format(datetime, 'mm'));
       } catch {
         const now = new Date();
-        setDate(format(now, 'yyyy-MM-dd'));
-        setTime(format(now, 'HH:mm'));
+        setSelectedYear(now.getFullYear());
+        setSelectedMonth(now.getMonth());
+        setSelectedDay(now.getDate());
+        setSelectedHour("08");
+        setSelectedMinute("00");
       }
     } else {
       const now = new Date();
-      setDate(format(now, 'yyyy-MM-dd'));
-      setTime(format(now, 'HH:mm'));
+      setSelectedYear(now.getFullYear());
+      setSelectedMonth(now.getMonth());
+      setSelectedDay(now.getDate());
+      setSelectedHour(isEndTime ? "09" : "08");
+      setSelectedMinute("00");
     }
-  }, [value, isOpen]);
+  }, [value, isOpen, isEndTime]);
+
+  const getDaysInMonth = (year: number, month: number) => {
+    return new Date(year, month + 1, 0).getDate();
+  };
+
+  const getFirstDayOfMonth = (year: number, month: number) => {
+    return new Date(year, month, 1).getDay();
+  };
+
+  const handlePrevMonth = () => {
+    if (selectedMonth === 0) {
+      setSelectedMonth(11);
+      setSelectedYear(selectedYear - 1);
+    } else {
+      setSelectedMonth(selectedMonth - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (selectedMonth === 11) {
+      setSelectedMonth(0);
+      setSelectedYear(selectedYear + 1);
+    } else {
+      setSelectedMonth(selectedMonth + 1);
+    }
+  };
+
+  const isDateDisabled = (day: number) => {
+    const date = new Date(selectedYear, selectedMonth, day);
+    const today = startOfDay(new Date());
+    
+    // Tidak bisa pilih tanggal yang sudah lewat
+    if (isBefore(date, today)) {
+      return true;
+    }
+    
+    // Jika ada minDateTime (untuk end date), check apakah date sebelum minDateTime
+    if (minDateTime) {
+      const minDate = new Date(minDateTime);
+      const selectedDate = new Date(selectedYear, selectedMonth, day, 
+        parseInt(selectedHour), parseInt(selectedMinute));
+      if (isBefore(selectedDate, minDate)) {
+        return true;
+      }
+    }
+    
+    return false;
+  };
+
+  const renderCalendar = () => {
+    const daysInMonth = getDaysInMonth(selectedYear, selectedMonth);
+    const firstDay = getFirstDayOfMonth(selectedYear, selectedMonth);
+    const days = [];
+    
+    // Empty cells for alignment
+    for (let i = 0; i < firstDay; i++) {
+      days.push(<div key={`empty-${i}`} className="h-10"></div>);
+    }
+    
+    // Days of month
+    for (let day = 1; day <= daysInMonth; day++) {
+      const isSelected = day === selectedDay;
+      const isDisabled = isDateDisabled(day);
+      const isToday = isSameDay(new Date(selectedYear, selectedMonth, day), new Date());
+      
+      days.push(
+        <button
+          key={day}
+          type="button"
+          disabled={isDisabled}
+          onClick={() => !isDisabled && setSelectedDay(day)}
+          className={`
+            h-10 rounded-lg text-sm font-medium transition-all
+            ${isSelected 
+              ? 'bg-blue-600 text-white' 
+              : isToday
+                ? 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                : isDisabled
+                  ? 'text-gray-300 cursor-not-allowed'
+                  : 'hover:bg-gray-100 text-gray-700'
+            }
+          `}
+        >
+          {day}
+        </button>
+      );
+    }
+    
+    return days;
+  };
 
   const handleConfirm = () => {
-    if (date && time) {
-      const datetime = `${date}T${time}`;
-      onSelect(datetime);
-      onClose();
+    const year = selectedYear;
+    const month = String(selectedMonth + 1).padStart(2, '0');
+    const day = String(selectedDay).padStart(2, '0');
+    const datetime = `${year}-${month}-${day}T${selectedHour}:${selectedMinute}`;
+    
+    // Validate if end time is after start time
+    if (minDateTime) {
+      const minDate = new Date(minDateTime);
+      const selectedDate = new Date(datetime);
+      if (isBefore(selectedDate, minDate) || selectedDate.getTime() === minDate.getTime()) {
+        alert.error(
+          getText('End time must be after start time', 'Waktu selesai harus setelah waktu mulai'),
+          ""
+        );
+        return;
+      }
     }
+    
+    onSelect(datetime);
+    onClose();
+  };
+
+  const formatDisplayDate = () => {
+    const day = String(selectedDay).padStart(2, '0');
+    const month = String(selectedMonth + 1).padStart(2, '0');
+    const year = selectedYear;
+    return `${day}/${month}/${year}`;
   };
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full">
+      <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
         <h3 className="text-lg font-semibold mb-4">{label}</h3>
         
         <div className="space-y-4">
+          {/* Calendar Section */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              {getText('Date', 'Tanggal')}
+              {getText('Date', 'Tanggal')} (DD/MM/YYYY)
             </label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
+            
+            {/* Month/Year Selector */}
+            <div className="flex items-center justify-between mb-4">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              
+              <div className="text-center">
+                <div className="font-semibold">
+                  {monthNames[selectedMonth]} {selectedYear}
+                </div>
+                <div className="text-sm text-gray-500">
+                  {getText('Selected', 'Dipilih')}: {formatDisplayDate()}
+                </div>
+              </div>
+              
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+            
+            {/* Calendar Grid */}
+            <div className="grid grid-cols-7 gap-1 mb-2">
+              {dayNames.map(day => (
+                <div key={day} className="text-center text-xs font-semibold text-gray-500 h-8 flex items-center justify-center">
+                  {day}
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {renderCalendar()}
+            </div>
           </div>
           
+          {/* Time Section */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              {getText('Time (24 Hour Format)', 'Waktu (Format 24 Jam)')}
+              {getText('Time', 'Waktu')} (24 {getText('Hour Format', 'Jam')})
             </label>
-            <input
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              step="60"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              {getText('Format: 00:00 - 23:59', 'Format: 00:00 - 23:59')}
+            
+            <div className="flex items-center space-x-2">
+              {/* Hour Selector */}
+              <div className="flex-1">
+                <select
+                  value={selectedHour}
+                  onChange={(e) => setSelectedHour(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  {Array.from({ length: 24 }, (_, i) => {
+                    const hour = String(i).padStart(2, '0');
+                    return (
+                      <option key={hour} value={hour}>
+                        {hour}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+              
+              <span className="font-semibold text-xl">:</span>
+              
+              {/* Minute Selector */}
+              <div className="flex-1">
+                <select
+                  value={selectedMinute}
+                  onChange={(e) => setSelectedMinute(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  {Array.from({ length: 60 }, (_, i) => {
+                    const minute = String(i).padStart(2, '0');
+                    return (
+                      <option key={minute} value={minute}>
+                        {minute}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            </div>
+            
+            <p className="text-xs text-gray-500 mt-2">
+              {getText('Format', 'Format')}: {formatDisplayDate()} {selectedHour}:{selectedMinute}
             </p>
           </div>
         </div>
@@ -208,14 +417,14 @@ const getLocalDateString = (date = new Date()) => {
   return format(date, 'yyyy-MM-dd');
 };
 
+// Format datetime dengan format Indonesia DD/MM/YYYY HH:mm
 const formatDateTime = (iso?: string) => {
-  const { getText } = useLanguage();
-  if (!iso) return getText("Not set", "Belum diatur");
+  if (!iso) return "Belum diatur";
   try {
     const date = parseISO(iso);
     return format(date, 'dd/MM/yyyy HH:mm', { locale: id });
   } catch {
-    return getText("Not set", "Belum diatur");
+    return "Belum diatur";
   }
 };
 
@@ -287,6 +496,13 @@ const BookRoom: React.FC = () => {
     const today = new Date();
     const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
     return dayNames[today.getDay()];
+  };
+
+  // Get day name for specific date
+  const getDayName = (date: string) => {
+    const dateObj = new Date(date);
+    const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    return dayNames[dateObj.getDay()];
   };
 
   // File handling functions
@@ -450,7 +666,7 @@ const BookRoom: React.FC = () => {
   }
 
   // Enhanced room fetching with complete schedule checking
-  async function fetchRooms(selectedDate: string) {
+  const fetchRooms = useCallback(async (selectedDate: string) => {
     setLoadingRooms(true);
     try {
       const { data: roomsData, error } = await supabase
@@ -499,7 +715,7 @@ const BookRoom: React.FC = () => {
         },
       }));
 
-      // Fetch all schedule data
+      // Fetch all schedule data for the selected date
       await Promise.all([
         fetchRoomBookings(mappedRooms, selectedDate),
         fetchLectureSchedules(mappedRooms, selectedDate),
@@ -513,7 +729,7 @@ const BookRoom: React.FC = () => {
     } finally {
       setLoadingRooms(false);
     }
-  }
+  }, [getText]);
 
   // Fetch lecture schedules
   async function fetchLectureSchedules(roomsList: Room[], selectedDate: string) {
@@ -816,14 +1032,29 @@ const BookRoom: React.FC = () => {
     }
   };
 
+  // Update rooms when datetime changes for normal tab
   useEffect(() => {
-    if (activeTab === 'normal') {
+    if (activeTab === 'normal' && startDateTime) {
+      const newDate = format(new Date(startDateTime), 'yyyy-MM-dd');
+      setTargetDate(newDate);
+      fetchRooms(newDate);
+      
+      // Clear selected room if it's no longer available
+      if (selectedRoom) {
+        setSelectedRoom(null);
+        setValue("room_id", "");
+      }
+    }
+  }, [startDateTime, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'normal' && !startDateTime) {
       fetchRooms(targetDate);
     }
   }, [targetDate, activeTab]);
 
   useEffect(() => {
-    if (scheduleModalRoom) {
+    if (scheduleModalRoom && targetDate) {
       fetchSchedulesForRoom(scheduleModalRoom.name, scheduleModalRoom.id, targetDate);
     }
   }, [scheduleModalRoom, targetDate]);
@@ -839,11 +1070,6 @@ const BookRoom: React.FC = () => {
           const endTime = new Date(start.getTime() + totalMinutes * 60000);
           const formattedEndTime = format(endTime, "yyyy-MM-dd'T'HH:mm");
           setValue("end_datetime", formattedEndTime);
-          
-          const newDate = format(start, 'yyyy-MM-dd');
-          if (newDate !== targetDate) {
-            setTargetDate(newDate);
-          }
         }
       } catch (err) {
         console.error("Error calculating end time:", err);
@@ -868,7 +1094,7 @@ const BookRoom: React.FC = () => {
     }
   }, [startDateTime, endDateTime]);
 
-  // ENHANCED: Improved room status checking with complete schedule validation
+  // Enhanced room status checking with complete schedule validation
   function getOptimizedRoomStatus(room: Room) {
     if (!room.is_available) {
       return { 
@@ -1038,7 +1264,7 @@ const BookRoom: React.FC = () => {
     }, 100);
   }
 
-  // ENHANCED: Complete room availability check
+  // Complete room availability check
   function isRoomAvailableForTimeSlot(room: Room, startTime: string, endTime: string): boolean {
     try {
       const start = new Date(startTime);
@@ -1167,7 +1393,7 @@ const BookRoom: React.FC = () => {
     return priorityMap[roomType] || 5;
   }
 
-  // ENHANCED: Filtered rooms untuk tab normal - hanya tampilkan yang available
+  // Filtered rooms untuk tab normal - hanya tampilkan yang available
   const filteredAndSortedRooms = useMemo(() => {
     let filtered = rooms;
 
@@ -1192,7 +1418,7 @@ const BookRoom: React.FC = () => {
       filtered = filtered.filter(room => !room.inUse);
     }
 
-    // IMPORTANT: For "normal" tab with selected time, only show available rooms
+    // For "normal" tab with selected time, only show available rooms
     if (activeTab === 'normal' && startDateTime && endDateTime) {
       // Filter to only show available rooms
       filtered = filtered.filter(room => {
@@ -1331,6 +1557,20 @@ const BookRoom: React.FC = () => {
         ""
       );
       return;
+    }
+    
+    // Validate start and end times
+    if (data.start_datetime && data.end_datetime) {
+      const start = new Date(data.start_datetime);
+      const end = new Date(data.end_datetime);
+      
+      if (end <= start) {
+        alert.error(
+          getText("End time must be after start time", "Waktu selesai harus setelah waktu mulai"),
+          ""
+        );
+        return;
+      }
     }
     
     if (activeTab === 'course' && !selectedCourse) {
@@ -1790,6 +2030,18 @@ const BookRoom: React.FC = () => {
                           )}
                         </div>
 
+                        {/* Date and Day Info */}
+                        {startDateTime && (
+                          <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                            <div className="flex items-center space-x-2 text-sm text-purple-800">
+                              <Calendar className="h-4 w-4" />
+                              <span>
+                                {getText('Selected Day:', 'Hari Dipilih:')} <strong>{getDayName(startDateTime)}</strong>, {format(new Date(startDateTime), 'dd MMMM yyyy')}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Info: Only available rooms will be shown */}
                         {startDateTime && endDateTime && (
                           <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -1851,7 +2103,7 @@ const BookRoom: React.FC = () => {
                           </div>
                         )}
 
-                        {!selectedRoom && (
+                        {!selectedRoom && startDateTime && endDateTime && (
                           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
                             <div className="flex items-center space-x-2">
                               <AlertTriangle className="h-5 w-5 text-amber-600" />
@@ -1862,115 +2114,128 @@ const BookRoom: React.FC = () => {
                           </div>
                         )}
 
-                        <div className="relative mb-4">
-                          <div className="relative">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                            <input
-                              type="text"
-                              placeholder={getText("Search room (name, code, or building)...", "Cari ruangan (nama, kode, atau gedung)...")}
-                              className="w-full pl-10 pr-4 py-2 bg-white/50 border border-gray-200/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                              value={searchTerm}
-                              onChange={(e) => setSearchTerm(e.target.value)}
-                            />
-                          </div>
-                          {searchTerm && (
-                            <p className="text-xs text-gray-500 mt-1">
-                              {getText('Found', 'Ditemukan')} {filteredAndSortedRooms.length} {getText('rooms', 'ruangan')}
+                        {!startDateTime || !endDateTime ? (
+                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
+                            <CalendarIcon className="h-12 w-12 text-yellow-600 mx-auto mb-3" />
+                            <p className="text-yellow-800 font-medium">
+                              {getText('Please select date and time first', 'Silakan pilih tanggal dan waktu terlebih dahulu')}
                             </p>
-                          )}
-                        </div>
-
-                        {/* Room list - only showing available rooms when time is selected */}
-                        <div className="space-y-3 max-h-80 overflow-y-auto">
-                          {loadingRooms ? (
-                            <div className="text-center py-8">
-                              <RefreshCw className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-2" />
-                              <p className="text-gray-600">{getText('Loading rooms...', 'Memuat ruangan...')}</p>
+                            <p className="text-yellow-600 text-sm mt-2">
+                              {getText('Rooms will be displayed after you set the booking time', 'Ruangan akan ditampilkan setelah Anda mengatur waktu pemesanan')}
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="relative mb-4">
+                              <div className="relative">
+                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                <input
+                                  type="text"
+                                  placeholder={getText("Search room (name, code, or building)...", "Cari ruangan (nama, kode, atau gedung)...")}
+                                  className="w-full pl-10 pr-4 py-2 bg-white/50 border border-gray-200/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                                  value={searchTerm}
+                                  onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                              </div>
+                              {searchTerm && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {getText('Found', 'Ditemukan')} {filteredAndSortedRooms.length} {getText('rooms', 'ruangan')}
+                                </p>
+                              )}
                             </div>
-                          ) : filteredAndSortedRooms.length === 0 ? (
-                            <div className="text-center py-8">
-                              <Building className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                              <p className="text-gray-600">
-                                {startDateTime && endDateTime
-                                  ? getText('No available rooms for the selected time', 'Tidak ada ruangan tersedia untuk waktu yang dipilih')
-                                  : searchTerm 
-                                    ? getText('No rooms match your search', 'Tidak ada ruangan yang cocok dengan pencarian')
-                                    : getText('Please select date and time first', 'Silakan pilih tanggal dan waktu terlebih dahulu')}
-                              </p>
-                            </div>
-                          ) : (
-                            filteredAndSortedRooms.map((room) => {
-                              const status = getOptimizedRoomStatus(room);
-                              const isAvailable = status.isAvailable;
-                              const isSelected = selectedRoom?.id === room.id;
-                              const cardClasses = `p-4 rounded-lg border-2 transition-all duration-200 ${
-                                isSelected ? "border-blue-500 bg-blue-50" : 
-                                !isAvailable ? "opacity-60 cursor-not-allowed border-gray-200" : 
-                                "cursor-pointer hover:shadow-md hover:border-blue-300 border-gray-200"
-                              } bg-white/50`;
-                              
-                              return (
-                                <div key={room.id} className={cardClasses} onClick={() => isAvailable && handleRoomSelect(room)}>
-                                  <div className="flex items-center justify-between mb-2">
-                                    <div>
-                                      <h4 className="font-semibold text-gray-900">{room.name}</h4>
-                                      <p className="text-sm text-gray-600">
-                                        {room.code ? `${getText('Code:', 'Kode:')} ${room.code}` : ''} 
-                                        {room.department?.name ? ` • ${room.department.name}` : ''}
-                                      </p>
-                                    </div>
-                                    <span className={`px-3 py-1 rounded-full text-xs font-medium border ${status.color}`}>
-                                      {getText(status.status, status.status)}
-                                    </span>
-                                  </div>
 
-                                  <div className="flex items-center space-x-4 text-sm text-gray-600">
-                                    <div className="flex items-center space-x-1">
-                                      <Users className="h-4 w-4" />
-                                      <span>{room.capacity ?? 0} {getText('seats', 'kursi')}</span>
-                                    </div>
-                                    <div className="flex items-center space-x-1">
-                                      <Building className="h-4 w-4" />
-                                      <span>{room.department?.name || getText('General', 'Umum')}</span>
-                                    </div>
-                                    {status.hasSchedule && (
-                                      <button 
-                                        type="button" 
-                                        className="text-blue-600 hover:text-blue-800 flex items-center space-x-1" 
-                                        onClick={(e) => { 
-                                          e.stopPropagation(); 
-                                          setScheduleModalRoom(room); 
-                                          setShowScheduleModal(true); 
-                                        }}
-                                        title={getText("View Schedule", "Lihat Jadwal")}
-                                      >
-                                        <Eye className="h-4 w-4" />
-                                        <span className="text-xs">{getText('Schedule', 'Jadwal')}</span>
-                                      </button>
-                                    )}
-                                  </div>
-
-                                  {status.reason && (
-                                    <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
-                                      <p className="text-xs text-yellow-800">
-                                        <Calendar className="h-3 w-3 inline mr-1" />
-                                        {status.reason}
-                                      </p>
-                                    </div>
-                                  )}
-
-                                  {isSelected && (
-                                    <div className="mt-2 p-2 bg-blue-100 border border-blue-300 rounded">
-                                      <p className="text-xs text-blue-800 font-medium">
-                                        ✓ {getText('Room selected', 'Ruangan dipilih')}
-                                      </p>
-                                    </div>
-                                  )}
+                            {/* Room list - only showing available rooms when time is selected */}
+                            <div className="space-y-3 max-h-80 overflow-y-auto">
+                              {loadingRooms ? (
+                                <div className="text-center py-8">
+                                  <RefreshCw className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-2" />
+                                  <p className="text-gray-600">{getText('Loading rooms...', 'Memuat ruangan...')}</p>
                                 </div>
-                              );
-                            })
-                          )}
-                        </div>
+                              ) : filteredAndSortedRooms.length === 0 ? (
+                                <div className="text-center py-8">
+                                  <Building className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                                  <p className="text-gray-600">
+                                    {getText('No available rooms for the selected time', 'Tidak ada ruangan tersedia untuk waktu yang dipilih')}
+                                  </p>
+                                  <p className="text-sm text-gray-500 mt-2">
+                                    {getText('Try selecting a different time', 'Coba pilih waktu yang berbeda')}
+                                  </p>
+                                </div>
+                              ) : (
+                                filteredAndSortedRooms.map((room) => {
+                                  const status = getOptimizedRoomStatus(room);
+                                  const isAvailable = status.isAvailable;
+                                  const isSelected = selectedRoom?.id === room.id;
+                                  const cardClasses = `p-4 rounded-lg border-2 transition-all duration-200 ${
+                                    isSelected ? "border-blue-500 bg-blue-50" : 
+                                    !isAvailable ? "opacity-60 cursor-not-allowed border-gray-200" : 
+                                    "cursor-pointer hover:shadow-md hover:border-blue-300 border-gray-200"
+                                  } bg-white/50`;
+                                  
+                                  return (
+                                    <div key={room.id} className={cardClasses} onClick={() => isAvailable && handleRoomSelect(room)}>
+                                      <div className="flex items-center justify-between mb-2">
+                                        <div>
+                                          <h4 className="font-semibold text-gray-900">{room.name}</h4>
+                                          <p className="text-sm text-gray-600">
+                                            {room.code ? `${getText('Code:', 'Kode:')} ${room.code}` : ''} 
+                                            {room.department?.name ? ` • ${room.department.name}` : ''}
+                                          </p>
+                                        </div>
+                                        <span className={`px-3 py-1 rounded-full text-xs font-medium border ${status.color}`}>
+                                          {getText(status.status, status.status)}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex items-center space-x-4 text-sm text-gray-600">
+                                        <div className="flex items-center space-x-1">
+                                          <Users className="h-4 w-4" />
+                                          <span>{room.capacity ?? 0} {getText('seats', 'kursi')}</span>
+                                        </div>
+                                        <div className="flex items-center space-x-1">
+                                          <Building className="h-4 w-4" />
+                                          <span>{room.department?.name || getText('General', 'Umum')}</span>
+                                        </div>
+                                        {status.hasSchedule && (
+                                          <button 
+                                            type="button" 
+                                            className="text-blue-600 hover:text-blue-800 flex items-center space-x-1" 
+                                            onClick={(e) => { 
+                                              e.stopPropagation(); 
+                                              setScheduleModalRoom(room); 
+                                              setShowScheduleModal(true); 
+                                            }}
+                                            title={getText("View Schedule", "Lihat Jadwal")}
+                                          >
+                                            <Eye className="h-4 w-4" />
+                                            <span className="text-xs">{getText('Schedule', 'Jadwal')}</span>
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      {status.reason && (
+                                        <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                                          <p className="text-xs text-yellow-800">
+                                            <Calendar className="h-3 w-3 inline mr-1" />
+                                            {status.reason}
+                                          </p>
+                                        </div>
+                                      )}
+
+                                      {isSelected && (
+                                        <div className="mt-2 p-2 bg-blue-100 border border-blue-300 rounded">
+                                          <p className="text-xs text-blue-800 font-medium">
+                                            ✓ {getText('Room selected', 'Ruangan dipilih')}
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </>
+                        )}
                       </div>
                     </>
                   )}
@@ -2173,7 +2438,7 @@ const BookRoom: React.FC = () => {
                             <li>• {getText('Book before taking the room key', 'Lakukan Booking Sebelum Mengambil Kunci Ruangan')}</li>
                           </ul>
                           <div className="mt-2"><hr /></div>
-                           <div className="mt-3 pt-3 border-t border-blue-300">
+                          <div className="mt-3 pt-3 border-t border-blue-300">
                             <button
                               type="button"
                               onClick={() => window.open('https://wa.me/6285869554147', '_blank')}
@@ -2195,11 +2460,22 @@ const BookRoom: React.FC = () => {
           </form>
         </div>
 
-        {/* DateTime Picker Modals */}
+        {/* Custom DateTime Picker Modals */}
         <DateTimePickerModal
           isOpen={showStartDatePicker}
           onClose={() => setShowStartDatePicker(false)}
-          onSelect={(datetime) => setValue("start_datetime", datetime)}
+          onSelect={(datetime) => {
+            setValue("start_datetime", datetime);
+            
+            // Clear end time if it's before start time
+            if (endDateTime) {
+              const end = new Date(endDateTime);
+              const start = new Date(datetime);
+              if (end <= start) {
+                setValue("end_datetime", "");
+              }
+            }
+          }}
           value={startDateTime}
           label={getText('Select Start Date & Time', 'Pilih Tanggal & Waktu Mulai')}
         />
@@ -2209,6 +2485,8 @@ const BookRoom: React.FC = () => {
           onClose={() => setShowEndDatePicker(false)}
           onSelect={(datetime) => setValue("end_datetime", datetime)}
           value={endDateTime}
+          minDateTime={startDateTime}
+          isEndTime={true}
           label={getText('Select End Date & Time', 'Pilih Tanggal & Waktu Selesai')}
         />
 
