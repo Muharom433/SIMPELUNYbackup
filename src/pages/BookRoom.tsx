@@ -1741,7 +1741,7 @@ const BookRoom: React.FC = () => {
       const adjustToUTC = (dateStr: string) => {
         if (!dateStr) return null;
         const date = new Date(dateStr);
-        date.setHours(date.getHours() - 7);
+        date.setHours(date.getHours());
         return date.toISOString();
       };
 
