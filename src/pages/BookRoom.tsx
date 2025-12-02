@@ -31,6 +31,11 @@ import {
   Camera,
   ChevronLeft,
   ChevronRight,
+  Package,
+  Plus,
+  Minus,
+  Star,
+  Wrench,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { alert } from '../components/Alert/AlertHelper';
@@ -70,6 +75,31 @@ type Room = {
   is_available?: boolean;
 };
 
+type Equipment = {
+  id: string;
+  name: string;
+  code: string;
+  category: string;
+  quantity: number;
+  unit: string;
+  is_mandatory: boolean;
+  is_available: boolean;
+  condition: string;
+  rooms_id: string | null;
+  Spesification?: string;
+  rooms?: {
+    id: string;
+    name: string;
+    code: string;
+  };
+};
+
+type EquipmentSelection = {
+  equipment: Equipment;
+  quantity: number;
+  isMandatory: boolean;
+};
+
 type FormValues = {
   start_datetime?: string;
   end_datetime?: string;
@@ -82,6 +112,8 @@ type FormValues = {
   study_program_id?: string;
   room_id?: string;
   attachments?: string[];
+  equipment_requested?: string[];
+  equipment_quantities?: number[];
 };
 
 type LectureSchedule = {
@@ -170,9 +202,6 @@ function checkTimeOverlap(
   start2Minutes: number, 
   end2Minutes: number
 ): boolean {
-  // No overlap if: end1 <= start2 OR start1 >= end2
-  // Overlap if: NOT (end1 <= start2 OR start1 >= end2)
-  // Which means: end1 > start2 AND start1 < end2
   return end1Minutes > start2Minutes && start1Minutes < end2Minutes;
 }
 
@@ -509,6 +538,243 @@ const DateTimePickerModal: React.FC<{
 };
 
 // =====================================================
+// EQUIPMENT SELECTION COMPONENT
+// =====================================================
+const EquipmentSelectionSection: React.FC<{
+  mandatoryEquipment: EquipmentSelection[];
+  optionalEquipment: Equipment[];
+  selectedOptionalEquipment: Map<string, number>;
+  onOptionalEquipmentChange: (equipmentId: string, quantity: number) => void;
+  getText: (en: string, id: string) => string;
+  selectedRoom: Room | null;
+}> = ({ 
+  mandatoryEquipment, 
+  optionalEquipment, 
+  selectedOptionalEquipment, 
+  onOptionalEquipmentChange,
+  getText,
+  selectedRoom
+}) => {
+  const [showOptionalSection, setShowOptionalSection] = useState(false);
+
+  return (
+    <div className="border-t border-gray-200/50 pt-6">
+      <div className="flex items-center space-x-3 mb-4">
+        <Package className="h-6 w-6 text-emerald-600" />
+        <h2 className="text-xl font-bold text-gray-800">{getText('Equipment', 'Peralatan')}</h2>
+      </div>
+
+      {/* Mandatory Equipment Section */}
+      {mandatoryEquipment.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center space-x-2 mb-3">
+            <Star className="h-4 w-4 text-amber-500" />
+            <h3 className="text-sm font-semibold text-gray-700">
+              {getText('Mandatory Equipment (Auto-included)', 'Peralatan Wajib (Otomatis ditambahkan)')}
+            </h3>
+          </div>
+          
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {mandatoryEquipment.map((item) => (
+                <div 
+                  key={item.equipment.id} 
+                  className="flex items-center justify-between p-3 bg-white rounded-lg border border-amber-200"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-amber-100 rounded-lg">
+                      <Wrench className="h-4 w-4 text-amber-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900 text-sm">{item.equipment.name}</p>
+                      <p className="text-xs text-gray-500">{item.equipment.code}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-bold text-amber-700">{item.quantity}</span>
+                    <span className="text-xs text-gray-500 ml-1">{item.equipment.unit}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <div className="mt-3 flex items-center space-x-2 text-xs text-amber-700">
+              <Info className="h-3 w-3" />
+              <span>
+                {getText(
+                  'These equipment items are required for the selected room and will be automatically included.',
+                  'Peralatan ini wajib untuk ruangan yang dipilih dan akan otomatis disertakan.'
+                )}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Optional Equipment Section */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowOptionalSection(!showOptionalSection)}
+          className="flex items-center space-x-2 w-full p-3 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
+        >
+          <Package className="h-4 w-4 text-emerald-600" />
+          <span className="font-medium text-emerald-800">
+            {getText('Optional Equipment', 'Peralatan Opsional')}
+          </span>
+          <span className="text-sm text-emerald-600">
+            ({selectedOptionalEquipment.size} {getText('selected', 'dipilih')})
+          </span>
+          <div className="flex-1" />
+          {showOptionalSection ? (
+            <ChevronUp className="h-4 w-4 text-emerald-600" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-emerald-600" />
+          )}
+        </button>
+
+        {showOptionalSection && (
+          <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+            {optionalEquipment.length === 0 ? (
+              <div className="text-center py-6 text-gray-500">
+                <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">
+                  {getText('No optional equipment available', 'Tidak ada peralatan opsional tersedia')}
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-64 overflow-y-auto">
+                  {optionalEquipment.map((equipment) => {
+                    const isSelected = selectedOptionalEquipment.has(equipment.id);
+                    const selectedQty = selectedOptionalEquipment.get(equipment.id) || 0;
+                    
+                    return (
+                      <div 
+                        key={equipment.id} 
+                        className={`p-3 rounded-lg border-2 transition-all ${
+                          isSelected 
+                            ? 'border-emerald-500 bg-emerald-100' 
+                            : 'border-gray-200 bg-white hover:border-emerald-300'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center space-x-2">
+                            <div className={`p-1.5 rounded ${isSelected ? 'bg-emerald-200' : 'bg-gray-100'}`}>
+                              <Package className={`h-3 w-3 ${isSelected ? 'text-emerald-700' : 'text-gray-500'}`} />
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900 text-sm">{equipment.name}</p>
+                              <p className="text-xs text-gray-500">{equipment.code}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs text-gray-500">
+                              {getText('Available', 'Tersedia')}: {equipment.quantity} {equipment.unit}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {equipment.rooms?.name && (
+                          <p className="text-xs text-gray-500 mb-2">
+                            📍 {equipment.rooms.name}
+                          </p>
+                        )}
+                        
+                        <div className="flex items-center justify-between">
+                          {isSelected ? (
+                            <div className="flex items-center space-x-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (selectedQty > 1) {
+                                    onOptionalEquipmentChange(equipment.id, selectedQty - 1);
+                                  } else {
+                                    onOptionalEquipmentChange(equipment.id, 0);
+                                  }
+                                }}
+                                className="p-1 bg-emerald-200 hover:bg-emerald-300 rounded transition-colors"
+                              >
+                                <Minus className="h-3 w-3 text-emerald-700" />
+                              </button>
+                              <span className="font-bold text-emerald-700 min-w-[24px] text-center">
+                                {selectedQty}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (selectedQty < equipment.quantity) {
+                                    onOptionalEquipmentChange(equipment.id, selectedQty + 1);
+                                  }
+                                }}
+                                disabled={selectedQty >= equipment.quantity}
+                                className="p-1 bg-emerald-200 hover:bg-emerald-300 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <Plus className="h-3 w-3 text-emerald-700" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => onOptionalEquipmentChange(equipment.id, 1)}
+                              className="px-3 py-1 bg-emerald-600 text-white text-xs font-medium rounded hover:bg-emerald-700 transition-colors"
+                            >
+                              + {getText('Add', 'Tambah')}
+                            </button>
+                          )}
+                          
+                          {isSelected && (
+                            <button
+                              type="button"
+                              onClick={() => onOptionalEquipmentChange(equipment.id, 0)}
+                              className="text-red-500 hover:text-red-700 transition-colors"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                <div className="mt-3 flex items-center space-x-2 text-xs text-emerald-700">
+                  <Info className="h-3 w-3" />
+                  <span>
+                    {getText(
+                      'Optional equipment can be borrowed from any available location.',
+                      'Peralatan opsional dapat dipinjam dari lokasi mana pun yang tersedia.'
+                    )}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Equipment Summary */}
+      {(mandatoryEquipment.length > 0 || selectedOptionalEquipment.size > 0) && (
+        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center space-x-2 text-sm text-blue-800">
+            <CheckCircle className="h-4 w-4" />
+            <span className="font-medium">
+              {getText('Equipment Summary:', 'Ringkasan Peralatan:')}
+            </span>
+            <span>
+              {mandatoryEquipment.length + selectedOptionalEquipment.size} {getText('items', 'item')}
+              {' • '}
+              {mandatoryEquipment.reduce((sum, item) => sum + item.quantity, 0) + 
+               Array.from(selectedOptionalEquipment.values()).reduce((sum, qty) => sum + qty, 0)} {getText('total units', 'total unit')}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// =====================================================
 // MAIN COMPONENT
 // =====================================================
 const BookRoom: React.FC = () => {
@@ -519,6 +785,8 @@ const BookRoom: React.FC = () => {
       class_type: "theory",
       purpose: "Class/Lecture",
       attachments: [],
+      equipment_requested: [],
+      equipment_quantities: [],
     },
   });
 
@@ -552,6 +820,12 @@ const BookRoom: React.FC = () => {
   
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+
+  // Equipment State
+  const [mandatoryEquipment, setMandatoryEquipment] = useState<EquipmentSelection[]>([]);
+  const [optionalEquipment, setOptionalEquipment] = useState<Equipment[]>([]);
+  const [selectedOptionalEquipment, setSelectedOptionalEquipment] = useState<Map<string, number>>(new Map());
+  const [loadingEquipment, setLoadingEquipment] = useState(false);
 
   // Refs
   const identityInputRef = useRef<HTMLInputElement | null>(null);
@@ -651,6 +925,95 @@ const BookRoom: React.FC = () => {
     const currentAttachments = getValues('attachments') || [];
     const updatedAttachments = currentAttachments.filter((_, i) => i !== index);
     setValue('attachments', updatedAttachments);
+  };
+
+  // =====================================================
+  // EQUIPMENT FETCHING
+  // =====================================================
+
+  /**
+   * Fetch mandatory equipment for selected room
+   */
+  const fetchMandatoryEquipmentForRoom = async (roomId: string) => {
+    try {
+      setLoadingEquipment(true);
+      console.log('🔧 Fetching mandatory equipment for room:', roomId);
+      
+      const { data, error } = await supabase
+        .from('equipment')
+        .select(`
+          *,
+          rooms (id, name, code)
+        `)
+        .eq('rooms_id', roomId)
+        .eq('is_mandatory', true)
+        .eq('condition', 'GOOD')
+        .gt('quantity', 0);
+
+      if (error) throw error;
+
+      console.log('🔧 Mandatory equipment found:', data?.length || 0);
+
+      // Convert to EquipmentSelection with quantity = 1 for each mandatory item
+      const mandatorySelections: EquipmentSelection[] = (data || []).map((eq: Equipment) => ({
+        equipment: eq,
+        quantity: 1, // Default 1 for mandatory
+        isMandatory: true
+      }));
+
+      setMandatoryEquipment(mandatorySelections);
+      
+    } catch (error) {
+      console.error('❌ Error fetching mandatory equipment:', error);
+      setMandatoryEquipment([]);
+    } finally {
+      setLoadingEquipment(false);
+    }
+  };
+
+  /**
+   * Fetch all optional equipment (available from any room)
+   */
+  const fetchOptionalEquipment = async () => {
+    try {
+      console.log('🔧 Fetching optional equipment...');
+      
+      const { data, error } = await supabase
+        .from('equipment')
+        .select(`
+          *,
+          rooms (id, name, code)
+        `)
+        .eq('is_available', true)
+        .eq('is_mandatory', false)
+        .eq('condition', 'GOOD')
+        .gt('quantity', 0)
+        .order('name');
+
+      if (error) throw error;
+
+      console.log('🔧 Optional equipment found:', data?.length || 0);
+      setOptionalEquipment(data || []);
+      
+    } catch (error) {
+      console.error('❌ Error fetching optional equipment:', error);
+      setOptionalEquipment([]);
+    }
+  };
+
+  /**
+   * Handle optional equipment selection change
+   */
+  const handleOptionalEquipmentChange = (equipmentId: string, quantity: number) => {
+    setSelectedOptionalEquipment(prev => {
+      const newMap = new Map(prev);
+      if (quantity <= 0) {
+        newMap.delete(equipmentId);
+      } else {
+        newMap.set(equipmentId, quantity);
+      }
+      return newMap;
+    });
   };
 
   // =====================================================
@@ -943,14 +1306,9 @@ const BookRoom: React.FC = () => {
   // ROOM AVAILABILITY VALIDATION
   // =====================================================
 
-  /**
-   * Check if room is available for the selected time slot
-   * Returns detailed status
-   */
   function checkRoomAvailability(room: Room, startTime: string, endTime: string): RoomStatusResult {
     const conflictDetails: string[] = [];
     
-    // Parse user's requested time
     const userStart = new Date(startTime);
     const userEnd = new Date(endTime);
     
@@ -964,48 +1322,30 @@ const BookRoom: React.FC = () => {
       };
     }
 
-    // Convert user time to minutes for comparison
-    const userStartMinutes = userStart.getHours()  * 60 + userStart.getMinutes();
+    const userStartMinutes = userStart.getHours() * 60 + userStart.getMinutes();
     const userEndMinutes = userEnd.getHours() * 60 + userEnd.getMinutes();
-
-    console.log(`🔍 Checking room ${room.name}:`, {
-      userTime: `${format(userStart, 'HH:mm')} - ${format(userEnd, 'HH:mm')}`,
-      userMinutes: `${userStartMinutes} - ${userEndMinutes}`,
-      bookings: room.targetDateBookings?.length || 0,
-      lectures: room.scheduleDetails?.lectures?.length || 0,
-      exams: room.scheduleDetails?.exams?.length || 0,
-      sessions: room.scheduleDetails?.sessions?.length || 0
-    });
 
     let hasConflict = false;
     let hasScheduleToday = false;
 
-    // =====================================================
-    // 1. CHECK BOOKINGS (approved/borrowed) - IN USE
-    // =====================================================
+    // Check bookings
     if (room.targetDateBookings && room.targetDateBookings.length > 0) {
       hasScheduleToday = true;
       
       for (const booking of room.targetDateBookings) {
-        // Bookings are stored in UTC, convert to local (+7)
         const bookingStart = new Date(booking.start_time);
         const bookingEnd = new Date(booking.end_time);
         
-        // Add 7 hours to convert from UTC to WIB
-        const bookingStartLocal = new Date(bookingStart.getTime() +0 * 60 * 60 * 1000);
-        const bookingEndLocal = new Date(bookingEnd.getTime() + 0 * 60 * 60 * 1000);
+        const bookingStartLocal = new Date(bookingStart.getTime());
+        const bookingEndLocal = new Date(bookingEnd.getTime());
         
         const bookingStartMinutes = bookingStartLocal.getHours() * 60 + bookingStartLocal.getMinutes();
         const bookingEndMinutes = bookingEndLocal.getHours() * 60 + bookingEndLocal.getMinutes();
         
-        console.log(`  📋 Booking: ${format(bookingStartLocal, 'HH:mm')} - ${format(bookingEndLocal, 'HH:mm')} (${bookingStartMinutes}-${bookingEndMinutes})`);
-        
         if (checkTimeOverlap(userStartMinutes, userEndMinutes, bookingStartMinutes, bookingEndMinutes)) {
           hasConflict = true;
           conflictDetails.push(`Booking: ${format(bookingStartLocal, 'HH:mm')}-${format(bookingEndLocal, 'HH:mm')}`);
-          console.log(`  ❌ CONFLICT with booking!`);
           
-          // Return IN USE immediately for booking conflicts
           return {
             status: 'In Use',
             reason: getText(
@@ -1021,37 +1361,26 @@ const BookRoom: React.FC = () => {
       }
     }
 
-    // =====================================================
-    // 2. CHECK EXAMS - CONFLICT
-    // =====================================================
+    // Check exams
     if (room.scheduleDetails?.exams && room.scheduleDetails.exams.length > 0) {
       hasScheduleToday = true;
       
       for (const exam of room.scheduleDetails.exams) {
-        // Skip take-home exams
         if (exam.is_take_home) continue;
         
         const examStartMinutes = timeToMinutes(exam.start_time);
         const examEndMinutes = timeToMinutes(exam.end_time);
         
-        if (examStartMinutes === null || examEndMinutes === null) {
-          console.log(`  ⚠️ Invalid exam time: ${exam.start_time} - ${exam.end_time}`);
-          continue;
-        }
-        
-        console.log(`  📝 Exam: ${exam.start_time} - ${exam.end_time} (${examStartMinutes}-${examEndMinutes})`);
+        if (examStartMinutes === null || examEndMinutes === null) continue;
         
         if (checkTimeOverlap(userStartMinutes, userEndMinutes, examStartMinutes, examEndMinutes)) {
           hasConflict = true;
           conflictDetails.push(`Exam: ${exam.course_name || 'UAS'} (${exam.start_time?.substring(0,5)}-${exam.end_time?.substring(0,5)})`);
-          console.log(`  ❌ CONFLICT with exam!`);
         }
       }
     }
 
-    // =====================================================
-    // 3. CHECK FINAL SESSIONS - CONFLICT
-    // =====================================================
+    // Check final sessions
     if (room.scheduleDetails?.sessions && room.scheduleDetails.sessions.length > 0) {
       hasScheduleToday = true;
       
@@ -1059,24 +1388,16 @@ const BookRoom: React.FC = () => {
         const sessionStartMinutes = timeToMinutes(session.start_time);
         const sessionEndMinutes = timeToMinutes(session.end_time);
         
-        if (sessionStartMinutes === null || sessionEndMinutes === null) {
-          console.log(`  ⚠️ Invalid session time: ${session.start_time} - ${session.end_time}`);
-          continue;
-        }
-        
-        console.log(`  🎓 Session: ${session.start_time} - ${session.end_time} (${sessionStartMinutes}-${sessionEndMinutes})`);
+        if (sessionStartMinutes === null || sessionEndMinutes === null) continue;
         
         if (checkTimeOverlap(userStartMinutes, userEndMinutes, sessionStartMinutes, sessionEndMinutes)) {
           hasConflict = true;
           conflictDetails.push(`Sidang: ${session.start_time?.substring(0,5)}-${session.end_time?.substring(0,5)}`);
-          console.log(`  ❌ CONFLICT with session!`);
         }
       }
     }
 
-    // =====================================================
-    // 4. CHECK LECTURE SCHEDULES - CONFLICT
-    // =====================================================
+    // Check lectures
     if (room.scheduleDetails?.lectures && room.scheduleDetails.lectures.length > 0) {
       hasScheduleToday = true;
       
@@ -1084,25 +1405,15 @@ const BookRoom: React.FC = () => {
         const lectureStartMinutes = timeToMinutes(lecture.start_time);
         const lectureEndMinutes = timeToMinutes(lecture.end_time);
         
-        if (lectureStartMinutes === null || lectureEndMinutes === null) {
-          console.log(`  ⚠️ Invalid lecture time: ${lecture.start_time} - ${lecture.end_time}`);
-          continue;
-        }
-        
-        console.log(`  📚 Lecture: ${lecture.course_name} ${lecture.start_time} - ${lecture.end_time} (${lectureStartMinutes}-${lectureEndMinutes})`);
+        if (lectureStartMinutes === null || lectureEndMinutes === null) continue;
         
         if (checkTimeOverlap(userStartMinutes, userEndMinutes, lectureStartMinutes, lectureEndMinutes)) {
           hasConflict = true;
           conflictDetails.push(`Kuliah: ${lecture.course_name} (${lecture.start_time?.substring(0,5)}-${lecture.end_time?.substring(0,5)})`);
-          console.log(`  ❌ CONFLICT with lecture!`);
         }
       }
     }
 
-    // =====================================================
-    // DETERMINE FINAL STATUS
-    // =====================================================
-    
     if (hasConflict) {
       return {
         status: 'Conflict',
@@ -1139,11 +1450,7 @@ const BookRoom: React.FC = () => {
     };
   }
 
-  /**
-   * Get optimized room status - used for display and filtering
-   */
   function getOptimizedRoomStatus(room: Room): RoomStatusResult {
-    // Check if room is disabled
     if (!room.is_available) {
       return {
         status: 'Unavailable',
@@ -1157,7 +1464,6 @@ const BookRoom: React.FC = () => {
     const s = getValues("start_datetime");
     const e = getValues("end_datetime");
 
-    // If no time selected, show basic status
     if (!s || !e) {
       const hasScheduledContent = 
         (room.targetDateBookings && room.targetDateBookings.length > 0) ||
@@ -1184,7 +1490,6 @@ const BookRoom: React.FC = () => {
       };
     }
 
-    // Check availability for selected time
     return checkRoomAvailability(room, s, e);
   }
 
@@ -1199,14 +1504,14 @@ const BookRoom: React.FC = () => {
       const dayNameIndonesian = getDayNameIndonesian(selectedDate);
 
       // 1. Fetch lecture schedules
-      const { data: lectureData, error: lectureError } = await supabase
+      const { data: lectureData } = await supabase
         .from('lecture_schedules')
         .select('*')
         .eq('day', dayNameIndonesian)
         .ilike('room', `%${roomName}%`)
         .order('start_time');
 
-      if (!lectureError && lectureData) {
+      if (lectureData) {
         lectureData.forEach(lecture => {
           combined.push({
             id: lecture.id,
@@ -1225,14 +1530,14 @@ const BookRoom: React.FC = () => {
       }
 
       // 2. Fetch exam schedules
-      const { data: examData, error: examError } = await supabase
+      const { data: examData } = await supabase
         .from('exams')
         .select('*')
         .eq('room_id', roomId)
         .eq('date', selectedDate)
         .order('start_time');
 
-      if (!examError && examData) {
+      if (examData) {
         examData.forEach(exam => {
           combined.push({
             id: exam.id,
@@ -1251,7 +1556,7 @@ const BookRoom: React.FC = () => {
       }
 
       // 3. Fetch final sessions
-      const { data: sessionData, error: sessionError } = await supabase
+      const { data: sessionData } = await supabase
         .from('final_sessions')
         .select(`
           *,
@@ -1261,7 +1566,7 @@ const BookRoom: React.FC = () => {
         .eq('date', selectedDate)
         .order('start_time');
 
-      if (!sessionError && sessionData) {
+      if (sessionData) {
         sessionData.forEach(session => {
           combined.push({
             id: session.id,
@@ -1283,7 +1588,7 @@ const BookRoom: React.FC = () => {
       const startOfDayUTC = `${selectedDate}T00:00:00+07:00`;
       const endOfDayUTC = `${selectedDate}T23:59:59+07:00`;
 
-      const { data: bookingData, error: bookingError } = await supabase
+      const { data: bookingData } = await supabase
         .from('bookings')
         .select(`
           *,
@@ -1295,20 +1600,16 @@ const BookRoom: React.FC = () => {
         .lte('start_time', endOfDayUTC)
         .order('start_time');
 
-      if (!bookingError && bookingData) {
+      if (bookingData) {
         bookingData.forEach(booking => {
           const startDate = new Date(booking.start_time);
           const endDate = new Date(booking.end_time);
-          
-          // Add 7 hours for display
-          const startLocal = new Date(startDate.getTime() + 0 * 60 * 60 * 1000);
-          const endLocal = new Date(endDate.getTime() + 0 * 60 * 60 * 1000);
 
           combined.push({
             id: booking.id,
             type: 'booking',
-            start_time: format(startLocal, 'HH:mm'),
-            end_time: format(endLocal, 'HH:mm'),
+            start_time: format(startDate, 'HH:mm'),
+            end_time: format(endDate, 'HH:mm'),
             title: `${booking.purpose || getText('Room Booking', 'Pemesanan Ruangan')}`,
             subtitle: `${booking.user?.full_name} • ${booking.user?.identity_number}`,
             description: `${getText('Status', 'Status')}: ${booking.status?.toUpperCase()}`,
@@ -1320,7 +1621,6 @@ const BookRoom: React.FC = () => {
         });
       }
 
-      // Sort by time
       combined.sort((a, b) => {
         const aTime = a.start_time === getText('Take Home', 'Take Home') ? '00:00' : a.start_time;
         const bTime = b.start_time === getText('Take Home', 'Take Home') ? '00:00' : b.start_time;
@@ -1467,6 +1767,12 @@ const BookRoom: React.FC = () => {
     
     setSelectedRoom(room);
     setValue("room_id", room.id);
+    
+    // Fetch mandatory equipment for this room
+    fetchMandatoryEquipmentForRoom(room.id);
+    
+    // Clear optional equipment selection when room changes
+    setSelectedOptionalEquipment(new Map());
   }
 
   function handleCourseSelect(course: LectureSchedule) {
@@ -1480,15 +1786,56 @@ const BookRoom: React.FC = () => {
     setValue("end_datetime", endTime);
     setValue("purpose", `${course.course_name} - ${course.class}`);
     
-    const matchedRoom = rooms.find(room => 
-      room.name.toLowerCase().includes(course.room.toLowerCase()) ||
-      course.room.toLowerCase().includes(room.name.toLowerCase())
+     const matchedRoom = rooms.find(room => {
+    const roomNameLower = room.name.toLowerCase();
+    const courseRoomLower = course.room.toLowerCase();
+    
+    // Multiple matching strategies
+    return (
+      roomNameLower.includes(courseRoomLower) ||
+      courseRoomLower.includes(roomNameLower) ||
+      roomNameLower.replace(/[^a-z0-9]/g, '') === courseRoomLower.replace(/[^a-z0-9]/g, '') ||
+      (room.code && room.code.toLowerCase() === courseRoomLower)
     );
+  });
     
     if (matchedRoom) {
-      setSelectedRoom(matchedRoom);
-      setValue("room_id", matchedRoom.id);
-    }
+    console.log('✅ Found matching room for course:', {
+      courseRoom: course.room,
+      matchedRoom: matchedRoom.name
+    });
+    
+    setSelectedRoom(matchedRoom);
+    setValue("room_id", matchedRoom.id);
+    
+    // Fetch equipment untuk ruangan yang cocok
+    fetchMandatoryEquipmentForRoom(matchedRoom.id);
+  } else {
+    console.warn('❌ No matching room found for course:', {
+      courseRoom: course.room,
+      availableRooms: rooms.map(r => r.name)
+    });
+    
+    // Reset state
+    setSelectedRoom(null);
+    setValue("room_id", "");
+    setMandatoryEquipment([]);
+    
+    // Tampilkan warning
+    alert.warning(
+      getText(
+        'Room not found automatically',
+        'Ruangan tidak ditemukan secara otomatis'
+      ),
+      getText(
+        `Room "${course.room}" is not in the system. Please contact administration.`,
+        `Ruangan "${course.room}" tidak ada di sistem. Silakan hubungi administrasi.`
+      )
+    );
+  }
+    
+    // Clear optional equipment selection
+    setSelectedOptionalEquipment(new Map());
   }
 
   // =====================================================
@@ -1517,13 +1864,11 @@ const BookRoom: React.FC = () => {
 
   // =====================================================
   // FILTERED AND SORTED ROOMS
-  // Only show Available and Scheduled, hide Conflict and In Use
   // =====================================================
 
   const filteredAndSortedRooms = useMemo(() => {
     let filtered = rooms;
 
-    // Apply search filter
     if (searchTerm && searchTerm.trim() !== '') {
       const searchLower = searchTerm.toLowerCase().trim();
       filtered = filtered.filter(room => {
@@ -1539,38 +1884,31 @@ const BookRoom: React.FC = () => {
       });
     }
 
-    // For "normal" tab with selected time, filter and show only Available and Scheduled
     if (activeTab === 'normal' && startDateTime && endDateTime) {
       filtered = filtered.filter(room => {
         const status = getOptimizedRoomStatus(room);
-        // Only show Available and Scheduled rooms
         return status.status === 'Available' || status.status === 'Scheduled';
       });
 
-      // Sort: Available first, then Scheduled, then by type and capacity
       filtered.sort((a, b) => {
         const statusA = getOptimizedRoomStatus(a);
         const statusB = getOptimizedRoomStatus(b);
         
-        // Priority: Available (0) > Scheduled (1)
         const statusPriority = { 'Available': 0, 'Scheduled': 1 };
         const statusDiff = (statusPriority[statusA.status as keyof typeof statusPriority] ?? 2) - 
                           (statusPriority[statusB.status as keyof typeof statusPriority] ?? 2);
         
         if (statusDiff !== 0) return statusDiff;
 
-        // Then by room type
         const aType = getRoomType(a.name);
         const bType = getRoomType(b.name);
         const typeDiff = getRoomTypePriority(aType) - getRoomTypePriority(bType);
         
         if (typeDiff !== 0) return typeDiff;
 
-        // Then by capacity (descending)
         return (b.capacity ?? 0) - (a.capacity ?? 0);
       });
     } else {
-      // Default sorting when time is not selected
       filtered.sort((a, b) => {
         return (a.name || '').localeCompare(b.name || '');
       });
@@ -1595,23 +1933,73 @@ const BookRoom: React.FC = () => {
   // EFFECTS
   // =====================================================
 
+   useEffect(() => {
+    const initializeData = async () => {
+      try {
+        // 1. Fetch data yang diperlukan untuk semua tab
+        await Promise.all([
+          fetchStudyPrograms(),
+          fetchTodayLectures(),
+          fetchOptionalEquipment(),
+        ]);
+
+        // 2. Fetch rooms untuk hari ini (INITIAL LOAD)
+        const todayDate = getLocalDateString();
+        setTargetDate(todayDate);
+        await fetchRooms(todayDate);
+        
+        console.log('✅ Rooms loaded for today on initial load');
+      } catch (error) {
+        console.error('❌ Error initializing data:', error);
+      }
+    };
+
+    initializeData();
+  }, []); // Hanya dijalankan sekali saat mount
+
+
+
   useEffect(() => {
     fetchStudyPrograms();
     fetchTodayLectures();
+    fetchOptionalEquipment(); // Fetch optional equipment on mount
   }, []);
 
-  useEffect(() => {
-    if (activeTab === 'normal' && startDateTime) {
-      const newDate = format(new Date(startDateTime), 'yyyy-MM-dd');
-      setTargetDate(newDate);
-      fetchRooms(newDate);
+  // useEffect(() => {
+  //   if (activeTab === 'normal' && startDateTime) {
+  //     const newDate = format(new Date(startDateTime), 'yyyy-MM-dd');
+  //     setTargetDate(newDate);
+  //     fetchRooms(newDate);
       
-      if (selectedRoom) {
-        setSelectedRoom(null);
-        setValue("room_id", "");
-      }
+  //     if (selectedRoom) {
+  //       setSelectedRoom(null);
+  //       setValue("room_id", "");
+  //       setMandatoryEquipment([]);
+  //       setSelectedOptionalEquipment(new Map());
+  //     }
+  //   }
+  // }, [startDateTime, activeTab]);
+
+  useEffect(() => {
+  if (activeTab === 'normal' && startDateTime) {
+    const newDate = format(new Date(startDateTime), 'yyyy-MM-dd');
+    setTargetDate(newDate);
+    fetchRooms(newDate);
+    
+    if (selectedRoom) {
+      setSelectedRoom(null);
+      setValue("room_id", "");
+      setMandatoryEquipment([]);
+      setSelectedOptionalEquipment(new Map());
     }
-  }, [startDateTime, activeTab]);
+  } else if (activeTab === 'course') {
+    // Pastikan rooms sudah diload untuk tab course
+    if (rooms.length === 0) {
+      const todayDate = getLocalDateString();
+      fetchRooms(todayDate);
+    }
+  }
+}, [startDateTime, activeTab]);
 
   useEffect(() => {
     if (activeTab === 'normal' && !startDateTime) {
@@ -1737,16 +2125,31 @@ const BookRoom: React.FC = () => {
 
       userId = existingUser?.id || null;
 
-      // Convert local time to UTC (subtract 7 hours)
+      // Convert local time to UTC
       const adjustToUTC = (dateStr: string) => {
         if (!dateStr) return null;
         const date = new Date(dateStr);
-        date.setHours(date.getHours());
         return date.toISOString();
       };
 
       const startTimeISO = data.start_datetime ? adjustToUTC(data.start_datetime) : null;
       const endTimeISO = data.end_datetime ? adjustToUTC(data.end_datetime) : null;
+
+      // Build equipment arrays
+      const equipmentIds: string[] = [];
+      const equipmentQuantities: number[] = [];
+
+      // Add mandatory equipment first
+      mandatoryEquipment.forEach(item => {
+        equipmentIds.push(item.equipment.id);
+        equipmentQuantities.push(item.quantity);
+      });
+
+      // Add selected optional equipment
+      selectedOptionalEquipment.forEach((qty, id) => {
+        equipmentIds.push(id);
+        equipmentQuantities.push(qty);
+      });
 
       const bookingData = {
         room_id: roomId,
@@ -1758,6 +2161,8 @@ const BookRoom: React.FC = () => {
         class_type: showSKSField ? data.class_type : null,
         status: 'pending',
         attachments: data.attachments || [],
+        equipment_requested: equipmentIds,
+        equipment_quantities: equipmentQuantities,
         user_info: {
           identity_number: data.identity_number,
           full_name: data.full_name,
@@ -1765,6 +2170,11 @@ const BookRoom: React.FC = () => {
           study_program_id: data.study_program_id
         }
       };
+
+      console.log('📦 Booking data with equipment:', {
+        equipment_requested: equipmentIds,
+        equipment_quantities: equipmentQuantities
+      });
       
       const { error } = await supabase.from('bookings').insert(bookingData);
       if (error) throw error;
@@ -1913,6 +2323,8 @@ const BookRoom: React.FC = () => {
                                 setValue("purpose", "");
                                 setSelectedRoom(null);
                                 setValue("room_id", "");
+                                setMandatoryEquipment([]);
+                                setSelectedOptionalEquipment(new Map());
                               }}
                               className="text-blue-600 hover:text-blue-800"
                             >
@@ -1924,7 +2336,7 @@ const BookRoom: React.FC = () => {
 
                       {/* Course List */}
                       <div className="space-y-3 max-h-96 overflow-y-auto">
-                        {loadingCourses ? (
+                        {loadingCourses || loadingRooms ? (
                           <div className="text-center py-8">
                             <RefreshCw className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-2" />
                             <p className="text-gray-600">{getText('Loading course schedule...', 'Memuat jadwal kuliah...')}</p>
@@ -1996,6 +2408,18 @@ const BookRoom: React.FC = () => {
                           <span>{getText("Booking only for today's courses. Room will be automatically selected according to the schedule.", "Booking hanya untuk mata kuliah hari ini. Ruangan akan otomatis dipilih sesuai jadwal.")}</span>
                         </div>
                       </div>
+
+                      {/* Equipment Section for Course Tab */}
+                      {selectedCourse && selectedRoom && (
+                        <EquipmentSelectionSection
+                          mandatoryEquipment={mandatoryEquipment}
+                          optionalEquipment={optionalEquipment}
+                          selectedOptionalEquipment={selectedOptionalEquipment}
+                          onOptionalEquipmentChange={handleOptionalEquipmentChange}
+                          getText={getText}
+                          selectedRoom={selectedRoom}
+                        />
+                      )}
                     </div>
                   )}
 
@@ -2231,6 +2655,8 @@ const BookRoom: React.FC = () => {
                                 onClick={() => {
                                   setSelectedRoom(null);
                                   setValue("room_id", "");
+                                  setMandatoryEquipment([]);
+                                  setSelectedOptionalEquipment(new Map());
                                 }}
                                 className="text-blue-600 hover:text-blue-800"
                               >
@@ -2377,6 +2803,18 @@ const BookRoom: React.FC = () => {
                           </>
                         )}
                       </div>
+
+                      {/* Equipment Section for Normal Tab */}
+                      {selectedRoom && (
+                        <EquipmentSelectionSection
+                          mandatoryEquipment={mandatoryEquipment}
+                          optionalEquipment={optionalEquipment}
+                          selectedOptionalEquipment={selectedOptionalEquipment}
+                          onOptionalEquipmentChange={handleOptionalEquipmentChange}
+                          getText={getText}
+                          selectedRoom={selectedRoom}
+                        />
+                      )}
                     </>
                   )}
                 </div>
@@ -2535,8 +2973,8 @@ const BookRoom: React.FC = () => {
                                   </span>
                                 </div>
                                 <p className="text-xs text-gray-600">
-                                  {format(new Date(new Date(booking.start_time).getTime() + 0 * 60 * 60 * 1000), 'dd/MM/yyyy HH:mm')} - 
-                                  {format(new Date(new Date(booking.end_time).getTime() + 0 * 60 * 60 * 1000), 'HH:mm')}
+                                  {format(new Date(booking.start_time), 'dd/MM/yyyy HH:mm')} - 
+                                  {format(new Date(booking.end_time), 'HH:mm')}
                                 </p>
                                 <p className="text-xs text-gray-500 mt-1">{booking.purpose}</p>
                               </div>
@@ -2582,6 +3020,7 @@ const BookRoom: React.FC = () => {
                             <li>• {getText('Leave your ID card like KTP/Student Card to Admin', 'Tinggalkan Kartu Identitas seperti KTP/KTM ke Admin')}</li>
                             <li>• {getText('Follow existing procedures', 'Ikuti Prosedur yang sudah ada')}</li>
                             <li>• {getText('Book before taking the room key', 'Lakukan Booking Sebelum Mengambil Kunci Ruangan')}</li>
+                            <li>• {getText('Equipment will be reserved when approved', 'Peralatan akan direservasi saat disetujui')}</li>
                           </ul>
                           <div className="mt-3 pt-3 border-t border-blue-300">
                             <button
