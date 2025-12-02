@@ -1,2957 +1,1748 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Calendar,
-  Search,
-  Filter,
-  Eye,
-  Check,
-  X,
-  AlertTriangle,
-  User,
-  Building,
-  Clock,
-  RefreshCw,
-  ChevronDown,
-  MapPin,
-  Users,
-  Package,
-  FileText,
-  Edit,
-  Trash2,
-  Download,
-  Upload,
-  Plus,
-  Settings,
-  BookOpen,
-  GraduationCap,
-  Phone,
-  Mail,
-  Hash,
-  Award,
-  Target,
-  Zap,
-  CheckCircle,
-  XCircle,
-  AlertCircle as AlertIcon,
-  Info,
-  MessageSquare,
-  Loader2,
-  ChevronLeft,
-  ChevronRight,
-  HandHeart,
-  ArrowRight,
-  Bell,
-  Camera,
-  Minus,
+    Calendar, Clock, User, Building, CheckCircle, XCircle, AlertTriangle,
+    Eye, Edit, Trash2, RefreshCw, Filter, Search, ChevronDown, ChevronUp,
+    Package, Plus, Minus, X, Check, ArrowRight, FileText, Users, Info,
+    AlertCircle, Phone, MapPin, BookOpen, Timer, Zap, Settings, Save
 } from 'lucide-react';
-
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { useLanguage } from '../contexts/LanguageContext';
-import { BookingWithDetails } from '../types';
-import { alert } from '../components/Alert/AlertHelper';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, isToday, isTomorrow, isPast, isAfter, isBefore } from 'date-fns';
+import toast from 'react-hot-toast';
 
-interface Booking {
-  id: string;
-  user_id: string;
-  room_id: string;
-  start_time: string;
-  end_time: string;
-  purpose: string;
-  sks: number;
-  class_type: 'theory' | 'practical';
-  status: 'pending' | 'approved' | 'borrowed' | 'rejected' | 'completed';
-  equipment_requested: string;
-  equipment_quantities: number;
-  equipment_details: any;
-  notes: string | null;
-  attachments: string;
-  user_info: any;
-  created_at: string;
-  updated_at: string;
-  user?: {
-    id: string;
-    full_name: string;
-    identity_number: string;
-    phone_number: string;
-    email: string;
-    role: string;
-    study_program?: {
-      name: string;
-      code: string;
-    };
-  };
-  room?: {
+// ===== TYPE DEFINITIONS =====
+interface Room {
     id: string;
     name: string;
     code: string;
     capacity: number;
-    department?: {
-      name: string;
-    };
-  };
+    department_id?: string;
+    department?: { name: string };
 }
 
 interface Equipment {
-  id: string;
-  name: string;
-  code: string;
-  category: string;
-  quantity: number;
-  unit: string;
-  is_mandatory: boolean;
-  is_available: boolean;
-  rooms_id: string;
-  condition: string;
-  item_type: string;
-  is_installed: boolean;
+    id: string;
+    name: string;
+    code?: string;
+    category?: string;
+    quantity: number;
+    unit?: string;
+    is_mandatory: boolean;
+    is_available: boolean;
+    rooms_id?: string;
+    condition?: string;
 }
 
 interface EquipmentSelection {
-  equipment: Equipment;
-  quantity: number;
-  isMandatory: boolean;
+    equipment_id: string;
+    equipment_name: string;
+    equipment_code?: string;
+    equipment_unit?: string;
+    quantity: number;
+    is_mandatory: boolean;
+    max_quantity: number;
 }
 
-// Edit Booking Modal Component dengan fitur lengkap
-interface EditBookingModalProps {
-  booking: Booking;
-  isOpen: boolean;
-  onClose: () => void;
-  onSave: (bookingId: string, updates: any, equipmentChanges: EquipmentChange[]) => Promise<void>;
-  rooms: any[];
-  allEquipment: Equipment[];
+interface Booking {
+    id: string;
+    user_id: string;
+    room_id: string;
+    start_time: string;
+    end_time: string;
+    purpose: string;
+    sks?: number;
+    class_type?: string;
+    status: 'pending' | 'approved' | 'borrowed' | 'completed' | 'cancelled' | 'rejected';
+    equipment_requested: string[];
+    equipment_quantities: number[];
+    notes?: string;
+    user_info?: any;
+    created_at: string;
+    updated_at: string;
+    attachments?: number;
+    equipment_details?: any;
+    equipment_back?: string[];
+    quantities_back?: number[];
+    user?: {
+        id: string;
+        full_name: string;
+        identity_number: string;
+        phone_number?: string;
+        email?: string;
+    };
+    room?: Room;
 }
 
-interface EquipmentChange {
-  equipmentId: string;
-  changeType: 'increase' | 'decrease';
-  quantity: number;
+interface CheckoutData {
+    user_id: string;
+    booking_id: string;
+    room_id: string;
+    checkout_date: string;
+    expected_return_date: string;
+    status: string;
+    checkout_notes?: string;
+    condition_on_checkout?: string;
+    total_items: number;
+    type: 'room';
+    created_at: string;
 }
 
-const EditBookingModal: React.FC<EditBookingModalProps> = ({
-  booking,
-  isOpen,
-  onClose,
-  onSave,
-  rooms,
-  allEquipment
-}) => {
-  const { getText } = useLanguage();
-  const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    room_id: booking.room_id || '',
-    start_time: '',
-    end_time: '',
-    purpose: booking.purpose || '',
-    status: booking.status || 'pending',
-    sks: booking.sks || 3,
-    class_type: booking.class_type || 'theory',
-    notes: booking.notes || ''
-  });
-  
-  const [searchRoom, setSearchRoom] = useState('');
-  const [showRoomDropdown, setShowRoomDropdown] = useState(false);
-  const [selectedRoom, setSelectedRoom] = useState<any>(null);
-  const [originalRoom, setOriginalRoom] = useState<any>(null);
-  
-  // Equipment states
-  const [roomMandatoryEquipment, setRoomMandatoryEquipment] = useState<Equipment[]>([]);
-  const [roomOptionalEquipment, setRoomOptionalEquipment] = useState<Equipment[]>([]);
-  const [selectedEquipment, setSelectedEquipment] = useState<EquipmentSelection[]>([]);
-  const [originalSelectedEquipment, setOriginalSelectedEquipment] = useState<EquipmentSelection[]>([]);
-  
-  // Additional equipment search
-  const [searchEquipment, setSearchEquipment] = useState('');
-  const [showEquipmentDropdown, setShowEquipmentDropdown] = useState(false);
-  const [availableAdditionalEquipment, setAvailableAdditionalEquipment] = useState<Equipment[]>([]);
+interface CheckoutItemData {
+    checkout_id: string;
+    equipment_id: string;
+    quantity: number;
+    condition_notes?: string;
+    status: string;
+}
 
-  // Parse equipment dari booking
-  const parseEquipmentRequested = (equipmentStr: any): string[] => {
-    if (!equipmentStr) return [];
-    if (Array.isArray(equipmentStr)) {
-      return equipmentStr.map(item => String(item)).filter(item => item);
-    }
-    const strValue = String(equipmentStr);
-    if (!strValue || strValue === 'null' || strValue === 'undefined') return [];
-    try {
-      const parsed = JSON.parse(strValue);
-      if (Array.isArray(parsed)) {
-        return parsed.map(item => String(item)).filter(item => item);
-      }
-      return [String(parsed)].filter(item => item);
-    } catch {
-      return strValue.split(',').map(item => String(item).trim()).filter(item => item);
-    }
-  };
-
-  const getEquipmentQuantities = (booking: Booking): number[] => {
-    const equipmentList = parseEquipmentRequested(booking.equipment_requested);
-    if (equipmentList.length === 0) return [];
-    
-    if (Array.isArray(booking.equipment_quantities)) {
-      const quantities = booking.equipment_quantities.map(qty => Number(qty) || 1);
-      if (quantities.length === equipmentList.length) {
-        return quantities;
-      }
-      return equipmentList.map((_, index) => quantities[index] || 1);
-    }
-    
-    if (typeof booking.equipment_quantities === 'string') {
-      try {
-        const parsed = JSON.parse(booking.equipment_quantities);
-        if (Array.isArray(parsed)) {
-          const quantities = parsed.map(qty => Number(qty) || 1);
-          return equipmentList.map((_, index) => quantities[index] || 1);
-        }
-      } catch (error) {
-        console.log('Failed to parse equipment_quantities as JSON:', error);
-      }
-    }
-    
-    if (typeof booking.equipment_quantities === 'number' && booking.equipment_quantities > 0) {
-      return equipmentList.map(() => booking.equipment_quantities as number);
-    }
-    
-    return equipmentList.map(() => 1);
-  };
-
-  // Initialize form data
-  useEffect(() => {
-    if (booking) {
-      const startTime = booking.start_time ? 
-        format(parseISO(booking.start_time), "yyyy-MM-dd'T'HH:mm") : '';
-      const endTime = booking.end_time ? 
-        format(parseISO(booking.end_time), "yyyy-MM-dd'T'HH:mm") : '';
-      
-      setFormData({
-        room_id: booking.room_id || '',
-        start_time: startTime,
-        end_time: endTime,
-        purpose: booking.purpose || '',
-        status: booking.status || 'pending',
-        sks: booking.sks || 3,
-        class_type: booking.class_type || 'theory',
-        notes: booking.notes || ''
-      });
-      
-      // Set initial room
-      const room = rooms.find(r => r.id === booking.room_id);
-      if (room) {
-        setSelectedRoom(room);
-        setOriginalRoom(room);
-        setSearchRoom(room.name);
-      }
-      
-      // Load current equipment selections
-      loadCurrentEquipmentSelections();
-    }
-  }, [booking, rooms, allEquipment]);
-
-  // Load current equipment selections from booking
-  const loadCurrentEquipmentSelections = () => {
-    const equipmentIds = parseEquipmentRequested(booking.equipment_requested);
-    const quantities = getEquipmentQuantities(booking);
-    
-    const selections: EquipmentSelection[] = [];
-    
-    equipmentIds.forEach((eqId, index) => {
-      const equipment = allEquipment.find(eq => 
-        eq.id === eqId || eq.code === eqId || eq.name === eqId
-      );
-      
-      if (equipment) {
-        selections.push({
-          equipment,
-          quantity: quantities[index] || 1,
-          isMandatory: equipment.is_mandatory
-        });
-      }
-    });
-    
-    setSelectedEquipment(selections);
-    setOriginalSelectedEquipment(JSON.parse(JSON.stringify(selections)));
-  };
-
-  // Fetch room equipment when room changes
-  const fetchRoomEquipment = async (roomId: string) => {
-    try {
-      const { data: equipment, error } = await supabase
-        .from('equipment')
-        .select('*')
-        .eq('rooms_id', roomId)
-        .order('name');
-      
-      if (error) throw error;
-      
-      const mandatory = (equipment || []).filter(eq => eq.is_mandatory);
-      const optional = (equipment || []).filter(eq => !eq.is_mandatory);
-      
-      setRoomMandatoryEquipment(mandatory);
-      setRoomOptionalEquipment(optional);
-      
-      return { mandatory, optional };
-    } catch (error) {
-      console.error('Error fetching room equipment:', error);
-      setRoomMandatoryEquipment([]);
-      setRoomOptionalEquipment([]);
-      return { mandatory: [], optional: [] };
-    }
-  };
-
-  // Fetch available additional equipment (not tied to specific room)
-  const fetchAvailableAdditionalEquipment = async () => {
-    try {
-      const { data: equipment, error } = await supabase
-        .from('equipment')
-        .select('*')
-        .eq('is_installed', false)
-        .gt('quantity', 0)
-        .order('name');
-      
-      if (error) throw error;
-      setAvailableAdditionalEquipment(equipment || []);
-    } catch (error) {
-      console.error('Error fetching additional equipment:', error);
-      setAvailableAdditionalEquipment([]);
-    }
-  };
-
-  useEffect(() => {
-    fetchAvailableAdditionalEquipment();
-  }, []);
-
-  // Handle room change
-  const handleRoomChange = async (room: any) => {
-    if (room.id === selectedRoom?.id) {
-      setShowRoomDropdown(false);
-      return;
-    }
-
-    setSelectedRoom(room);
-    setFormData({ ...formData, room_id: room.id });
-    setSearchRoom(room.name);
-    setShowRoomDropdown(false);
-    
-    // Fetch new room's equipment
-    const { mandatory, optional } = await fetchRoomEquipment(room.id);
-    
-    // Update selected equipment:
-    // 1. Remove old room's mandatory equipment
-    // 2. Add new room's mandatory equipment
-    // 3. Keep additional (non-mandatory, non-room-specific) equipment
-    
-    const additionalEquipment = selectedEquipment.filter(sel => 
-      !sel.isMandatory && sel.equipment.rooms_id !== originalRoom?.id
-    );
-    
-    // Add new room's mandatory equipment with default quantity 1
-    const newMandatorySelections: EquipmentSelection[] = mandatory.map(eq => ({
-      equipment: eq,
-      quantity: 1,
-      isMandatory: true
-    }));
-    
-    setSelectedEquipment([...newMandatorySelections, ...additionalEquipment]);
-  };
-
-  // Update equipment quantity
-  const updateEquipmentQuantity = (equipmentId: string, newQuantity: number) => {
-    setSelectedEquipment(prev => prev.map(sel => {
-      if (sel.equipment.id === equipmentId) {
-        // Validate against available quantity
-        const maxAvailable = sel.equipment.quantity;
-        const validQuantity = Math.max(1, Math.min(newQuantity, maxAvailable));
-        return { ...sel, quantity: validQuantity };
-      }
-      return sel;
-    }));
-  };
-
-  // Remove equipment from selection
-  const removeEquipment = (equipmentId: string) => {
-    setSelectedEquipment(prev => prev.filter(sel => 
-      sel.equipment.id !== equipmentId || sel.isMandatory
-    ));
-  };
-
-  // Add additional equipment
-  const addAdditionalEquipment = (equipment: Equipment) => {
-    // Check if already selected
-    if (selectedEquipment.some(sel => sel.equipment.id === equipment.id)) {
-      alert.warning(getText('Equipment already added', 'Peralatan sudah ditambahkan'));
-      return;
-    }
-    
-    setSelectedEquipment(prev => [...prev, {
-      equipment,
-      quantity: 1,
-      isMandatory: false
-    }]);
-    
-    setSearchEquipment('');
-    setShowEquipmentDropdown(false);
-  };
-
-  // Calculate equipment changes for submission
-  const calculateEquipmentChanges = (): EquipmentChange[] => {
-    const changes: EquipmentChange[] = [];
-    
-    // Only calculate changes if booking is approved or borrowed
-    if (booking.status !== 'approved' && booking.status !== 'borrowed') {
-      return changes;
-    }
-    
-    // Get original equipment IDs and quantities
-    const originalMap = new Map<string, number>();
-    originalSelectedEquipment.forEach(sel => {
-      originalMap.set(sel.equipment.id, sel.quantity);
-    });
-    
-    // Get new equipment IDs and quantities
-    const newMap = new Map<string, number>();
-    selectedEquipment.forEach(sel => {
-      newMap.set(sel.equipment.id, sel.quantity);
-    });
-    
-    // Find equipment to restore (removed or reduced)
-    originalMap.forEach((origQty, eqId) => {
-      const newQty = newMap.get(eqId) || 0;
-      if (newQty < origQty) {
-        changes.push({
-          equipmentId: eqId,
-          changeType: 'increase',
-          quantity: origQty - newQty
-        });
-      }
-    });
-    
-    // Find equipment to reduce (added or increased)
-    newMap.forEach((newQty, eqId) => {
-      const origQty = originalMap.get(eqId) || 0;
-      if (newQty > origQty) {
-        changes.push({
-          equipmentId: eqId,
-          changeType: 'decrease',
-          quantity: newQty - origQty
-        });
-      }
-    });
-    
-    return changes;
-  };
-
-  // Handle form submit
-  const handleSubmit = async () => {
-    setLoading(true);
-    try {
-      // Validate equipment availability
-      for (const sel of selectedEquipment) {
-        if (sel.quantity > sel.equipment.quantity) {
-          throw new Error(`Insufficient quantity for ${sel.equipment.name}. Available: ${sel.equipment.quantity}`);
-        }
-      }
-      
-      // Prepare equipment arrays
-      const equipmentRequested = selectedEquipment.map(sel => sel.equipment.id);
-      const equipmentQuantities = selectedEquipment.map(sel => sel.quantity);
-      
-      // Prepare equipment details
-      const equipmentDetails = selectedEquipment.map(sel => ({
-        id: sel.equipment.id,
-        name: sel.equipment.name,
-        code: sel.equipment.code,
-        quantity: sel.quantity,
-        unit: sel.equipment.unit,
-        isMandatory: sel.isMandatory
-      }));
-      
-      // Prepare update data
-      const updates = {
-        room_id: formData.room_id,
-        start_time: formData.start_time ? `${formData.start_time}:00` : null,
-        end_time: formData.end_time ? `${formData.end_time}:00` : null,
-        purpose: formData.purpose,
-        status: formData.status,
-        sks: formData.sks,
-        class_type: formData.class_type,
-        notes: formData.notes,
-        equipment_requested: equipmentRequested,
-        equipment_quantities: equipmentQuantities,
-        equipment_details: equipmentDetails,
-        updated_at: new Date().toISOString()
-      };
-      
-      // Calculate equipment changes
-      const equipmentChanges = calculateEquipmentChanges();
-      
-      await onSave(booking.id, updates, equipmentChanges);
-      onClose();
-    } catch (error: any) {
-      console.error('Error updating booking:', error);
-      alert.error(error.message || getText('Failed to update booking', 'Gagal memperbarui pemesanan'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Filter rooms for dropdown
-  const filteredRooms = rooms.filter(room =>
-    room.name?.toLowerCase().includes(searchRoom.toLowerCase()) ||
-    room.code?.toLowerCase().includes(searchRoom.toLowerCase())
-  );
-
-  // Filter additional equipment for dropdown
-  const filteredAdditionalEquipment = availableAdditionalEquipment.filter(eq =>
-    (eq.name?.toLowerCase().includes(searchEquipment.toLowerCase()) ||
-    eq.code?.toLowerCase().includes(searchEquipment.toLowerCase())) &&
-    !selectedEquipment.some(sel => sel.equipment.id === eq.id)
-  );
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-hidden">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold">{getText('Edit Booking', 'Edit Pemesanan')}</h2>
-              <p className="mt-1 opacity-90">
-                {getText('Update booking information and equipment', 'Perbarui informasi pemesanan dan peralatan')}
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
-            >
-              <X className="h-6 w-6" />
-            </button>
-          </div>
-        </div>
-
-        <div className="p-6 overflow-y-auto max-h-[calc(95vh-140px)]">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Left Column - Booking Details */}
-            <div className="space-y-6">
-              {/* User Information (Read-only) */}
-              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                  <User className="h-5 w-5 mr-2 text-gray-600" />
-                  {getText('User Information (Cannot be changed)', 'Informasi Pengguna (Tidak dapat diubah)')}
-                </h4>
-                <div className="space-y-2">
-                  <div className="flex items-center">
-                    <span className="text-sm text-gray-600 w-28">{getText('Name', 'Nama')}:</span>
-                    <span className="text-sm font-medium text-gray-900">
-                      {booking.user?.full_name || booking.user_info?.full_name || 'Unknown'}
-                    </span>
-                  </div>
-                  <div className="flex items-center">
-                    <span className="text-sm text-gray-600 w-28">{getText('Phone', 'Telepon')}:</span>
-                    <span className="text-sm text-gray-900">
-                      {booking.user?.phone_number || booking.user_info?.phone_number || 'N/A'}
-                    </span>
-                  </div>
-                  <div className="flex items-center">
-                    <span className="text-sm text-gray-600 w-28">{getText('ID Number', 'NIM/NIP')}:</span>
-                    <span className="text-sm text-gray-900">
-                      {booking.user?.identity_number || booking.user_info?.identity_number || 'N/A'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Room Selection */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <Building className="h-4 w-4 inline mr-1" />
-                  {getText('Room', 'Ruangan')} *
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={searchRoom}
-                    onChange={(e) => {
-                      setSearchRoom(e.target.value);
-                      setShowRoomDropdown(true);
-                    }}
-                    onFocus={() => setShowRoomDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowRoomDropdown(false), 200)}
-                    placeholder={getText('Search room...', 'Cari ruangan...')}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                  <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  
-                  {showRoomDropdown && filteredRooms.length > 0 && (
-                    <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
-                      {filteredRooms.map((room) => (
-                        <div
-                          key={room.id}
-                          onClick={() => handleRoomChange(room)}
-                          className={`px-4 py-3 hover:bg-blue-50 cursor-pointer border-b last:border-b-0 ${
-                            room.id === selectedRoom?.id ? 'bg-blue-50' : ''
-                          }`}
-                        >
-                          <div className="font-medium text-gray-900">{room.name}</div>
-                          <div className="text-sm text-gray-600">
-                            {room.code} • {room.capacity} {getText('seats', 'kursi')}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                
-                {/* Room change warning */}
-                {selectedRoom && originalRoom && selectedRoom.id !== originalRoom.id && (
-                  <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <div className="flex items-start space-x-2">
-                      <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
-                      <div className="text-sm text-yellow-800">
-                        <p className="font-medium">{getText('Room Change Detected', 'Perubahan Ruangan Terdeteksi')}</p>
-                        <p className="mt-1">
-                          {getText(
-                            `Changing from "${originalRoom.name}" to "${selectedRoom.name}". Equipment will be updated automatically.`,
-                            `Berubah dari "${originalRoom.name}" ke "${selectedRoom.name}". Peralatan akan diperbarui otomatis.`
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Date Time Fields */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    <Clock className="h-4 w-4 inline mr-1" />
-                    {getText('Start Date & Time', 'Tanggal & Waktu Mulai')}
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={formData.start_time}
-                    onChange={(e) => setFormData({...formData, start_time: e.target.value})}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    <Clock className="h-4 w-4 inline mr-1" />
-                    {getText('End Date & Time', 'Tanggal & Waktu Selesai')}
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={formData.end_time}
-                    onChange={(e) => setFormData({...formData, end_time: e.target.value})}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              {/* Purpose */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {getText('Purpose', 'Tujuan')}
-                </label>
-                <input
-                  type="text"
-                  value={formData.purpose}
-                  onChange={(e) => setFormData({...formData, purpose: e.target.value})}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Status */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {getText('Status', 'Status')}
-                </label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData({...formData, status: e.target.value as any})}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="pending">{getText('Pending', 'Menunggu')}</option>
-                  <option value="approved">{getText('Approved', 'Disetujui')}</option>
-                  <option value="borrowed">{getText('Borrowed', 'Dipinjam')}</option>
-                  <option value="rejected">{getText('Rejected', 'Ditolak')}</option>
-                  <option value="completed">{getText('Completed', 'Selesai')}</option>
-                </select>
-              </div>
-
-              {/* SKS and Class Type */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {getText('SKS', 'SKS')}
-                  </label>
-                  <select
-                    value={formData.sks}
-                    onChange={(e) => setFormData({...formData, sks: Number(e.target.value)})}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    {[1, 2, 3, 4, 5, 6].map(n => (
-                      <option key={n} value={n}>{n} SKS</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {getText('Class Type', 'Tipe Kelas')}
-                  </label>
-                  <select
-                    value={formData.class_type}
-                    onChange={(e) => setFormData({...formData, class_type: e.target.value as any})}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="theory">{getText('Theory', 'Teori')}</option>
-                    <option value="practical">{getText('Practical', 'Praktik')}</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Notes */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {getText('Notes', 'Catatan')}
-                </label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                  rows={3}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            {/* Right Column - Equipment Management */}
-            <div className="space-y-6">
-              {/* Selected Equipment */}
-              <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
-                <h4 className="font-medium text-emerald-900 mb-4 flex items-center justify-between">
-                  <span className="flex items-center">
-                    <Package className="h-5 w-5 mr-2" />
-                    {getText('Equipment List', 'Daftar Peralatan')}
-                  </span>
-                  <span className="text-sm bg-emerald-600 text-white px-2 py-1 rounded">
-                    {selectedEquipment.length} {getText('items', 'item')}
-                  </span>
-                </h4>
-
-                {/* Equipment list */}
-                <div className="space-y-3 max-h-80 overflow-y-auto">
-                  {selectedEquipment.length === 0 ? (
-                    <div className="text-center py-6 text-gray-500">
-                      <Package className="h-10 w-10 mx-auto mb-2 text-gray-300" />
-                      <p>{getText('No equipment selected', 'Tidak ada peralatan dipilih')}</p>
-                    </div>
-                  ) : (
-                    selectedEquipment.map((sel, index) => (
-                      <div 
-                        key={`${sel.equipment.id}-${index}`}
-                        className={`bg-white rounded-lg border p-3 ${
-                          sel.isMandatory ? 'border-emerald-300' : 'border-blue-300'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-start space-x-3">
-                            <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${
-                              sel.isMandatory ? 'bg-emerald-100' : 'bg-blue-100'
-                            }`}>
-                              <Package className={`h-5 w-5 ${
-                                sel.isMandatory ? 'text-emerald-600' : 'text-blue-600'
-                              }`} />
-                            </div>
-                            <div>
-                              <div className="font-medium text-gray-900">{sel.equipment.name}</div>
-                              <div className="text-sm text-gray-600">{sel.equipment.code}</div>
-                              <div className="flex items-center space-x-2 mt-1">
-                                {sel.isMandatory ? (
-                                  <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">
-                                    {getText('Mandatory', 'Wajib')}
-                                  </span>
-                                ) : (
-                                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
-                                    {getText('Additional', 'Tambahan')}
-                                  </span>
-                                )}
-                                <span className="text-xs text-gray-500">
-                                  {getText('Available', 'Tersedia')}: {sel.equipment.quantity} {sel.equipment.unit}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center space-x-2">
-                            {/* Quantity controls */}
-                            <div className="flex items-center border border-gray-300 rounded-lg">
-                              <button
-                                type="button"
-                                onClick={() => updateEquipmentQuantity(sel.equipment.id, sel.quantity - 1)}
-                                disabled={sel.quantity <= 1}
-                                className="p-1 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed rounded-l-lg"
-                              >
-                                <Minus className="h-4 w-4 text-gray-600" />
-                              </button>
-                              <input
-                                type="number"
-                                value={sel.quantity}
-                                onChange={(e) => updateEquipmentQuantity(sel.equipment.id, parseInt(e.target.value) || 1)}
-                                min={1}
-                                max={sel.equipment.quantity}
-                                className="w-12 text-center border-x border-gray-300 py-1 text-sm"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => updateEquipmentQuantity(sel.equipment.id, sel.quantity + 1)}
-                                disabled={sel.quantity >= sel.equipment.quantity}
-                                className="p-1 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed rounded-r-lg"
-                              >
-                                <Plus className="h-4 w-4 text-gray-600" />
-                              </button>
-                            </div>
-
-                            {/* Remove button (only for non-mandatory) */}
-                            {!sel.isMandatory && (
-                              <button
-                                type="button"
-                                onClick={() => removeEquipment(sel.equipment.id)}
-                                className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                title={getText('Remove', 'Hapus')}
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Quantity warning */}
-                        {sel.quantity > sel.equipment.quantity && (
-                          <div className="mt-2 text-xs text-red-600 flex items-center">
-                            <AlertTriangle className="h-3 w-3 mr-1" />
-                            {getText('Exceeds available quantity!', 'Melebihi jumlah tersedia!')}
-                          </div>
-                        )}
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                {/* Total summary */}
-                {selectedEquipment.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-emerald-200">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-emerald-700 font-medium">
-                        {getText('Total Items', 'Total Item')}:
-                      </span>
-                      <span className="font-bold text-emerald-900">
-                        {selectedEquipment.reduce((sum, sel) => sum + sel.quantity, 0)} {getText('items', 'item')}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Add Additional Equipment */}
-              <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
-                <h4 className="font-medium text-blue-900 mb-3 flex items-center">
-                  <Plus className="h-5 w-5 mr-2" />
-                  {getText('Add Additional Equipment', 'Tambah Peralatan Tambahan')}
-                </h4>
-                <p className="text-sm text-blue-700 mb-3">
-                  {getText(
-                    'Add extra equipment like cables, adapters, etc.',
-                    'Tambahkan peralatan tambahan seperti kabel, adaptor, dll.'
-                  )}
-                </p>
-
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <input
-                    type="text"
-                    value={searchEquipment}
-                    onChange={(e) => {
-                      setSearchEquipment(e.target.value);
-                      setShowEquipmentDropdown(true);
-                    }}
-                    onFocus={() => setShowEquipmentDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowEquipmentDropdown(false), 200)}
-                    placeholder={getText('Search equipment...', 'Cari peralatan...')}
-                    className="w-full pl-10 pr-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                  />
-                  
-                  {showEquipmentDropdown && filteredAdditionalEquipment.length > 0 && (
-                    <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                      {filteredAdditionalEquipment.slice(0, 10).map((eq) => (
-                        <div
-                          key={eq.id}
-                          onClick={() => addAdditionalEquipment(eq)}
-                          className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b last:border-b-0"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="font-medium text-gray-900">{eq.name}</div>
-                              <div className="text-sm text-gray-600">{eq.code} • {eq.category}</div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm font-medium text-green-600">{eq.quantity} {eq.unit}</div>
-                              <div className="text-xs text-gray-500">{getText('available', 'tersedia')}</div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Room optional equipment quick add */}
-                {roomOptionalEquipment.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-sm text-blue-700 mb-2">
-                      {getText('Room optional equipment:', 'Peralatan opsional ruangan:')}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {roomOptionalEquipment.map((eq) => {
-                        const isSelected = selectedEquipment.some(sel => sel.equipment.id === eq.id);
-                        return (
-                          <button
-                            key={eq.id}
-                            type="button"
-                            onClick={() => !isSelected && addAdditionalEquipment(eq)}
-                            disabled={isSelected}
-                            className={`px-3 py-1 rounded-full text-sm transition-colors ${
-                              isSelected
-                                ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                                : 'bg-white text-blue-700 border border-blue-300 hover:bg-blue-100'
-                            }`}
-                          >
-                            {isSelected ? (
-                              <span className="flex items-center">
-                                <Check className="h-3 w-3 mr-1" />
-                                {eq.name}
-                              </span>
-                            ) : (
-                              <span className="flex items-center">
-                                <Plus className="h-3 w-3 mr-1" />
-                                {eq.name}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Equipment Changes Summary */}
-              {(booking.status === 'approved' || booking.status === 'borrowed') && (
-                <div className="bg-yellow-50 rounded-xl p-4 border border-yellow-200">
-                  <h4 className="font-medium text-yellow-900 mb-3 flex items-center">
-                    <AlertTriangle className="h-5 w-5 mr-2" />
-                    {getText('Equipment Changes Impact', 'Dampak Perubahan Peralatan')}
-                  </h4>
-                  <div className="text-sm text-yellow-800 space-y-2">
-                    <p>
-                      {getText(
-                        'Since this booking is already approved/borrowed, equipment quantities will be automatically adjusted:',
-                        'Karena pemesanan ini sudah disetujui/dipinjam, jumlah peralatan akan disesuaikan otomatis:'
-                      )}
-                    </p>
-                    <ul className="list-disc ml-5 space-y-1">
-                      <li>
-                        {getText(
-                          'Removed equipment will be restored to inventory',
-                          'Peralatan yang dihapus akan dikembalikan ke inventaris'
-                        )}
-                      </li>
-                      <li>
-                        {getText(
-                          'Reduced quantities will be restored',
-                          'Jumlah yang dikurangi akan dikembalikan'
-                        )}
-                      </li>
-                      <li>
-                        {getText(
-                          'Added equipment will be deducted from inventory',
-                          'Peralatan yang ditambahkan akan dikurangi dari inventaris'
-                        )}
-                      </li>
-                      <li>
-                        {getText(
-                          'Increased quantities will be deducted',
-                          'Jumlah yang ditambah akan dikurangi'
-                        )}
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex justify-end space-x-3 pt-6 mt-6 border-t">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              {getText('Cancel', 'Batal')}
-            </button>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={loading}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  {getText('Saving...', 'Menyimpan...')}
-                </>
-              ) : (
-                <>
-                  <Check className="h-4 w-4 mr-2" />
-                  {getText('Save Changes', 'Simpan Perubahan')}
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Main BookingManagement Component
+// ===== MAIN COMPONENT =====
 const BookingManagement: React.FC = () => {
-  const { profile } = useAuth();
-  const { getText } = useLanguage();
-  
-  // Data states
-  const [bookings, setBookings] = useState<Booking[]>([]);
-  const [allEquipment, setAllEquipment] = useState<Equipment[]>([]);
-  const [bookingStats, setBookingStats] = useState({
-    pending: 0,
-    approved: 0,
-    borrowed: 0,
-    rejected: 0,
-    completed: 0,
-    total: 0
-  });
-  
-  // Loading and UI states
-  const [loading, setLoading] = useState(true);
-  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
-  const [statsLoading, setStatsLoading] = useState(false);
-  
-  // Filter states
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [dateFilter, setDateFilter] = useState<string>('all');
-  
-  // Modal states
-  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-  const [showBorrowConfirm, setShowBorrowConfirm] = useState<string | null>(null);
-  
-  // Edit modal states
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
-  const [allRooms, setAllRooms] = useState<any[]>([]);
-  
-  // Pagination states
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(50);
-  const [totalCount, setTotalCount] = useState(0);
-
-  // Initialize data on component mount
-  useEffect(() => {
-    initializeData();
+    const { profile } = useAuth();
     
-    // Set up real-time subscription for live updates
-    const subscription = supabase
-      .channel('booking-management-realtime')
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'bookings'
-        }, 
-        (payload) => {
-          console.log('🔄 Real-time update received:', payload);
-          try {
-            fetchBookings();
-            fetchBookingStats();
-          } catch (error) {
-            console.error('Error in real-time subscription:', error);
-          }
-        }
-      )
-      .subscribe();
+    // ===== STATE =====
+    const [bookings, setBookings] = useState<Booking[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState<string>('all');
+    const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+    const [showDetailModal, setShowDetailModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+    
+    // Edit Form State
+    const [editFormData, setEditFormData] = useState<{
+        room_id: string;
+        purpose: string;
+        start_time: string;
+        end_time: string;
+        notes: string;
+    }>({
+        room_id: '',
+        purpose: '',
+        start_time: '',
+        end_time: '',
+        notes: ''
+    });
+    
+    // Equipment State for Edit
+    const [rooms, setRooms] = useState<Room[]>([]);
+    const [allEquipment, setAllEquipment] = useState<Equipment[]>([]);
+    const [mandatoryEquipment, setMandatoryEquipment] = useState<Equipment[]>([]);
+    const [optionalEquipment, setOptionalEquipment] = useState<Equipment[]>([]);
+    const [equipmentSelections, setEquipmentSelections] = useState<EquipmentSelection[]>([]);
+    const [showEquipmentSection, setShowEquipmentSection] = useState(false);
+    const [loadingEquipment, setLoadingEquipment] = useState(false);
+    const [equipmentSearch, setEquipmentSearch] = useState('');
+    const [unavailableEquipment, setUnavailableEquipment] = useState<string[]>([]);
 
-    return () => {
-      subscription.unsubscribe();
+    // ===== FETCH BOOKINGS =====
+    const fetchBookings = useCallback(async () => {
+        try {
+            setLoading(true);
+            
+            let query = supabase
+                .from('bookings')
+                .select(`
+                    *,
+                    user:users!bookings_user_id_fkey(
+                        id, full_name, identity_number, phone_number, email
+                    ),
+                    room:rooms!bookings_room_id_fkey(
+                        id, name, code, capacity,
+                        department:departments(name)
+                    )
+                `)
+                .order('created_at', { ascending: false });
+
+            // Department filter for department admin
+            if (profile?.role === 'department_admin' && profile.department_id) {
+                query = query.eq('room.department_id', profile.department_id);
+            }
+
+            if (statusFilter !== 'all') {
+                query = query.eq('status', statusFilter);
+            }
+
+            const { data, error } = await query;
+            
+            if (error) throw error;
+            setBookings(data || []);
+            
+        } catch (error: any) {
+            console.error('Error fetching bookings:', error);
+            toast.error(`Gagal memuat data booking: ${error.message}`);
+        } finally {
+            setLoading(false);
+        }
+    }, [profile, statusFilter]);
+
+    // ===== FETCH ROOMS =====
+    const fetchRooms = async () => {
+        try {
+            let query = supabase
+                .from('rooms')
+                .select(`
+                    id, name, code, capacity, department_id,
+                    department:departments(name)
+                `)
+                .order('name');
+
+            if (profile?.role === 'department_admin' && profile.department_id) {
+                query = query.eq('department_id', profile.department_id);
+            }
+
+            const { data, error } = await query;
+            if (error) throw error;
+            setRooms(data || []);
+        } catch (error: any) {
+            console.error('Error fetching rooms:', error);
+        }
     };
-  }, []);
 
-  // Fetch all rooms for edit modal
-  useEffect(() => {
-    fetchAllRooms();
-  }, []);
-
-  // Refetch data when filters or pagination change
-  useEffect(() => {
-    fetchBookings();
-  }, [currentPage, searchTerm, statusFilter, dateFilter]);
-
-  // Initialize all data
-  const initializeData = async () => {
-    await Promise.all([
-      fetchBookings(),
-      fetchAllEquipment(),
-      fetchBookingStats()
-    ]);
-  };
-
-  // Fetch all rooms function
-  const fetchAllRooms = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('rooms')
-        .select(`
-          id,
-          name,
-          code,
-          capacity,
-          is_available,
-          department:departments(
-            name
-          )
-        `)
-        .eq('is_available', true)
-        .order('name');
-      
-      if (error) throw error;
-      setAllRooms(data || []);
-    } catch (error) {
-      console.error('Error fetching rooms:', error);
-    }
-  };
-
-  // FETCH BOOKINGS
-  const fetchBookings = async () => {
-    try {
-      setLoading(true);
-      
-      console.log('🚀 Fetching bookings...');
-      
-      const offset = (currentPage - 1) * pageSize;
-      
-      let query = supabase
-        .from('bookings')
-        .select(`
-          id,
-          user_id,
-          room_id,
-          start_time,
-          end_time,
-          purpose,
-          sks,
-          class_type,
-          status,
-          equipment_requested,
-          equipment_quantities,
-          equipment_details,
-          notes,
-          attachments,
-          user_info,
-          created_at,
-          updated_at,
-          user:users(
-            id,
-            full_name,
-            identity_number,
-            phone_number,
-            email,
-            role,
-            study_program:study_programs(
-              name,
-              code
-            )
-          ),
-          room:rooms(
-            id,
-            name,
-            code,
-            capacity,
-            department:departments(
-              name
-            )
-          )
-        `)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + pageSize - 1);
-
-      if (statusFilter !== 'all') {
-        query = query.eq('status', statusFilter);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-      
-      setBookings(data || []);
-      
-      if (currentPage === 1) {
-        let countQuery = supabase
-          .from('bookings')
-          .select('*', { count: 'exact', head: true });
-        
-        if (statusFilter !== 'all') {
-          countQuery = countQuery.eq('status', statusFilter);
-        }
-        
-        const { count } = await countQuery;
-        setTotalCount(count || 0);
-      }
-      
-      console.log(`✅ Successfully loaded ${data?.length || 0} bookings`);
-      
-    } catch (error) {
-      console.error('❌ Error fetching bookings:', error);
-      alert.error(getText('Failed to load bookings', 'Gagal memuat pemesanan'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // FETCH EQUIPMENT DATA
-  const fetchAllEquipment = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('equipment')
-        .select('*')
-        .order('name');
-      
-      if (error) throw error;
-      setAllEquipment(data || []);
-    } catch (error) {
-      console.error('Error fetching equipment:', error);
-      alert.error(getText('Failed to load equipment data', 'Gagal memuat data peralatan'));
-    }
-  };
-
-  // FETCH BOOKING STATISTICS
-  const fetchBookingStats = async () => {
-    try {
-      setStatsLoading(true);
-      
-      const { data: allBookings } = await supabase
-        .from('bookings')
-        .select('status');
-      
-      if (allBookings) {
-        const stats = allBookings.reduce((acc, booking) => {
-          acc[booking.status] = (acc[booking.status] || 0) + 1;
-          acc.total = (acc.total || 0) + 1;
-          return acc;
-        }, { pending: 0, approved: 0, borrowed: 0, rejected: 0, completed: 0, total: 0 });
-        
-        setBookingStats(stats);
-      }
-    } catch (error) {
-      console.error('Error fetching booking statistics:', error);
-    } finally {
-      setStatsLoading(false);
-    }
-  };
-
-  // HANDLE EDIT BOOKING WITH EQUIPMENT CHANGES
-  const handleEditBooking = async (
-    bookingId: string, 
-    updates: any, 
-    equipmentChanges: { equipmentId: string; changeType: 'increase' | 'decrease'; quantity: number }[]
-  ) => {
-    try {
-      console.log('📝 Updating booking with data:', updates);
-      console.log('📦 Equipment changes:', equipmentChanges);
-      
-      // Process equipment changes
-      for (const change of equipmentChanges) {
-        if (change.changeType === 'increase') {
-          // Restore equipment quantity
-          const { error } = await supabase.rpc('increase_equipment_quantity', {
-            equipment_id: change.equipmentId,
-            increase_by: change.quantity
-          });
-          
-          if (error) {
-            console.error(`❌ Failed to restore equipment ${change.equipmentId}:`, error);
-            // Try direct update as fallback
-            const { data: currentEq } = await supabase
-              .from('equipment')
-              .select('quantity')
-              .eq('id', change.equipmentId)
-              .single();
-            
-            if (currentEq) {
-              await supabase
+    // ===== FETCH ALL EQUIPMENT =====
+    const fetchAllEquipment = async () => {
+        try {
+            const { data, error } = await supabase
                 .from('equipment')
-                .update({ quantity: currentEq.quantity + change.quantity })
-                .eq('id', change.equipmentId);
-            }
-          }
-          console.log(`✅ Restored ${change.quantity} of equipment ${change.equipmentId}`);
-        } else {
-          // Decrease equipment quantity
-          const { error } = await supabase.rpc('decrease_equipment_quantity', {
-            equipment_id: change.equipmentId,
-            decrease_by: change.quantity
-          });
-          
-          if (error) {
-            console.error(`❌ Failed to decrease equipment ${change.equipmentId}:`, error);
-            // Try direct update as fallback
-            const { data: currentEq } = await supabase
-              .from('equipment')
-              .select('quantity')
-              .eq('id', change.equipmentId)
-              .single();
-            
-            if (currentEq) {
-              const newQty = Math.max(0, currentEq.quantity - change.quantity);
-              await supabase
-                .from('equipment')
-                .update({ quantity: newQty })
-                .eq('id', change.equipmentId);
-            }
-          }
-          console.log(`✅ Decreased ${change.quantity} of equipment ${change.equipmentId}`);
+                .select('*')
+                .eq('is_available', true)
+                .order('name');
+
+            if (error) throw error;
+            setAllEquipment(data || []);
+        } catch (error: any) {
+            console.error('Error fetching equipment:', error);
         }
-      }
-      
-      // Update booking in database
-      const { error } = await supabase
-        .from('bookings')
-        .update(updates)
-        .eq('id', bookingId);
-      
-      if (error) throw error;
-      
-      alert.success(
-        getText('Booking updated successfully', 'Pemesanan berhasil diperbarui')
-      );
-      
-      // Refresh data
-      await Promise.all([
-        fetchBookings(),
-        fetchAllEquipment(),
-        fetchBookingStats()
-      ]);
-      
-      setShowEditModal(false);
-      setEditingBooking(null);
-      
-    } catch (error: any) {
-      console.error('Error updating booking:', error);
-      alert.error(
-        error.message || getText('Failed to update booking', 'Gagal memperbarui pemesanan')
-      );
-      throw error;
-    }
-  };
-
-  // HANDLE STATUS UPDATE (APPROVE/REJECT)
-  const handleStatusUpdate = async (bookingId: string, newStatus: 'approved' | 'rejected') => {
-    try {
-      setProcessingIds(prev => new Set(prev).add(bookingId));
-      
-      console.log('📋 Updating booking status...');
-      
-      const booking = bookings.find(b => b.id === bookingId);
-      if (!booking) {
-        throw new Error('Booking not found');
-      }
-
-      const updateData = { 
-        status: newStatus,
-        updated_at: new Date().toISOString()
-      };
-
-      const { error: bookingError } = await supabase
-        .from('bookings')
-        .update(updateData)
-        .eq('id', bookingId);
-
-      if (bookingError) throw bookingError;
-      
-      const statusText = newStatus === 'approved' ? getText('approved', 'disetujui') : getText('rejected', 'ditolak');
-      alert.success(getText(`Booking ${statusText} successfully`, `Pemesanan berhasil ${statusText}`));
-      
-      await Promise.all([
-        fetchBookings(),
-        fetchBookingStats()
-      ]);
-      
-      if (selectedBooking?.id === bookingId) {
-        setShowDetailModal(false);
-      }
-      
-    } catch (error: any) {
-      console.error('❌ Error updating booking status:', error);
-      alert.error(error.message || getText('Failed to update booking status', 'Gagal memperbarui status pemesanan'));
-    } finally {
-      setProcessingIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(bookingId);
-        return newSet;
-      });
-    }
-  };
-
-  // HANDLE BORROW UPDATE (APPROVED -> BORROWED)
-  const handleBorrowUpdate = async (bookingId: string) => {
-    try {
-      setProcessingIds(prev => new Set(prev).add(bookingId));
-      
-      console.log('📦 Processing borrow request...');
-      
-      const booking = bookings.find(b => b.id === bookingId);
-      if (!booking) {
-        throw new Error('Booking not found');
-      }
-
-      if (booking.status !== 'approved') {
-        throw new Error('Only approved bookings can be borrowed');
-      }
-
-      const equipmentList = parseEquipmentRequested(booking.equipment_requested);
-      const quantities = getEquipmentQuantities(booking);
-      
-      // Check equipment availability before borrowing
-      if (equipmentList.length > 0) {
-        for (let i = 0; i < equipmentList.length; i++) {
-          const equipmentId = equipmentList[i];
-          const quantity = quantities[i] || 1;
-          
-          const availability = getEquipmentAvailability(equipmentId);
-          
-          if (availability.available < quantity) {
-            throw new Error(`Insufficient equipment quantity for ${equipmentId}. Available: ${availability.available}, Required: ${quantity}`);
-          }
-        }
-      }
-
-      // Decrease equipment quantities when borrowed
-      if (equipmentList.length > 0) {
-        for (let i = 0; i < equipmentList.length; i++) {
-          const equipmentId = equipmentList[i];
-          const quantity = quantities[i] || 1;
-          
-          const { error } = await supabase.rpc('decrease_equipment_quantity', {
-            equipment_id: equipmentId,
-            decrease_by: quantity
-          });
-          
-          if (error) {
-            console.error(`❌ Failed to decrease equipment ${equipmentId}:`, error);
-            // Fallback to direct update
-            const { data: currentEq } = await supabase
-              .from('equipment')
-              .select('quantity')
-              .eq('id', equipmentId)
-              .single();
-            
-            if (currentEq) {
-              const newQty = Math.max(0, currentEq.quantity - quantity);
-              await supabase
-                .from('equipment')
-                .update({ quantity: newQty })
-                .eq('id', equipmentId);
-            }
-          }
-        }
-      }
-
-      // Update booking status to borrowed
-      const { error: bookingError } = await supabase
-        .from('bookings')
-        .update({ 
-          status: 'borrowed',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', bookingId);
-
-      if (bookingError) throw bookingError;
-      
-      alert.success(getText('Equipment borrowed successfully', 'Peralatan berhasil dipinjam'));
-      setShowBorrowConfirm(null);
-      
-      await Promise.all([
-        fetchBookings(),
-        fetchAllEquipment(),
-        fetchBookingStats()
-      ]);
-      
-      if (selectedBooking?.id === bookingId) {
-        setShowDetailModal(false);
-      }
-      
-    } catch (error: any) {
-      console.error('❌ Error processing borrow request:', error);
-      alert.error(error.message || getText('Failed to process borrow request', 'Gagal memproses permintaan peminjaman'));
-    } finally {
-      setProcessingIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(bookingId);
-        return newSet;
-      });
-    }
-  };
-
-  // HANDLE DELETE
-  const handleDelete = async (bookingId: string) => {
-    try {
-      setProcessingIds(prev => new Set(prev).add(bookingId));
-      
-      console.log('🗑️ Deleting booking...');
-      
-      const booking = bookings.find(b => b.id === bookingId);
-      if (!booking) {
-        throw new Error('Booking not found');
-      }
-
-      // Restore equipment quantities if booking was approved or borrowed
-      const equipmentList = parseEquipmentRequested(booking.equipment_requested);
-      const quantities = getEquipmentQuantities(booking);
-      
-      if ((booking.status === 'approved' || booking.status === 'borrowed') && equipmentList.length > 0) {
-        for (let i = 0; i < equipmentList.length; i++) {
-          const equipmentId = equipmentList[i];
-          const quantity = quantities[i] || 1;
-          
-          const { error } = await supabase.rpc('increase_equipment_quantity', {
-            equipment_id: equipmentId,
-            increase_by: quantity
-          });
-          
-          if (error) {
-            console.error(`❌ Failed to restore equipment ${equipmentId}:`, error);
-            // Fallback
-            const { data: currentEq } = await supabase
-              .from('equipment')
-              .select('quantity')
-              .eq('id', equipmentId)
-              .single();
-            
-            if (currentEq) {
-              await supabase
-                .from('equipment')
-                .update({ quantity: currentEq.quantity + quantity })
-                .eq('id', equipmentId);
-            }
-          }
-        }
-      }
-
-      // Delete the booking
-      const { error } = await supabase
-        .from('bookings')
-        .delete()
-        .eq('id', bookingId);
-
-      if (error) throw error;
-      
-      alert.success(getText('Booking deleted successfully', 'Pemesanan berhasil dihapus'));
-      setShowDeleteConfirm(null);
-      
-      await Promise.all([
-        fetchBookings(),
-        fetchAllEquipment(),
-        fetchBookingStats()
-      ]);
-      
-      if (selectedBooking?.id === bookingId) {
-        setShowDetailModal(false);
-      }
-      
-    } catch (error: any) {
-      console.error('❌ Error deleting booking:', error);
-      alert.error(error.message || getText('Failed to delete booking', 'Gagal menghapus pemesanan'));
-    } finally {
-      setProcessingIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(bookingId);
-        return newSet;
-      });
-    }
-  };
-
-  // EQUIPMENT UTILITY FUNCTIONS
-  const parseEquipmentRequested = (equipmentStr: any): string[] => {
-    if (!equipmentStr) return [];
-    
-    if (Array.isArray(equipmentStr)) {
-      return equipmentStr.map(item => String(item)).filter(item => item);
-    }
-    
-    const strValue = String(equipmentStr);
-    
-    if (!strValue || strValue === 'null' || strValue === 'undefined') return [];
-    
-    try {
-      const parsed = JSON.parse(strValue);
-      if (Array.isArray(parsed)) {
-        return parsed.map(item => String(item)).filter(item => item);
-      }
-      return [String(parsed)].filter(item => item);
-    } catch {
-      return strValue.split(',').map(item => String(item).trim()).filter(item => item);
-    }
-  };
-  
-  const parseAttachments = (attachmentStr: any): string[] => {
-    if (!attachmentStr) return [];
-    
-    if (Array.isArray(attachmentStr)) {
-      return attachmentStr.map(item => String(item)).filter(item => item);
-    }
-    
-    const strValue = String(attachmentStr);
-    
-    if (!strValue || strValue === 'null' || strValue === 'undefined') return [];
-    
-    try {
-      const parsed = JSON.parse(strValue);
-      if (Array.isArray(parsed)) {
-        return parsed.map(item => String(item)).filter(item => item);
-      }
-      return [String(parsed)].filter(item => item);
-    } catch {
-      return strValue.split(',').map(item => String(item).trim()).filter(item => item);
-    }
-  };
-
-  const getEquipmentQuantities = (booking: Booking): number[] => {
-    const equipmentList = parseEquipmentRequested(booking.equipment_requested);
-    
-    if (equipmentList.length === 0) return [];
-    
-    if (Array.isArray(booking.equipment_quantities)) {
-      const quantities = booking.equipment_quantities.map(qty => Number(qty) || 1);
-      if (quantities.length === equipmentList.length) {
-        return quantities;
-      }
-      return equipmentList.map((_, index) => quantities[index] || 1);
-    }
-    
-    if (typeof booking.equipment_quantities === 'string') {
-      try {
-        const parsed = JSON.parse(booking.equipment_quantities);
-        if (Array.isArray(parsed)) {
-          const quantities = parsed.map(qty => Number(qty) || 1);
-          return equipmentList.map((_, index) => quantities[index] || 1);
-        }
-      } catch (error) {
-        console.log('Failed to parse equipment_quantities as JSON:', error);
-      }
-    }
-    
-    if (typeof booking.equipment_quantities === 'number' && booking.equipment_quantities > 0) {
-      return equipmentList.map(() => booking.equipment_quantities as number);
-    }
-    
-    return equipmentList.map(() => 1);
-  };
-
-  const getEquipmentAvailability = (equipmentId: string) => {
-    const equipment = allEquipment.find(eq => eq.id === equipmentId || eq.code === equipmentId || eq.name === equipmentId);
-    if (!equipment) return { available: 0, total: 0 };
-    
-    return {
-      available: equipment.quantity,
-      total: equipment.quantity,
     };
-  };
 
-  // Format datetime untuk display
-  const formatDateTimeDisplay = (iso?: string) => {
-    if (!iso) return 'N/A';
-    try {
-      const date = parseISO(iso);
-      return format(date, 'MMM d, yyyy HH:mm');
-    } catch {
-      return 'N/A';
-    }
-  };
+    // ===== FETCH EQUIPMENT BY ROOM =====
+    const fetchEquipmentByRoom = async (roomId: string) => {
+        try {
+            setLoadingEquipment(true);
 
-  const formatTimeDisplay = (iso?: string) => {
-    if (!iso) return 'N/A';
-    try {
-      const date = parseISO(iso);
-      return format(date, 'HH:mm');
-    } catch {
-      return 'N/A';
-    }
-  };
+            // 1. Fetch MANDATORY equipment for this specific room
+            const { data: mandatoryData, error: mandatoryError } = await supabase
+                .from('equipment')
+                .select('*')
+                .eq('rooms_id', roomId)
+                .eq('is_available', true)
+                .eq('is_mandatory', true);
 
-  const formatDateDisplay = (iso?: string) => {
-    if (!iso) return 'N/A';
-    try {
-      const date = parseISO(iso);
-      return format(date, 'MMM d, HH:mm');
-    } catch {
-      return 'N/A';
-    }
-  };
+            if (mandatoryError) throw mandatoryError;
 
-  // FILTERING
-  const filteredBookings = bookings.filter(booking => {
-    const searchLower = searchTerm.toLowerCase();
-    const matchesSearch = !searchTerm || 
-      (booking.user?.full_name && booking.user.full_name.toLowerCase().includes(searchLower)) ||
-      (booking.user?.identity_number && booking.user.identity_number.toLowerCase().includes(searchLower)) ||
-      (booking.purpose && booking.purpose.toLowerCase().includes(searchLower)) ||
-      (booking.room?.name && booking.room.name.toLowerCase().includes(searchLower)) ||
-      (booking.room?.code && booking.room.code.toLowerCase().includes(searchLower)) ||
-      (booking.user_info?.full_name && booking.user_info.full_name.toLowerCase().includes(searchLower)) ||
-      (booking.user_info?.identity_number && booking.user_info.identity_number.toLowerCase().includes(searchLower));
-    
-    const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
-    
-    let matchesDate = true;
-    if (dateFilter !== 'all') {
-      const bookingDate = new Date(booking.start_time);
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const nextWeek = new Date(today);
-      nextWeek.setDate(nextWeek.getDate() + 7);
+            // 2. Fetch OPTIONAL equipment (is_available=true, is_mandatory=false, quantity>0)
+            const { data: optionalData, error: optionalError } = await supabase
+                .from('equipment')
+                .select('*')
+                .eq('is_mandatory', false)
+                .eq('is_available', true)
+                .gt('quantity', 0)
+                .order('name');
 
-      switch (dateFilter) {
-        case 'today': matchesDate = bookingDate.toDateString() === today.toDateString(); break;
-        case 'tomorrow': matchesDate = bookingDate.toDateString() === tomorrow.toDateString(); break;
-        case 'week': matchesDate = bookingDate >= today && bookingDate <= nextWeek; break;
-        case 'past': matchesDate = bookingDate < today; break;
-      }
-    }
-    
-    return matchesSearch && matchesStatus && matchesDate;
-  });
+            if (optionalError) throw optionalError;
 
-  // UTILITY FUNCTIONS
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'approved': return 'bg-green-100 text-green-800 border-green-200';
-      case 'borrowed': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'rejected': return 'bg-red-100 text-red-800 border-red-200';
-      case 'completed': return 'bg-purple-100 text-purple-800 border-purple-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
+            setMandatoryEquipment(mandatoryData || []);
+            setOptionalEquipment(optionalData || []);
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'pending': return Clock;
-      case 'approved': return CheckCircle;
-      case 'borrowed': return HandHeart;
-      case 'rejected': return XCircle;
-      case 'completed': return Award;
-      default: return AlertIcon;
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'pending': return getText('Pending', 'Menunggu');
-      case 'approved': return getText('Approved', 'Disetujui');
-      case 'borrowed': return getText('Borrowed', 'Dipinjam');
-      case 'rejected': return getText('Rejected', 'Ditolak');
-      case 'completed': return getText('Completed', 'Selesai');
-      default: return status;
-    }
-  };
-
-  const getAvailableActions = (booking: Booking) => {
-    const actions = [];
-    
-    switch (booking.status) {
-      case 'pending':
-        actions.push(
-          { type: 'approve', label: getText('Approve', 'Setujui'), icon: Check, color: 'green' },
-          { type: 'reject', label: getText('Reject', 'Tolak'), icon: X, color: 'red' }
-        );
-        break;
-      case 'approved':
-        actions.push(
-          { type: 'borrow', label: getText('Mark as Borrowed', 'Tandai Dipinjam'), icon: HandHeart, color: 'blue' },
-          { type: 'reject', label: getText('Cancel Approval', 'Batalkan Persetujuan'), icon: X, color: 'red' }
-        );
-        break;
-      case 'borrowed':
-        break;
-      case 'rejected':
-        actions.push(
-          { type: 'approve', label: getText('Re-approve', 'Setujui Ulang'), icon: Check, color: 'green' }
-        );
-        break;
-      case 'completed':
-        break;
-    }
-    
-    return actions;
-  };
-
-  // RENDER EQUIPMENT SECTION
-  const renderEquipmentSection = (selectedBooking: Booking) => {
-    const equipmentList = parseEquipmentRequested(selectedBooking.equipment_requested);
-    const quantities = getEquipmentQuantities(selectedBooking);
-    
-    if (equipmentList.length === 0) {
-      return null;
-    }
-
-    const totalItems = quantities.reduce((sum, qty) => sum + qty, 0);
-
-    return (
-      <div>
-        <h5 className="font-medium text-gray-900 mb-3 flex items-center">
-          <Package className="h-5 w-5 mr-2 text-blue-600" />
-          {getText('Requested Equipment', 'Peralatan yang Diminta')}
-          <span className="ml-2 text-sm text-gray-500">
-            ({equipmentList.length} types, {totalItems} total items)
-          </span>
-        </h5>
-        
-        <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {equipmentList.map((equipmentId, index) => {
-              const requestedQuantity = quantities[index] || 1;
-
-              const equipmentDetails = allEquipment.find(eq => 
-                eq.id === equipmentId || eq.code === equipmentId || eq.name === equipmentId
-              );
-              const equipmentName = equipmentDetails?.name || `Equipment ${equipmentId}`;
-              const equipmentCode = equipmentDetails?.code || 'Unknown';
-              const equipmentUnit = equipmentDetails?.unit || 'pcs';
-              const isMandatory = equipmentDetails?.is_mandatory || false;
-              
-              const availability = getEquipmentAvailability(equipmentId);
-
-              return (
-                <div key={`${equipmentId}-${index}`} className="bg-white rounded-xl border border-emerald-200 p-4 shadow-sm">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center">
-                      <div className={`h-10 w-10 rounded-lg flex items-center justify-center mr-3 ${
-                        isMandatory ? 'bg-emerald-100' : 'bg-blue-100'
-                      }`}>
-                        <Package className={`h-5 w-5 ${isMandatory ? 'text-emerald-600' : 'text-blue-600'}`} />
-                      </div>
-                      <div>
-                        <div className="font-semibold text-emerald-900">{equipmentName}</div>
-                        <div className="text-sm text-emerald-700">{equipmentCode}</div>
-                        {isMandatory && (
-                          <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">
-                            {getText('Mandatory', 'Wajib')}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="text-right">
-                      <div className="font-bold text-emerald-900 text-lg">{requestedQuantity}</div>
-                      <div className="text-xs text-emerald-600">{equipmentUnit}</div>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-3 p-3 bg-gray-50 rounded-lg border">
-                    <div className="text-xs font-medium text-gray-600 mb-2">CURRENT AVAILABILITY</div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Available:</span>
-                      <span className={`font-bold text-lg ${availability.available >= requestedQuantity ? 'text-green-600' : 'text-red-600'}`}>
-                        {availability.available}
-                      </span>
-                    </div>
-                    
-                    <div className="mt-2 pt-2 border-t border-gray-200">
-                      {availability.available >= requestedQuantity ? (
-                        <div className="flex items-center text-green-700">
-                          <CheckCircle className="h-4 w-4 mr-1" />
-                          <span className="text-xs font-medium">
-                            {getText('Sufficient quantity available', 'Jumlah mencukupi')}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center text-red-700">
-                          <XCircle className="h-4 w-4 mr-1" />
-                          <span className="text-xs font-medium">
-                            {getText('Insufficient quantity!', 'Jumlah tidak mencukupi!')} 
-                            <span className="ml-1">
-                              ({getText('Need', 'Butuh')} {requestedQuantity}, {getText('Available', 'Tersedia')} {availability.available})
-                            </span>
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {selectedBooking.status === 'borrowed' && (
-                    <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                      <div className="flex items-center text-blue-700">
-                        <HandHeart className="h-4 w-4 mr-1" />
-                        <span className="text-xs font-medium">
-                          {getText('Currently borrowed', 'Sedang dipinjam')}
-                        </span>
-                      </div>
-                      <div className="text-xs text-blue-600 mt-1">
-                        {getText('Last updated', 'Terakhir diperbarui')}: {formatDateTimeDisplay(selectedBooking.updated_at)}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          
-          <div className="mt-4 pt-4 border-t border-emerald-200">
-            {(() => {
-              const allSufficient = equipmentList.every((equipmentId, index) => {
-                const requestedQuantity = quantities[index] || 1;
-                const availability = getEquipmentAvailability(equipmentId);
-                return availability.available >= requestedQuantity;
-              });
-              
-              return allSufficient ? (
-                <div className="flex items-center text-green-700 bg-green-100 rounded-lg p-3">
-                  <CheckCircle className="h-5 w-5 mr-2" />
-                  <span className="font-medium">
-                    {getText('✅ All equipment available for booking', '✅ Semua peralatan tersedia untuk pemesanan')}
-                    <span className="ml-2 text-sm">({totalItems} items total)</span>
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-center text-red-700 bg-red-100 rounded-lg p-3">
-                  <XCircle className="h-5 w-5 mr-2" />
-                  <span className="font-medium">
-                    {getText('❌ Some equipment insufficient for booking', '❌ Beberapa peralatan tidak mencukupi untuk pemesanan')}
-                    <span className="ml-2 text-sm">({totalItems} items requested)</span>
-                  </span>
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // PAGINATION COMPONENT
-  const renderPagination = () => {
-    if (loading || totalCount <= pageSize) return null;
-    
-    const totalPages = Math.ceil(totalCount / pageSize);
-    if (totalPages <= 1) return null;
-
-    return (
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mt-6">
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-gray-700">
-            {getText(
-              `Showing ${((currentPage - 1) * pageSize) + 1} to ${Math.min(currentPage * pageSize, totalCount)} of ${totalCount} bookings`,
-              `Menampilkan ${((currentPage - 1) * pageSize) + 1} hingga ${Math.min(currentPage * pageSize, totalCount)} dari ${totalCount} pemesanan`
-            )}
-          </div>
-          
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              disabled={currentPage === 1 || loading}
-              className="flex items-center px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              {getText('Previous', 'Sebelumnya')}
-            </button>
+            return {
+                mandatory: mandatoryData || [],
+                optional: optionalData || []
+            };
             
-            <div className="flex items-center space-x-1">
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                let pageNum;
-                if (totalPages <= 5) {
-                  pageNum = i + 1;
-                } else if (currentPage <= 3) {
-                  pageNum = i + 1;
-                } else if (currentPage >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
-                } else {
-                  pageNum = currentPage - 2 + i;
+        } catch (error: any) {
+            console.error('Error fetching equipment by room:', error);
+            toast.error('Gagal memuat data peralatan');
+            return { mandatory: [], optional: [] };
+        } finally {
+            setLoadingEquipment(false);
+        }
+    };
+
+    // ===== INITIALIZE EQUIPMENT SELECTIONS FROM BOOKING =====
+    const initializeEquipmentSelections = async (booking: Booking, newRoomId?: string) => {
+        const targetRoomId = newRoomId || booking.room_id;
+        const { mandatory, optional } = await fetchEquipmentByRoom(targetRoomId);
+
+        const selections: EquipmentSelection[] = [];
+        const unavailable: string[] = [];
+
+        // Add all mandatory equipment from the target room
+        mandatory.forEach(eq => {
+            // Check if this equipment was in original booking
+            const originalIndex = booking.equipment_requested?.indexOf(eq.id);
+            const originalQty = originalIndex !== -1 
+                ? booking.equipment_quantities?.[originalIndex] || 1 
+                : eq.quantity;
+
+            // Validate availability
+            if (!eq.is_available) {
+                unavailable.push(eq.name);
+                return;
+            }
+
+            selections.push({
+                equipment_id: eq.id,
+                equipment_name: eq.name,
+                equipment_code: eq.code,
+                equipment_unit: eq.unit || 'pcs',
+                quantity: Math.min(originalQty, eq.quantity),
+                is_mandatory: true,
+                max_quantity: eq.quantity
+            });
+        });
+
+        // If room hasn't changed, also include optional equipment from original booking
+        if (!newRoomId || newRoomId === booking.room_id) {
+            booking.equipment_requested?.forEach((eqId, index) => {
+                // Skip if already added as mandatory
+                if (selections.some(s => s.equipment_id === eqId)) return;
+
+                const eq = [...mandatory, ...optional].find(e => e.id === eqId);
+                if (eq && !eq.is_mandatory) {
+                    // Validate availability for optional equipment
+                    if (!eq.is_available) {
+                        unavailable.push(eq.name);
+                        return;
+                    }
+
+                    selections.push({
+                        equipment_id: eq.id,
+                        equipment_name: eq.name,
+                        equipment_code: eq.code,
+                        equipment_unit: eq.unit || 'pcs',
+                        quantity: booking.equipment_quantities?.[index] || 1,
+                        is_mandatory: false,
+                        max_quantity: eq.quantity
+                    });
                 }
-                
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => setCurrentPage(pageNum)}
-                    disabled={loading}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      currentPage === pageNum
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-700 hover:bg-gray-50 border border-gray-300 disabled:opacity-50'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-            </div>
+            });
+        }
+
+        setUnavailableEquipment(unavailable);
+        setEquipmentSelections(selections);
+    };
+
+    // ===== HANDLE ROOM CHANGE IN EDIT =====
+    const handleRoomChange = async (newRoomId: string) => {
+        if (!selectedBooking) return;
+
+        setEditFormData(prev => ({ ...prev, room_id: newRoomId }));
+        setEquipmentSearch(''); // Reset search when room changes
+        
+        // Re-initialize equipment selections with new room
+        await initializeEquipmentSelections(selectedBooking, newRoomId);
+    };
+
+    // ===== ADD OPTIONAL EQUIPMENT =====
+    const addOptionalEquipment = (equipment: Equipment) => {
+        // Check if already added
+        if (equipmentSelections.some(s => s.equipment_id === equipment.id)) {
+            toast.error('Peralatan sudah ditambahkan');
+            return;
+        }
+
+        setEquipmentSelections(prev => [...prev, {
+            equipment_id: equipment.id,
+            equipment_name: equipment.name,
+            equipment_code: equipment.code,
+            equipment_unit: equipment.unit || 'pcs',
+            quantity: 1,
+            is_mandatory: false,
+            max_quantity: equipment.quantity
+        }]);
+    };
+
+    // ===== REMOVE OPTIONAL EQUIPMENT =====
+    const removeOptionalEquipment = (equipmentId: string) => {
+        setEquipmentSelections(prev => 
+            prev.filter(s => s.equipment_id !== equipmentId || s.is_mandatory)
+        );
+    };
+
+    // ===== UPDATE EQUIPMENT QUANTITY =====
+    const updateEquipmentQuantity = (equipmentId: string, newQuantity: number) => {
+        setEquipmentSelections(prev => 
+            prev.map(s => {
+                if (s.equipment_id === equipmentId) {
+                    return {
+                        ...s,
+                        quantity: Math.max(1, Math.min(newQuantity, s.max_quantity))
+                    };
+                }
+                return s;
+            })
+        );
+    };
+
+    // ===== FILTER OPTIONAL EQUIPMENT =====
+    const filteredOptionalEquipment = useMemo(() => {
+        const searchLower = equipmentSearch.toLowerCase();
+        return optionalEquipment.filter(eq => 
+            !equipmentSelections.some(s => s.equipment_id === eq.id) &&
+            (eq.name.toLowerCase().includes(searchLower) || 
+             eq.code?.toLowerCase().includes(searchLower) || 
+             eq.category?.toLowerCase().includes(searchLower))
+        );
+    }, [optionalEquipment, equipmentSelections, equipmentSearch]);
+
+    // ===== CREATE CHECKOUT FOR OLD BOOKING DATA =====
+    const createCheckoutForOldData = async (
+        booking: Booking,
+        mandatoryEquipmentOnly: Equipment[]
+    ): Promise<string | null> => {
+        try {
+            console.log('📦 Creating checkout for old booking data...');
+
+            // 1. Create checkout record
+            const checkoutData: CheckoutData = {
+                user_id: booking.user_id,
+                booking_id: booking.id,
+                room_id: booking.room_id,
+                checkout_date: new Date().toISOString(),
+                expected_return_date: booking.end_time,
+                status: 'returned',
+                checkout_notes: `Auto-checkout dari edit booking. Room sebelumnya: ${booking.room?.name}`,
+                condition_on_checkout: 'Baik',
+                total_items: mandatoryEquipmentOnly.length,
+                type: 'room',
+                created_at: new Date().toISOString()
+            };
+
+            const { data: checkoutResult, error: checkoutError } = await supabase
+                .from('checkouts')
+                .insert(checkoutData)
+                .select()
+                .single();
+
+            if (checkoutError) throw checkoutError;
+
+            console.log('✅ Checkout created:', checkoutResult.id);
+
+            // 2. Create checkout_items for MANDATORY equipment only
+            const checkoutItems: CheckoutItemData[] = [];
+
+            booking.equipment_requested?.forEach((eqId, index) => {
+                const equipment = mandatoryEquipmentOnly.find(e => e.id === eqId);
+                if (equipment && equipment.is_mandatory) {
+                    checkoutItems.push({
+                        checkout_id: checkoutResult.id,
+                        equipment_id: eqId,
+                        quantity: booking.equipment_quantities?.[index] || 1,
+                        condition_notes: 'Auto dari edit booking',
+                        status: 'pending_verification'
+                    });
+                }
+            });
+
+            if (checkoutItems.length > 0) {
+                const { error: itemsError } = await supabase
+                    .from('checkout_items')
+                    .insert(checkoutItems);
+
+                if (itemsError) throw itemsError;
+                console.log('✅ Checkout items created:', checkoutItems.length);
+            }
+
+            return checkoutResult.id;
+
+        } catch (error: any) {
+            console.error('❌ Error creating checkout:', error);
+            throw error;
+        }
+    };
+
+    // ===== UPDATE EQUIPMENT QUANTITIES =====
+    const updateEquipmentQuantities = async (
+        oldSelections: EquipmentSelection[],
+        newSelections: EquipmentSelection[],
+        action: 'borrow' | 'return'
+    ) => {
+        try {
+            console.log(`📊 Updating equipment quantities (${action})...`);
+
+            for (const newSel of newSelections) {
+                const oldSel = oldSelections.find(o => o.equipment_id === newSel.equipment_id);
+                const oldQty = oldSel?.quantity || 0;
+                const newQty = newSel.quantity;
+                const difference = newQty - oldQty;
+
+                if (difference !== 0) {
+                    const { data: currentEq, error: fetchError } = await supabase
+                        .from('equipment')
+                        .select('quantity')
+                        .eq('id', newSel.equipment_id)
+                        .single();
+
+                    if (fetchError) throw fetchError;
+
+                    let newEquipmentQty: number;
+                    
+                    if (action === 'borrow') {
+                        newEquipmentQty = currentEq.quantity - difference;
+                    } else {
+                        newEquipmentQty = currentEq.quantity + difference;
+                    }
+
+                    const { error: updateError } = await supabase
+                        .from('equipment')
+                        .update({ 
+                            quantity: Math.max(0, newEquipmentQty),
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', newSel.equipment_id);
+
+                    if (updateError) throw updateError;
+
+                    console.log(`  ✅ Equipment ${newSel.equipment_name}: ${currentEq.quantity} → ${newEquipmentQty}`);
+
+                    // Log to equipment_quantity_logs
+                    await supabase
+                        .from('equipment_quantity_logs')
+                        .insert({
+                            equipment_id: newSel.equipment_id,
+                            from_quantity: currentEq.quantity,
+                            to_quantity: newEquipmentQty,
+                            change_amount: Math.abs(difference),
+                            transaction_type: action === 'borrow' ? 'checkout' : 'return',
+                            reference_type: 'booking_edit',
+                            created_at: new Date().toISOString()
+                        });
+                }
+            }
+
+            // Handle removed equipment (return to stock)
+            for (const oldSel of oldSelections) {
+                if (!newSelections.some(n => n.equipment_id === oldSel.equipment_id)) {
+                    const { data: currentEq, error: fetchError } = await supabase
+                        .from('equipment')
+                        .select('quantity')
+                        .eq('id', oldSel.equipment_id)
+                        .single();
+
+                    if (fetchError) throw fetchError;
+
+                    const newEquipmentQty = currentEq.quantity + oldSel.quantity;
+
+                    const { error: updateError } = await supabase
+                        .from('equipment')
+                        .update({ 
+                            quantity: newEquipmentQty,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', oldSel.equipment_id);
+
+                    if (updateError) throw updateError;
+
+                    console.log(`  ✅ Equipment ${oldSel.equipment_name} returned: ${currentEq.quantity} → ${newEquipmentQty}`);
+                }
+            }
+
+        } catch (error: any) {
+            console.error('❌ Error updating equipment quantities:', error);
+            throw error;
+        }
+    };
+
+    // ===== HANDLE UPDATE BOOKING =====
+    const handleUpdateBooking = async () => {
+        if (!selectedBooking) return;
+
+        try {
+            setProcessingIds(prev => new Set(prev).add(selectedBooking.id));
             
-            <button
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-              disabled={currentPage === totalPages || loading}
-              className="flex items-center px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {getText('Next', 'Selanjutnya')}
-              <ChevronRight className="h-4 w-4 ml-1" />
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
+            const originalStatus = selectedBooking.status;
+            const roomChanged = editFormData.room_id !== selectedBooking.room_id;
 
-  // ACCESS CONTROL CHECK
-  if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            {getText('Access Denied', 'Akses Ditolak')}
-          </h3>
-          <p className="text-gray-600">
-            {getText("You don't have permission to access booking management.", 'Anda tidak memiliki izin untuk mengakses manajemen pemesanan.')}
-          </p>
-        </div>
-      </div>
-    );
-  }
+            console.log('🔄 Updating booking...', {
+                bookingId: selectedBooking.id,
+                originalStatus,
+                roomChanged,
+                newRoomId: editFormData.room_id
+            });
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center space-x-3">
-              <Calendar className="h-8 w-8" />
-              <span>{getText('Booking Management', 'Manajemen Pemesanan')}</span>
-            </h1>
-            <p className="mt-2 opacity-90">
-              {getText('Review and manage room booking requests with equipment borrowing', 'Tinjau dan kelola permintaan pemesanan ruangan dengan peminjaman peralatan')}
-            </p>
-          </div>
-          <div className="hidden md:block text-right">
-            <div className="text-2xl font-bold">
-              {statsLoading ? (
-                <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-              ) : (
-                bookingStats.total || bookings.length
-              )}
-            </div>
-            <div className="text-sm opacity-80">{getText('Total Bookings', 'Total Pemesanan')}</div>
-          </div>
-        </div>
-      </div>
+            // ===== CASE 1: STATUS = "BORROWED" =====
+            if (originalStatus === 'borrowed') {
+                // If room changed, create checkout for old data
+                if (roomChanged) {
+                    const { data: oldMandatoryEquipment } = await supabase
+                        .from('equipment')
+                        .select('*')
+                        .eq('rooms_id', selectedBooking.room_id)
+                        .eq('is_available', true)
+                        .eq('is_mandatory', true);
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        {[
-          { 
-            label: getText('Pending', 'Menunggu'), 
-            count: bookingStats.pending, 
-            color: 'bg-yellow-500', 
-            icon: Clock,
-            description: getText('Awaiting review', 'Menunggu tinjauan')
-          },
-          { 
-            label: getText('Approved', 'Disetujui'), 
-            count: bookingStats.approved, 
-            color: 'bg-green-500', 
-            icon: CheckCircle,
-            description: getText('Ready to borrow', 'Siap dipinjam')
-          },
-          { 
-            label: getText('Borrowed', 'Dipinjam'), 
-            count: bookingStats.borrowed, 
-            color: 'bg-blue-500', 
-            icon: HandHeart,
-            description: getText('Currently borrowed', 'Sedang dipinjam')
-          },
-          { 
-            label: getText('Rejected', 'Ditolak'), 
-            count: bookingStats.rejected, 
-            color: 'bg-red-500', 
-            icon: XCircle,
-            description: getText('Request denied', 'Permintaan ditolak')
-          },
-          { 
-            label: getText('Completed', 'Selesai'), 
-            count: bookingStats.completed, 
-            color: 'bg-purple-500', 
-            icon: Award,
-            description: getText('Returned', 'Dikembalikan')
-          },
-        ].map((stat, index) => (
-          <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between mb-2">
-              <div className={`${stat.color} p-2 rounded-lg`}>
-                <stat.icon className="h-5 w-5 text-white" />
-              </div>
-              <div className="text-right">
-                <p className="text-2xl font-bold text-gray-900">
-                  {statsLoading ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : (
-                    stat.count
-                  )}
-                </p>
-              </div>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-900">{stat.label}</p>
-              <p className="text-xs text-gray-500">{stat.description}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Controls */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-          <div className="flex flex-col sm:flex-row gap-4 flex-1">
-            {/* Search */}
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-              <input
-                type="text"
-                placeholder={getText('Search bookings...', 'Cari pemesanan...')}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-
-            {/* Status Filter */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="all">{getText('All Status', 'Semua Status')}</option>
-              <option value="pending">{getText('Pending', 'Menunggu')}</option>
-              <option value="approved">{getText('Approved', 'Disetujui')}</option>
-              <option value="borrowed">{getText('Borrowed', 'Dipinjam')}</option>
-              <option value="rejected">{getText('Rejected', 'Ditolak')}</option>
-              <option value="completed">{getText('Completed', 'Selesai')}</option>
-            </select>
-
-            {/* Date Filter */}
-            <select
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="all">{getText('All Dates', 'Semua Tanggal')}</option>
-              <option value="today">{getText('Today', 'Hari Ini')}</option>
-              <option value="tomorrow">{getText('Tomorrow', 'Besok')}</option>
-              <option value="week">{getText('This Week', 'Minggu Ini')}</option>
-              <option value="past">{getText('Past Bookings', 'Pemesanan Lalu')}</option>
-            </select>
-          </div>
-
-          {/* Refresh Button */}
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => initializeData()}
-              disabled={loading}
-              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors duration-200 disabled:opacity-50"
-              title={getText('Refresh', 'Segarkan')}
-            >
-              <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Bookings Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  {getText('User & Purpose', 'Pengguna & Tujuan')}
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  {getText('Room & Time', 'Ruangan & Waktu')}
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  {getText('Details', 'Detail')}
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  {getText('Status', 'Status')}
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  {getText('Actions', 'Aksi')}
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center">
-                    <div className="flex items-center justify-center">
-                      <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mr-2" />
-                      <span className="text-gray-600">{getText('Loading bookings...', 'Memuat pemesanan...')}</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : filteredBookings.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center">
-                    <Calendar className="h-16 w-16 text-blue-500 mx-auto mb-4" />
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                      {getText('No bookings found', 'Tidak ada pemesanan ditemukan')}
-                    </h3>
-                    <p className="text-gray-600">
-                      {searchTerm || statusFilter !== 'all' || dateFilter !== 'all' ? 
-                        getText('Try adjusting your search filters', 'Coba sesuaikan filter pencarian Anda') :
-                        getText('No bookings available', 'Belum ada pemesanan tersedia')
-                      }
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                filteredBookings.map((booking) => {
-                  const StatusIcon = getStatusIcon(booking.status);
-                  const equipmentList = parseEquipmentRequested(booking.equipment_requested);
-                  const availableActions = getAvailableActions(booking);
-                  
-                  return (
-                    <tr key={booking.id} className="hover:bg-gray-50 transition-colors duration-200">
-                      <td className="px-6 py-4">
-                        <div className="flex items-start space-x-3">
-                          <div className="flex-shrink-0 h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-lg flex items-center justify-center">
-                            <User className="h-5 w-5 text-white" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center space-x-2">
-                              <p className="text-sm font-medium text-gray-900 truncate">
-                                {booking.user?.full_name || booking.user_info?.full_name || 'Unknown User'}
-                              </p>
-                              {booking.user?.role && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                                  {booking.user.role}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-sm text-gray-500 truncate">
-                              {booking.user?.phone_number || booking.user_info?.phone_number || 'No ID'}
-                            </p>
-                            <p className="text-sm text-blue-600 truncate font-medium mt-1">
-                              {booking.purpose}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center text-sm text-gray-900">
-                            <Building className="h-4 w-4 mr-1 text-gray-400" />
-                            <span className="font-medium">{booking.room?.name || 'Unknown Room'}</span>
-                          </div>
-                          <div className="flex items-center text-sm text-gray-500">
-                            <MapPin className="h-4 w-4 mr-1 text-gray-400" />
-                            <span>{booking.room?.code || 'N/A'}</span>
-                          </div>
-                          <div className="flex items-center text-sm text-gray-600">
-                            <Clock className="h-4 w-4 mr-1 text-gray-400" />
-                            <span>
-                              {formatDateDisplay(booking.start_time)}
-                            </span>
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {booking.end_time ? (
-                              <>
-                                {getText('to', 'hingga')} {formatTimeDisplay(booking.end_time)}
-                              </>
-                            ) : 'N/A'}
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <div className="space-y-2">
-                          <div className="flex items-center text-sm">
-                            <GraduationCap className="h-4 w-4 mr-1 text-gray-400" />
-                            <span className="text-gray-900">{booking.sks || 0} SKS</span>
-                            <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-800 text-xs rounded">
-                              {booking.class_type === 'theory' ? getText('Theory', 'Teori') : getText('Practical', 'Praktik')}
-                            </span>
-                          </div>
-                          
-                          {equipmentList.length > 0 && (
-                            <div className="flex items-center text-sm text-gray-600">
-                              <Package className="h-4 w-4 mr-1 text-gray-400" />
-                              <span>
-                                {equipmentList.length} {getText('equipment', 'peralatan')}
-                                {booking.equipment_quantities && (
-                                  <span className="ml-1 text-xs text-gray-500">
-                                    ({getEquipmentQuantities(booking).reduce((sum, qty) => sum + qty, 0)} items)
-                                  </span>
-                                )}
-                              </span>
-                            </div>
-                          )}
-                          
-                          <div className="text-xs text-gray-500">
-                            {booking.created_at ? (
-                              <>
-                                {getText('Created', 'Dibuat')}: {formatDateDisplay(booking.created_at)}
-                              </>
-                            ) : 'N/A'}
-                          </div>
-
-                          {booking.status === 'borrowed' && (
-                            <div className="text-xs text-blue-600 flex items-center">
-                              <HandHeart className="h-3 w-3 mr-1" />
-                              {getText('Status', 'Status')}: {getStatusText(booking.status)}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <div className="flex items-center space-x-2">
-                          <StatusIcon className="h-4 w-4" />
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(booking.status)}`}>
-                            {getStatusText(booking.status)}
-                          </span>
-                          {booking.status === 'pending' && (
-                            <Bell className="h-3 w-3 text-yellow-500 animate-pulse" title={getText('Needs attention', 'Perlu perhatian')} />
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end space-x-2">
-                          <button
-                            onClick={() => {
-                              setSelectedBooking(booking);
-                              setShowDetailModal(true);
-                            }}
-                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200"
-                            title={getText('View Details', 'Lihat Detail')}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-
-                          {/* Edit Button */}
-                          <button
-                            onClick={() => {
-                              setEditingBooking(booking);
-                              setShowEditModal(true);
-                            }}
-                            className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors duration-200"
-                            title={getText('Edit Booking', 'Edit Pemesanan')}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </button>
-
-                          {availableActions.map((action, index) => (
-                            <button
-                              key={index}
-                              onClick={() => {
-                                if (action.type === 'approve') {
-                                  handleStatusUpdate(booking.id, 'approved');
-                                } else if (action.type === 'reject') {
-                                  handleStatusUpdate(booking.id, 'rejected');
-                                } else if (action.type === 'borrow') {
-                                  setShowBorrowConfirm(booking.id);
-                                }
-                              }}
-                              disabled={processingIds.has(booking.id)}
-                              className={`p-2 text-gray-400 hover:text-${action.color}-600 hover:bg-${action.color}-50 rounded-lg transition-colors duration-200 disabled:opacity-50`}
-                              title={action.label}
-                            >
-                              {processingIds.has(booking.id) ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <action.icon className="h-4 w-4" />
-                              )}
-                            </button>
-                          ))}
-
-                          <button
-                            onClick={() => setShowDeleteConfirm(booking.id)}
-                            disabled={processingIds.has(booking.id)}
-                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200 disabled:opacity-50"
-                            title={getText('Delete', 'Hapus')}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Pagination */}
-      {renderPagination()}
-
-      {/* Edit Modal */}
-      {showEditModal && editingBooking && (
-        <EditBookingModal
-          booking={editingBooking}
-          isOpen={showEditModal}
-          onClose={() => {
-            setShowEditModal(false);
-            setEditingBooking(null);
-          }}
-          onSave={handleEditBooking}
-          rooms={allRooms}
-          allEquipment={allEquipment}
-        />
-      )}
-
-      {/* Detail Modal */}
-      {showDetailModal && selectedBooking && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold">{getText('Booking Details', 'Detail Pemesanan')}</h2>
-                  <p className="mt-1 opacity-90">
-                    {getText('Review booking information and manage status', 'Tinjau informasi pemesanan dan kelola status')}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowDetailModal(false)}
-                  className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Left Column */}
-                <div className="space-y-6">
-                  {/* User Information */}
-                  <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
-                    <h4 className="font-medium text-blue-900 mb-3 flex items-center">
-                      <User className="h-5 w-5 mr-2" />
-                      {getText('User Information', 'Informasi Pengguna')}
-                    </h4>
-                    <div className="space-y-2">
-                      <div className="flex items-center">
-                        <span className="text-sm text-blue-700 w-24">{getText('Name', 'Nama')}:</span>
-                        <span className="text-sm font-medium text-blue-900">
-                          {selectedBooking.user?.full_name || selectedBooking.user_info?.full_name || 'Unknown User'}
-                        </span>
-                      </div>
-                      <div className="flex items-center">
-                        <span className="text-sm text-blue-700 w-24">{getText('Phone', 'Telepon')}:</span>
-                        <span className="text-sm text-blue-900">
-                          {selectedBooking.user?.phone_number|| selectedBooking.user_info?.phone_number || 'No ID'}
-                        </span>
-                      </div>
-                      {selectedBooking.user?.email && (
-                        <div className="flex items-center">
-                          <span className="text-sm text-blue-700 w-24">{getText('Email', 'Email')}:</span>
-                          <span className="text-sm text-blue-900">{selectedBooking.user.email}</span>
-                        </div>
-                      )}
-                      {selectedBooking.user?.study_program && (
-                        <div className="flex items-center">
-                          <span className="text-sm text-blue-700 w-24">{getText('Program', 'Program')}:</span>
-                          <span className="text-sm text-blue-900">{selectedBooking.user.study_program.name}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Room Information */}
-                  <div className="bg-green-50 rounded-xl p-4 border border-green-200">
-                    <h4 className="font-medium text-green-900 mb-3 flex items-center">
-                      <Building className="h-5 w-5 mr-2" />
-                      {getText('Room Information', 'Informasi Ruangan')}
-                    </h4>
-                    <div className="space-y-2">
-                      <div className="flex items-center">
-                        <span className="text-sm text-green-700 w-24">{getText('Room', 'Ruangan')}:</span>
-                        <span className="text-sm font-medium text-green-900">
-                          {selectedBooking.room?.name || 'Unknown Room'}
-                        </span>
-                      </div>
-                      <div className="flex items-center">
-                        <span className="text-sm text-green-700 w-24">{getText('Code', 'Kode')}:</span>
-                        <span className="text-sm text-green-900">{selectedBooking.room?.code || 'N/A'}</span>
-                      </div>
-                      <div className="flex items-center">
-                        <span className="text-sm text-green-700 w-24">{getText('Capacity', 'Kapasitas')}:</span>
-                        <span className="text-sm text-green-900">
-                          {selectedBooking.room?.capacity || 'N/A'} {getText('people', 'orang')}
-                        </span>
-                      </div>
-                      {selectedBooking.room?.department && (
-                        <div className="flex items-center">
-                          <span className="text-sm text-green-700 w-24">{getText('Department', 'Departemen')}:</span>
-                          <span className="text-sm text-green-900">{selectedBooking.room.department.name}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Equipment Section */}
-                  {renderEquipmentSection(selectedBooking)}
-                </div>
-
-                {/* Right Column */}
-                <div className="space-y-6">
-                  {/* Booking Details */}
-                  <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
-                    <h4 className="font-medium text-purple-900 mb-3 flex items-center">
-                      <Calendar className="h-5 w-5 mr-2" />
-                      {getText('Booking Details', 'Detail Pemesanan')}
-                    </h4>
-                    <div className="space-y-3">
-                      <div>
-                        <span className="text-sm text-purple-700">{getText('Purpose', 'Tujuan')}:</span>
-                        <p className="text-sm font-medium text-purple-900 mt-1">{selectedBooking.purpose}</p>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <span className="text-sm text-purple-700">{getText('Start Time', 'Waktu Mulai')}:</span>
-                          <p className="text-sm font-medium text-purple-900">
-                            {formatDateTimeDisplay(selectedBooking.start_time)}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-sm text-purple-700">{getText('End Time', 'Waktu Selesai')}:</span>
-                          <p className="text-sm font-medium text-purple-900">
-                            {formatDateTimeDisplay(selectedBooking.end_time)}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <span className="text-sm text-purple-700">{getText('SKS', 'SKS')}:</span>
-                          <p className="text-sm font-medium text-purple-900">{selectedBooking.sks || 0} SKS</p>
-                        </div>
-                        <div>
-                          <span className="text-sm text-purple-700">{getText('Class Type', 'Jenis Kelas')}:</span>
-                          <p className="text-sm font-medium text-purple-900">
-                            {selectedBooking.class_type === 'theory' ? getText('Theory', 'Teori') : getText('Practical', 'Praktik')}
-                          </p>
-                        </div>
-                      </div>
-
-                      {selectedBooking.notes && (
-                        <div>
-                          <span className="text-sm text-purple-700">{getText('Notes', 'Catatan')}:</span>
-                          <p className="text-sm text-purple-900 mt-1 p-3 bg-white rounded-lg border border-purple-200">
-                            {selectedBooking.notes}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Status Information */}
-                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                    <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                      <Info className="h-5 w-5 mr-2" />
-                      {getText('Status Information', 'Informasi Status')}
-                    </h4>
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-700">{getText('Current Status', 'Status Saat Ini')}:</span>
-                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(selectedBooking.status)}`}>
-                          {getStatusText(selectedBooking.status)}
-                        </span>
-                      </div>
-                      
-                      <div className="border-l-2 border-gray-200 pl-4 space-y-3">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                          <div className="flex-1">
-                            <div className="text-sm font-medium text-gray-900">{getText('Created', 'Dibuat')}</div>
-                            <div className="text-xs text-gray-500">
-                              {formatDateTimeDisplay(selectedBooking.created_at)}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <div className={`w-3 h-3 rounded-full ${
-                            selectedBooking.status === 'pending' ? 'bg-yellow-500' :
-                            selectedBooking.status === 'approved' ? 'bg-green-500' :
-                            selectedBooking.status === 'borrowed' ? 'bg-blue-500' :
-                            selectedBooking.status === 'rejected' ? 'bg-red-500' :
-                            selectedBooking.status === 'completed' ? 'bg-purple-500' : 'bg-gray-300'
-                          }`}></div>
-                          <div className="flex-1">
-                            <div className="text-sm font-medium text-gray-900">{getText('Last Updated', 'Terakhir Diperbarui')}</div>
-                            <div className="text-xs text-gray-500">
-                              {formatDateTimeDisplay(selectedBooking.updated_at)}
-                            </div>
-                            <div className="text-xs text-gray-400 mt-1">
-                              Status: {getStatusText(selectedBooking.status)}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Attachments */}
-                  {selectedBooking.attachments && parseAttachments(selectedBooking.attachments).length > 0 && (
-                    <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
-                      <h4 className="font-medium text-purple-900 mb-3 flex items-center">
-                        <FileText className="h-5 w-5 mr-2" />
-                        {getText('Booking Documents', 'Dokumen Pemesanan')}
-                        <span className="ml-2 text-sm text-purple-600">({parseAttachments(selectedBooking.attachments).length} files)</span>
-                      </h4>
-                      
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {parseAttachments(selectedBooking.attachments).map((attachment, index) => {
-                          const isPDF = attachment.startsWith('data:application/pdf') || attachment.toLowerCase().includes('.pdf');
-                          
-                          return (
-                            <div key={index} className="relative group">
-                              <div 
-                                onClick={() => window.open(attachment, '_blank')}
-                                className="cursor-pointer bg-white rounded-lg border border-purple-200 p-3 hover:shadow-md transition-all duration-200 hover:scale-105"
-                              >
-                                {isPDF ? (
-                                  <div className="flex flex-col items-center">
-                                    <div className="h-16 w-16 bg-red-100 rounded-lg flex items-center justify-center mb-2">
-                                      <FileText className="h-8 w-8 text-red-600" />
-                                    </div>
-                                    <span className="text-xs text-center text-gray-700 font-medium">
-                                      PDF Document
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <div className="relative">
-                                    <img
-                                      src={attachment}
-                                      alt={`Booking Document ${index + 1}`}
-                                      className="w-full h-16 object-cover rounded-lg mb-2"
-                                    />
-                                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg transition-all duration-200 flex items-center justify-center">
-                                      <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-                                    </div>
-                                    <span className="text-xs text-center text-gray-700 font-medium block">
-                                      Image File
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                              
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  window.open(attachment, '_blank');
-                                }}
-                                className="absolute top-1 right-1 bg-purple-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-purple-700"
-                                title={getText('Quick View', 'Lihat Cepat')}
-                              >
-                                <Eye className="h-3 w-3" />
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      
-                      <div className="mt-4 pt-4 border-t border-purple-200">
-                        <button
-                          onClick={() => {
-                            parseAttachments(selectedBooking.attachments).forEach((attachment, index) => {
-                              const link = document.createElement('a');
-                              link.href = attachment;
-                              link.download = `booking_document_${index + 1}${attachment.startsWith('data:application/pdf') ? '.pdf' : '.jpg'}`;
-                              link.click();
-                            });
-                            alert.success(getText('Documents downloaded', 'Dokumen berhasil diunduh'));
-                          }}
-                          className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors duration-200"
-                        >
-                          <Download className="h-4 w-4" />
-                          <span>{getText('Download All Documents', 'Unduh Semua Dokumen')}</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Actions Section */}
-                  {(() => {
-                    const availableActions = getAvailableActions(selectedBooking);
-                    if (availableActions.length === 0) return null;
-
-                    return (
-                      <div className="bg-yellow-50 rounded-xl p-4 border border-yellow-200">
-                        <h4 className="font-medium text-yellow-900 mb-3 flex items-center">
-                          <Zap className="h-5 w-5 mr-2" />
-                          {getText('Available Actions', 'Tindakan yang Tersedia')}
-                        </h4>
-                        
-                        <div className="mb-4 p-3 bg-white rounded-lg border border-yellow-200">
-                          {selectedBooking.status === 'pending' && (
-                            <div className="flex items-start space-x-2">
-                              <Bell className="h-4 w-4 text-yellow-600 mt-0.5" />
-                              <div className="text-sm text-yellow-800">
-                                <p className="font-medium">{getText('Pending Review', 'Menunggu Tinjauan')}</p>
-                                <p className="text-xs mt-1">
-                                  {getText('This booking requires your approval or rejection.', 
-                                           'Pemesanan ini memerlukan persetujuan atau penolakan Anda.')}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                          
-                          {selectedBooking.status === 'approved' && (
-                            <div className="flex items-start space-x-2">
-                              <ArrowRight className="h-4 w-4 text-green-600 mt-0.5" />
-                              <div className="text-sm text-green-800">
-                                <p className="font-medium">{getText('Ready for Borrowing', 'Siap untuk Dipinjam')}</p>
-                                <p className="text-xs mt-1">
-                                  {getText('Mark as "Borrowed" when the user picks up the equipment.', 
-                                           'Tandai sebagai "Dipinjam" ketika pengguna mengambil peralatan.')}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                          
-                          {selectedBooking.status === 'rejected' && (
-                            <div className="flex items-start space-x-2">
-                              <RefreshCw className="h-4 w-4 text-red-600 mt-0.5" />
-                              <div className="text-sm text-red-800">
-                                <p className="font-medium">{getText('Previously Rejected', 'Sebelumnya Ditolak')}</p>
-                                <p className="text-xs mt-1">
-                                  {getText('You can re-approve this booking if circumstances have changed.', 
-                                           'Anda dapat menyetujui ulang pemesanan ini jika keadaan telah berubah.')}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row gap-3">
-                          {availableActions.map((action, index) => (
-                            <button
-                              key={index}
-                              onClick={() => {
-                                if (action.type === 'approve') {
-                                  handleStatusUpdate(selectedBooking.id, 'approved');
-                                  setShowDetailModal(false);
-                                } else if (action.type === 'reject') {
-                                  handleStatusUpdate(selectedBooking.id, 'rejected');
-                                  setShowDetailModal(false);
-                                } else if (action.type === 'borrow') {
-                                  setShowBorrowConfirm(selectedBooking.id);
-                                  setShowDetailModal(false);
-                                }
-                              }}
-                              disabled={processingIds.has(selectedBooking.id)}
-                              className={`flex-1 flex items-center justify-center px-4 py-2 bg-${action.color}-600 text-white rounded-lg hover:bg-${action.color}-700 disabled:opacity-50 transition-colors duration-200`}
-                            >
-                              {processingIds.has(selectedBooking.id) ? (
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                              ) : (
-                                <action.icon className="h-4 w-4 mr-2" />
-                              )}
-                              {action.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+                    await createCheckoutForOldData(
+                        selectedBooking,
+                        oldMandatoryEquipment || []
                     );
-                  })()}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Borrow Confirmation Modal */}
-      {showBorrowConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 max-w-md w-full">
-            <div className="flex items-center space-x-3 mb-4">
-              <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                <HandHeart className="h-5 w-5 text-blue-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-bold text-gray-900">
-                  {getText('Confirm Equipment Borrowing', 'Konfirmasi Peminjaman Peralatan')}
-                </h3>
-                <p className="text-sm text-gray-600">
-                  {getText('Mark equipment as borrowed', 'Tandai peralatan sebagai dipinjam')}
-                </p>
-              </div>
-            </div>
-            
-            <div className="mb-6">
-              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                <div className="flex items-center mb-2">
-                  <Info className="h-4 w-4 text-blue-600 mr-2" />
-                  <span className="text-sm font-medium text-blue-900">
-                    {getText('What happens when you confirm:', 'Yang terjadi ketika Anda konfirmasi:')}
-                  </span>
-                </div>
-                <ul className="text-sm text-blue-800 space-y-1 ml-6">
-                  <li>• {getText('Status changes from "Approved" to "Borrowed"', 'Status berubah dari "Disetujui" ke "Dipinjam"')}</li>
-                  <li>• {getText('Equipment quantities will be reduced', 'Kuantitas peralatan akan dikurangi')}</li>
-                  <li>• {getText('Borrowing timestamp will be recorded', 'Waktu peminjaman akan dicatat')}</li>
-                </ul>
-              </div>
-            </div>
-            
-            <p className="text-gray-700 mb-6">
-              {getText(
-                'Are you sure the user has picked up the equipment?',
-                'Apakah Anda yakin pengguna telah mengambil peralatan?'
-              )}
-            </p>
-            
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowBorrowConfirm(null)}
-                disabled={processingIds.has(showBorrowConfirm || '')}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors duration-200"
-              >
-                {getText('Cancel', 'Batal')}
-              </button>
-              <button
-                onClick={() => {
-                  if (showBorrowConfirm) {
-                    handleBorrowUpdate(showBorrowConfirm);
-                  }
-                }}
-                disabled={processingIds.has(showBorrowConfirm || '')}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors duration-200"
-              >
-                {processingIds.has(showBorrowConfirm || '') ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2 inline" />
-                    {getText('Processing...', 'Memproses...')}
-                  </>
-                ) : (
-                  <>
-                    <HandHeart className="h-4 w-4 mr-2 inline" />
-                    {getText('Confirm Borrowing', 'Konfirmasi Peminjaman')}
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                    toast.success('Data checkout lama telah dibuat untuk validasi');
+                }
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 max-w-md w-full">
-            <div className="flex items-center space-x-3 mb-4">
-              <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                <AlertTriangle className="h-5 w-5 text-red-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-bold text-gray-900">
-                  {getText('Delete Booking', 'Hapus Pemesanan')}
-                </h3>
-                <p className="text-sm text-gray-600">
-                  {getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')}
-                </p>
-              </div>
-            </div>
+                // Get old equipment selections for comparison
+                const oldSelections: EquipmentSelection[] = [];
+                selectedBooking.equipment_requested?.forEach((eqId, index) => {
+                    const eq = allEquipment.find(e => e.id === eqId);
+                    if (eq) {
+                        oldSelections.push({
+                            equipment_id: eq.id,
+                            equipment_name: eq.name,
+                            equipment_code: eq.code,
+                            equipment_unit: eq.unit || 'pcs',
+                            quantity: selectedBooking.equipment_quantities?.[index] || 1,
+                            is_mandatory: eq.is_mandatory,
+                            max_quantity: eq.quantity
+                        });
+                    }
+                });
+
+                await updateEquipmentQuantities(oldSelections, equipmentSelections, 'borrow');
+            }
+
+            // ===== BUILD UPDATE DATA =====
+            const newEquipmentRequested = equipmentSelections.map(s => s.equipment_id);
+            const newEquipmentQuantities = equipmentSelections.map(s => s.quantity);
+
+            const updateData: any = {
+                room_id: editFormData.room_id,
+                purpose: editFormData.purpose,
+                start_time: editFormData.start_time,
+                end_time: editFormData.end_time,
+                notes: editFormData.notes,
+                equipment_requested: newEquipmentRequested,
+                equipment_quantities: newEquipmentQuantities,
+                updated_at: new Date().toISOString()
+            };
+
+            // Update booking
+            const { error: updateError } = await supabase
+                .from('bookings')
+                .update(updateData)
+                .eq('id', selectedBooking.id);
+
+            if (updateError) throw updateError;
+
+            toast.success('Booking berhasil diperbarui!');
             
-            <div className="mb-6">
-              <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-                <div className="flex items-center mb-2">
-                  <AlertTriangle className="h-4 w-4 text-red-600 mr-2" />
-                  <span className="text-sm font-medium text-red-900">
-                    {getText('What happens when you delete:', 'Yang terjadi ketika Anda hapus:')}
-                  </span>
+            setShowEditModal(false);
+            setSelectedBooking(null);
+            await fetchBookings();
+
+        } catch (error: any) {
+            console.error('❌ Error updating booking:', error);
+            toast.error(`Gagal memperbarui booking: ${error.message}`);
+        } finally {
+            setProcessingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(selectedBooking?.id || '');
+                return newSet;
+            });
+        }
+    };
+
+    // ===== HANDLE STATUS CHANGE =====
+    const handleStatusChange = async (bookingId: string, newStatus: string) => {
+        try {
+            setProcessingIds(prev => new Set(prev).add(bookingId));
+            
+            const booking = bookings.find(b => b.id === bookingId);
+            if (!booking) throw new Error('Booking tidak ditemukan');
+
+            console.log(`📊 Changing status: ${booking.status} → ${newStatus}`);
+
+            // ===== APPROVED → BORROWED: Validate and deduct equipment quantities =====
+            if (booking.status === 'approved' && newStatus === 'borrowed') {
+                console.log('🔍 Checking equipment availability...');
+                
+                // Validate equipment availability
+                for (let i = 0; i < (booking.equipment_requested?.length || 0); i++) {
+                    const eqId = booking.equipment_requested[i];
+                    const qty = booking.equipment_quantities?.[i] || 1;
+
+                    const { data: currentEq, error: fetchError } = await supabase
+                        .from('equipment')
+                        .select('quantity, name, is_available')
+                        .eq('id', eqId)
+                        .single();
+
+                    if (fetchError) {
+                        throw new Error(`Gagal memeriksa peralatan: ${currentEq?.name || eqId}`);
+                    }
+
+                    // Validate availability
+                    if (!currentEq.is_available) {
+                        throw new Error(`Peralatan "${currentEq.name}" tidak tersedia.`);
+                    }
+
+                    // Validate quantity
+                    if (currentEq.quantity < qty) {
+                        throw new Error(`Stok "${currentEq.name}" tidak cukup. Tersedia: ${currentEq.quantity}`);
+                    }
+                }
+
+                console.log('🔻 Deducting equipment quantities...');
+                
+                // Deduct quantities
+                for (let i = 0; i < (booking.equipment_requested?.length || 0); i++) {
+                    const eqId = booking.equipment_requested[i];
+                    const qty = booking.equipment_quantities?.[i] || 1;
+
+                    const { data: currentEq, error: fetchError } = await supabase
+                        .from('equipment')
+                        .select('quantity, name')
+                        .eq('id', eqId)
+                        .single();
+
+                    if (fetchError) continue;
+
+                    const newQty = Math.max(0, currentEq.quantity - qty);
+
+                    const { error: updateError } = await supabase
+                        .from('equipment')
+                        .update({ 
+                            quantity: newQty,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', eqId);
+
+                    if (updateError) continue;
+
+                    console.log(`  ✅ ${currentEq.name}: ${currentEq.quantity} → ${newQty} (-${qty})`);
+
+                    // Log the change
+                    await supabase
+                        .from('equipment_quantity_logs')
+                        .insert({
+                            equipment_id: eqId,
+                            from_quantity: currentEq.quantity,
+                            to_quantity: newQty,
+                            change_amount: qty,
+                            transaction_type: 'checkout',
+                            reference_type: 'booking',
+                            reference_id: bookingId,
+                            created_at: new Date().toISOString()
+                        });
+                }
+            }
+
+            // Update booking status
+            const { error: statusError } = await supabase
+                .from('bookings')
+                .update({ 
+                    status: newStatus,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', bookingId);
+
+            if (statusError) throw statusError;
+
+            toast.success(`Status berhasil diubah ke ${newStatus}`);
+            await fetchBookings();
+
+        } catch (error: any) {
+            console.error('❌ Error changing status:', error);
+            toast.error(`Gagal mengubah status: ${error.message}`);
+        } finally {
+            setProcessingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(bookingId);
+                return newSet;
+            });
+        }
+    };
+
+    // ===== HANDLE DELETE BOOKING =====
+    const handleDeleteBooking = async () => {
+        if (!selectedBooking) return;
+
+        try {
+            setProcessingIds(prev => new Set(prev).add(selectedBooking.id));
+
+            // If status is borrowed, return equipment quantities first
+            if (selectedBooking.status === 'borrowed') {
+                console.log('🔄 Returning equipment quantities before deletion...');
+                
+                for (let i = 0; i < (selectedBooking.equipment_requested?.length || 0); i++) {
+                    const eqId = selectedBooking.equipment_requested[i];
+                    const qty = selectedBooking.equipment_quantities?.[i] || 1;
+
+                    const { data: currentEq, error: fetchError } = await supabase
+                        .from('equipment')
+                        .select('quantity, name')
+                        .eq('id', eqId)
+                        .single();
+
+                    if (fetchError) continue;
+
+                    const newQty = currentEq.quantity + qty;
+
+                    const { error: updateError } = await supabase
+                        .from('equipment')
+                        .update({ 
+                            quantity: newQty,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', eqId);
+
+                    if (updateError) continue;
+
+                    console.log(`  ✅ ${currentEq.name} returned: ${currentEq.quantity} → ${newQty} (+${qty})`);
+                }
+            }
+
+            // Delete the booking
+            const { error: deleteError } = await supabase
+                .from('bookings')
+                .delete()
+                .eq('id', selectedBooking.id);
+
+            if (deleteError) throw deleteError;
+
+            toast.success('Booking berhasil dihapus!');
+            setShowDeleteModal(false);
+            setSelectedBooking(null);
+            await fetchBookings();
+
+        } catch (error: any) {
+            console.error('❌ Error deleting booking:', error);
+            toast.error(`Gagal menghapus booking: ${error.message}`);
+        } finally {
+            setProcessingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(selectedBooking?.id || '');
+                return newSet;
+            });
+        }
+    };
+
+    // ===== OPEN EDIT MODAL =====
+    const openEditModal = async (booking: Booking) => {
+        setSelectedBooking(booking);
+        setEditFormData({
+            room_id: booking.room_id,
+            purpose: booking.purpose,
+            start_time: booking.start_time,
+            end_time: booking.end_time,
+            notes: booking.notes || ''
+        });
+
+        await fetchRooms();
+        await fetchAllEquipment();
+        await initializeEquipmentSelections(booking);
+        
+        setShowEditModal(true);
+    };
+
+    // ===== OPEN DELETE MODAL =====
+    const openDeleteModal = (booking: Booking) => {
+        setSelectedBooking(booking);
+        setShowDeleteModal(true);
+    };
+
+    // ===== EFFECTS =====
+    useEffect(() => {
+        if (profile) {
+            fetchBookings();
+        }
+    }, [profile, fetchBookings]);
+
+    // ===== FILTERS =====
+    const filteredBookings = useMemo(() => {
+        return bookings.filter(booking => {
+            const searchLower = searchTerm.toLowerCase();
+            return (
+                booking.user?.full_name?.toLowerCase().includes(searchLower) ||
+                booking.user?.identity_number?.toLowerCase().includes(searchLower) ||
+                booking.room?.name?.toLowerCase().includes(searchLower) ||
+                booking.purpose?.toLowerCase().includes(searchLower)
+            );
+        });
+    }, [bookings, searchTerm]);
+
+    // ===== STATUS BADGE =====
+    const getStatusBadge = (status: string) => {
+        const config: Record<string, { color: string; icon: string; label: string }> = {
+            pending: { color: 'bg-yellow-100 text-yellow-800', icon: '⏳', label: 'Pending' },
+            approved: { color: 'bg-blue-100 text-blue-800', icon: '✅', label: 'Approved' },
+            borrowed: { color: 'bg-purple-100 text-purple-800', icon: '📦', label: 'Borrowed' },
+            completed: { color: 'bg-green-100 text-green-800', icon: '✔️', label: 'Completed' },
+            cancelled: { color: 'bg-gray-100 text-gray-800', icon: '❌', label: 'Cancelled' },
+            rejected: { color: 'bg-red-100 text-red-800', icon: '🚫', label: 'Rejected' }
+        };
+
+        const cfg = config[status] || config.pending;
+        return (
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cfg.color}`}>
+                <span className="mr-1">{cfg.icon}</span>
+                {cfg.label}
+            </span>
+        );
+    };
+
+    // ===== RENDER ACTIONS BASED ON STATUS =====
+    const renderBookingActions = (booking: Booking) => {
+        const isProcessing = processingIds.has(booking.id);
+
+        switch (booking.status) {
+            case 'pending':
+                return (
+                    <div className="flex items-center space-x-2">
+                        <button 
+                            onClick={() => {
+                                setSelectedBooking(booking);
+                                setShowDetailModal(true);
+                            }}
+                            className="p-2 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg"
+                            title="Lihat Detail"
+                        >
+                            <Eye className="h-4 w-4" />
+                        </button>
+                        
+                        <button 
+                            onClick={() => openEditModal(booking)}
+                            className="p-2 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded-lg"
+                            title="Edit Booking"
+                        >
+                            <Edit className="h-4 w-4" />
+                        </button>
+
+                        <button 
+                            onClick={() => handleStatusChange(booking.id, 'approved')}
+                            disabled={isProcessing}
+                            className="p-2 bg-green-100 text-green-600 hover:bg-green-200 rounded-lg disabled:opacity-50"
+                            title="Approve"
+                        >
+                            <Check className="h-4 w-4" />
+                        </button>
+
+                        <button 
+                            onClick={() => handleStatusChange(booking.id, 'borrowed')}
+                            disabled={isProcessing}
+                            className="p-2 bg-purple-100 text-purple-600 hover:bg-purple-200 rounded-lg disabled:opacity-50"
+                            title="Set Borrowed"
+                        >
+                            <Package className="h-4 w-4" />
+                        </button>
+
+                        <button 
+                            onClick={() => handleStatusChange(booking.id, 'rejected')}
+                            disabled={isProcessing}
+                            className="p-2 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg disabled:opacity-50"
+                            title="Reject"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+
+                        <button 
+                            onClick={() => openDeleteModal(booking)}
+                            disabled={isProcessing}
+                            className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg disabled:opacity-50"
+                            title="Hapus Booking"
+                        >
+                            <Trash2 className="h-4 w-4" />
+                        </button>
+                    </div>
+                );
+
+            case 'approved':
+                return (
+                    <div className="flex items-center space-x-2">
+                        <button 
+                            onClick={() => {
+                                setSelectedBooking(booking);
+                                setShowDetailModal(true);
+                            }}
+                            className="p-2 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg"
+                            title="Lihat Detail"
+                        >
+                            <Eye className="h-4 w-4" />
+                        </button>
+                        
+                        <button 
+                            onClick={() => openEditModal(booking)}
+                            className="p-2 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded-lg"
+                            title="Edit Booking"
+                        >
+                            <Edit className="h-4 w-4" />
+                        </button>
+
+                        <button 
+                            onClick={() => handleStatusChange(booking.id, 'borrowed')}
+                            disabled={isProcessing}
+                            className="p-2 bg-purple-100 text-purple-600 hover:bg-purple-200 rounded-lg disabled:opacity-50"
+                            title="Set Borrowed"
+                        >
+                            <Package className="h-4 w-4" />
+                        </button>
+
+                        <button 
+                            onClick={() => handleStatusChange(booking.id, 'rejected')}
+                            disabled={isProcessing}
+                            className="p-2 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg disabled:opacity-50"
+                            title="Reject"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+
+                        <button 
+                            onClick={() => openDeleteModal(booking)}
+                            disabled={isProcessing}
+                            className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg disabled:opacity-50"
+                            title="Hapus Booking"
+                        >
+                            <Trash2 className="h-4 w-4" />
+                        </button>
+                    </div>
+                );
+
+            case 'borrowed':
+                return (
+                    <div className="flex items-center space-x-2">
+                        <button 
+                            onClick={() => {
+                                setSelectedBooking(booking);
+                                setShowDetailModal(true);
+                            }}
+                            className="p-2 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg"
+                            title="Lihat Detail"
+                        >
+                            <Eye className="h-4 w-4" />
+                        </button>
+                        
+                        <button 
+                            onClick={() => openEditModal(booking)}
+                            className="p-2 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded-lg"
+                            title="Edit Booking"
+                        >
+                            <Edit className="h-4 w-4" />
+                        </button>
+                    </div>
+                );
+
+            case 'completed':
+                return (
+                    <div className="flex items-center space-x-2">
+                        <button 
+                            onClick={() => {
+                                setSelectedBooking(booking);
+                                setShowDetailModal(true);
+                            }}
+                            className="p-2 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg"
+                            title="Lihat Detail"
+                        >
+                            <Eye className="h-4 w-4" />
+                        </button>
+
+                        <button 
+                            onClick={() => openDeleteModal(booking)}
+                            disabled={isProcessing}
+                            className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg disabled:opacity-50"
+                            title="Hapus Booking"
+                        >
+                            <Trash2 className="h-4 w-4" />
+                        </button>
+                    </div>
+                );
+
+            default:
+                return (
+                    <div className="flex items-center space-x-2">
+                        <button 
+                            onClick={() => {
+                                setSelectedBooking(booking);
+                                setShowDetailModal(true);
+                            }}
+                            className="p-2 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg"
+                            title="Lihat Detail"
+                        >
+                            <Eye className="h-4 w-4" />
+                        </button>
+                    </div>
+                );
+        }
+    };
+
+    // ===== ACCESS CONTROL =====
+    if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <div className="text-center">
+                    <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium">Akses Ditolak</h3>
+                    <p className="text-gray-600">Anda tidak memiliki izin untuk mengakses halaman ini.</p>
                 </div>
-                <ul className="text-sm text-red-800 space-y-1 ml-6">
-                  <li>• {getText('Booking will be permanently removed', 'Pemesanan akan dihapus secara permanen')}</li>
-                  <li>• {getText('Equipment quantities will be restored (if applicable)', 'Kuantitas peralatan akan dipulihkan (jika berlaku)')}</li>
-                  <li>• {getText('All booking data will be lost', 'Semua data pemesanan akan hilang')}</li>
-                </ul>
-              </div>
             </div>
-            
-            <p className="text-gray-700 mb-6">
-              {getText(
-                'Are you sure you want to delete this booking?',
-                'Apakah Anda yakin ingin menghapus pemesanan ini?'
-              )}
-            </p>
-            
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowDeleteConfirm(null)}
-                disabled={processingIds.has(showDeleteConfirm || '')}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors duration-200"
-              >
-                {getText('Cancel', 'Batal')}
-              </button>
-              <button
-                onClick={() => {
-                  if (showDeleteConfirm) {
-                    handleDelete(showDeleteConfirm);
-                  }
-                }}
-                disabled={processingIds.has(showDeleteConfirm || '')}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors duration-200"
-              >
-                {processingIds.has(showDeleteConfirm || '') ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2 inline" />
-                    {getText('Deleting...', 'Menghapus...')}
-                  </>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            {/* ===== HEADER ===== */}
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-3xl font-bold flex items-center space-x-3">
+                            <Calendar className="h-8 w-8" />
+                            <span>Manajemen Booking</span>
+                        </h1>
+                        <p className="mt-2 opacity-90">
+                            Kelola dan proses permintaan peminjaman ruangan
+                        </p>
+                    </div>
+                    <div className="hidden md:block text-right">
+                        <div className="text-2xl font-bold">{bookings.length}</div>
+                        <div className="text-sm opacity-80">Total Booking</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* ===== SEARCH & FILTERS ===== */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
+                    <div className="relative w-full lg:flex-1">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                        <input 
+                            type="text" 
+                            placeholder="Cari berdasarkan nama, NIM, ruangan..."
+                            value={searchTerm} 
+                            onChange={(e) => setSearchTerm(e.target.value)} 
+                            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                        />
+                    </div>
+                    
+                    <div className="flex items-center space-x-3">
+                        <select 
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                            <option value="all">Semua Status</option>
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="borrowed">Borrowed</option>
+                            <option value="completed">Completed</option>
+                            <option value="cancelled">Cancelled</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
+                        
+                        <button 
+                            onClick={fetchBookings}
+                            disabled={loading}
+                            className="flex items-center space-x-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 disabled:opacity-50"
+                        >
+                            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                            <span>Refresh</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* ===== BOOKING LIST ===== */}
+            <div className="space-y-4">
+                {loading ? (
+                    <div className="flex items-center justify-center h-64">
+                        <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
+                    </div>
+                ) : filteredBookings.length === 0 ? (
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+                        <Calendar className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                        <h3 className="text-xl font-semibold text-gray-900 mb-2">Tidak Ada Booking</h3>
+                        <p className="text-gray-600">Belum ada data booking yang sesuai filter.</p>
+                    </div>
                 ) : (
-                  <>
-                    <Trash2 className="h-4 w-4 mr-2 inline" />
-                    {getText('Delete', 'Hapus')}
-                  </>
+                    filteredBookings.map((booking) => (
+                        <div 
+                            key={booking.id}
+                            className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow"
+                        >
+                            <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                    {/* Header */}
+                                    <div className="flex items-center space-x-4 mb-4">
+                                        <div className="h-12 w-12 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-lg flex items-center justify-center">
+                                            <Building className="h-6 w-6 text-white" />
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center space-x-3">
+                                                <h3 className="text-lg font-semibold text-gray-900">
+                                                    {booking.room?.name || 'Unknown Room'}
+                                                </h3>
+                                                {getStatusBadge(booking.status)}
+                                            </div>
+                                            <p className="text-sm text-gray-600">{booking.purpose}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Details Grid */}
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                        <div className="flex items-center space-x-2">
+                                            <User className="h-4 w-4 text-gray-400" />
+                                            <div>
+                                                <p className="font-medium text-gray-900 text-sm">{booking.user?.full_name}</p>
+                                                <p className="text-xs text-gray-500">{booking.user?.identity_number}</p>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="flex items-center space-x-2">
+                                            <Clock className="h-4 w-4 text-gray-400" />
+                                            <div>
+                                                <p className="font-medium text-gray-900 text-sm">
+                                                    {format(parseISO(booking.start_time), 'dd MMM yyyy')}
+                                                </p>
+                                                <p className="text-xs text-gray-500">
+                                                    {format(parseISO(booking.start_time), 'HH:mm')} - {format(parseISO(booking.end_time), 'HH:mm')}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center space-x-2">
+                                            <Package className="h-4 w-4 text-gray-400" />
+                                            <div>
+                                                <p className="font-medium text-gray-900 text-sm">
+                                                    {booking.equipment_requested?.length || 0} Peralatan
+                                                </p>
+                                                <p className="text-xs text-gray-500">Dipinjam</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center space-x-2">
+                                            <Calendar className="h-4 w-4 text-gray-400" />
+                                            <div>
+                                                <p className="font-medium text-gray-900 text-sm">
+                                                    {format(parseISO(booking.created_at), 'dd MMM yyyy')}
+                                                </p>
+                                                <p className="text-xs text-gray-500">Dibuat</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex items-center space-x-2 ml-4">
+                                    {renderBookingActions(booking)}
+                                </div>
+                            </div>
+                        </div>
+                    ))
                 )}
-              </button>
             </div>
-          </div>
+
+            {/* ===== DETAIL MODAL ===== */}
+            {showDetailModal && selectedBooking && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden">
+                        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-2xl font-bold">Detail Booking</h2>
+                                    <p className="mt-1 opacity-90">
+                                        {selectedBooking.room?.name} - {selectedBooking.user?.full_name}
+                                    </p>
+                                </div>
+                                <button 
+                                    onClick={() => setShowDetailModal(false)}
+                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg"
+                                >
+                                    <X className="h-6 w-6" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+                            {/* Booking Info */}
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-2 gap-6">
+                                    <div className="bg-gray-50 rounded-lg p-4">
+                                        <h4 className="font-medium text-gray-700 mb-2">Informasi Pemohon</h4>
+                                        <p className="font-semibold">{selectedBooking.user?.full_name}</p>
+                                        <p className="text-sm text-gray-600">{selectedBooking.user?.identity_number}</p>
+                                        <p className="text-sm text-gray-600">{selectedBooking.user?.phone_number}</p>
+                                    </div>
+                                    
+                                    <div className="bg-gray-50 rounded-lg p-4">
+                                        <h4 className="font-medium text-gray-700 mb-2">Ruangan</h4>
+                                        <p className="font-semibold">{selectedBooking.room?.name}</p>
+                                        <p className="text-sm text-gray-600">Kode: {selectedBooking.room?.code}</p>
+                                        <p className="text-sm text-gray-600">Kapasitas: {selectedBooking.room?.capacity}</p>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <h4 className="font-medium text-gray-700 mb-2">Waktu Peminjaman</h4>
+                                    <div className="flex items-center space-x-4">
+                                        <div>
+                                            <p className="text-sm text-gray-600">Mulai</p>
+                                            <p className="font-semibold">
+                                                {format(parseISO(selectedBooking.start_time), 'dd MMM yyyy HH:mm')}
+                                            </p>
+                                        </div>
+                                        <ArrowRight className="h-4 w-4 text-gray-400" />
+                                        <div>
+                                            <p className="text-sm text-gray-600">Selesai</p>
+                                            <p className="font-semibold">
+                                                {format(parseISO(selectedBooking.end_time), 'dd MMM yyyy HH:mm')}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <h4 className="font-medium text-gray-700 mb-2">Tujuan</h4>
+                                    <p>{selectedBooking.purpose}</p>
+                                    {selectedBooking.notes && (
+                                        <p className="text-sm text-gray-600 mt-2">
+                                            <strong>Catatan:</strong> {selectedBooking.notes}
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* Equipment List */}
+                                {selectedBooking.equipment_requested && selectedBooking.equipment_requested.length > 0 && (
+                                    <div className="bg-gray-50 rounded-lg p-4">
+                                        <h4 className="font-medium text-gray-700 mb-3">Peralatan Dipinjam</h4>
+                                        <div className="space-y-2">
+                                            {selectedBooking.equipment_requested.map((eqId, index) => {
+                                                const eq = allEquipment.find(e => e.id === eqId);
+                                                return (
+                                                    <div key={eqId} className="flex items-center justify-between bg-white p-3 rounded-lg">
+                                                        <div className="flex items-center space-x-3">
+                                                            <Package className="h-4 w-4 text-gray-400" />
+                                                            <span>{eq?.name || eqId}</span>
+                                                            {eq?.is_mandatory && (
+                                                                <span className="px-2 py-0.5 bg-red-100 text-red-800 text-xs rounded">
+                                                                    Wajib
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <span className="font-medium">
+                                                            {selectedBooking.equipment_quantities?.[index] || 1} {eq?.unit || 'pcs'}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Status */}
+                                <div className="flex items-center justify-between bg-gray-50 rounded-lg p-4">
+                                    <div>
+                                        <h4 className="font-medium text-gray-700">Status</h4>
+                                        <div className="mt-1">{getStatusBadge(selectedBooking.status)}</div>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-sm text-gray-600">Dibuat pada</p>
+                                        <p className="font-medium">
+                                            {format(parseISO(selectedBooking.created_at), 'dd MMM yyyy HH:mm')}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ===== EDIT MODAL ===== */}
+            {showEditModal && selectedBooking && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+                        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-2xl font-bold">Edit Booking</h2>
+                                    <p className="mt-1 opacity-90">
+                                        Status: {getStatusBadge(selectedBooking.status)}
+                                        {selectedBooking.status === 'borrowed' && (
+                                            <span className="ml-2 text-yellow-200 text-sm">
+                                                ⚠️ Perubahan room akan membuat checkout otomatis
+                                            </span>
+                                        )}
+                                    </p>
+                                </div>
+                                <button 
+                                    onClick={() => setShowEditModal(false)}
+                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg"
+                                >
+                                    <X className="h-6 w-6" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+                            <div className="space-y-6">
+                                {/* Warning untuk unavailable equipment */}
+                                {unavailableEquipment.length > 0 && (
+                                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                                        <div className="flex items-start">
+                                            <AlertTriangle className="h-5 w-5 text-red-600 mr-2 mt-0.5" />
+                                            <div>
+                                                <p className="font-medium text-red-800">Peralatan Tidak Tersedia</p>
+                                                <p className="text-sm text-red-700">
+                                                    Peralatan berikut tidak tersedia dan akan dihapus: {unavailableEquipment.join(', ')}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Room Selection */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Ruangan *
+                                    </label>
+                                    <select
+                                        value={editFormData.room_id}
+                                        onChange={(e) => handleRoomChange(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        {rooms.map(room => (
+                                            <option key={room.id} value={room.id}>
+                                                {room.name} ({room.code}) - Kapasitas: {room.capacity}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {editFormData.room_id !== selectedBooking.room_id && selectedBooking.status === 'borrowed' && (
+                                        <p className="mt-2 text-sm text-amber-600 bg-amber-50 p-2 rounded">
+                                            ⚠️ Mengubah ruangan akan membuat checkout otomatis untuk peralatan wajib ruangan sebelumnya.
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* Time */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Waktu Mulai *
+                                        </label>
+                                        <input
+                                            type="datetime-local"
+                                            value={editFormData.start_time?.slice(0, 16)}
+                                            onChange={(e) => setEditFormData(prev => ({ ...prev, start_time: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Waktu Selesai *
+                                        </label>
+                                        <input
+                                            type="datetime-local"
+                                            value={editFormData.end_time?.slice(0, 16)}
+                                            onChange={(e) => setEditFormData(prev => ({ ...prev, end_time: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Purpose */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Tujuan *
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={editFormData.purpose}
+                                        onChange={(e) => setEditFormData(prev => ({ ...prev, purpose: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+
+                                {/* Notes */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Catatan
+                                    </label>
+                                    <textarea
+                                        value={editFormData.notes}
+                                        onChange={(e) => setEditFormData(prev => ({ ...prev, notes: e.target.value }))}
+                                        rows={3}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+
+                                {/* Equipment Section */}
+                                <div className="border-t pt-6">
+                                    <div 
+                                        className="flex items-center justify-between cursor-pointer"
+                                        onClick={() => setShowEquipmentSection(!showEquipmentSection)}
+                                    >
+                                        <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                                            <Package className="h-5 w-5 mr-2 text-blue-600" />
+                                            Peralatan ({equipmentSelections.length})
+                                        </h3>
+                                        {showEquipmentSection ? (
+                                            <ChevronUp className="h-5 w-5 text-gray-400" />
+                                        ) : (
+                                            <ChevronDown className="h-5 w-5 text-gray-400" />
+                                        )}
+                                    </div>
+
+                                    {showEquipmentSection && (
+                                        <div className="mt-4 space-y-4">
+                                            {/* Warning for borrowed status */}
+                                            {selectedBooking.status === 'borrowed' && (
+                                                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                                                    <div className="flex items-start">
+                                                        <AlertTriangle className="h-5 w-5 text-amber-600 mr-2 mt-0.5" />
+                                                        <div>
+                                                            <p className="font-medium text-amber-800">Status Borrowed</p>
+                                                            <p className="text-sm text-amber-700">
+                                                                Perubahan jumlah peralatan akan langsung mempengaruhi stok di tabel equipment.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {selectedBooking.status === 'approved' && (
+                                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                                    <div className="flex items-start">
+                                                        <Info className="h-5 w-5 text-blue-600 mr-2 mt-0.5" />
+                                                        <div>
+                                                            <p className="font-medium text-blue-800">Status Approved</p>
+                                                            <p className="text-sm text-blue-700">
+                                                                Perubahan peralatan tidak akan mempengaruhi stok. Stok akan dikurangi saat status berubah ke "Borrowed".
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Loading indicator */}
+                                            {loadingEquipment && (
+                                                <div className="flex items-center justify-center py-4">
+                                                    <RefreshCw className="h-5 w-5 animate-spin text-blue-600 mr-2" />
+                                                    <span className="text-gray-600">Memuat peralatan...</span>
+                                                </div>
+                                            )}
+
+                                            {/* Mandatory Equipment */}
+                                            <div>
+                                                <h4 className="font-medium text-gray-700 mb-3 flex items-center">
+                                                    <span className="px-2 py-0.5 bg-red-100 text-red-800 text-xs rounded mr-2">WAJIB</span>
+                                                    Peralatan Wajib Ruangan
+                                                </h4>
+                                                <div className="space-y-2">
+                                                    {equipmentSelections.filter(s => s.is_mandatory).map((selection) => (
+                                                        <div 
+                                                            key={selection.equipment_id}
+                                                            className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg p-3"
+                                                        >
+                                                            <div>
+                                                                <p className="font-medium text-gray-900">{selection.equipment_name}</p>
+                                                                <p className="text-xs text-gray-500">
+                                                                    Kode: {selection.equipment_code || 'N/A'} | Max: {selection.max_quantity} {selection.equipment_unit}
+                                                                </p>
+                                                            </div>
+                                                            <div className="flex items-center space-x-2">
+                                                                <button
+                                                                    onClick={() => updateEquipmentQuantity(selection.equipment_id, selection.quantity - 1)}
+                                                                    disabled={selection.quantity <= 1}
+                                                                    className="p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded disabled:opacity-50"
+                                                                >
+                                                                    <Minus className="h-4 w-4" />
+                                                                </button>
+                                                                <span className="w-12 text-center font-bold">{selection.quantity}</span>
+                                                                <button
+                                                                    onClick={() => updateEquipmentQuantity(selection.equipment_id, selection.quantity + 1)}
+                                                                    disabled={selection.quantity >= selection.max_quantity}
+                                                                    className="p-1 bg-green-100 hover:bg-green-200 text-green-600 rounded disabled:opacity-50"
+                                                                >
+                                                                    <Plus className="h-4 w-4" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                    {equipmentSelections.filter(s => s.is_mandatory).length === 0 && (
+                                                        <p className="text-gray-500 text-sm italic">Tidak ada peralatan wajib untuk ruangan ini</p>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Optional Equipment - Selected */}
+                                            <div>
+                                                <h4 className="font-medium text-gray-700 mb-3 flex items-center">
+                                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-xs rounded mr-2">OPSIONAL</span>
+                                                    Peralatan Tambahan yang Dipilih
+                                                </h4>
+                                                <div className="space-y-2">
+                                                    {equipmentSelections.filter(s => !s.is_mandatory).map((selection) => (
+                                                        <div 
+                                                            key={selection.equipment_id}
+                                                            className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3"
+                                                        >
+                                                            <div>
+                                                                <p className="font-medium text-gray-900">{selection.equipment_name}</p>
+                                                                <p className="text-xs text-gray-500">
+                                                                    Kode: {selection.equipment_code || 'N/A'} | Max: {selection.max_quantity} {selection.equipment_unit}
+                                                                </p>
+                                                            </div>
+                                                            <div className="flex items-center space-x-2">
+                                                                <button
+                                                                    onClick={() => updateEquipmentQuantity(selection.equipment_id, selection.quantity - 1)}
+                                                                    disabled={selection.quantity <= 1}
+                                                                    className="p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded disabled:opacity-50"
+                                                                >
+                                                                    <Minus className="h-4 w-4" />
+                                                                </button>
+                                                                <span className="w-12 text-center font-bold">{selection.quantity}</span>
+                                                                <button
+                                                                    onClick={() => updateEquipmentQuantity(selection.equipment_id, selection.quantity + 1)}
+                                                                    disabled={selection.quantity >= selection.max_quantity}
+                                                                    className="p-1 bg-green-100 hover:bg-green-200 text-green-600 rounded disabled:opacity-50"
+                                                                >
+                                                                    <Plus className="h-4 w-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => removeOptionalEquipment(selection.equipment_id)}
+                                                                    className="p-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded ml-2"
+                                                                    title="Hapus"
+                                                                >
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                    {equipmentSelections.filter(s => !s.is_mandatory).length === 0 && (
+                                                        <p className="text-gray-500 text-sm italic">Tidak ada peralatan opsional yang dipilih</p>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Add Optional Equipment with Search */}
+                                            <div>
+                                                <h4 className="font-medium text-gray-700 mb-3">Tambah Peralatan Opsional</h4>
+                                                
+                                                {/* Search Bar */}
+                                                <div className="relative mb-3">
+                                                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Cari peralatan opsional..."
+                                                        value={equipmentSearch}
+                                                        onChange={(e) => setEquipmentSearch(e.target.value)}
+                                                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                                    />
+                                                </div>
+
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                                                    {filteredOptionalEquipment.length > 0 ? (
+                                                        filteredOptionalEquipment.map((eq) => (
+                                                            <button
+                                                                key={eq.id}
+                                                                onClick={() => addOptionalEquipment(eq)}
+                                                                className="flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-left transition-colors"
+                                                            >
+                                                                <div>
+                                                                    <p className="font-medium text-gray-900 text-sm">{eq.name}</p>
+                                                                    <p className="text-xs text-gray-500">
+                                                                        Kode: {eq.code || 'N/A'} | Stok: {eq.quantity} {eq.unit || 'pcs'}
+                                                                    </p>
+                                                                </div>
+                                                                <Plus className="h-4 w-4 text-green-600" />
+                                                            </button>
+                                                        ))
+                                                    ) : (
+                                                        <div className="col-span-2 text-center py-4 text-gray-500">
+                                                            {equipmentSearch ? 
+                                                                `Tidak ditemukan peralatan dengan kata kunci "${equipmentSearch}"` : 
+                                                                'Tidak ada peralatan opsional yang tersedia'}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer Actions */}
+                        <div className="border-t px-6 py-4 bg-gray-50 flex justify-end space-x-3">
+                            <button
+                                onClick={() => setShowEditModal(false)}
+                                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100"
+                            >
+                                Batal
+                            </button>
+                            <button
+                                onClick={handleUpdateBooking}
+                                disabled={processingIds.has(selectedBooking.id)}
+                                className="flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                            >
+                                {processingIds.has(selectedBooking.id) ? (
+                                    <RefreshCw className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Save className="h-4 w-4" />
+                                )}
+                                <span>Simpan Perubahan</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ===== DELETE MODAL ===== */}
+            {showDeleteModal && selectedBooking && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+                        <div className="p-6">
+                            <div className="flex items-center justify-center mb-6">
+                                <div className="h-16 w-16 bg-red-100 rounded-full flex items-center justify-center">
+                                    <AlertTriangle className="h-8 w-8 text-red-600" />
+                                </div>
+                            </div>
+                            
+                            <h3 className="text-xl font-semibold text-center mb-2">
+                                Hapus Booking
+                            </h3>
+                            
+                            <p className="text-gray-600 text-center mb-6">
+                                Apakah Anda yakin ingin menghapus booking ini?
+                                {selectedBooking.status === 'borrowed' && (
+                                    <span className="block mt-2 text-amber-600 text-sm">
+                                        ⚠️ Equipment yang dipinjam akan dikembalikan ke stok.
+                                    </span>
+                                )}
+                            </p>
+
+                            <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                                <p className="font-medium">{selectedBooking.room?.name}</p>
+                                <p className="text-sm text-gray-600">{selectedBooking.user?.full_name}</p>
+                                <p className="text-sm text-gray-600">
+                                    {format(parseISO(selectedBooking.start_time), 'dd MMM yyyy HH:mm')}
+                                </p>
+                                <div className="mt-2">{getStatusBadge(selectedBooking.status)}</div>
+                            </div>
+
+                            <div className="flex justify-end space-x-3">
+                                <button
+                                    onClick={() => setShowDeleteModal(false)}
+                                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    onClick={handleDeleteBooking}
+                                    disabled={processingIds.has(selectedBooking.id)}
+                                    className="flex items-center space-x-2 px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                                >
+                                    {processingIds.has(selectedBooking.id) ? (
+                                        <RefreshCw className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <Trash2 className="h-4 w-4" />
+                                    )}
+                                    <span>Hapus</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
-      )}
-    </div>
-  );
+    );
 };
 
 export default BookingManagement;
