@@ -41,6 +41,12 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
+  Package,
+  ZoomIn,
+  ZoomOut,
+  Camera,
+  ImageIcon,
+  Trash,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -55,7 +61,7 @@ const userSchema = z.object({
   full_name: z.string().min(2, 'Full name is required'),
   identity_number: z.string().min(1, 'Identity number is required'),
   phone_number: z.string().optional().or(z.literal('')),
-  role: z.enum(['super_admin', 'department_admin', 'lecturer', 'student']),
+  role: z.enum(['super_admin', 'department_admin', 'lecturer', 'student', 'laboratory', 'staffing', 'purchasing', 'technician', 'frontdesk']),
   department_id: z.string().optional().nullable(),
   study_program_id: z.string().optional().nullable(),
   password: z.string().min(6, 'Password must be at least 6 characters').optional(),
@@ -73,6 +79,7 @@ interface User {
   role: string;
   department_id?: string;
   study_program_id?: string;
+  attachments?: string | null;
   created_at: string;
   updated_at?: string;
   department?: { id: string; name: string; code?: string; };
@@ -98,6 +105,13 @@ interface Room {
   code: string;
   capacity: number;
   assigned_at?: string;
+  floor?: string;
+  building?: {
+    name: string;
+    campus?: {
+      name: string;
+    };
+  };
 }
 
 interface ActivityItem {
@@ -134,10 +148,10 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = React.memo(({
   const selectedOption = useMemo(() => {
     return options.find(option => option.id === value);
   }, [options, value]);
-  
+
   const filteredOptions = useMemo(() => {
     if (!searchTerm.trim()) return options;
-    
+
     const searchLower = searchTerm.toLowerCase().trim();
     return options.filter(option =>
       (option.name?.toLowerCase() || '').includes(searchLower) ||
@@ -169,12 +183,11 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = React.memo(({
         type="button"
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
-        className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-left flex items-center justify-between transition-all duration-200 ${
-          disabled ? 'bg-gray-100 cursor-not-allowed text-gray-500' : 'hover:border-gray-400 hover:shadow-sm'
-        }`}
+        className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-left flex items-center justify-between transition-all duration-200 ${disabled ? 'bg-gray-100 cursor-not-allowed text-gray-500' : 'hover:border-gray-400 hover:shadow-sm'
+          }`}
       >
         <span className={selectedOption ? 'text-gray-900' : 'text-gray-500'}>
-          {selectedOption 
+          {selectedOption
             ? `${selectedOption.name}${selectedOption.code ? ` (${selectedOption.code})` : ''}`
             : placeholder
           }
@@ -226,9 +239,8 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = React.memo(({
                   key={option.id}
                   type="button"
                   onClick={() => handleSelect(option.id)}
-                  className={`w-full px-4 py-3 text-left text-sm hover:bg-blue-50 hover:text-blue-900 transition-colors duration-200 ${
-                    option.id === value ? 'bg-blue-100 text-blue-900' : 'text-gray-900'
-                  }`}
+                  className={`w-full px-4 py-3 text-left text-sm hover:bg-blue-50 hover:text-blue-900 transition-colors duration-200 ${option.id === value ? 'bg-blue-100 text-blue-900' : 'text-gray-900'
+                    }`}
                 >
                   {option.name}
                   {option.code && <span className="text-gray-500"> ({option.code})</span>}
@@ -261,9 +273,8 @@ const PasswordInput: React.FC<{
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className={`w-full px-4 py-3 pr-12 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
-          error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
-        }`}
+        className={`w-full px-4 py-3 pr-12 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
+          }`}
         required={required}
       />
       <button
@@ -281,7 +292,7 @@ const PasswordInput: React.FC<{
 const UserManagement: React.FC = () => {
   const { profile } = useAuth();
   const { getText } = useLanguage();
-  
+
   // State hooks
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -295,7 +306,88 @@ const UserManagement: React.FC = () => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [showUserDetail, setShowUserDetail] = useState<User | null>(null);
+  const [viewImageObj, setViewImageObj] = useState<{ src: string; alt: string } | null>(null);
   const [userRooms, setUserRooms] = useState<Room[]>([]);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // Image Viewer State
+  const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [startPos, setStartPos] = useState({ x: 0, y: 0 });
+
+  const handleZoomIn = () => setScale(prev => Math.min(prev + 0.5, 4));
+  const handleZoomOut = () => {
+    setScale(prev => {
+      const newScale = Math.max(prev - 0.5, 1);
+      if (newScale === 1) setPosition({ x: 0, y: 0 });
+      return newScale;
+    });
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (scale > 1) {
+      setIsDragging(true);
+      setStartPos({ x: e.clientX - position.x, y: e.clientY - position.y });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging && scale > 1) {
+      setPosition({
+        x: e.clientX - startPos.x,
+        y: e.clientY - startPos.y
+      });
+    }
+  };
+
+  const handleMouseUp = () => setIsDragging(false);
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.stopPropagation();
+    if (e.deltaY < 0) {
+      handleZoomIn();
+    } else {
+      handleZoomOut();
+    }
+  };
+
+  const resetZoom = () => {
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+    setViewImageObj(null);
+  };
+
+  // Photo upload handler
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        toast.error(getText('Please select an image file', 'Silakan pilih file gambar'));
+        return;
+      }
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error(getText('Image size must be less than 5MB', 'Ukuran gambar harus kurang dari 5MB'));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64String = event.target?.result as string;
+        setPhotoPreview(base64String);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const clearPhoto = () => {
+    setPhotoPreview(null);
+    if (photoInputRef.current) {
+      photoInputRef.current.value = '';
+    }
+  };
   const [userActivities, setUserActivities] = useState<ActivityItem[]>([]);
   const [loadingUserDetails, setLoadingUserDetails] = useState(false);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
@@ -329,6 +421,11 @@ const UserManagement: React.FC = () => {
       case 'department_admin': return Building;
       case 'lecturer': return GraduationCap;
       case 'student': return BookOpen;
+      case 'laboratory': return Package;
+      case 'staffing': return Users;
+      case 'purchasing': return Home;
+      case 'technician': return Settings;
+      case 'frontdesk': return Calendar;
       default: return User;
     }
   }, []);
@@ -339,6 +436,11 @@ const UserManagement: React.FC = () => {
       case 'department_admin': return getText('Department Admin', 'Admin Departemen');
       case 'lecturer': return getText('Lecturer', 'Dosen');
       case 'student': return getText('Student', 'Mahasiswa');
+      case 'laboratory': return getText('Laboratory', 'Laboratorium');
+      case 'staffing': return getText('Staffing', 'Kepegawaian');
+      case 'purchasing': return getText('Purchasing', 'Pengadaan');
+      case 'technician': return getText('Technician', 'Teknisi');
+      case 'frontdesk': return getText('Front Desk', 'Front Desk');
       default: return role;
     }
   }, [getText]);
@@ -349,6 +451,11 @@ const UserManagement: React.FC = () => {
       case 'department_admin': return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'lecturer': return 'bg-purple-100 text-purple-800 border-purple-200';
       case 'student': return 'bg-green-100 text-green-800 border-green-200';
+      case 'laboratory': return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'staffing': return 'bg-teal-100 text-teal-800 border-teal-200';
+      case 'purchasing': return 'bg-cyan-100 text-cyan-800 border-cyan-200';
+      case 'technician': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'frontdesk': return 'bg-pink-100 text-pink-800 border-pink-200';
       default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   }, []);
@@ -362,13 +469,13 @@ const UserManagement: React.FC = () => {
         department:departments(id, name, code),
         study_program:study_programs(id, name, code)
       `);
-      
+
       if (profile?.role === 'super_admin') {
         // Super admin sees all users
       } else if (profile?.role === 'department_admin' && profile.department_id) {
         query = query.eq('department_id', profile.department_id);
       }
-      
+
       query = query.order('created_at', { ascending: false });
 
       const { data, error } = await query;
@@ -385,11 +492,11 @@ const UserManagement: React.FC = () => {
   const fetchDepartments = useCallback(async () => {
     try {
       let query = supabase.from('departments').select('id, name, code');
-      
+
       if (profile?.role === 'department_admin' && profile.department_id) {
         query = query.eq('id', profile.department_id);
       }
-      
+
       const { data, error } = await query;
       if (error) throw error;
       setDepartments(data || []);
@@ -402,11 +509,11 @@ const UserManagement: React.FC = () => {
   const fetchStudyPrograms = useCallback(async () => {
     try {
       let query = supabase.from('study_programs').select('*');
-      
+
       if (profile?.role === 'department_admin' && profile.department_id) {
         query = query.eq('department_id', profile.department_id);
       }
-      
+
       const { data, error } = await query;
       if (error) throw error;
       setStudyPrograms(data || []);
@@ -422,10 +529,10 @@ const UserManagement: React.FC = () => {
         .from('study_programs')
         .select('*')
         .eq('department_id', departmentId);
-      
+
       if (error) throw error;
       setStudyPrograms(data || []);
-      
+
       const currentStudyProgramId = form.getValues('study_program_id');
       const isCurrentProgramInDepartment = data?.some(program => program.id === currentStudyProgramId);
       if (!isCurrentProgramInDepartment) {
@@ -445,7 +552,17 @@ const UserManagement: React.FC = () => {
         .from('room_users')
         .select(`
           assigned_at,
-          room:rooms(id, name, code, capacity)
+          room:rooms(
+            id, 
+            name, 
+            code, 
+            capacity, 
+            floor,
+            building:building_id(
+              name,
+              campus:campus_id(name)
+            )
+          )
         `)
         .eq('user_id', userId)
         .order('assigned_at', { ascending: false });
@@ -515,11 +632,11 @@ const UserManagement: React.FC = () => {
   // Filtered users with multiple filters
   const filteredUsers = useMemo(() => {
     if (!users || users.length === 0) return [];
-    
+
     return users.filter(user => {
       const searchLower = searchTerm.toLowerCase().trim();
-      
-      const matchesSearch = !searchLower || 
+
+      const matchesSearch = !searchLower ||
         (user.full_name?.toLowerCase() || '').includes(searchLower) ||
         (user.username?.toLowerCase() || '').includes(searchLower) ||
         (user.email?.toLowerCase() || '').includes(searchLower) ||
@@ -528,10 +645,10 @@ const UserManagement: React.FC = () => {
         (user.role?.toLowerCase() || '').includes(searchLower) ||
         (user.department?.name?.toLowerCase() || '').includes(searchLower) ||
         (user.study_program?.name?.toLowerCase() || '').includes(searchLower);
-      
+
       const matchesRole = roleFilter === 'all' || user.role === roleFilter;
       const matchesDepartment = departmentFilter === 'all' || user.department_id === departmentFilter;
-      
+
       return matchesSearch && matchesRole && matchesDepartment;
     });
   }, [users, searchTerm, roleFilter, departmentFilter]);
@@ -542,7 +659,7 @@ const UserManagement: React.FC = () => {
   const currentTableData = filteredUsers.slice(startIndex, startIndex + itemsPerPage);
 
   // Access control check
-  const hasAccess = profile && ['super_admin', 'department_admin'].includes(profile.role);
+  const hasAccess = profile && ['super_admin', 'department_admin', 'staffing'].includes(profile.role);
 
   const handleSubmit = async (data: UserForm) => {
     try {
@@ -556,7 +673,7 @@ const UserManagement: React.FC = () => {
         }
       }
 
-      const userData = {
+      const userData: any = {
         username: data.username.trim(),
         email: data.email?.trim() || null,
         full_name: data.full_name.trim(),
@@ -566,6 +683,11 @@ const UserManagement: React.FC = () => {
         department_id: data.department_id || null,
         study_program_id: data.study_program_id || null,
       };
+
+      // Add photo if provided
+      if (photoPreview) {
+        userData.attachments = photoPreview;
+      }
 
       if (editingUser) {
         const updateData: any = { ...userData };
@@ -577,7 +699,7 @@ const UserManagement: React.FC = () => {
           .from('users')
           .update(updateData)
           .eq('id', editingUser.id);
-        
+
         if (error) throw error;
         toast.success(getText('User updated successfully', 'Pengguna berhasil diperbarui'));
       } else {
@@ -589,7 +711,7 @@ const UserManagement: React.FC = () => {
         const { error } = await supabase
           .from('users')
           .insert({ ...userData, password: data.password.trim() });
-        
+
         if (error) throw error;
         toast.success(getText('User created successfully', 'Pengguna berhasil dibuat'));
       }
@@ -597,6 +719,7 @@ const UserManagement: React.FC = () => {
       setShowModal(false);
       setEditingUser(null);
       form.reset({ role: 'student' });
+      setPhotoPreview(null);
       fetchUsers();
     } catch (error: any) {
       console.error('Error saving user:', error);
@@ -636,13 +759,20 @@ const UserManagement: React.FC = () => {
       study_program_id: user.study_program_id || '',
       password: '',
     });
-    
+
+    // Set photo preview if user has attachments (photo)
+    if (user.attachments) {
+      setPhotoPreview(user.attachments);
+    } else {
+      setPhotoPreview(null);
+    }
+
     if (user.department_id) {
       fetchStudyProgramsByDepartment(user.department_id);
     } else if (profile?.role === 'super_admin') {
       setStudyPrograms([]);
     }
-    
+
     setShowModal(true);
   }, [form, fetchStudyProgramsByDepartment, profile]);
 
@@ -653,7 +783,7 @@ const UserManagement: React.FC = () => {
         .from('users')
         .delete()
         .eq('id', userId);
-      
+
       if (error) throw error;
       toast.success(getText('User deleted successfully', 'Pengguna berhasil dihapus'));
       setShowDeleteConfirm(null);
@@ -697,7 +827,7 @@ const UserManagement: React.FC = () => {
               <span>{getText('User Management', 'Manajemen Pengguna')}</span>
             </h1>
             <p className="mt-2 opacity-90">
-              {profile?.role === 'super_admin' 
+              {profile?.role === 'super_admin'
                 ? getText('Manage all system users and their permissions', 'Kelola semua pengguna sistem dan izin mereka')
                 : getText('Manage department users and access', 'Kelola pengguna departemen dan akses')
               }
@@ -713,29 +843,29 @@ const UserManagement: React.FC = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {[
-          { 
-            label: getText('Students', 'Mahasiswa'), 
-            count: users.filter(u => u.role === 'student').length, 
-            color: 'bg-green-500', 
-            icon: BookOpen 
+          {
+            label: getText('Students', 'Mahasiswa'),
+            count: users.filter(u => u.role === 'student').length,
+            color: 'bg-green-500',
+            icon: BookOpen
           },
-          { 
-            label: getText('Lecturers', 'Dosen'), 
-            count: users.filter(u => u.role === 'lecturer').length, 
-            color: 'bg-purple-500', 
-            icon: GraduationCap 
+          {
+            label: getText('Lecturers', 'Dosen'),
+            count: users.filter(u => u.role === 'lecturer').length,
+            color: 'bg-purple-500',
+            icon: GraduationCap
           },
-          { 
-            label: getText('Dept. Admins', 'Admin Dept.'), 
-            count: users.filter(u => u.role === 'department_admin').length, 
-            color: 'bg-blue-500', 
-            icon: Building 
+          {
+            label: getText('Dept. Admins', 'Admin Dept.'),
+            count: users.filter(u => u.role === 'department_admin').length,
+            color: 'bg-blue-500',
+            icon: Building
           },
-          { 
-            label: getText('Super Admins', 'Super Admin'), 
-            count: users.filter(u => u.role === 'super_admin').length, 
-            color: 'bg-red-500', 
-            icon: Shield 
+          {
+            label: getText('Super Admins', 'Super Admin'),
+            count: users.filter(u => u.role === 'super_admin').length,
+            color: 'bg-red-500',
+            icon: Shield
           },
         ].map((stat, index) => (
           <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow duration-200">
@@ -778,6 +908,11 @@ const UserManagement: React.FC = () => {
               <option value="student">{getText('Students', 'Mahasiswa')}</option>
               <option value="lecturer">{getText('Lecturers', 'Dosen')}</option>
               <option value="department_admin">{getText('Dept. Admins', 'Admin Dept.')}</option>
+              <option value="laboratory">{getText('Laboratory', 'Laboratorium')}</option>
+              <option value="staffing">{getText('Staffing', 'Kepegawaian')}</option>
+              <option value="purchasing">{getText('Purchasing', 'Pengadaan')}</option>
+              <option value="technician">{getText('Technician', 'Teknisi')}</option>
+              <option value="frontdesk">{getText('Front Desk', 'Front Desk')}</option>
               {profile?.role === 'super_admin' && (
                 <option value="super_admin">{getText('Super Admins', 'Super Admin')}</option>
               )}
@@ -813,7 +948,7 @@ const UserManagement: React.FC = () => {
             >
               <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
             </button>
-            
+
             <button
               onClick={() => {
                 setEditingUser(null);
@@ -828,6 +963,7 @@ const UserManagement: React.FC = () => {
                   study_program_id: '',
                   password: '',
                 });
+                setPhotoPreview(null);
                 if (profile?.role === 'department_admin' && profile.department_id) {
                   fetchStudyProgramsByDepartment(profile.department_id);
                 } else {
@@ -920,13 +1056,28 @@ const UserManagement: React.FC = () => {
               ) : (
                 currentTableData.map((user) => {
                   const RoleIcon = getRoleIcon(user.role);
-                  
+
                   return (
                     <tr key={user.id} className="hover:bg-gray-50 transition-colors duration-200">
                       <td className="px-6 py-4">
                         <div className="flex items-start space-x-4">
-                          <div className="flex-shrink-0 h-12 w-12 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center">
-                            <RoleIcon className="h-6 w-6 text-white" />
+                          <div
+                            className="flex-shrink-0 h-12 w-12 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center overflow-hidden cursor-pointer"
+                            onClick={() => {
+                              if (user.attachments) {
+                                setViewImageObj({ src: user.attachments, alt: user.full_name });
+                              }
+                            }}
+                          >
+                            {user.attachments ? (
+                              <img
+                                src={user.attachments}
+                                alt={user.full_name}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <RoleIcon className="h-6 w-6 text-white" />
+                            )}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center space-x-2">
@@ -1006,7 +1157,7 @@ const UserManagement: React.FC = () => {
                           >
                             <Activity className="h-4 w-4" />
                           </button>
-                          
+
                           <button
                             onClick={() => handleEdit(user)}
                             disabled={processingIds.has(user.id)}
@@ -1015,7 +1166,7 @@ const UserManagement: React.FC = () => {
                           >
                             <Edit className="h-4 w-4" />
                           </button>
-                          
+
                           <button
                             onClick={() => setShowDeleteConfirm(user.id)}
                             disabled={processingIds.has(user.id)}
@@ -1043,7 +1194,7 @@ const UserManagement: React.FC = () => {
                   {getText('Showing', 'Menampilkan')} {startIndex + 1} - {Math.min(startIndex + itemsPerPage, filteredUsers.length)} {getText('of', 'dari')} {filteredUsers.length} {getText('users', 'pengguna')}
                 </span>
               </div>
-              
+
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => setCurrentPage(p => p - 1)}
@@ -1053,7 +1204,7 @@ const UserManagement: React.FC = () => {
                   <ChevronLeft className="h-4 w-4" />
                   <span className="hidden sm:inline">{getText('Previous', 'Sebelum')}</span>
                 </button>
-                
+
                 <div className="flex items-center space-x-1">
                   {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                     let pageNum;
@@ -1066,23 +1217,22 @@ const UserManagement: React.FC = () => {
                     } else {
                       pageNum = currentPage - 2 + i;
                     }
-                    
+
                     return (
                       <button
                         key={pageNum}
                         onClick={() => setCurrentPage(pageNum)}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200 ${
-                          currentPage === pageNum
-                            ? 'bg-blue-600 text-white'
-                            : 'text-gray-700 hover:bg-gray-100'
-                        }`}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200 ${currentPage === pageNum
+                          ? 'bg-blue-600 text-white'
+                          : 'text-gray-700 hover:bg-gray-100'
+                          }`}
                       >
                         {pageNum}
                       </button>
                     );
                   })}
                 </div>
-                
+
                 <button
                   onClick={() => setCurrentPage(p => p + 1)}
                   disabled={currentPage >= totalPages}
@@ -1199,17 +1349,36 @@ const UserManagement: React.FC = () => {
                       </div>
                     ) : userRooms.length > 0 ? (
                       <div className="space-y-3">
-                        {userRooms.map((room) => (
-                          <div key={room.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-orange-200">
-                            <div>
-                              <div className="font-medium text-orange-900">{room.name}</div>
-                              <div className="text-sm text-orange-700">{room.code} • {room.capacity} {getText('seats', 'kursi')}</div>
+                        {userRooms.map((room) => {
+                          // Build location path with dash separator
+                          const locationParts = [
+                            room.building?.campus?.name,
+                            room.building?.name,
+                            room.floor ? `Lt.${room.floor}` : null,
+                            room.name
+                          ].filter(Boolean);
+                          const locationPath = locationParts.join(' - ');
+
+                          return (
+                            <div key={room.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-orange-200">
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-orange-900">{room.name}</div>
+                                <div className="flex items-center gap-1 text-sm text-orange-700 mt-1">
+                                  <MapPin className="h-3 w-3 shrink-0" />
+                                  <span className="truncate" title={locationPath}>
+                                    {locationPath || room.code}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-orange-600 mt-1">
+                                  {room.capacity} {getText('seats', 'kursi')}
+                                </div>
+                              </div>
+                              <div className="text-xs text-orange-600 shrink-0 ml-2">
+                                {format(new Date(room.assigned_at || ''), 'dd MMM')}
+                              </div>
                             </div>
-                            <div className="text-xs text-orange-600">
-                              {format(new Date(room.assigned_at || ''), 'dd MMM')}
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : (
                       <div className="text-center py-6 text-orange-600">
@@ -1276,6 +1445,62 @@ const UserManagement: React.FC = () => {
             </div>
           </div>
         </div>
+
+      )}
+
+      {/* Image Viewer Modal */}
+      {/* Image Viewer Modal */}
+      {viewImageObj && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-90 transition-opacity duration-300">
+          <div className="absolute top-4 right-4 z-[70] flex items-center space-x-4">
+            <div className="flex items-center space-x-2 bg-white/10 rounded-lg p-1 backdrop-blur-sm">
+              <button
+                onClick={handleZoomOut}
+                className="p-2 text-white hover:bg-white/20 rounded-lg transition-colors"
+                title="Zoom Out"
+              >
+                <ZoomOut className="h-6 w-6" />
+              </button>
+              <span className="text-white font-medium min-w-[3rem] text-center">
+                {Math.round(scale * 100)}%
+              </span>
+              <button
+                onClick={handleZoomIn}
+                className="p-2 text-white hover:bg-white/20 rounded-lg transition-colors"
+                title="Zoom In"
+              >
+                <ZoomIn className="h-6 w-6" />
+              </button>
+            </div>
+            <button
+              onClick={resetZoom}
+              className="p-3 text-white hover:bg-white/20 rounded-full transition-colors"
+            >
+              <X className="h-8 w-8" />
+            </button>
+          </div>
+
+          <div
+            className="relative w-full h-full flex items-center justify-center overflow-hidden p-4"
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            onWheel={handleWheel}
+          >
+            <img
+              src={viewImageObj.src}
+              alt={viewImageObj.alt}
+              draggable={false}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              style={{
+                transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+                cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default',
+                transition: isDragging ? 'none' : 'transform 0.2s ease-out'
+              }}
+              className="max-w-full max-h-full object-contain select-none"
+            />
+          </div>
+        </div>
       )}
       {/* Enhanced Add/Edit User Modal */}
       {showModal && (
@@ -1293,7 +1518,7 @@ const UserManagement: React.FC = () => {
                       {editingUser ? getText('Edit User', 'Edit Pengguna') : getText('Add New User', 'Tambah Pengguna Baru')}
                     </h3>
                     <p className="text-blue-100 text-sm">
-                      {editingUser 
+                      {editingUser
                         ? getText('Update user information and permissions', 'Perbarui informasi dan izin pengguna')
                         : getText('Create a new user account', 'Buat akun pengguna baru')
                       }
@@ -1305,15 +1530,16 @@ const UserManagement: React.FC = () => {
                     setShowModal(false);
                     setEditingUser(null);
                     form.reset();
+                    setPhotoPreview(null);
                   }}
                   disabled={submitting}
                   className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors duration-200"
                 >
                   <X className="h-6 w-6" />
                 </button>
-                </div>
+              </div>
             </div>
-            
+
             {/* Modal Content */}
             <form onSubmit={form.handleSubmit(handleSubmit)} className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
               <div className="space-y-6">
@@ -1323,7 +1549,64 @@ const UserManagement: React.FC = () => {
                     <User className="h-5 w-5 mr-2" />
                     {getText('Basic Information', 'Informasi Dasar')}
                   </h4>
-                  
+
+                  {/* Photo Upload Section */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {getText('Profile Photo', 'Foto Profil')}
+                    </label>
+                    <div className="flex items-start space-x-4">
+                      {/* Photo Preview */}
+                      <div className="relative">
+                        {photoPreview ? (
+                          <div className="relative">
+                            <img
+                              src={photoPreview}
+                              alt="Profile Preview"
+                              className="h-24 w-24 rounded-xl object-cover border-2 border-blue-300 shadow-md"
+                            />
+                            <button
+                              type="button"
+                              onClick={clearPhoto}
+                              className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-md"
+                              title={getText('Remove photo', 'Hapus foto')}
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="h-24 w-24 rounded-xl bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center">
+                            <User className="h-10 w-10 text-gray-400" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Upload Controls */}
+                      <div className="flex-1">
+                        <input
+                          ref={photoInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handlePhotoChange}
+                          className="hidden"
+                          id="user-photo-upload"
+                          disabled={submitting}
+                        />
+                        <label
+                          htmlFor="user-photo-upload"
+                          className={`inline-flex items-center space-x-2 px-4 py-2 border border-blue-300 text-blue-700 rounded-lg cursor-pointer hover:bg-blue-50 transition-colors ${submitting ? 'opacity-50 cursor-not-allowed' : ''
+                            }`}
+                        >
+                          <Camera className="h-4 w-4" />
+                          <span>{photoPreview ? getText('Change Photo', 'Ganti Foto') : getText('Upload Photo', 'Unggah Foto')}</span>
+                        </label>
+                        <p className="mt-2 text-xs text-gray-500">
+                          {getText('Max 5MB. Formats: JPG, PNG, GIF', 'Maks 5MB. Format: JPG, PNG, GIF')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="space-y-4">
                     {/* Full Name */}
                     <div>
@@ -1333,9 +1616,8 @@ const UserManagement: React.FC = () => {
                       <input
                         {...form.register('full_name')}
                         type="text"
-                        className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
-                          form.formState.errors.full_name ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
-                        }`}
+                        className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${form.formState.errors.full_name ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
+                          }`}
                         placeholder={getText('Enter full name', 'Masukkan nama lengkap')}
                         disabled={submitting}
                       />
@@ -1356,9 +1638,8 @@ const UserManagement: React.FC = () => {
                         <input
                           {...form.register('username')}
                           type="text"
-                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
-                            form.formState.errors.username ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
-                          }`}
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${form.formState.errors.username ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
+                            }`}
                           placeholder="username"
                           disabled={submitting}
                         />
@@ -1378,9 +1659,8 @@ const UserManagement: React.FC = () => {
                         <input
                           {...form.register('identity_number')}
                           type="text"
-                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
-                            form.formState.errors.identity_number ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
-                          }`}
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${form.formState.errors.identity_number ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
+                            }`}
                           placeholder="NIM/NIP"
                           disabled={submitting}
                         />
@@ -1402,9 +1682,8 @@ const UserManagement: React.FC = () => {
                         <input
                           {...form.register('email')}
                           type="email"
-                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
-                            form.formState.errors.email ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
-                          }`}
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${form.formState.errors.email ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
+                            }`}
                           placeholder="user@email.com"
                           disabled={submitting}
                         />
@@ -1424,9 +1703,8 @@ const UserManagement: React.FC = () => {
                         <input
                           {...form.register('phone_number')}
                           type="tel"
-                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
-                            form.formState.errors.phone_number ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
-                          }`}
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${form.formState.errors.phone_number ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
+                            }`}
                           placeholder="08xxxxxxxxxx"
                           disabled={submitting}
                         />
@@ -1454,11 +1732,18 @@ const UserManagement: React.FC = () => {
                     >
                       <option value="student">{getText('Student', 'Mahasiswa')}</option>
                       <option value="lecturer">{getText('Lecturer', 'Dosen')}</option>
-                      {profile?.role === 'super_admin' && (
+                      {(profile?.role === 'super_admin' || profile?.role === 'staffing') && (
                         <>
                           <option value="department_admin">{getText('Department Admin', 'Admin Departemen')}</option>
-                          <option value="super_admin">{getText('Super Admin', 'Super Admin')}</option>
+                          <option value="laboratory">{getText('Laboratory', 'Laboratorium')}</option>
+                          <option value="staffing">{getText('Staffing', 'Kepegawaian')}</option>
+                          <option value="purchasing">{getText('Purchasing', 'Pengadaan')}</option>
+                          <option value="technician">{getText('Technician', 'Teknisi')}</option>
+                          <option value="frontdesk">{getText('Front Desk', 'Front Desk')}</option>
                         </>
+                      )}
+                      {profile?.role === 'super_admin' && (
+                        <option value="super_admin">{getText('Super Admin', 'Super Admin')}</option>
                       )}
                     </select>
                     {form.formState.errors.role && (
@@ -1479,6 +1764,11 @@ const UserManagement: React.FC = () => {
                       {watchRole === 'department_admin' && getText('Department-level management and oversight', 'Manajemen dan pengawasan tingkat departemen')}
                       {watchRole === 'lecturer' && getText('Room booking and class management', 'Pemesanan ruangan dan manajemen kelas')}
                       {watchRole === 'student' && getText('Basic room booking access', 'Akses dasar pemesanan ruangan')}
+                      {watchRole === 'laboratory' && getText('Lab room and equipment management per department', 'Manajemen ruangan lab dan peralatan per departemen')}
+                      {watchRole === 'staffing' && getText('User and room management across all departments', 'Manajemen pengguna dan ruangan lintas departemen')}
+                      {watchRole === 'purchasing' && getText('Equipment stock and location management', 'Manajemen stok peralatan dan lokasi')}
+                      {watchRole === 'technician' && getText('View reports and maintenance tasks', 'Melihat laporan dan tugas pemeliharaan')}
+                      {watchRole === 'frontdesk' && getText('View schedules and room booking', 'Melihat jadwal dan pemesanan ruangan')}
                     </div>
                   </div>
                 </div>
@@ -1541,14 +1831,14 @@ const UserManagement: React.FC = () => {
                           {getText('Study Program', 'Program Studi')}
                         </label>
                         <SearchableDropdown
-                          options={studyPrograms.filter(sp => 
-                            profile?.role === 'department_admin' 
+                          options={studyPrograms.filter(sp =>
+                            profile?.role === 'department_admin'
                               ? sp.department_id === profile.department_id
                               : sp.department_id === watchDepartmentId
-                          ).map(program => ({ 
-                            id: program.id, 
-                            name: program.name, 
-                            code: program.code 
+                          ).map(program => ({
+                            id: program.id,
+                            name: program.name,
+                            code: program.code
                           }))}
                           value={form.watch('study_program_id') || ''}
                           onChange={(value) => form.setValue('study_program_id', value)}
@@ -1589,7 +1879,7 @@ const UserManagement: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {getText('Password', 'Kata Sandi')} 
+                      {getText('Password', 'Kata Sandi')}
                       {!editingUser && <span className="text-red-500"> *</span>}
                       {editingUser && (
                         <span className="text-gray-500 text-sm ml-2">
@@ -1604,7 +1894,7 @@ const UserManagement: React.FC = () => {
                       error={form.formState.errors.password?.message}
                       required={!editingUser}
                     />
-                    
+
                     {/* Password Requirements */}
                     {!editingUser && (
                       <div className="mt-2 p-3 bg-white rounded-lg border border-red-200">
@@ -1631,6 +1921,7 @@ const UserManagement: React.FC = () => {
                   setShowModal(false);
                   setEditingUser(null);
                   form.reset();
+                  setPhotoPreview(null);
                 }}
                 className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors duration-200 font-medium disabled:opacity-50"
                 disabled={submitting}
@@ -1678,7 +1969,7 @@ const UserManagement: React.FC = () => {
                   </p>
                 </div>
               </div>
-              
+
               <div className="mb-6">
                 <p className="text-gray-700 mb-4">
                   {getText(
@@ -1686,7 +1977,7 @@ const UserManagement: React.FC = () => {
                     'Apakah Anda yakin ingin menghapus pengguna ini? Semua data terkait akan dihapus secara permanen.'
                   )}
                 </p>
-                
+
                 {(() => {
                   const userToDelete = users.find(u => u.id === showDeleteConfirm);
                   return userToDelete && (

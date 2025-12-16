@@ -1,1200 +1,1150 @@
-import React, { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-    Package, Plus, Minus, Search, User, Phone, Mail, Hash, Calendar, Clock, 
-    CheckCircle, AlertCircle, Trash2, Loader2, Send, Eye, Building, 
-    ChevronDown, Settings, Wrench, Zap, ShoppingCart, GraduationCap, BookOpen,
-    Upload, FileText, X, Camera, Info, AlertTriangle
+    Wrench, Search, Package, User, Building, MapPin,
+    X, Plus, Minus, CheckCircle, Send, Info,
+    Eye, Maximize2, Camera, RefreshCw,
+    FileText, AlertTriangle, Upload
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Equipment, User as UserType, StudyProgram, Department } from '../types';
 import toast from 'react-hot-toast';
-import { alert } from '../components/Alert/AlertHelper';
-import { format } from 'date-fns';
 
-// Constants for lending status
-const LENDING_STATUS = {
-    PENDING: 'pending',    // New: Waiting for approval
-    APPROVED: 'approved',  // New: Approved and can be borrowed
-    BORROW: 'borrow',      // Active borrowing
-    RETURNED: 'returned',
-    OVERDUE: 'overdue',
-    REJECTED: 'rejected'   // New: Rejected by admin
-};
+// Types
+interface EquipmentWithDetails {
+    id: string;
+    name: string;
+    code: string;
+    category: string;
+    quantity: number;
+    unit: string;
+    condition: string;
+    is_available: boolean;
+    attachments?: string | null;
+    Spesification?: string | null;
+    rooms_id: string | null;
+    table_id?: string | null;
+    rack_id?: string | null;
+    box_id?: string | null;
+    rooms?: {
+        id: string;
+        name: string;
+        code: string;
+        department_id?: string;
+        floor?: number;
+        department?: { id: string; name: string; code: string };
+        building?: { name: string; campus?: { name: string } };
+    } | null;
+}
 
-// Updated schema with purpose field and attachments for "Other" purpose
-const lendingSchema = z.object({
-    full_name: z.string().min(3, 'Full name must be at least 3 characters'),
-    identity_number: z.string().min(5, 'Identity number must be at least 5 characters'),
-    phone_number: z.string().min(10, 'Please enter a valid phone number'),
-    study_program_id: z.string().min(1, 'Please select a study program'),
-    date: z.string().min(1, 'Please select lending date'),
-    purpose: z.enum(['Class/Lecture', 'Other'], { required_error: 'Purpose is required' }),
-    notes: z.string().optional(),
-    attachments: z.array(z.string()).optional(),
-}).superRefine((data, ctx) => {
-    // Validate attachments are required if purpose is 'Other'
-    if (data.purpose === 'Other' && (!data.attachments || data.attachments.length === 0)) {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "Attachments are required when purpose is 'Other'",
-            path: ['attachments'],
-        });
-    }
-});
-
-type LendingForm = z.infer<typeof lendingSchema>;
+interface Table { id: string; room_id: string; description: string; rack?: number; }
+interface Rack { id: string; name: string; table_id: string; }
+interface Box { id: string; name: string; description?: string; rack_id: string; }
 
 interface SelectedEquipment {
-    equipment: Equipment;
+    equipment: EquipmentWithDetails;
     quantity: number;
 }
 
-interface ExistingUser {
+interface IdentitySuggestion {
     id: string;
     identity_number: string;
     full_name: string;
-    email: string;
-    phone_number?: string;
-    study_program_id?: string;
-    study_program?: StudyProgram & { department?: Department };
+    phone_number: string;
+    email?: string;
+    department_id?: string;
+    department_name?: string;
 }
 
-interface StudyProgramWithDepartment extends StudyProgram {
-    department?: Department;
-}
-
+// Main Component
 const ToolLending: React.FC = () => {
-    const { profile } = useAuth();
     const { getText } = useLanguage();
-    const [loading, setLoading] = useState(true);
-    const [submitting, setSubmitting] = useState(false);
-    const [availableEquipment, setAvailableEquipment] = useState<Equipment[]>([]);
-    const [selectedEquipment, setSelectedEquipment] = useState<SelectedEquipment[]>([]);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [categoryFilter, setCategoryFilter] = useState<string>('all');
-    const [existingUsers, setExistingUsers] = useState<ExistingUser[]>([]);
+
+    // Identity states
+    const [identityNumber, setIdentityNumber] = useState('');
+    const [fullName, setFullName] = useState('');
+    const [phoneNumber, setPhoneNumber] = useState('');
+    const [email, setEmail] = useState('');
+    const [userDepartmentId, setUserDepartmentId] = useState<string | null>(null);
+    const [userDepartmentName, setUserDepartmentName] = useState<string>('');
+    const [userId, setUserId] = useState<string | null>(null);
+
+    // Identity dropdown
+    const [identitySuggestions, setIdentitySuggestions] = useState<IdentitySuggestion[]>([]);
     const [showIdentityDropdown, setShowIdentityDropdown] = useState(false);
-    const [identitySearchTerm, setIdentitySearchTerm] = useState('');
-    const [currentTime] = useState(new Date());
-    
-    // New state for study programs
-    const [studyPrograms, setStudyPrograms] = useState<StudyProgramWithDepartment[]>([]);
-    const [showStudyProgramDropdown, setShowStudyProgramDropdown] = useState(false);
-    const [studyProgramSearchTerm, setStudyProgramSearchTerm] = useState('');
+    const [isManualEntry, setIsManualEntry] = useState(false);
+    const [identityVerified, setIdentityVerified] = useState(false);
 
-    const form = useForm<LendingForm>({
-        resolver: zodResolver(lendingSchema),
-        defaultValues: {
-            date: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
-            purpose: 'Class/Lecture',
-            attachments: [],
-        }
-    });
+    // Equipment states
+    const [equipment, setEquipment] = useState<EquipmentWithDetails[]>([]);
+    const [filteredEquipment, setFilteredEquipment] = useState<EquipmentWithDetails[]>([]);
+    const [selectedEquipments, setSelectedEquipments] = useState<Map<string, SelectedEquipment>>(new Map());
+    const [searchTerm, setSearchTerm] = useState('');
+    const [categoryFilter, setCategoryFilter] = useState('all');
+    const [loading, setLoading] = useState(false);
+    const [loadingEquipment, setLoadingEquipment] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
 
-    const watchIdentityNumber = form.watch('identity_number');
-    const watchStudyProgramId = form.watch('study_program_id');
-    const watchPurpose = form.watch('purpose');
-    const watchAttachments = form.watch('attachments');
+    // Location data
+    const [tables, setTables] = useState<Table[]>([]);
+    const [racks, setRacks] = useState<Rack[]>([]);
+    const [boxes, setBoxes] = useState<Box[]>([]);
 
+    // Equipment detail modal
+    const [showDetailModal, setShowDetailModal] = useState(false);
+    const [detailEquipment, setDetailEquipment] = useState<EquipmentWithDetails | null>(null);
+    const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
+
+    // Form
+    const [purpose, setPurpose] = useState<'Class/Lecture' | 'Other'>('Class/Lecture');
+    const [returnDate, setReturnDate] = useState('');
+    const [attachments, setAttachments] = useState<string[]>([]);
+
+    // Refs
+    const identityInputRef = useRef<HTMLInputElement | null>(null);
+    const fullNameInputRef = useRef<HTMLInputElement | null>(null);
+    const phoneInputRef = useRef<HTMLInputElement | null>(null);
+    const dropdownRef = useRef<HTMLDivElement | null>(null);
+
+    // Close dropdown when clicking outside
     useEffect(() => {
-        fetchAvailableEquipment();
-        fetchExistingUsers();
-        fetchStudyPrograms();
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setShowIdentityDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    useEffect(() => {
-        if (watchIdentityNumber && watchIdentityNumber.length >= 5 && !profile) {
-            // Find existing user by identity number
-            const findExistingUser = async () => {
-                try {
-                    const { data: existingUser, error } = await supabase
-                        .from('users')
-                        .select('id, full_name, phone_number, email, identity_number, study_program_id, study_program:study_programs(*, department:departments(*))')
-                        .eq('identity_number', watchIdentityNumber)
-                        .maybeSingle();
+    // ==================== IDENTITY SEARCH ====================
 
-                    if (error && error.code !== 'PGRST116') {
-                        console.error('Error checking existing user:', error);
-                        return;
-                    }
-
-                    if (existingUser) {
-                        // Auto-fill form with existing user data
-                        form.setValue('full_name', existingUser.full_name);
-                        if (existingUser.phone_number) {
-                            form.setValue('phone_number', existingUser.phone_number);
-                        }
-                        if (existingUser.study_program_id) {
-                            form.setValue('study_program_id', existingUser.study_program_id);
-                            const selectedProgram = studyPrograms.find(sp => sp.id === existingUser.study_program_id);
-                            if (selectedProgram) {
-                                setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`);
-                            }
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error fetching user data:', error);
-                }
-            };
-
-            // Debounce the API call
-            const timeoutId = setTimeout(findExistingUser, 500);
-            return () => clearTimeout(timeoutId);
-        }
-    }, [watchIdentityNumber, profile, form, getText, studyPrograms]);
-
-    useEffect(() => {
-        if (watchStudyProgramId) {
-            const selectedProgram = studyPrograms.find(sp => sp.id === watchStudyProgramId);
-            if (selectedProgram) {
-                setStudyProgramSearchTerm(`${selectedProgram.name} (${selectedProgram.code}) - ${selectedProgram.department?.name}`);
-            }
-        }
-    }, [watchStudyProgramId, studyPrograms]);
-
-    const fetchAvailableEquipment = async () => {
-        try {
-            setLoading(true);
-            const { data, error } = await supabase
-                .from('equipment')
-                .select('*')
-                .eq('is_available', true)
-                .is('rooms_id', null) // Only equipment not tied to specific rooms
-                .gt('quantity', 0)
-                .order('name');
-
-            if (error) throw error;
-            setAvailableEquipment(data || []);
-        } catch (error) {
-            console.error('Error fetching equipment:', error);
-            alert.error(getText('Failed to load equipment.', 'Gagal memuat peralatan.'));
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const fetchExistingUsers = async () => {
-        try {
-            // Only fetch a limited number of recent users for dropdown suggestions
-            const { data, error } = await supabase
-                .from('users')
-                .select('id, identity_number, full_name, email, phone_number, study_program_id, study_program:study_programs(*, department:departments(*))')
-                .order('updated_at', { ascending: false })
-                .limit(50); // Limit to recent 50 users for performance
-
-            if (error) throw error;
-            setExistingUsers(data || []);
-        } catch (error) {
-            console.error('Error fetching users for dropdown:', error);
-            // Don't show error to user as this is just for convenience
-        }
-    };
-
-    const fetchStudyPrograms = async () => {
-        try {
-            const { data, error } = await supabase
-                .from('study_programs')
-                .select(`*, department:departments(*)`)
-                .order('name');
-            
-            if (error) throw error;
-            setStudyPrograms(data || []);
-        } catch (error) {
-            console.error('Error fetching study programs:', error);
-            alert.error(getText('Failed to load study programs.', 'Gagal memuat program studi.'));
-        }
-    };
-
-    const addEquipment = (equipment: Equipment) => {
-        const existing = selectedEquipment.find(item => item.equipment.id === equipment.id);
-        if (existing) {
-            if (existing.quantity < equipment.quantity) {
-                setSelectedEquipment(prev =>
-                    prev.map(item =>
-                        item.equipment.id === equipment.id
-                            ? { ...item, quantity: item.quantity + 1 }
-                            : item
-                    )
-                );
-            } else {
-                alert.error(`Maximum available quantity is ${equipment.quantity}`);
-            }
-        } else {
-            setSelectedEquipment(prev => [...prev, { equipment, quantity: 1 }]);
-        }
-    };
-
-    const updateQuantity = (equipmentId: string, newQuantity: number) => {
-        const equipment = availableEquipment.find(eq => eq.id === equipmentId);
-        if (!equipment) return;
-
-        if (newQuantity <= 0) {
-            removeEquipment(equipmentId);
-        } else if (newQuantity <= equipment.quantity) {
-            setSelectedEquipment(prev =>
-                prev.map(item =>
-                    item.equipment.id === equipmentId
-                        ? { ...item, quantity: newQuantity }
-                        : item
-                )
-            );
-        } else {
-            alert.error(`Maximum available quantity is ${equipment.quantity}`);
-        }
-    };
-
-    const removeEquipment = (equipmentId: string) => {
-        setSelectedEquipment(prev => prev.filter(item => item.equipment.id !== equipmentId));
-    };
-
-    // ✅ ENHANCED: File handling functions with preview support
-    const getFileTypeIcon = (attachment: string) => {
-        if (attachment.startsWith('data:application/pdf')) {
-            return <FileText className="h-4 w-4 text-red-600" />;
-        } else if (attachment.startsWith('data:image/')) {
-            return <Camera className="h-4 w-4 text-amber-600" />;
-        } else {
-            return <FileText className="h-4 w-4 text-gray-600" />;
-        }
-    };
-
-    const getFileName = (attachment: string, index: number) => {
-        if (attachment.startsWith('data:application/pdf')) {
-            return `Document_${index + 1}.pdf`;
-        } else if (attachment.startsWith('data:image/')) {
-            return `Image_${index + 1}.jpg`;
-        } else {
-            return `File_${index + 1}`;
-        }
-    };
-
-    const getFileType = (attachment: string) => {
-        if (attachment.startsWith('data:application/pdf')) {
-            return 'PDF Document';
-        } else if (attachment.startsWith('data:image/')) {
-            return 'Image File';
-        } else {
-            return 'Document';
-        }
-    };
-
-    // ✅ ENHANCED: File upload with validation and preview
-    const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = event.target.files;
-        if (!files) return;
-        
-        const currentAttachments = form.getValues('attachments') || [];
-        const safeCurrentAttachments = Array.isArray(currentAttachments) ? currentAttachments : [];
-        
-        Array.from(files).forEach((file) => {
-            // ✅ ENHANCED: File validation
-            const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-            if (!allowedTypes.includes(file.type)) {
-                alert.error(getText('Please select an image, PDF, or document file', 'Silakan pilih file gambar, PDF, atau dokumen'));
-                return;
-            }
-
-            // ✅ ENHANCED: File size validation (max 10MB)
-            if (file.size > 10 * 1024 * 1024) {
-                alert.error(getText('File size must be less than 10MB', 'Ukuran file harus kurang dari 10MB'));
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const result = e.target?.result as string;
-                if (result) {
-                    const newAttachments = [...safeCurrentAttachments, result];
-                    form.setValue('attachments', newAttachments, { shouldValidate: true });
-                    alert.success(getText('File uploaded successfully', 'File berhasil diunggah'));
-                }
-            };
-            reader.readAsDataURL(file);
-        });
-    };
-
-    // ✅ ENHANCED: Remove attachment with validation
-    const removeAttachment = (index: number) => {
-        const currentAttachments = form.getValues('attachments') || [];
-        const safeCurrentAttachments = Array.isArray(currentAttachments) ? currentAttachments : [];
-        const updatedAttachments = safeCurrentAttachments.filter((_, i) => i !== index);
-        form.setValue('attachments', updatedAttachments, { shouldValidate: true });
-    };
-
-    const onSubmit = async (data: LendingForm) => {
-        if (selectedEquipment.length === 0) {
-            alert.error(getText('Please select at least one equipment', 'Silakan pilih minimal satu peralatan'));
+    async function searchIdentity(value: string) {
+        if (value.length < 3) {
+            setIdentitySuggestions([]);
+            setShowIdentityDropdown(false);
+            setIsManualEntry(true);
             return;
         }
 
-        setSubmitting(true);
         try {
-            // Prepare equipment IDs and quantities
-            const equipmentIds = selectedEquipment.map(item => item.equipment.id);
-            const quantities = selectedEquipment.map(item => item.quantity);
+            const { data: users, error } = await supabase
+                .from('users')
+                .select(`
+                    id,
+                    identity_number,
+                    full_name,
+                    phone_number,
+                    email,
+                    department_id,
+                    departments:department_id (
+                        id,
+                        name
+                    )
+                `)
+                .or(`identity_number.ilike.%${value}%,full_name.ilike.%${value}%`)
+                .limit(10);
 
-            let userId = profile?.id || null;
+            if (error) throw error;
 
-            // If user is not logged in, handle user creation/finding
-            if (!profile) {
-                // Check if user already exists
-                const { data: existingUser, error: userCheckError } = await supabase
-                    .from('users')
-                    .select('id')
-                    .eq('identity_number', data.identity_number)
-                    .maybeSingle();
+            if (!users || users.length === 0) {
+                setIdentitySuggestions([]);
+                setShowIdentityDropdown(false);
+                setIsManualEntry(true);
 
-                if (userCheckError && userCheckError.code !== 'PGRST116') {
-                    throw userCheckError;
-                }
-
-                // Get study program and department info
-                const selectedStudyProgram = studyPrograms.find(sp => sp.id === data.study_program_id);
-                const departmentId = selectedStudyProgram?.department_id;
-
-                if (existingUser) {
-                    // User exists, use their ID and update their information
-                    userId = existingUser.id;
-                    
-                    const { error: updateError } = await supabase
-                        .from('users')
-                        .update({
-                            full_name: data.full_name,
-                            phone_number: data.phone_number,
-                            study_program_id: data.study_program_id,
-                            department_id: departmentId,
-                            updated_at: new Date().toISOString()
-                        })
-                        .eq('id', existingUser.id);
-
-                    if (updateError) {
-                        console.warn('Error updating user data:', updateError);
-                    }
-                } else {
-                    // User doesn't exist, create new user with identity_number as password
-                    const { data: newUser, error: createUserError } = await supabase
-                        .from('users')
-                        .insert({
-                            username: data.identity_number, // Username = identity number
-                            email: `${data.identity_number}@student.edu`,
-                            full_name: data.full_name,
-                            identity_number: data.identity_number,
-                            phone_number: data.phone_number,
-                            study_program_id: data.study_program_id,
-                            department_id: departmentId,
-                            role: 'student',
-                            password: data.identity_number // Password = identity number (plain text, sesuai sistem lama)
-                        })
-                        .select('id')
-                        .single();
-
-                    if (createUserError) {
-                        throw createUserError; // Don't proceed if user creation fails
-                    }
-                    
-                    userId = newUser.id;
-                    
-                    // Show success message for auto-registration
-                    alert.success(
-                        getText(
-                            'Account automatically created! You can login with your NIM as both username and password.',
-                            'Akun otomatis dibuat! Anda dapat login dengan NIM sebagai username dan password.'
-                        ),
-                        { duration: 6000 }
-                    );
-                }
+                if (fullNameInputRef.current) fullNameInputRef.current.disabled = false;
+                if (phoneInputRef.current) phoneInputRef.current.disabled = false;
+                return;
             }
 
-            // MUST HAVE userId at this point
-            if (!userId) {
-                throw new Error('Unable to create or find user');
-            }
+            const mappedUsers = users.map((user: any) => ({
+                id: user.id,
+                identity_number: user.identity_number,
+                full_name: user.full_name,
+                phone_number: user.phone_number || "",
+                email: user.email || "",
+                department_id: user.department_id || null,
+                department_name: user.departments?.name || ""
+            }));
 
-            // Create lending record with userId and PENDING status
-            const lendingData = {
-                date: new Date(data.date).toISOString(),
+            setIdentitySuggestions(mappedUsers);
+            setShowIdentityDropdown(true);
+            setIsManualEntry(false);
+
+        } catch (err) {
+            console.error("Error fetching identity suggestions:", err);
+            setIdentitySuggestions([]);
+            setShowIdentityDropdown(false);
+            setIsManualEntry(true);
+        }
+    }
+
+    function selectIdentity(user: IdentitySuggestion) {
+        setIdentityNumber(user.identity_number);
+        setFullName(user.full_name);
+        setPhoneNumber(user.phone_number);
+        setEmail(user.email || '');
+        setUserDepartmentId(user.department_id || null);
+        setUserDepartmentName(user.department_name || '');
+        setUserId(user.id);
+
+        if (identityInputRef.current) identityInputRef.current.value = user.identity_number;
+        if (fullNameInputRef.current) {
+            fullNameInputRef.current.value = user.full_name;
+            fullNameInputRef.current.disabled = true;
+        }
+        if (phoneInputRef.current) {
+            phoneInputRef.current.value = user.phone_number;
+            phoneInputRef.current.disabled = true;
+        }
+
+        setShowIdentityDropdown(false);
+        setIdentitySuggestions([]);
+        setIsManualEntry(false);
+        setIdentityVerified(true);
+
+        // Fetch equipment based on department
+        fetchEquipmentData(user.department_id || null);
+    }
+
+    function handleIdentityChange(e: React.ChangeEvent<HTMLInputElement>) {
+        const value = e.target.value;
+        setIdentityNumber(value);
+
+        if (value.length === 0) {
+            setFullName('');
+            setPhoneNumber('');
+            setEmail('');
+            setUserDepartmentId(null);
+            setUserDepartmentName('');
+            setUserId(null);
+
+            if (fullNameInputRef.current) {
+                fullNameInputRef.current.value = "";
+                fullNameInputRef.current.disabled = false;
+            }
+            if (phoneInputRef.current) {
+                phoneInputRef.current.value = "";
+                phoneInputRef.current.disabled = false;
+            }
+            setIsManualEntry(false);
+            setIdentityVerified(false);
+        } else {
+            searchIdentity(value);
+        }
+    }
+
+    // ==================== DATA FETCHING ====================
+
+    const fetchEquipmentData = useCallback(async (departmentId: string | null) => {
+        try {
+            setLoadingEquipment(true);
+
+            const { data: equipmentData, error: equipmentError } = await supabase
+                .from('equipment')
+                .select(`
+                    *,
+                    rooms:rooms_id(
+                        id, name, code, department_id, floor,
+                        department:departments(id, name, code),
+                        building:building_id(name, campus:campus_id(name))
+                    )
+                `)
+                .eq('is_available', true)
+                .gt('quantity', 0)
+                .order('name');
+
+            if (equipmentError) throw equipmentError;
+
+            // Filter equipment based on department
+            let filtered = (equipmentData || []).filter((eq: EquipmentWithDetails) => {
+                if (!eq.rooms || !eq.rooms.department_id) return true;
+                if (!departmentId) return !eq.rooms.department_id;
+                return eq.rooms.department_id === departmentId || !eq.rooms.department_id;
+            });
+
+            setEquipment(filtered);
+            setFilteredEquipment(filtered);
+
+            // Fetch location data
+            const [tablesRes, racksRes, boxesRes] = await Promise.all([
+                supabase.from('table').select('id, room_id, description, rack'),
+                supabase.from('rack').select('id, name, table_id').order('name'),
+                supabase.from('box').select('id, name, description, rack_id').order('name')
+            ]);
+
+            if (tablesRes.data) setTables(tablesRes.data);
+            if (racksRes.data) setRacks(racksRes.data);
+            if (boxesRes.data) setBoxes(boxesRes.data);
+
+        } catch (error) {
+            console.error('Error fetching equipment:', error);
+            toast.error(getText('Failed to load equipment', 'Gagal memuat peralatan'));
+        } finally {
+            setLoadingEquipment(false);
+        }
+    }, [getText]);
+
+    // Initial load - fetch equipment with no department filter
+    useEffect(() => {
+        fetchEquipmentData(null);
+    }, [fetchEquipmentData]);
+
+    // ==================== EQUIPMENT FILTERING ====================
+
+    useEffect(() => {
+        let filtered = [...equipment];
+
+        if (searchTerm) {
+            const search = searchTerm.toLowerCase();
+            filtered = filtered.filter(eq =>
+                eq.name.toLowerCase().includes(search) ||
+                eq.code.toLowerCase().includes(search) ||
+                eq.category?.toLowerCase().includes(search) ||
+                eq.rooms?.name?.toLowerCase().includes(search)
+            );
+        }
+
+        if (categoryFilter !== 'all') {
+            filtered = filtered.filter(eq => eq.category === categoryFilter);
+        }
+
+        setFilteredEquipment(filtered);
+    }, [equipment, searchTerm, categoryFilter]);
+
+    const categories = [...new Set(equipment.map(eq => eq.category).filter(Boolean))];
+
+    // ==================== EQUIPMENT SELECTION ====================
+
+    const handleSelectEquipment = (eq: EquipmentWithDetails, quantity: number) => {
+        const newMap = new Map(selectedEquipments);
+
+        if (quantity <= 0) {
+            newMap.delete(eq.id);
+        } else {
+            const maxQty = eq.quantity || 1;
+            newMap.set(eq.id, {
+                equipment: eq,
+                quantity: Math.min(quantity, maxQty)
+            });
+        }
+
+        setSelectedEquipments(newMap);
+    };
+
+    // ==================== SUBMIT REQUEST ====================
+
+    const handleSubmitRequest = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        if (!identityNumber || !fullName || !phoneNumber) {
+            toast.error(getText('Please fill all required identity fields', 'Harap isi semua kolom identitas yang diperlukan'));
+            return;
+        }
+
+        if (selectedEquipments.size === 0) {
+            toast.error(getText('Please select at least one equipment', 'Pilih minimal satu peralatan'));
+            return;
+        }
+
+        if (!purpose) {
+            toast.error(getText('Please select the purpose', 'Harap pilih tujuan peminjaman'));
+            return;
+        }
+
+        if (purpose === 'Other' && attachments.length === 0) {
+            toast.error(getText('Please upload supporting documents for Other purpose', 'Harap unggah dokumen pendukung untuk tujuan Lainnya'));
+            return;
+        }
+
+        if (!returnDate) {
+            toast.error(getText('Please select return date', 'Pilih tanggal pengembalian'));
+            return;
+        }
+
+        try {
+            setSubmitting(true);
+
+            const equipmentIds = Array.from(selectedEquipments.values()).map(s => s.equipment.id);
+            const quantities = Array.from(selectedEquipments.values()).map(s => s.quantity);
+
+            const lendingData: any = {
+                id_user: userId,
+                date: new Date().toISOString(),
+                return_date: returnDate,
                 id_equipment: equipmentIds,
                 qty: quantities,
-                id_user: userId, // ALWAYS use id_user, never user_info
-                status: LENDING_STATUS.PENDING, // Set status to 'pending' for approval
-                purpose: data.purpose, // Add purpose field
-                notes: data.notes || null,
-                attachments: data.attachments || [],
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
+                purpose: purpose,
+                status: 'pending',
+                attachments: purpose === 'Other' ? attachments : null,
+                user_info: !userId ? {
+                    full_name: fullName,
+                    identity_number: identityNumber,
+                    phone_number: phoneNumber,
+                    email: email
+                } : null
             };
 
-            console.log('Creating lending record with data:', lendingData); // Debug log
-
-            const { error: lendingError } = await supabase
+            const { error } = await supabase
                 .from('lending_tool')
                 .insert(lendingData);
 
-            if (lendingError) {
-                console.error('Error creating lending record:', lendingError);
-                throw lendingError;
-            }
+            if (error) throw error;
 
-            // NOTE: Don't update equipment quantities yet since it's pending approval
-            // Equipment quantities will be updated when admin approves the request
+            toast.success(getText(
+                'Lending request submitted successfully! Please wait for approval.',
+                'Permintaan peminjaman berhasil dikirim! Harap tunggu persetujuan.'
+            ));
 
-            alert.success(
-                getText(
-                    'Equipment lending request submitted successfully! Please wait for approval.',
-                    'Permintaan peminjaman peralatan berhasil dikirim! Silakan tunggu persetujuan.'
-                )
-            );
-            
-            // Reset form and selections
-            form.reset({
-                date: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
-                purpose: 'Class/Lecture',
-                attachments: [],
-            });
-            setSelectedEquipment([]);
-            setIdentitySearchTerm('');
-            setStudyProgramSearchTerm('');
-            
-            // Refresh equipment list
-            await fetchAvailableEquipment();
+            // Reset form
+            setSelectedEquipments(new Map());
+            setPurpose('Class/Lecture');
+            setReturnDate('');
+            setAttachments([]);
 
-        } catch (error: any) {
-            console.error('Error creating lending request:', error);
-            alert.error(error.message || getText('Failed to create lending request', 'Gagal membuat permintaan peminjaman'));
+        } catch (err: any) {
+            console.error('Submit error:', err);
+            toast.error(err.message || getText('Failed to submit request', 'Gagal mengirim permintaan'));
         } finally {
             setSubmitting(false);
         }
     };
 
-    const filteredEquipment = availableEquipment.filter(equipment => {
-        const matchesSearch = equipment.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            equipment.code.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesCategory = categoryFilter === 'all' || equipment.category === categoryFilter;
-        return matchesSearch && matchesCategory;
-    });
+    // ==================== HELPER FUNCTIONS ====================
 
-    const filteredIdentityNumbers = existingUsers.filter(user =>
-        user.identity_number.toLowerCase().includes(identitySearchTerm.toLowerCase()) ||
-        user.full_name.toLowerCase().includes(identitySearchTerm.toLowerCase())
-    );
+    const getLocationPath = (eq: EquipmentWithDetails): string => {
+        const parts: string[] = [];
 
-    const filteredStudyPrograms = studyPrograms.filter(program =>
-        program.name.toLowerCase().includes(studyProgramSearchTerm.toLowerCase()) ||
-        program.code.toLowerCase().includes(studyProgramSearchTerm.toLowerCase()) ||
-        program.department?.name.toLowerCase().includes(studyProgramSearchTerm.toLowerCase())
-    );
+        if ((eq.rooms as any)?.building?.campus?.name) {
+            parts.push((eq.rooms as any).building.campus.name);
+        }
+        if ((eq.rooms as any)?.building?.name) {
+            parts.push((eq.rooms as any).building.name);
+        }
+        if ((eq.rooms as any)?.floor) {
+            parts.push(`Lt. ${(eq.rooms as any).floor}`);
+        }
+        if (eq.rooms?.name) {
+            parts.push(eq.rooms.name);
+        }
 
-    const categories = [...new Set(availableEquipment.map(eq => eq.category))];
+        const box = boxes.find(b => b.id === eq.box_id);
+        const rackId = eq.rack_id || box?.rack_id;
+        const rack = racks.find(r => r.id === rackId);
+        const tableId = eq.table_id || rack?.table_id;
+        const table = tables.find(t => t.id === tableId);
 
-    const getTotalSelectedItems = () => {
-        return selectedEquipment.reduce((total, item) => total + item.quantity, 0);
+        if (table?.description) parts.push(table.description);
+        if (rack?.name) parts.push(`Rak ${rack.name}`);
+        if (box?.name) parts.push(`Box ${box.name}`);
+
+        return parts.length > 0 ? parts.join(' → ') : getText('Location not set', 'Lokasi belum diatur');
     };
 
-    if (loading) {
-        return (
-            <div className="flex justify-center items-center h-screen">
-                <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
-            </div>
-        );
-    }
+    // ==================== RENDER EQUIPMENT DETAIL MODAL ====================
 
-    return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-            {/* Header Section */}
-            <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 sticky top-0 z-40">
-                <div className="max-w-7xl mx-auto px-4 py-6">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
-                            <div className="p-3 bg-gradient-to-r from-green-600 to-emerald-600 rounded-2xl shadow-lg">
-                                <Package className="h-8 w-8 text-white" />
+    const renderDetailModal = () => {
+        if (!showDetailModal || !detailEquipment) return null;
+
+        const eq = detailEquipment;
+        const box = boxes.find(b => b.id === eq.box_id);
+        const rackId = eq.rack_id || box?.rack_id;
+        const rack = racks.find(r => r.id === rackId);
+        const tableId = eq.table_id || rack?.table_id;
+        const table = tables.find(t => t.id === tableId);
+
+        return (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                    {/* Header with Photo */}
+                    {eq.attachments ? (
+                        <div className="relative h-64">
+                            <img src={eq.attachments} alt={eq.name} className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+                            <button
+                                onClick={() => setShowDetailModal(false)}
+                                className="absolute top-4 right-4 p-2 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-lg text-white"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                            <div className="absolute bottom-4 left-6 right-6">
+                                <h2 className="text-white text-2xl font-bold drop-shadow-lg">{eq.name}</h2>
+                                <p className="text-white/80 font-mono">{eq.code}</p>
                             </div>
-                            <div>
-                                <h1 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
-                                    {getText('Tool Lending', 'Peminjaman Alat')}
-                                </h1>
-                                <p className="text-gray-600 mt-1">
-                                    {getText('Request equipment for your activities', 'Ajukan peralatan untuk kegiatan Anda')}
-                                </p>
-                            </div>
+                            <button
+                                onClick={() => setFullscreenPhoto(eq.attachments || null)}
+                                className="absolute bottom-4 right-4 p-2 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-lg text-white"
+                            >
+                                <Maximize2 className="h-5 w-5" />
+                            </button>
                         </div>
-                        {selectedEquipment.length > 0 && (
-                            <div className="hidden md:block">
-                                <div className="text-right">
-                                    <div className="text-2xl font-bold text-gray-800">
-                                        {getTotalSelectedItems()} {getText('items', 'item')}
-                                    </div>
-                                    <div className="text-sm text-gray-500">
-                                        {selectedEquipment.length} {getText('types selected', 'jenis dipilih')}
-                                    </div>
+                    ) : (
+                        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white relative">
+                            <button
+                                onClick={() => setShowDetailModal(false)}
+                                className="absolute top-4 right-4 p-2 hover:bg-white/20 rounded-lg"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                            <div className="flex items-center gap-4">
+                                <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center">
+                                    <Wrench className="h-8 w-8" />
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-bold">{eq.name}</h2>
+                                    <p className="opacity-90 font-mono">{eq.code}</p>
                                 </div>
                             </div>
+                        </div>
+                    )}
+
+                    <div className="p-6 space-y-6">
+                        {/* Basic Info */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-blue-50 p-4 rounded-xl">
+                                <p className="text-xs text-blue-600 mb-1">{getText('Category', 'Kategori')}</p>
+                                <p className="font-bold text-blue-900">{eq.category || 'General'}</p>
+                            </div>
+                            <div className="bg-purple-50 p-4 rounded-xl">
+                                <p className="text-xs text-purple-600 mb-1">{getText('Available Quantity', 'Jumlah Tersedia')}</p>
+                                <p className="font-bold text-purple-900 text-xl">{eq.quantity} {eq.unit}</p>
+                            </div>
+                        </div>
+
+                        {/* Condition */}
+                        <div className={`p-4 rounded-xl ${eq.condition === 'GOOD' ? 'bg-green-50' : eq.condition === 'MAINTENANCE' ? 'bg-yellow-50' : 'bg-red-50'}`}>
+                            <p className="text-xs text-gray-600 mb-1">{getText('Condition', 'Kondisi')}</p>
+                            <p className={`font-bold ${eq.condition === 'GOOD' ? 'text-green-700' : eq.condition === 'MAINTENANCE' ? 'text-yellow-700' : 'text-red-700'}`}>
+                                {eq.condition === 'GOOD' ? '✅ ' : eq.condition === 'MAINTENANCE' ? '🔧 ' : '⚠️ '}
+                                {eq.condition || 'Unknown'}
+                            </p>
+                        </div>
+
+                        {/* Location */}
+                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                            <h3 className="font-semibold text-blue-800 mb-3 flex items-center gap-2">
+                                <MapPin className="h-5 w-5" />
+                                {getText('Location', 'Lokasi')}
+                            </h3>
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                                {(eq.rooms as any)?.building?.campus?.name && (
+                                    <div>
+                                        <span className="text-blue-600 text-xs">{getText('Campus', 'Kampus')}</span>
+                                        <p className="font-medium text-gray-900">{(eq.rooms as any).building.campus.name}</p>
+                                    </div>
+                                )}
+                                {(eq.rooms as any)?.building?.name && (
+                                    <div>
+                                        <span className="text-blue-600 text-xs">{getText('Building', 'Gedung')}</span>
+                                        <p className="font-medium text-gray-900">{(eq.rooms as any).building.name}</p>
+                                    </div>
+                                )}
+                                {(eq.rooms as any)?.floor && (
+                                    <div>
+                                        <span className="text-blue-600 text-xs">{getText('Floor', 'Lantai')}</span>
+                                        <p className="font-medium text-gray-900">Lantai {(eq.rooms as any).floor}</p>
+                                    </div>
+                                )}
+                                {eq.rooms?.name && (
+                                    <div>
+                                        <span className="text-blue-600 text-xs">{getText('Room', 'Ruangan')}</span>
+                                        <p className="font-medium text-gray-900">{eq.rooms.name}</p>
+                                    </div>
+                                )}
+                                {table && (
+                                    <div>
+                                        <span className="text-blue-600 text-xs">{getText('Cabinet', 'Lemari')}</span>
+                                        <p className="font-medium text-gray-900">{table.description}</p>
+                                    </div>
+                                )}
+                                {rack && (
+                                    <div>
+                                        <span className="text-blue-600 text-xs">{getText('Rack', 'Rak')}</span>
+                                        <p className="font-medium text-gray-900">{rack.name}</p>
+                                    </div>
+                                )}
+                                {box && (
+                                    <div>
+                                        <span className="text-blue-600 text-xs">Box</span>
+                                        <p className="font-medium text-gray-900">{box.name}</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Specification */}
+                        {eq.Spesification && (
+                            <div className="bg-gray-50 p-4 rounded-xl">
+                                <h3 className="font-semibold text-gray-800 mb-2">{getText('Specifications', 'Spesifikasi')}</h3>
+                                <p className="text-gray-600 text-sm whitespace-pre-wrap">{eq.Spesification}</p>
+                            </div>
                         )}
+
+                        {/* Action Buttons */}
+                        <div className="flex gap-3 pt-4 border-t">
+                            <button
+                                onClick={() => setShowDetailModal(false)}
+                                className="flex-1 py-3 border border-gray-300 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-colors"
+                            >
+                                {getText('Close', 'Tutup')}
+                            </button>
+                            {!selectedEquipments.has(eq.id) && eq.quantity > 0 && (
+                                <button
+                                    onClick={() => {
+                                        handleSelectEquipment(eq, 1);
+                                        setShowDetailModal(false);
+                                    }}
+                                    className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all flex items-center justify-center gap-2"
+                                >
+                                    <Plus className="h-5 w-5" />
+                                    {getText('Select This Item', 'Pilih Item Ini')}
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
+        );
+    };
 
-            <div className="max-w-7xl mx-auto px-4 py-8">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                    {/* Left Column - Equipment Selection (7/12 width) */}
-                    <div className="lg:col-span-7 space-y-6">
-                        {/* Search and Filter Controls */}
-                        <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-                            <div className="flex flex-col sm:flex-row gap-4 items-center">
-                                <div className="flex-1 relative w-full">
-                                    <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                                    <input
-                                        type="text"
-                                        placeholder={getText("Search equipment...", "Cari peralatan...")}
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        className="w-full pl-12 pr-4 py-4 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all duration-200 placeholder-gray-400"
-                                    />
-                                </div>
-                                <select
-                                    value={categoryFilter}
-                                    onChange={(e) => setCategoryFilter(e.target.value)}
-                                    className="px-4 py-4 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all duration-200"
-                                >
-                                    <option value="all">{getText('All Categories', 'Semua Kategori')}</option>
-                                    {categories.map(category => (
-                                        <option key={category} value={category}>{category}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
+    // ==================== RENDER FULLSCREEN PHOTO ====================
 
-                        {/* Equipment Grid */}
-                        <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-                            <div className="flex items-center justify-between mb-6">
-                                <h2 className="text-2xl font-bold text-gray-800">
-                                    {getText('Available Equipment', 'Peralatan Tersedia')}
-                                </h2>
-                                <div className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
-                                    {filteredEquipment.length} {getText('items', 'item')}
-                                </div>
-                            </div>
+    const renderFullscreenPhoto = () => {
+        if (!fullscreenPhoto) return null;
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto pr-2">
-                                {filteredEquipment.map((equipment) => {
-                                    const selectedItem = selectedEquipment.find(item => item.equipment.id === equipment.id);
-                                    const isSelected = !!selectedItem;
-                                    
-                                    return (
-                                        <div
-                                            key={equipment.id}
-                                            className={`group p-4 rounded-xl border transition-all duration-200 cursor-pointer ${
-                                                isSelected
-                                                    ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white border-green-500 shadow-lg'
-                                                    : 'bg-white/80 hover:bg-white border-gray-200/50 hover:shadow-md'
-                                            }`}
-                                            onClick={() => addEquipment(equipment)}
-                                        >
-                                            <div className="flex items-start justify-between mb-3">
-                                                <div className="flex-1">
-                                                    <h3 className={`font-bold text-lg ${isSelected ? 'text-white' : 'text-gray-800'}`}>
-                                                        {equipment.name}
-                                                    </h3>
-                                                    <p className={`text-sm ${isSelected ? 'text-green-100' : 'text-gray-500'}`}>
-                                                        {equipment.code}
-                                                    </p>
-                                                    <div className="flex items-center space-x-2 mt-2">
-                                                        <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium ${
-                                                            isSelected 
-                                                                ? 'bg-white/20 text-white' 
-                                                                : 'bg-blue-100 text-blue-800'
-                                                        }`}>
-                                                            {equipment.category}
-                                                        </span>
-                                                        <span className={`text-sm ${isSelected ? 'text-green-100' : 'text-gray-600'}`}>
-                                                            {equipment.quantity} {equipment.unit || 'pcs'} {getText('available', 'tersedia')}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                {isSelected && (
-                                                    <div className="flex items-center space-x-2 bg-white/20 rounded-lg px-3 py-1">
-                                                        <span className="text-white font-bold">{selectedItem.quantity}</span>
-                                                        <CheckCircle className="h-4 w-4 text-white" />
-                                                    </div>
-                                                )}
-                                            </div>
-                                            
-                                            {equipment.specification && (
-                                                <p className={`text-xs ${isSelected ? 'text-green-100' : 'text-gray-500'} mb-2`}>
-                                                    {equipment.specification}
-                                                </p>
-                                            )}
-                                            
-                                            <div className="flex items-center justify-between">
-                                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                                    isSelected 
-                                                        ? 'bg-white/20 text-white' 
-                                                        : equipment.condition === 'good' 
-                                                            ? 'bg-green-100 text-green-800'
-                                                            : 'bg-yellow-100 text-yellow-800'
-                                                }`}>
-                                                    {getText(
-                                                        equipment.condition === 'good' ? 'Good Condition' : 'Fair Condition',
-                                                        equipment.condition === 'good' ? 'Kondisi Baik' : 'Kondisi Cukup'
-                                                    )}
-                                                </span>
-                                                {isSelected && (
-                                                    <div className="flex items-center space-x-1">
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                updateQuantity(equipment.id, selectedItem.quantity - 1);
-                                                            }}
-                                                            className="p-1 bg-white/20 rounded hover:bg-white/30 transition-colors"
-                                                        >
-                                                            <Minus className="h-3 w-3 text-white" />
-                                                        </button>
-                                                      <span className="text-white font-bold px-2">{selectedItem.quantity}</span>
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                updateQuantity(equipment.id, selectedItem.quantity + 1);
-                                                            }}
-                                                            className="p-1 bg-white/20 rounded hover:bg-white/30 transition-colors"
-                                                        >
-                                                            <Plus className="h-3 w-3 text-white" />
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
+        return (
+            <div
+                className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 cursor-zoom-out"
+                onClick={() => setFullscreenPhoto(null)}
+            >
+                <button
+                    onClick={() => setFullscreenPhoto(null)}
+                    className="absolute top-4 right-4 p-3 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-full text-white"
+                >
+                    <X className="h-6 w-6" />
+                </button>
+                <img
+                    src={fullscreenPhoto}
+                    alt="Fullscreen preview"
+                    className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                />
+            </div>
+        );
+    };
 
-                            {filteredEquipment.length === 0 && (
-                                <div className="text-center py-12">
-                                    <div className="p-4 bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                                        <Package className="h-8 w-8 text-gray-400" />
-                                    </div>
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                                        {getText('No Equipment Available', 'Tidak Ada Peralatan Tersedia')}
-                                    </h3>
-                                    <p className="text-gray-500">
-                                        {getText('Try adjusting your search or category filter.', 'Coba sesuaikan pencarian atau filter kategori.')}
-                                    </p>
-                                </div>
-                            )}
-                        </div>
+    // ==================== MAIN RENDER ====================
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4 md:p-8">
+            {/* Background decorations */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-200/30 rounded-full blur-3xl" />
+                <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-indigo-200/30 rounded-full blur-3xl" />
+            </div>
+
+            <div className="relative z-10 max-w-7xl mx-auto">
+                {/* Header */}
+                <div className="text-center mb-8">
+                    <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl shadow-lg mb-4">
+                        <Wrench className="h-8 w-8 text-white" />
                     </div>
+                    <h1 className="text-3xl md:text-4xl font-bold text-gray-800">{getText('Equipment Lending', 'Peminjaman Peralatan')}</h1>
+                    <p className="text-gray-600 mt-2">{getText('Borrow equipment for your needs', 'Pinjam peralatan untuk kebutuhan Anda')}</p>
+                </div>
 
-                    {/* Right Column - Form and Cart (5/12 width) */}
-                    <div className="lg:col-span-5">
-                        <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 sticky top-24">
-                            <div className="flex items-center space-x-3 mb-8">
-                                <div className="p-2 bg-gradient-to-r from-green-500 to-emerald-500 rounded-lg">
-                                    <ShoppingCart className="h-5 w-5 text-white" />
-                                </div>
-                                <h2 className="text-2xl font-bold text-gray-800">
-                                    {getText('Lending Request', 'Permintaan Peminjaman')}
-                                </h2>
-                            </div>
+                {/* Main Form - 2 Column Layout Like BookRoom */}
+                <form onSubmit={handleSubmitRequest}>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
-                            {/* Selected Equipment Cart */}
-                            {selectedEquipment.length > 0 && (
-                                <div className="mb-8">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <h3 className="text-lg font-semibold text-gray-800">
-                                            {getText('Selected Equipment', 'Peralatan Dipilih')}
-                                        </h3>
-                                        <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
-                                            {getTotalSelectedItems()} {getText('items', 'item')}
+                        {/* LEFT COLUMN - Equipment Selection */}
+                        <div className="lg:col-span-2 relative z-10">
+                            <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 space-y-6">
+
+                                {/* Equipment Section Header */}
+                                <div className="flex items-center space-x-3">
+                                    <Package className="h-6 w-6 text-blue-600" />
+                                    <h2 className="text-xl font-bold text-gray-800">{getText('Select Equipment', 'Pilih Peralatan')}</h2>
+                                    {identityVerified && userDepartmentName && (
+                                        <span className="bg-blue-100 text-blue-800 text-sm px-3 py-1 rounded-full font-medium">
+                                            {userDepartmentName}
                                         </span>
-                                    </div>
-                                    <div className="space-y-3 max-h-48 overflow-y-auto">
-                                        {selectedEquipment.map((item) => (
-                                            <div key={item.equipment.id} className="flex items-center justify-between p-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200/50 rounded-xl">
-                                                <div className="flex-1">
-                                                    <h4 className="font-medium text-gray-800">{item.equipment.name}</h4>
-                                                    <p className="text-sm text-gray-600">{item.equipment.code}</p>
-                                                </div>
-                                                <div className="flex items-center space-x-3">
-                                                    <div className="flex items-center space-x-2 bg-white/80 rounded-lg px-3 py-1">
-                                                        <button
-                                                            onClick={() => updateQuantity(item.equipment.id, item.quantity - 1)}
-                                                            className="p-1 text-gray-600 hover:text-gray-800 transition-colors">
-                                                            <Minus className="h-3 w-3" />
-                                                        </button>
-                                                        <span className="font-bold text-gray-800 min-w-[2rem] text-center">
-                                                            {item.quantity}
-                                                        </span>
-                                                        <button
-                                                            onClick={() => updateQuantity(item.equipment.id, item.quantity + 1)}
-                                                            className="p-1 text-gray-600 hover:text-gray-800 transition-colors"
-                                                        >
-                                                            <Plus className="h-3 w-3" />
-                                                        </button>
-                                                    </div>
-                                                    <button
-                                                        onClick={() => removeEquipment(item.equipment.id)}
-                                                        className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all duration-200"
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ))}
+                                    )}
+                                </div>
+
+                                {/* Info Banner */}
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                    <div className="flex items-start space-x-2">
+                                        <Info className="h-5 w-5 text-blue-600 mt-0.5" />
+                                        <div className="text-sm text-blue-800">
+                                            <p className="font-medium">{getText('Information', 'Informasi')}</p>
+                                            <p className="mt-1">
+                                                {identityVerified
+                                                    ? getText('Showing equipment available for your department.', 'Menampilkan peralatan yang tersedia untuk departemen Anda.')
+                                                    : getText('Fill in your identity to see equipment based on your department.', 'Isi identitas Anda untuk melihat peralatan berdasarkan departemen Anda.')}
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
-                            )}
 
-                            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                                {!profile && (
-                                    <div className="space-y-6">
-                                        <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
-                                            <User className="h-5 w-5 text-green-500" />
-                                            <h3 className="text-lg font-semibold text-gray-800">
-                                                {getText('Personal Information', 'Informasi Pribadi')}
-                                            </h3>
+                                {/* Search and Filter */}
+                                <div className="flex flex-col sm:flex-row gap-4">
+                                    <div className="relative flex-1">
+                                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                        <input
+                                            type="text"
+                                            placeholder={getText("Search equipment (name, code)...", "Cari peralatan (nama, kode)...")}
+                                            className="w-full pl-10 pr-4 py-2 bg-white/50 border border-gray-200/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                        />
+                                    </div>
+                                    <select
+                                        value={categoryFilter}
+                                        onChange={(e) => setCategoryFilter(e.target.value)}
+                                        className="px-4 py-2 bg-white/50 border border-gray-200/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                                    >
+                                        <option value="all">{getText('All Categories', 'Semua Kategori')}</option>
+                                        {categories.map(cat => (
+                                            <option key={cat} value={cat}>{cat}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Equipment List */}
+                                <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                                    {loadingEquipment ? (
+                                        <div className="text-center py-8">
+                                            <RefreshCw className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-2" />
+                                            <p className="text-gray-600">{getText('Loading equipment...', 'Memuat peralatan...')}</p>
                                         </div>
+                                    ) : filteredEquipment.length === 0 ? (
+                                        <div className="text-center py-8">
+                                            <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                                            <p className="text-gray-600">{getText('No equipment available', 'Tidak ada peralatan tersedia')}</p>
+                                        </div>
+                                    ) : (
+                                        filteredEquipment.map((eq) => {
+                                            const isSelected = selectedEquipments.has(eq.id);
+                                            const selectedQty = selectedEquipments.get(eq.id)?.quantity || 0;
 
-                                        <div className="space-y-4">
-                                            <div>
-                                                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                                    {getText('Identity Number (NIM/NIP)', 'Nomor Identitas (NIM/NIP)')} *
-                                                </label>
-                                                <div className="relative">
-                                                    <input
-                                                        {...form.register('identity_number')}
-                                                        type="text"
-                                                        placeholder={getText("Enter or select your ID", "Masukkan atau pilih ID Anda")}
-                                                        value={identitySearchTerm}
-                                                        onChange={(e) => {
-                                                            setIdentitySearchTerm(e.target.value);
-                                                            form.setValue('identity_number', e.target.value);
-                                                            setShowIdentityDropdown(true);
-                                                        }}
-                                                        onFocus={() => setShowIdentityDropdown(true)}
-                                                        className="w-full px-4 py-3 pr-10 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all duration-200"
-                                                    />
-                                                    <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                                    {showIdentityDropdown && filteredIdentityNumbers.length > 0 && (
+                                            return (
+                                                <div
+                                                    key={eq.id}
+                                                    className={`p-4 rounded-lg border-2 transition-all duration-200 ${isSelected
+                                                        ? "border-blue-500 bg-blue-50"
+                                                        : "hover:shadow-md hover:border-blue-300 border-gray-200 bg-white/50"
+                                                        }`}
+                                                >
+                                                    <div className="flex items-start gap-4">
+                                                        {/* Photo Thumbnail */}
                                                         <div
-                                                            onMouseLeave={() => setShowIdentityDropdown(false)}
-                                                            className="absolute z-10 w-full mt-1 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-xl max-h-60 overflow-y-auto"
+                                                            className="w-20 h-20 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer bg-gray-100"
+                                                            onClick={() => {
+                                                                setDetailEquipment(eq);
+                                                                setShowDetailModal(true);
+                                                            }}
                                                         >
-                                                            {filteredIdentityNumbers.map((user) => (
-                                                                <div
-                                                                    key={user.id}
-                                                                    onClick={() => {
-                                                                        setIdentitySearchTerm(user.identity_number);
-                                                                        form.setValue('identity_number', user.identity_number);
-                                                                        setShowIdentityDropdown(false);
-                                                                    }}
-                                                                    className="px-4 py-3 hover:bg-green-50 cursor-pointer border-b border-gray-100/50 last:border-b-0 transition-colors duration-150"
-                                                                >
-                                                                    <div className="font-semibold text-gray-800">{user.identity_number}</div>
-                                                                    <div className="text-sm text-gray-600">{user.full_name}</div>
-                                                                    {user.study_program && (
-                                                                        <div className="text-xs text-gray-500">{user.study_program.name}</div>
-                                                                    )}
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                {form.formState.errors.identity_number && (
-                                                    <p className="mt-2 text-sm text-red-600 font-medium">
-                                                        {form.formState.errors.identity_number.message}
-                                                    </p>
-                                                )}
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                                    {getText('Full Name', 'Nama Lengkap')} *
-                                                </label>
-                                                <input
-                                                    {...form.register('full_name')}
-                                                    type="text"
-                                                    placeholder={getText("Enter your full name", "Masukkan nama lengkap Anda")}
-                                                    className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all duration-200"
-                                                />
-                                                {form.formState.errors.full_name && (
-                                                    <p className="mt-2 text-sm text-red-600 font-medium">
-                                                        {form.formState.errors.full_name.message}
-                                                    </p>
-                                                )}
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                                    {getText('Phone Number', 'Nomor Telepon')} *
-                                                </label>
-                                                <div className="relative">
-                                                    <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                                                    <input
-                                                        {...form.register('phone_number')}
-                                                        type="tel"
-                                                        placeholder="08xxxxxxxxxx"
-                                                        className="w-full pl-12 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all duration-200"
-                                                    />
-                                                </div>
-                                                {form.formState.errors.phone_number && (
-                                                    <p className="mt-2 text-sm text-red-600 font-medium">
-                                                        {form.formState.errors.phone_number.message}
-                                                    </p>
-                                                )}
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                                    {getText('Study Program', 'Program Studi')} *
-                                                </label>
-                                                <div className="relative">
-                                                    <GraduationCap className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 z-10" />
-                                                    <input
-                                                        type="text"
-                                                        placeholder={getText("Search and select your study program", "Cari dan pilih program studi Anda")}
-                                                        value={studyProgramSearchTerm}
-                                                        onChange={(e) => {
-                                                            setStudyProgramSearchTerm(e.target.value);
-                                                            setShowStudyProgramDropdown(true);
-                                                        }}
-                                                        onFocus={() => setShowStudyProgramDropdown(true)}
-                                                        className="w-full pl-12 pr-10 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all duration-200 py-3"
-                                                    />
-                                                    <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                                    {showStudyProgramDropdown && (
-                                                        <div
-                                                            onMouseLeave={() => setShowStudyProgramDropdown(false)}
-                                                            className="absolute z-10 w-full mt-1 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-xl max-h-60 overflow-y-auto"
-                                                        >
-                                                            {filteredStudyPrograms.length > 0 ? (
-                                                                <div className="p-1">
-                                                                    {filteredStudyPrograms.map((program) => (
-                                                                        <div
-                                                                            key={program.id}
-                                                                            onClick={() => {
-                                                                                const displayText = `${program.name} (${program.code}) - ${program.department?.name}`;
-                                                                                setStudyProgramSearchTerm(displayText);
-                                                                                form.setValue('study_program_id', program.id);
-                                                                                setShowStudyProgramDropdown(false);
-                                                                            }}
-                                                                            className="px-4 py-3 hover:bg-green-50 cursor-pointer border-b border-gray-100/50 last:border-b-0 transition-colors duration-150 rounded-lg"
-                                                                        >
-                                                                            <div className="font-semibold text-gray-800">{program.name} ({program.code})</div>
-                                                                            <div className="text-sm text-gray-600">{program.department?.name}</div>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
+                                                            {eq.attachments ? (
+                                                                <img src={eq.attachments} alt={eq.name} className="w-full h-full object-cover" />
                                                             ) : (
-                                                                <div className="p-4 text-center text-gray-500">
-                                                                    {getText('No study programs found', 'Tidak ada program studi ditemukan')}
+                                                                <div className="w-full h-full flex items-center justify-center">
+                                                                    <Camera className="h-6 w-6 text-gray-400" />
                                                                 </div>
                                                             )}
                                                         </div>
-                                                    )}
-                                                </div>
-                                                {form.formState.errors.study_program_id && (
-                                                    <p className="mt-2 text-sm text-red-600 font-medium">
-                                                        {form.formState.errors.study_program_id.message}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </div>
 
-                                        {/* Auto-registration info */}
-                                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-xl p-4">
-                                            <div className="flex items-start space-x-3">
-                                                <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                                                <div className="text-sm text-blue-800">
-                                                    <p className="font-semibold">
-                                                        {getText('Auto Account Creation', 'Pembuatan Akun Otomatis')}
-                                                    </p>
-                                                    <p className="mt-1">
-                                                        {getText('If you don\'t have an account, one will be created automatically using your NIM as both username and password.', 'Jika Anda belum memiliki akun, akun akan dibuat otomatis menggunakan NIM sebagai username dan password.')}
-                                                    </p>
+                                                        {/* Equipment Info */}
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-start justify-between mb-1">
+                                                                <div>
+                                                                    <h4 className="font-semibold text-gray-900">{eq.name}</h4>
+                                                                    <p className="text-sm text-gray-600">{eq.code}</p>
+                                                                </div>
+                                                                <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                                                                    {eq.category || 'General'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-center gap-4 text-sm text-gray-600 mb-2">
+                                                                <div className="flex items-center gap-1">
+                                                                    <Package className="h-3.5 w-3.5" />
+                                                                    <span>{eq.quantity} {eq.unit}</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-1 text-xs truncate">
+                                                                    <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
+                                                                    <span className="truncate">{getLocationPath(eq)}</span>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Action Row */}
+                                                            <div className="flex items-center gap-3">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setDetailEquipment(eq);
+                                                                        setShowDetailModal(true);
+                                                                    }}
+                                                                    className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
+                                                                >
+                                                                    <Eye className="h-4 w-4" />
+                                                                    {getText('Details', 'Detail')}
+                                                                </button>
+
+                                                                {isSelected ? (
+                                                                    <div className="flex items-center gap-2 ml-auto">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleSelectEquipment(eq, selectedQty - 1)}
+                                                                            className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                                                                        >
+                                                                            <Minus className="h-4 w-4 text-gray-600" />
+                                                                        </button>
+                                                                        <span className="w-8 text-center font-bold text-blue-700">{selectedQty}</span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleSelectEquipment(eq, selectedQty + 1)}
+                                                                            disabled={selectedQty >= eq.quantity}
+                                                                            className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded transition-colors disabled:opacity-50"
+                                                                        >
+                                                                            <Plus className="h-4 w-4 text-gray-600" />
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleSelectEquipment(eq, 0)}
+                                                                            className="p-1.5 text-red-500 hover:text-red-700 ml-1"
+                                                                        >
+                                                                            <X className="h-4 w-4" />
+                                                                        </button>
+                                                                    </div>
+                                                                ) : (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleSelectEquipment(eq, 1)}
+                                                                        className="ml-auto px-3 py-1.5 text-sm bg-blue-50 text-blue-700 font-medium rounded hover:bg-blue-100 transition-colors flex items-center gap-1"
+                                                                    >
+                                                                        <Plus className="h-4 w-4" />
+                                                                        {getText('Select', 'Pilih')}
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            );
+                                        })
+                                    )}
+                                </div>
+
+                                {/* Selected Equipment Summary */}
+                                {selectedEquipments.size > 0 && (
+                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                        <h3 className="font-semibold text-blue-800 mb-3 flex items-center gap-2">
+                                            <CheckCircle className="h-5 w-5" />
+                                            {getText('Selected Equipment', 'Peralatan Terpilih')} ({selectedEquipments.size})
+                                        </h3>
+                                        <div className="space-y-2">
+                                            {Array.from(selectedEquipments.values()).map(({ equipment: eq, quantity }) => (
+                                                <div key={eq.id} className="flex items-center justify-between bg-white rounded p-2">
+                                                    <span className="font-medium text-gray-800">{eq.name}</span>
+                                                    <span className="text-blue-700 font-semibold">{quantity} {eq.unit}</span>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
                                 )}
+                            </div>
+                        </div>
 
-                                <div className="space-y-4">
-                                    <div className="flex items-center space-x-3 pb-4 border-b border-gray-200/50">
-                                        <Calendar className="h-5 w-5 text-green-500" />
-                                        <h3 className="text-lg font-semibold text-gray-800">
-                                            {getText('Lending Details', 'Detail Peminjaman')}
-                                        </h3>
+                        {/* RIGHT COLUMN - Personal Info & Submit */}
+                        <div className="lg:col-span-1 relative z-10">
+                            <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 space-y-6 sticky top-4">
+                                {/* Personal Information */}
+                                <div>
+                                    <div className="flex items-center space-x-3 mb-6">
+                                        <User className="h-6 w-6 text-purple-600" />
+                                        <h2 className="text-xl font-bold text-gray-800">{getText('Personal Information', 'Informasi Pribadi')}</h2>
                                     </div>
 
-                                    <div>
-                                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                            {getText('Lending Date & Time', 'Tanggal & Waktu Peminjaman')} *
-                                        </label>
-                                        <div className="relative">
-                                            <Clock className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                    <div className="space-y-4">
+                                        {/* Identity Number with Dropdown */}
+                                        <div className="relative" ref={dropdownRef}>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                {getText('Identity Number (NIM/NIP)', 'Nomor Identitas (NIM/NIP)')} *
+                                            </label>
                                             <input
-                                                {...form.register('date')}
-                                                type="datetime-local"
-                                                className="w-full pl-12 pr-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all duration-200"
+                                                ref={identityInputRef}
+                                                type="text"
+                                                value={identityNumber}
+                                                onChange={handleIdentityChange}
+                                                placeholder={getText("Enter your ID", "Masukkan ID Anda")}
+                                                autoComplete="off"
+                                                className="w-full px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                                            />
+
+                                            {showIdentityDropdown && identitySuggestions.length > 0 && (
+                                                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                                    {identitySuggestions.map((user, idx) => (
+                                                        <div
+                                                            key={idx}
+                                                            onClick={() => selectIdentity(user)}
+                                                            className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                                                        >
+                                                            <div className="font-medium text-gray-900">{user.full_name}</div>
+                                                            <div className="text-sm text-gray-600">{user.identity_number}</div>
+                                                            {user.department_name && (
+                                                                <div className="text-xs text-blue-600 flex items-center gap-1">
+                                                                    <Building className="h-3 w-3" />
+                                                                    {user.department_name}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {isManualEntry && (
+                                                <p className="mt-1 text-xs text-blue-600">
+                                                    {getText('Data not found. Please fill manually.', 'Data tidak ditemukan. Silakan isi manual.')}
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        {/* Full Name */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                {getText('Full Name', 'Nama Lengkap')} *
+                                            </label>
+                                            <input
+                                                ref={fullNameInputRef}
+                                                type="text"
+                                                value={fullName}
+                                                onChange={(e) => setFullName(e.target.value)}
+                                                placeholder={getText("Enter your full name", "Masukkan nama lengkap")}
+                                                className="w-full px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                                             />
                                         </div>
-                                        {form.formState.errors.date && (
-                                            <p className="mt-2 text-sm text-red-600 font-medium">
-                                                {form.formState.errors.date.message}
-                                            </p>
+
+                                        {/* Phone Number */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                {getText('Phone Number', 'Nomor Telepon')} *
+                                            </label>
+                                            <input
+                                                ref={phoneInputRef}
+                                                type="tel"
+                                                value={phoneNumber}
+                                                onChange={(e) => setPhoneNumber(e.target.value)}
+                                                placeholder="08xxxxxxxxxx"
+                                                className="w-full px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                                            />
+                                        </div>
+
+                                        {/* Email (Optional) */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                {getText('Email (Optional)', 'Email (Opsional)')}
+                                            </label>
+                                            <input
+                                                type="email"
+                                                value={email}
+                                                onChange={(e) => setEmail(e.target.value)}
+                                                placeholder="email@example.com"
+                                                className="w-full px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                                            />
+                                        </div>
+
+                                        {/* Department Display */}
+                                        {userDepartmentName && (
+                                            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                                                <div className="flex items-center gap-2 text-purple-700">
+                                                    <Building className="h-4 w-4" />
+                                                    <span className="text-sm font-medium">{getText('Department', 'Departemen')}</span>
+                                                </div>
+                                                <p className="text-purple-900 font-semibold mt-1">{userDepartmentName}</p>
+                                            </div>
                                         )}
                                     </div>
-
-                                    {/* Purpose Field */}
-                                    <div>
-                                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                            {getText('Purpose', 'Tujuan')} *
-                                        </label>
-                                        <select
-                                            {...form.register('purpose')}
-                                            className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all duration-200"
-                                        >
-                                            <option value="Class/Lecture">{getText('Class/Lecture', 'Kuliah / Sidang TA')}</option>
-                                            <option value="Other">{getText('Others...', 'Lainnya...')}</option>
-                                        </select>
-                                        {form.formState.errors.purpose && (
-                                            <p className="mt-2 text-sm text-red-600 font-medium">
-                                                {form.formState.errors.purpose.message}
-                                            </p>
-                                        )}
-                                    </div>
-
-                                    {/* ✅ ENHANCED: Additional fields for "Other" purpose with improved attachment system */}
-                                    {watchPurpose === 'Other' && (
-                                        <div className="space-y-6 border-t border-gray-200/50 pt-6">
-                                            <div>
-                                                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                                    {getText('Notes', 'Catatan')}
-                                                </label>
-                                                <textarea
-                                                    {...form.register('notes')}
-                                                    rows={3}
-                                                    className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all duration-200"
-                                                    placeholder={getText("Additional information about your request", "Informasi tambahan tentang permintaan Anda")}
-                                                />
-                                            </div>
-                                            
-                                            {/* ✅ ENHANCED: Attachments Section with Preview */}
-                                            <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200/50 rounded-2xl p-6 space-y-6">
-                                                <div className="flex items-center space-x-3 mb-4">
-                                                    <FileText className="h-5 w-5 text-yellow-600" />
-                                                    <h4 className="text-lg font-semibold text-yellow-900">
-                                                        {getText('Attachments', 'Lampiran')} *
-                                                    </h4>
-                                                </div>
-
-                                                <div className="space-y-4">
-                                                    {/* File Upload Area */}
-                                                    <div className="border-2 border-dashed border-gray-300/50 rounded-xl p-6 text-center bg-gradient-to-b from-gray-50/50 to-white/50 hover:from-gray-100/50 hover:to-gray-50/50 transition-all duration-200">
-                                                        <div className="flex flex-col items-center">
-                                                            <div className="p-3 bg-green-100 rounded-full mb-3">
-                                                                <Upload className="h-8 w-8 text-green-600" />
-                                                            </div>
-                                                            <input
-                                                                type="file"
-                                                                multiple
-                                                                accept="image/*,.pdf,.doc,.docx"
-                                                                onChange={handleFileUpload}
-                                                                className="hidden"
-                                                                id="file-upload"
-                                                            />
-                                                            <label htmlFor="file-upload" className="cursor-pointer">
-                                                                <span className="text-lg font-semibold text-green-600 hover:text-green-700">
-                                                                    {getText('Upload Files', 'Unggah File')}
-                                                                </span>
-                                                            </label>
-                                                            <p className="text-sm text-gray-500 mt-2">
-                                                                {getText('PDF, JPG, PNG, DOC up to 10MB each', 'PDF, JPG, PNG, DOC hingga 10MB per file')}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* ✅ ENHANCED: Uploaded Files Preview */}
-                                                    {watchAttachments && watchAttachments.length > 0 && (
-                                                        <div>
-                                                            <h5 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
-                                                                <Package className="h-4 w-4 mr-2" />
-                                                                {getText('Uploaded Documents', 'Dokumen yang Diunggah')} ({watchAttachments.length})
-                                                            </h5>
-                                                            <div className="grid grid-cols-1 gap-3">
-                                                                {watchAttachments.map((attachment, index) => (
-                                                                    <div key={index} className="flex items-center justify-between p-3 bg-white/80 border border-gray-200 rounded-xl hover:bg-white hover:shadow-md transition-all duration-200">
-                                                                        <div className="flex items-center space-x-3">
-                                                                            {/* File Preview */}
-                                                                            <div className="flex-shrink-0">
-                                                                                {attachment.startsWith('data:application/pdf') ? (
-                                                                                    <div className="h-10 w-10 bg-red-100 rounded-lg flex items-center justify-center">
-                                                                                        <FileText className="h-5 w-5 text-red-600" />
-                                                                                    </div>
-                                                                                ) : attachment.startsWith('data:image/') ? (
-                                                                                    <div className="h-10 w-10 rounded-lg overflow-hidden border border-gray-200">
-                                                                                        <img
-                                                                                            src={attachment}
-                                                                                            alt={`Document ${index + 1}`}
-                                                                                            className="h-full w-full object-cover"
-                                                                                        />
-                                                                                    </div>
-                                                                                ) : (
-                                                                                    <div className="h-10 w-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                                                                                        <FileText className="h-5 w-5 text-gray-600" />
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                            
-                                                                            {/* File Info */}
-                                                                            <div className="flex-1 min-w-0">
-                                                                                <p className="text-sm font-medium text-gray-900 truncate">
-                                                                                    {getFileName(attachment, index)}
-                                                                                </p>
-                                                                                <p className="text-xs text-gray-500">
-                                                                                    {getFileType(attachment)}
-                                                                                </p>
-                                                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1">
-                                                                                    {getText('Uploaded', 'Terupload')}
-                                                                                </span>
-                                                                            </div>
-                                                                        </div>
-                                                                        
-                                                                        {/* Action Buttons */}
-                                                                        <div className="flex items-center space-x-2">
-                                                                            {/* View Button */}
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => window.open(attachment, '_blank')}
-                                                                                className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-full transition-colors duration-200"
-                                                                                title={getText('View document', 'Lihat dokumen')}
-                                                                            >
-                                                                                <Eye className="h-4 w-4" />
-                                                                            </button>
-                                                                            
-                                                                            {/* Remove Button */}
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => removeAttachment(index)}
-                                                                                className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-full transition-colors duration-200"
-                                                                                title={getText('Remove document', 'Hapus dokumen')}
-                                                                            >
-                                                                                <X className="h-4 w-4" />
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Validation Error */}
-                                                    {form.formState.errors.attachments && (
-                                                        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                                                            <div className="flex items-center space-x-2">
-                                                                <AlertTriangle className="h-4 w-4 text-red-600" />
-                                                                <p className="text-sm text-red-800 font-medium">
-                                                                    {form.formState.errors.attachments.message}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                {/* Helper Information */}
-                                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                                    <div className="flex items-start space-x-3">
-                                                        <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                                                        <div className="text-sm text-blue-800">
-                                                            <p className="font-semibold mb-2">
-                                                                {getText('Document Requirements:', 'Persyaratan Dokumen:')}
-                                                            </p>
-                                                            <ul className="space-y-1 text-xs">
-                                                                <li>• {getText('Upload official permission documents', 'Unggah dokumen izin resmi')}</li>
-                                                                <li>• {getText('Supported formats: PDF, JPG, PNG, DOC', 'Format yang didukung: PDF, JPG, PNG, DOC')}</li>
-                                                                <li>• {getText('Maximum file size: 10MB per file', 'Ukuran file maksimal: 10MB per file')}</li>
-                                                                <li>• {getText('You can upload multiple documents', 'Anda dapat mengunggah beberapa dokumen')}</li>
-                                                                <li>• {getText('Click the eye icon to preview documents', 'Klik ikon mata untuk melihat dokumen')}</li>
-                                                            </ul>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {selectedEquipment.length === 0 && (
-                                        <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200/50 rounded-xl p-4">
-                                            <div className="flex items-start space-x-3">
-                                                <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-                                                <div className="text-sm text-yellow-800">
-                                                    <p className="font-semibold">
-                                                        {getText('No Equipment Selected', 'Tidak Ada Peralatan Dipilih')}
-                                                    </p>
-                                                    <p className="mt-1">
-                                                        {getText('Please select at least one equipment from the list above.', 'Silakan pilih minimal satu peralatan dari daftar di atas.')}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
                                 </div>
 
-                                {/* Approval Notice */}
-                                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-xl p-4">
-                                    <div className="flex items-start space-x-3">
-                                        <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                                        <div className="text-sm text-blue-800">
-                                            <p className="font-semibold">
-                                                {getText('Approval Required', 'Perlu Persetujuan')}
-                                            </p>
-                                            <p className="mt-1">
-                                                {getText('Your lending request will be reviewed by admin. You will be notified once approved.', 'Permintaan peminjaman Anda akan ditinjau oleh admin. Anda akan diberitahu setelah disetujui.')}
-                                            </p>
-                                            <div></div>
-                                            <hr></hr>
-                                             <div className="mt-3 pt-3 border-t border-blue-300">
-                                                <button
-                                                type="button"
-                                                onClick={() => window.open('https://wa.me/6285869554147', '_blank')}
-                                                className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-lg transition-colors shadow-sm"
-                                                >
-                                                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
-                                                </svg>
-                                                <span>{getText('Contact Person: 085869554147', 'Contact Person: 085869554147')}</span>
-                                                </button>
+                                {/* Lending Details */}
+                                <div className="border-t border-gray-200/50 pt-6">
+                                    <div className="flex items-center space-x-3 mb-4">
+                                        <FileText className="h-5 w-5 text-green-600" />
+                                        <h3 className="font-bold text-gray-800">{getText('Lending Details', 'Detail Peminjaman')}</h3>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        {/* Purpose Dropdown */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                {getText('Purpose', 'Tujuan')} *
+                                            </label>
+                                            <select
+                                                value={purpose}
+                                                onChange={(e) => setPurpose(e.target.value as 'Class/Lecture' | 'Other')}
+                                                className="w-full px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                                            >
+                                                <option value="Class/Lecture">{getText('Lecture', 'Kuliah')}</option>
+                                                <option value="Other">{getText('Other', 'Lainnya')}</option>
+                                            </select>
+                                        </div>
+
+                                        {/* File Upload for "Other" purpose */}
+                                        {purpose === 'Other' && (
+                                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-4">
+                                                <div className="flex items-center space-x-2">
+                                                    <AlertTriangle className="h-5 w-5 text-yellow-600" />
+                                                    <h3 className="font-medium text-yellow-900">
+                                                        {getText('Supporting Documents Required', 'Dokumen Pendukung Diperlukan')}
+                                                    </h3>
+                                                </div>
+
+                                                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                                                    <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                                                    <input
+                                                        type="file"
+                                                        multiple
+                                                        accept="image/*,.pdf"
+                                                        onChange={(e) => {
+                                                            const files = e.target.files;
+                                                            if (!files) return;
+
+                                                            Array.from(files).forEach(file => {
+                                                                if (file.size > 10 * 1024 * 1024) {
+                                                                    toast.error(getText('File too large (max 10MB)', 'File terlalu besar (maks 10MB)'));
+                                                                    return;
+                                                                }
+
+                                                                const reader = new FileReader();
+                                                                reader.onloadend = () => {
+                                                                    setAttachments(prev => [...prev, reader.result as string]);
+                                                                };
+                                                                reader.readAsDataURL(file);
+                                                            });
+                                                        }}
+                                                        className="hidden"
+                                                        id="file-upload-lending"
+                                                    />
+                                                    <label htmlFor="file-upload-lending" className="cursor-pointer">
+                                                        <span className="text-sm font-medium text-blue-600 hover:text-blue-700">
+                                                            {getText('Upload Files', 'Unggah File')}
+                                                        </span>
+                                                    </label>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        {getText('PDF, JPG, PNG up to 10MB', 'PDF, JPG, PNG hingga 10MB')}
+                                                    </p>
+                                                </div>
+
+                                                {attachments.length > 0 && (
+                                                    <div className="space-y-2">
+                                                        {attachments.map((attachment, index) => (
+                                                            <div key={index} className="flex items-center justify-between p-2 bg-white rounded border">
+                                                                <div className="flex items-center space-x-2">
+                                                                    {attachment.startsWith('data:application/pdf') ? (
+                                                                        <FileText className="h-4 w-4 text-red-600" />
+                                                                    ) : (
+                                                                        <Camera className="h-4 w-4 text-amber-600" />
+                                                                    )}
+                                                                    <span className="text-sm">
+                                                                        {attachment.startsWith('data:application/pdf')
+                                                                            ? `Document_${index + 1}.pdf`
+                                                                            : `Image_${index + 1}.jpg`}
+                                                                    </span>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setAttachments(prev => prev.filter((_, i) => i !== index))}
+                                                                    className="text-red-600 hover:text-red-800"
+                                                                >
+                                                                    <X className="h-4 w-4" />
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
+                                        )}
+
+                                        {/* Return Date */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                {getText('Return Date', 'Tanggal Pengembalian')} *
+                                            </label>
+                                            <input
+                                                type="datetime-local"
+                                                value={returnDate}
+                                                onChange={(e) => setReturnDate(e.target.value)}
+                                                min={new Date().toISOString().slice(0, 16)}
+                                                className="w-full px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                                                required
+                                            />
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="pt-6 border-t border-gray-200/50">
+                                {/* Submit Button */}
+                                <div className="border-t border-gray-200/50 pt-6">
                                     <button
                                         type="submit"
-                                        disabled={selectedEquipment.length === 0 || submitting}
-                                        className="w-full flex items-center justify-center space-x-3 px-6 py-4 bg-gradient-to-r from-green-500 to-emerald-500 text-white font-semibold rounded-xl hover:from-green-600 hover:to-emerald-600 focus:outline-none focus:ring-2 focus:ring-green-500/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl disabled:hover:shadow-lg"
+                                        disabled={
+                                            submitting ||
+                                            selectedEquipments.size === 0 ||
+                                            !identityNumber ||
+                                            !fullName ||
+                                            !phoneNumber ||
+                                            !purpose ||
+                                            !returnDate
+                                        }
+                                        className="w-full flex items-center justify-center space-x-2 py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg"
                                     >
                                         {submitting ? (
                                             <>
-                                                <Loader2 className="h-5 w-5 animate-spin" />
+                                                <RefreshCw className="h-5 w-5 animate-spin" />
                                                 <span>{getText('Submitting...', 'Mengirim...')}</span>
                                             </>
                                         ) : (
                                             <>
                                                 <Send className="h-5 w-5" />
-                                                <span>{getText('Submit Request for Approval', 'Kirim Permintaan untuk Persetujuan')}</span>
+                                                <span>{getText('Submit Request', 'Kirim Permintaan')}</span>
                                             </>
                                         )}
                                     </button>
+
+                                    {/* Notice */}
+                                    <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                        <div className="flex items-start space-x-3">
+                                            <Info className="h-5 w-5 text-blue-600 mt-0.5" />
+                                            <div className="text-sm text-blue-800">
+                                                <p className="font-semibold mb-2">{getText('Notice', 'Perhatian')}</p>
+                                                <ul className="space-y-1 text-xs">
+                                                    <li>• {getText('Leave your ID card to Admin when picking up', 'Tinggalkan kartu identitas ke Admin saat pengambilan')}</li>
+                                                    <li>• {getText('Please return equipment on time', 'Harap kembalikan peralatan tepat waktu')}</li>
+                                                    <li>• {getText('Wait for approval before picking up', 'Tunggu persetujuan sebelum mengambil')}</li>
+                                                </ul>
+                                                <div className="mt-3 pt-3 border-t border-blue-300">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => window.open('https://wa.me/6285869554147', '_blank')}
+                                                        className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-lg transition-colors shadow-sm"
+                                                    >
+                                                        <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                                                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+                                                        </svg>
+                                                        <span>{getText('Contact: 085869554147', 'Hubungi: 085869554147')}</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                            </form>
+                            </div>
                         </div>
                     </div>
-                </div>
+                </form>
             </div>
+
+            {/* Modals */}
+            {renderDetailModal()}
+            {renderFullscreenPhoto()}
         </div>
     );
 };

@@ -17,22 +17,22 @@ const getDateRangeForBookings = (localDate: string) => {
   // Start: 00:00:00 local time
   const startOfDay = new Date(`${localDate}T00:00:00`);
   const startUTC = startOfDay.toISOString();
-  
+
   // End: 23:59:59 local time  
   const endOfDay = new Date(`${localDate}T23:59:59`);
   const endUTC = endOfDay.toISOString();
-  
+
   return { startUTC, endUTC };
 };
 
 export const useRoomData = (targetDate: string) => {
-  const { 
-    rooms, 
-    setRooms, 
-    shouldRefresh, 
-    getCacheStats 
+  const {
+    rooms,
+    setRooms,
+    shouldRefresh,
+    getCacheStats
   } = useRoomStore();
-  
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,7 +46,7 @@ export const useRoomData = (targetDate: string) => {
 
     try {
       console.log(`🏢 Fetching room data for ${date} (local timezone)...`);
-      
+
       // 1. FETCH ROOMS dengan relasi department
       const { data: roomsData, error: roomsError } = await supabase
         .from('rooms')
@@ -57,6 +57,7 @@ export const useRoomData = (targetDate: string) => {
           capacity,
           is_available,
           equipment,
+          study_program_id,
           department:departments(id, name)
         `)
         .order('name');
@@ -65,7 +66,7 @@ export const useRoomData = (targetDate: string) => {
 
       // 2. FETCH BOOKINGS - APPROVED dan BOOKED untuk conflict detection
       const { startUTC, endUTC } = getDateRangeForBookings(date);
-      
+
       const { data: bookingsData, error: bookingsError } = await supabase
         .from('bookings')
         .select(`
@@ -179,7 +180,7 @@ export const useRoomData = (targetDate: string) => {
       const now = new Date();
       const currentTimeUTC = now.toISOString();
       const today = getLocalDateString(now);
-      
+
       let currentBookingsData = [];
       if (date === today) {
         const { data: currentData, error: currentError } = await supabase
@@ -241,17 +242,17 @@ export const useRoomData = (targetDate: string) => {
       const enhancedRooms: EnhancedRoomStatus[] = (roomsData || []).map(room => {
         // Group bookings by room (approved dan booked)
         const roomBookings = (bookingsData || []).filter(booking => booking.room_id === room.id);
-        
+
         // Group sessions by room
         const roomSessions = (sessionsData || []).filter(session => session.room_id === room.id);
-        
+
         // Group lectures by room
-        const roomLectures = (lecturesData || []).filter(lecture => 
+        const roomLectures = (lecturesData || []).filter(lecture =>
           lecture.room.toLowerCase() === room.name.toLowerCase()
         );
-        
+
         // Group exams by room
-        const roomExams = (examsData || []).filter(exam => 
+        const roomExams = (examsData || []).filter(exam =>
           exam.room_id === room.id
         );
 
@@ -288,17 +289,17 @@ export const useRoomData = (targetDate: string) => {
         // Determine status - PERBAIKAN LOGIC
         const isToday = date === today;
         const hasCurrentBooking = isToday && !!currentBooking;
-        const hasScheduledContent = roomBookings.length > 0 || roomSessions.length > 0 || 
-                                  roomLectures.length > 0 || roomExams.length > 0;
+        const hasScheduledContent = roomBookings.length > 0 || roomSessions.length > 0 ||
+          roomLectures.length > 0 || roomExams.length > 0;
 
         // Status untuk hari ini
-        const todayStatus: 'In Use' | 'Scheduled' | 'Available' = 
-          hasCurrentBooking ? 'In Use' : 
-          (isToday && hasScheduledContent) ? 'Scheduled' : 
-          'Available';
+        const todayStatus: 'In Use' | 'Scheduled' | 'Available' =
+          hasCurrentBooking ? 'In Use' :
+            (isToday && hasScheduledContent) ? 'Scheduled' :
+              'Available';
 
         // Status untuk target date
-        const targetDateStatus: 'Scheduled' | 'Available' = 
+        const targetDateStatus: 'Scheduled' | 'Available' =
           hasScheduledContent ? 'Scheduled' : 'Available';
 
         return {
@@ -309,10 +310,11 @@ export const useRoomData = (targetDate: string) => {
           department: room.department,
           equipment: room.equipment || [],
           is_available: room.is_available,
-          
+          study_program_id: room.study_program_id, // Added for laboran filter
+
           todayStatus,
           targetDateStatus,
-          
+
           currentBooking: currentBooking ? {
             id: currentBooking.id,
             purpose: currentBooking.purpose,
@@ -329,7 +331,7 @@ export const useRoomData = (targetDate: string) => {
               identity_number: currentBooking.user_info.identity_number
             } : undefined)
           } : undefined,
-          
+
           targetDateBookings: roomBookings.map(booking => ({
             id: booking.id,
             start_time: booking.start_time,
@@ -354,7 +356,7 @@ export const useRoomData = (targetDate: string) => {
               study_program: null
             } : null)
           })),
-          
+
           scheduleDetails: {
             lectures: roomLectures.map(lecture => ({
               id: lecture.id,
@@ -370,7 +372,7 @@ export const useRoomData = (targetDate: string) => {
               academics_year: lecture.academics_year,
               type: lecture.type
             })),
-            
+
             exams: roomExams.map(exam => ({
               id: exam.id,
               start_time: exam.start_time,
@@ -383,7 +385,7 @@ export const useRoomData = (targetDate: string) => {
               department_id: exam.department_id,
               study_program_id: exam.study_program_id
             })),
-            
+
             sessions: roomSessions.map(session => ({
               id: session.id,
               start_time: session.start_time,
@@ -394,7 +396,7 @@ export const useRoomData = (targetDate: string) => {
               supervisor: session.supervisor,
               examiner: session.examiner,
               secretary: session.secretary,
-                            student: session.student ? {
+              student: session.student ? {
                 id: session.student.id,
                 full_name: session.student.full_name,
                 identity_number: session.student.identity_number,
@@ -407,17 +409,17 @@ export const useRoomData = (targetDate: string) => {
               } : null
             }))
           },
-          
+
           futureBookings: futureStats
         };
       });
 
       setRooms(enhancedRooms, date);
-      
+
       const stats = getCacheStats();
       console.log(`✅ Room data fetched successfully for ${date} (local). Cache hit rate: ${stats.hitRate.toFixed(1)}%`);
       console.log(`📊 Bookings status filter: approved & booked only`);
-      
+
       return enhancedRooms;
 
     } catch (error: any) {

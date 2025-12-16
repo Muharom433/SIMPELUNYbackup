@@ -38,6 +38,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
+import { useSystemSettings } from '../contexts/SystemSettingsContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { format, subDays, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { toast } from 'react-hot-toast';
 import {
@@ -141,6 +143,7 @@ interface IssueReport {
   assigned_user?: {
     full_name: string;
   };
+  source?: 'user' | 'technician';
 }
 
 interface ReportComment {
@@ -159,6 +162,7 @@ interface ReportComment {
 
 const Reports: React.FC = () => {
   const { profile } = useAuth();
+  const { getText } = useLanguage();
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [issueReports, setIssueReports] = useState<IssueReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -177,6 +181,14 @@ const Reports: React.FC = () => {
   const [newComment, setNewComment] = useState('');
   const [isInternalComment, setIsInternalComment] = useState(false);
   const [processingAction, setProcessingAction] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newTask, setNewTask] = useState({
+    title: '',
+    description: '',
+    category: 'maintenance',
+    priority: 'medium',
+    location: '',
+  });
 
   const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'];
 
@@ -188,22 +200,22 @@ const Reports: React.FC = () => {
   const fetchReportData = async () => {
     try {
       setLoading(true);
-      
+
       // Get actual data from the reports table for the dashboard
       const { data: reportsData, error: reportsError } = await supabase
         .from('reports')
         .select('id, category, priority, status, created_at');
-      
+
       if (reportsError) throw reportsError;
-      
+
       const reports = reportsData || [];
-      
+
       // Calculate statistics
       const totalReports = reports.length;
       const newReports = reports.filter(r => r.status === 'new').length;
       const inProgressReports = reports.filter(r => ['under_review', 'in_progress'].includes(r.status)).length;
       const resolvedReports = reports.filter(r => ['resolved', 'closed'].includes(r.status)).length;
-      
+
       // Group by category
       const categoryGroups = reports.reduce((acc, report) => {
         const category = report.category;
@@ -211,12 +223,12 @@ const Reports: React.FC = () => {
         acc[category]++;
         return acc;
       }, {});
-      
+
       const byCategory = Object.entries(categoryGroups).map(([category, count]) => ({
         category: category.replace('_', ' '),
         count
       }));
-      
+
       // Group by priority
       const priorityGroups = reports.reduce((acc, report) => {
         const priority = report.priority;
@@ -224,12 +236,12 @@ const Reports: React.FC = () => {
         acc[priority]++;
         return acc;
       }, {});
-      
+
       const byPriority = Object.entries(priorityGroups).map(([priority, count]) => ({
         priority: priority.charAt(0).toUpperCase() + priority.slice(1),
         count
       }));
-      
+
       // Create mock data for other sections
       const mockData: ReportData = {
         bookings: {
@@ -353,22 +365,22 @@ const Reports: React.FC = () => {
           assigned_user:users!assigned_to(full_name)
         `)
         .order('created_at', { ascending: false });
-      
+
       // Apply status filter
       if (statusFilter !== 'all') {
         query = query.eq('status', statusFilter);
       }
-      
+
       // Apply priority filter
       if (priorityFilter !== 'all') {
         query = query.eq('priority', priorityFilter);
       }
-      
+
       // Apply department filter if needed
       if (departmentFilter !== 'all' && profile?.role === 'department_admin') {
         query = query.eq('room.department_id', departmentFilter);
       }
-      
+
       const { data, error } = await query;
 
       if (error) throw error;
@@ -389,7 +401,7 @@ const Reports: React.FC = () => {
         `)
         .eq('report_id', reportId)
         .order('created_at', { ascending: true });
-      
+
       if (error) throw error;
       setReportComments(data || []);
     } catch (error) {
@@ -400,10 +412,10 @@ const Reports: React.FC = () => {
 
   const handleAddComment = async () => {
     if (!selectedIssue || !newComment.trim()) return;
-    
+
     try {
       setProcessingAction(true);
-      
+
       const { error } = await supabase
         .from('report_comments')
         .insert({
@@ -413,18 +425,18 @@ const Reports: React.FC = () => {
           is_internal: isInternalComment,
           attachments: []
         });
-      
+
       if (error) throw error;
-      
+
       toast.success('Comment added successfully');
       setNewComment('');
       fetchReportComments(selectedIssue.id);
-      
+
       // If this is the first comment and status is 'new', update to 'under_review'
       if (selectedIssue.status === 'new') {
         await updateReportStatus(selectedIssue.id, 'under_review');
       }
-      
+
     } catch (error) {
       console.error('Error adding comment:', error);
       toast.error('Failed to add comment');
@@ -436,32 +448,32 @@ const Reports: React.FC = () => {
   const updateReportStatus = async (reportId: string, newStatus: string) => {
     try {
       setProcessingAction(true);
-      
-      const updates: any = { 
+
+      const updates: any = {
         status: newStatus,
         updated_at: new Date().toISOString()
       };
-      
+
       // If resolving, add resolution details
       if (newStatus === 'resolved') {
         updates.resolved_at = new Date().toISOString();
         updates.resolution_notes = resolutionNotes;
       }
-      
+
       // If assigning, add assigned_to
       if (newStatus === 'in_progress' && !selectedIssue?.assigned_to) {
         updates.assigned_to = profile?.id;
       }
-      
+
       const { error } = await supabase
         .from('reports')
         .update(updates)
         .eq('id', reportId);
-      
+
       if (error) throw error;
-      
+
       toast.success(`Report ${newStatus.replace('_', ' ')} successfully`);
-      
+
       // Update local state
       if (selectedIssue && selectedIssue.id === reportId) {
         setSelectedIssue({
@@ -477,16 +489,16 @@ const Reports: React.FC = () => {
           })
         });
       }
-      
+
       // Refresh reports list
       fetchIssueReports();
-      
+
       // Close modals if needed
       if (newStatus === 'resolved') {
         setShowResolveModal(false);
         setResolutionNotes('');
       }
-      
+
     } catch (error) {
       console.error('Error updating report status:', error);
       toast.error('Failed to update report status');
@@ -498,38 +510,83 @@ const Reports: React.FC = () => {
   const handleDeleteReport = async (reportId: string) => {
     try {
       setProcessingAction(true);
-      
+
       // First delete all comments
       const { error: commentsError } = await supabase
         .from('report_comments')
         .delete()
         .eq('report_id', reportId);
-      
+
       if (commentsError) throw commentsError;
-      
+
       // Then delete the report
       const { error } = await supabase
         .from('reports')
         .delete()
         .eq('id', reportId);
-      
+
       if (error) throw error;
-      
+
       toast.success('Report deleted successfully');
       setShowDeleteConfirm(null);
-      
+
       // Close detail modal if open
       if (selectedIssue?.id === reportId) {
         setShowIssueModal(false);
       }
-      
+
       // Refresh reports list
       fetchIssueReports();
       fetchReportData();
-      
+
     } catch (error) {
       console.error('Error deleting report:', error);
       toast.error('Failed to delete report');
+    } finally {
+      setProcessingAction(false);
+    }
+  };
+
+  const handleAddTask = async () => {
+    try {
+      if (!newTask.title || !newTask.description) {
+        toast.error('Please fill in all required fields');
+        return;
+      }
+
+      setProcessingAction(true);
+
+      const { error } = await supabase
+        .from('reports')
+        .insert({
+          title: newTask.title,
+          description: newTask.description,
+          category: newTask.category,
+          priority: newTask.priority,
+          location: newTask.location,
+          status: 'new',
+          is_anonymous: false,
+          reporter_name: profile?.full_name || 'System Technician',
+          reporter_id: profile?.id
+        });
+
+      if (error) throw error;
+
+      toast.success('Manual task added successfully');
+      setShowAddModal(false);
+      setNewTask({
+        title: '',
+        description: '',
+        category: 'maintenance',
+        priority: 'medium',
+        location: '',
+      });
+      fetchIssueReports();
+      fetchReportData();
+
+    } catch (error) {
+      console.error('Error adding task:', error);
+      toast.error('Failed to add manual task. Check database migration.');
     } finally {
       setProcessingAction(false);
     }
@@ -578,25 +635,25 @@ const Reports: React.FC = () => {
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'new': return 'New';
-      case 'under_review': return 'Under Review';
-      case 'in_progress': return 'In Progress';
-      case 'resolved': return 'Resolved';
-      case 'closed': return 'Closed';
+      case 'new': return getText('New', 'Baru');
+      case 'under_review': return getText('Under Review', 'Sedang Ditinjau');
+      case 'in_progress': return getText('In Progress', 'Dalam Proses');
+      case 'resolved': return getText('Resolved', 'Selesai');
+      case 'closed': return getText('Closed', 'Ditutup');
       default: return status.replace('_', ' ').charAt(0).toUpperCase() + status.replace('_', ' ').slice(1);
     }
   };
 
   const filteredIssueReports = issueReports.filter(report => {
-    const matchesSearch = 
+    const matchesSearch =
       report.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       report.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (report.reporter_name && report.reporter_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (report.location && report.location.toLowerCase().includes(searchTerm.toLowerCase()));
-    
+
     const matchesStatus = statusFilter === 'all' || report.status === statusFilter;
     const matchesPriority = priorityFilter === 'all' || report.priority === priorityFilter;
-    
+
     return matchesSearch && matchesStatus && matchesPriority;
   });
 
@@ -631,15 +688,15 @@ const Reports: React.FC = () => {
           <div>
             <h1 className="text-3xl font-bold flex items-center space-x-3">
               <BarChart3 className="h-8 w-8" />
-              <span>Issue Reports Management</span>
+              <span>{getText('Issue Reports Management', 'Manajemen Laporan Masalah')}</span>
             </h1>
             <p className="mt-2 opacity-90">
-              Manage and respond to student complaints and issue reports
+              {getText('Manage and respond to student complaints and issue reports', 'Kelola dan tanggapi keluhan dan laporan masalah mahasiswa')}
             </p>
           </div>
           <div className="hidden md:block text-right">
             <div className="text-2xl font-bold">{reportData?.issues.total || 0}</div>
-            <div className="text-sm opacity-80">Total Reports</div>
+            <div className="text-sm opacity-80">{getText('Total Reports', 'Total Laporan')}</div>
           </div>
         </div>
       </div>
@@ -647,10 +704,10 @@ const Reports: React.FC = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {[
-          { label: 'New', count: reportData?.issues.new || 0, color: 'bg-blue-500', icon: AlertCircle },
-          { label: 'In Progress', count: reportData?.issues.inProgress || 0, color: 'bg-yellow-500', icon: Clock },
-          { label: 'Resolved', count: reportData?.issues.resolved || 0, color: 'bg-green-500', icon: CheckCircle },
-          { label: 'Total', count: reportData?.issues.total || 0, color: 'bg-purple-500', icon: BarChart3 },
+          { label: getText('New', 'Baru'), count: reportData?.issues.new || 0, color: 'bg-blue-500', icon: AlertCircle },
+          { label: getText('In Progress', 'Dalam Proses'), count: reportData?.issues.inProgress || 0, color: 'bg-yellow-500', icon: Clock },
+          { label: getText('Resolved', 'Selesai'), count: reportData?.issues.resolved || 0, color: 'bg-green-500', icon: CheckCircle },
+          { label: getText('Total', 'Total'), count: reportData?.issues.total || 0, color: 'bg-purple-500', icon: BarChart3 },
         ].map((stat, index) => (
           <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between">
@@ -675,7 +732,7 @@ const Reports: React.FC = () => {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search issue reports..."
+                placeholder={getText("Search issue reports...", "Cari laporan masalah...")}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -689,7 +746,7 @@ const Reports: React.FC = () => {
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="all">All Status</option>
+                <option value="all">{getText("All Status", "Semua Status")}</option>
                 <option value="new">New</option>
                 <option value="under_review">Under Review</option>
                 <option value="in_progress">In Progress</option>
@@ -702,7 +759,7 @@ const Reports: React.FC = () => {
                 onChange={(e) => setPriorityFilter(e.target.value)}
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="all">All Priority</option>
+                <option value="all">{getText("All Priority", "Semua Prioritas")}</option>
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
@@ -714,6 +771,13 @@ const Reports: React.FC = () => {
           {/* Actions */}
           <div className="flex items-center space-x-2">
             <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200"
+            >
+              <Plus className="h-4 w-4" />
+              <span>{getText('Add Task', 'Tambah Tugas')}</span>
+            </button>
+            <button
               onClick={() => {
                 fetchIssueReports();
                 fetchReportData();
@@ -722,19 +786,19 @@ const Reports: React.FC = () => {
             >
               <RefreshCw className="h-5 w-5" />
             </button>
-            
+
             <button
               onClick={printReport}
               className="flex items-center space-x-2 px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-200"
             >
               <Printer className="h-4 w-4" />
-              <span>Print</span>
+              <span>{getText('Print', 'Cetak')}</span>
             </button>
 
             <div className="relative group">
               <button className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200">
                 <Download className="h-4 w-4" />
-                <span>Export</span>
+                <span>{getText('Export', 'Ekspor')}</span>
               </button>
               <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
                 <div className="py-1">
@@ -770,25 +834,25 @@ const Reports: React.FC = () => {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Issue
+                  {getText('Issue', 'Masalah')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Reporter
+                  {getText('Reporter', 'Pelapor')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Location
+                  {getText('Location', 'Lokasi')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Priority
+                  {getText('Priority', 'Prioritas')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
+                  {getText('Status', 'Status')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Created
+                  {getText('Created', 'Dibuat')}
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
+                  {getText('Actions', 'Aksi')}
                 </th>
               </tr>
             </thead>
@@ -1049,7 +1113,7 @@ const Reports: React.FC = () => {
                 {/* Comments Section */}
                 <div>
                   <h5 className="font-medium text-gray-900 mb-3">Comments & Updates</h5>
-                  
+
                   {reportComments.length === 0 ? (
                     <div className="bg-gray-50 rounded-lg p-8 text-center">
                       <MessageSquare className="h-10 w-10 text-gray-400 mx-auto mb-2" />
@@ -1058,8 +1122,8 @@ const Reports: React.FC = () => {
                   ) : (
                     <div className="space-y-4 mb-4">
                       {reportComments.map((comment) => (
-                        <div 
-                          key={comment.id} 
+                        <div
+                          key={comment.id}
                           className={`p-4 rounded-lg ${comment.is_internal ? 'bg-yellow-50 border border-yellow-200' : 'bg-gray-50 border border-gray-200'}`}
                         >
                           <div className="flex items-start space-x-3">
@@ -1100,7 +1164,7 @@ const Reports: React.FC = () => {
                       ))}
                     </div>
                   )}
-                  
+
                   {/* Add Comment Form */}
                   <div className="mt-4 bg-gray-50 rounded-lg p-4">
                     <div className="flex items-start space-x-3">
@@ -1168,11 +1232,10 @@ const Reports: React.FC = () => {
                           {[1, 2, 3, 4, 5].map((star) => (
                             <Star
                               key={star}
-                              className={`h-4 w-4 ${
-                                star <= selectedIssue.feedback_rating!
-                                  ? 'text-yellow-400 fill-current'
-                                  : 'text-gray-300'
-                              }`}
+                              className={`h-4 w-4 ${star <= selectedIssue.feedback_rating!
+                                ? 'text-yellow-400 fill-current'
+                                : 'text-gray-300'
+                                }`}
                             />
                           ))}
                         </div>
@@ -1198,7 +1261,7 @@ const Reports: React.FC = () => {
                       <span>Mark as Resolved</span>
                     </button>
                   )}
-                  
+
                   {selectedIssue.status === 'new' && (
                     <button
                       onClick={() => updateReportStatus(selectedIssue.id, 'under_review')}
@@ -1209,7 +1272,7 @@ const Reports: React.FC = () => {
                       <span>{processingAction ? 'Updating...' : 'Start Review'}</span>
                     </button>
                   )}
-                  
+
                   {selectedIssue.status === 'under_review' && (
                     <button
                       onClick={() => updateReportStatus(selectedIssue.id, 'in_progress')}
@@ -1220,7 +1283,7 @@ const Reports: React.FC = () => {
                       <span>{processingAction ? 'Updating...' : 'Start Working'}</span>
                     </button>
                   )}
-                  
+
                   {selectedIssue.status === 'resolved' && (
                     <button
                       onClick={() => updateReportStatus(selectedIssue.id, 'closed')}
@@ -1231,7 +1294,7 @@ const Reports: React.FC = () => {
                       <span>{processingAction ? 'Updating...' : 'Close Issue'}</span>
                     </button>
                   )}
-                  
+
                   <button
                     onClick={() => setShowDeleteConfirm(selectedIssue.id)}
                     disabled={processingAction}
@@ -1261,7 +1324,7 @@ const Reports: React.FC = () => {
                   <X className="h-6 w-6" />
                 </button>
               </div>
-              
+
               <div className="mb-4">
                 <div className="bg-green-50 border-l-4 border-green-400 p-4 mb-4">
                   <div className="flex">
@@ -1275,14 +1338,14 @@ const Reports: React.FC = () => {
                     </div>
                   </div>
                 </div>
-                
+
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Issue Title
                 </label>
                 <div className="text-sm font-medium text-gray-900 mb-4 p-2 bg-gray-50 rounded-lg">
                   {selectedIssue.title}
                 </div>
-                
+
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Resolution Notes *
                 </label>
@@ -1294,7 +1357,7 @@ const Reports: React.FC = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
                 />
               </div>
-              
+
               <div className="flex space-x-3">
                 <button
                   onClick={() => setShowResolveModal(false)}
@@ -1412,38 +1475,147 @@ const Reports: React.FC = () => {
 
       {/* Summary Section */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Report Summary</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">{getText('Report Summary', 'Ringkasan Laporan')}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="text-center">
             <div className="text-2xl font-bold text-blue-600">{reportData?.issues.new || 0}</div>
-            <div className="text-sm text-gray-600">New Reports</div>
+            <div className="text-sm text-gray-600">{getText('New Reports', 'Laporan Baru')}</div>
             <div className="text-xs text-blue-600 mt-1">
-              Require immediate attention
+              {getText('Require immediate attention', 'Butuh perhatian segera')}
             </div>
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold text-orange-600">{reportData?.issues.inProgress || 0}</div>
-            <div className="text-sm text-gray-600">In Progress</div>
+            <div className="text-sm text-gray-600">{getText('In Progress', 'Dalam Proses')}</div>
             <div className="text-xs text-orange-600 mt-1">
-              Currently being addressed
+              {getText('Currently being addressed', 'Sedang ditangani')}
             </div>
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold text-green-600">{reportData?.issues.resolved || 0}</div>
-            <div className="text-sm text-gray-600">Resolved</div>
+            <div className="text-sm text-gray-600">{getText('Resolved', 'Selesai')}</div>
             <div className="text-xs text-green-600 mt-1">
-              Successfully completed
+              {getText('Successfully completed', 'Berhasil diselesaikan')}
             </div>
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold text-purple-600">{reportData?.issues.total || 0}</div>
-            <div className="text-sm text-gray-600">Total Reports</div>
+            <div className="text-sm text-gray-600">{getText('Total Reports', 'Total Laporan')}</div>
             <div className="text-xs text-purple-600 mt-1">
-              All time submissions
+              {getText('All time submissions', 'Semua kiriman')}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Add Manual Task Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-semibold text-gray-900">{getText('Add Manual Task', 'Tambah Tugas Manual')}</h3>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {getText('Task Title', 'Judul Tugas')} *
+                </label>
+                <input
+                  type="text"
+                  value={newTask.title}
+                  onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Fix projector in A101"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description *
+                </label>
+                <textarea
+                  value={newTask.description}
+                  onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Detailed description of the task..."
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Category
+                  </label>
+                  <select
+                    value={newTask.category}
+                    onChange={(e) => setNewTask({ ...newTask, category: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="maintenance">Maintenance</option>
+                    <option value="equipment">Equipment</option>
+                    <option value="room_condition">Room Condition</option>
+                    <option value="cleanliness">Cleanliness</option>
+                    <option value="safety">Safety</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Priority
+                  </label>
+                  <select
+                    value={newTask.priority}
+                    onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Location (Room/Area)
+                </label>
+                <input
+                  type="text"
+                  value={newTask.location}
+                  onChange={(e) => setNewTask({ ...newTask, location: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Server Room"
+                />
+              </div>
+
+              <div className="pt-4 flex space-x-3">
+                <button
+                  onClick={() => setShowAddModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  {getText('Cancel', 'Batal')}
+                </button>
+                <button
+                  onClick={handleAddTask}
+                  disabled={processingAction}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  {processingAction ? getText('Adding...', 'Menambahkan...') : getText('Add Task', 'Tambah Tugas')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

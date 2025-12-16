@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Wrench, Search, Eye, Edit, Trash2, RefreshCw, Download, User, Package, 
-    AlertCircle, Calendar, Clock, X, Phone, Mail, Hash, Building, Users, 
+    Wrench, Search, Eye, Edit, Trash2, RefreshCw, Download, User, Package,
+    AlertCircle, Calendar, Clock, X, Phone, Mail, Hash, Building, Users,
     CheckCircle, XCircle, Plus, Minus, Settings, Loader2,
     FileText, Check, AlertTriangle
 } from 'lucide-react';
@@ -50,12 +50,12 @@ const ToolLendingManagement: React.FC = () => {
     useEffect(() => {
         fetchLendingRecords();
         fetchAllEquipment();
-        
+
         // Real-time subscription
         const subscription = supabase
             .channel('tool-administration')
-            .on('postgres_changes', 
-                { event: '*', schema: 'public', table: 'lending_tool' }, 
+            .on('postgres_changes',
+                { event: '*', schema: 'public', table: 'lending_tool' },
                 () => { fetchLendingRecords(); }
             )
             .subscribe();
@@ -82,7 +82,7 @@ const ToolLendingManagement: React.FC = () => {
     const fetchLendingRecords = async () => {
         try {
             setLoading(true);
-            
+
             const { data: lendingData, error: lendingError } = await supabase
                 .from('lending_tool')
                 .select('*')
@@ -90,6 +90,11 @@ const ToolLendingManagement: React.FC = () => {
 
             if (lendingError) throw lendingError;
             if (!lendingData) { setLendingRecords([]); setLoading(false); return; }
+
+            // Get laboratory's department_id and study_program_id for filtering
+            const isLaboratory = profile?.role === 'laboratory';
+            const laborDeptId = profile?.department_id;
+            const laborStudyProgramId = profile?.study_program_id;
 
             // Fetch user details and equipment details for each record
             const recordsWithDetails = await Promise.all(
@@ -104,33 +109,60 @@ const ToolLendingManagement: React.FC = () => {
                             .select('id, full_name, identity_number, email, role, phone_number')
                             .eq('id', record.id_user)
                             .maybeSingle();
-                        if (userData) user = userData;
+                        if (userData) user = userData as any;
                     }
 
-                    // Fetch equipment details
+                    // Fetch equipment details with room information for filtering
                     if (record.id_equipment && record.id_equipment.length > 0) {
                         const { data: equipmentData } = await supabase
                             .from('equipment')
-                            .select('*')
+                            .select('*, rooms:rooms_id(id, name, study_program_id, department_id)')
                             .in('id', record.id_equipment);
-                        
+
                         if (equipmentData) {
                             // Sort equipment to match the order in id_equipment array
-                            equipmentDetails = record.id_equipment.map(id => 
+                            equipmentDetails = record.id_equipment.map((id: string) =>
                                 equipmentData.find(eq => eq.id === id)
                             ).filter(Boolean) as Equipment[];
                         }
                     }
 
-                    return { 
-                        ...record, 
-                        user, 
-                        equipment_details: equipmentDetails 
+                    return {
+                        ...record,
+                        user,
+                        equipment_details: equipmentDetails
                     };
                 })
             );
 
-            setLendingRecords(recordsWithDetails);
+            // Laboratory filtering logic:
+            // - Department MUST be same as laboran's department
+            // - Study program can be NULL (show) OR same as laboran's study program (show)
+            // - If study program is DIFFERENT from laboran's → don't show
+            let filteredRecords = recordsWithDetails;
+            if (isLaboratory && laborDeptId) {
+                filteredRecords = recordsWithDetails.filter(record => {
+                    // Check if any equipment in this record belongs to a room that matches laboran's criteria
+                    if (!record.equipment_details || record.equipment_details.length === 0) return false;
+                    return record.equipment_details.some((eq: any) => {
+                        const room = eq.rooms;
+                        if (!room) return false;
+
+                        // Department must match
+                        if (room.department_id !== laborDeptId) return false;
+
+                        // Study program check: null OR same as laboran
+                        if (room.study_program_id === null || room.study_program_id === laborStudyProgramId) {
+                            return true;
+                        }
+
+                        return false;
+                    });
+                });
+                console.log(`🔬 Laboran filter: ${filteredRecords.length} records from ${recordsWithDetails.length}`);
+            }
+
+            setLendingRecords(filteredRecords);
 
         } catch (error) {
             console.error('Error fetching lending records:', error);
@@ -141,302 +173,302 @@ const ToolLendingManagement: React.FC = () => {
     };
 
     // ✅ TAMBAH FUNGSI APPROVAL/REJECTION
-    
-const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rejected') => {
-  try {
-    setProcessingIds(prev => new Set(prev).add(recordId));
-    
-    const record = lendingRecords.find(r => r.id === recordId);
-    if (!record) throw new Error("Lending record not found");
 
-    console.log('🔧 FIXED: Updating lending status with equipment management:', {
-      recordId: record.id,
-      currentStatus: record.status,
-      newStatus,
-      id_equipment: record.id_equipment,
-      qty: record.qty
-    });
-
-    // ✅ ADD: Equipment quantity management (same as BookingManagement)
-    if (record.id_equipment && record.id_equipment.length > 0) {
-      const validEquipmentList = [];
-      const invalidEquipment = [];
-      
-      for (let i = 0; i < record.id_equipment.length; i++) {
-        const equipmentId = record.id_equipment[i];
-        const quantity = record.qty?.[i] || 1;
-        
-        console.log(`🔍 Validating equipment ${i + 1}/${record.id_equipment.length}:`, {
-          equipmentId,
-          quantity,
-          index: i
-        });
-
-        // ✅ CHECK: Does equipment exist and has sufficient quantity?
-        const { data: equipment, error: checkError } = await supabase
-          .from('equipment')
-          .select('id, name, quantity')
-          .eq('id', equipmentId)
-          .single();
-
-        if (checkError || !equipment) {
-          console.warn(`⚠️ Equipment ${equipmentId} not found - will be skipped`);
-          invalidEquipment.push({ equipmentId, index: i, reason: 'not_found' });
-          continue; // Skip missing equipment
-        }
-
-        // For approval, check sufficient quantity
-        if (newStatus === 'approved' && equipment.quantity < quantity) {
-          console.warn(`⚠️ Equipment ${equipmentId} insufficient quantity: need ${quantity}, available ${equipment.quantity}`);
-          invalidEquipment.push({ 
-            equipmentId, 
-            index: i, 
-            reason: 'insufficient', 
-            available: equipment.quantity, 
-            needed: quantity 
-          });
-          continue; // Skip insufficient equipment
-        }
-
-        console.log(`✅ Equipment validated:`, {
-          id: equipment.id,
-          name: equipment.name,
-          availableQuantity: equipment.quantity,
-          requestedQuantity: quantity
-        });
-
-        validEquipmentList.push({
-          id: equipmentId,
-          quantity: quantity,
-          currentQuantity: equipment.quantity,
-          name: equipment.name
-        });
-      }
-
-      // ✅ REPORT: Invalid equipment found
-      if (invalidEquipment.length > 0) {
-        console.warn('⚠️ Invalid equipment found:', invalidEquipment);
-        
-        const notFoundCount = invalidEquipment.filter(eq => eq.reason === 'not_found').length;
-        const insufficientCount = invalidEquipment.filter(eq => eq.reason === 'insufficient').length;
-        
-        let warningMessage = '';
-        if (notFoundCount > 0) {
-          warningMessage += `${notFoundCount} equipment not found in database. `;
-        }
-        if (insufficientCount > 0) {
-          warningMessage += `${insufficientCount} equipment has insufficient quantity. `;
-        }
-        
-        // ✅ OPTION 1: Skip invalid equipment and continue with valid ones
-        if (validEquipmentList.length > 0) {
-          warningMessage += `Continuing with ${validEquipmentList.length} valid equipment.`;
-          toast.warning(warningMessage);
-        } else {
-          // ✅ OPTION 2: No valid equipment, cannot proceed with equipment updates
-          warningMessage += 'No valid equipment to process.';
-          toast.warning(warningMessage);
-          
-          // Still update record status but skip equipment updates
-          console.log('ℹ️ Proceeding with status update only (no equipment changes)');
-        }
-      }
-
-      // ✅ PROCESS: Only valid equipment
-      if (validEquipmentList.length > 0) {
-        console.log('✅ Processing valid equipment list:', validEquipmentList);
-
-        for (const equipmentItem of validEquipmentList) {
-          if (newStatus === 'approved') {
-            // ✅ APPROVED: Decrease quantity
-            console.log(`📉 Decreasing ${equipmentItem.id} by ${equipmentItem.quantity}`);
-            
-            const newQuantity = equipmentItem.currentQuantity - equipmentItem.quantity;
-            const { error: updateError } = await supabase
-              .from('equipment')
-              .update({ 
-                quantity: newQuantity,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', equipmentItem.id);
-              
-            if (updateError) {
-              console.error(`❌ Failed to update ${equipmentItem.id}:`, updateError);
-              // Continue with other equipment instead of failing completely
-            } else {
-              console.log(`✅ ${equipmentItem.name}: ${equipmentItem.currentQuantity} → ${newQuantity}`);
-            }
-            
-          } else if (newStatus === 'rejected' && (record.status === 'approved' || record.status === 'borrow')) {
-            // ✅ REJECTED: Restore quantity
-            console.log(`📈 Restoring ${equipmentItem.id} by ${equipmentItem.quantity}`);
-            
-            const newQuantity = equipmentItem.currentQuantity + equipmentItem.quantity;
-            const { error: updateError } = await supabase
-              .from('equipment')
-              .update({ 
-                quantity: newQuantity,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', equipmentItem.id);
-              
-            if (updateError) {
-              console.error(`❌ Failed to restore ${equipmentItem.id}:`, updateError);
-            } else {
-              console.log(`✅ ${equipmentItem.name}: ${equipmentItem.currentQuantity} → ${newQuantity}`);
-            }
-          }
-        }
-      }
-    }
-
-    // ✅ UPDATE LENDING STATUS (always proceed with this)
-    let finalStatus = newStatus;
-    if (newStatus === 'approved') {
-      finalStatus = 'borrow'; // Change to 'borrow' when approved
-    }
-    
-    const { error: recordError } = await supabase
-      .from('lending_tool')
-      .update({ 
-        status: finalStatus,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', recordId);
-
-    if (recordError) throw recordError;
-    
-    console.log('✅ FIXED: Lending status updated successfully');
-    
-    // Success notification
-    const statusText = newStatus === 'approved' 
-      ? getText('approved', 'disetujui') 
-      : getText('rejected', 'ditolak');
-    
-    toast.success(getText(`Tool lending ${statusText} successfully`, `Peminjaman alat berhasil ${statusText}`));
-    
-    // Refresh data
-    await fetchLendingRecords();
-    await fetchAllEquipment();
-    
-    // Close modal if open
-    if (selectedRecord?.id === recordId) {
-      setShowDetailModal(false);
-    }
-    
-  } catch (error: any) {
-    console.error('❌ Error updating lending status:', error);
-    toast.error(error.message || getText('Failed to update lending status', 'Gagal memperbarui status peminjaman'));
-  } finally {
-    setProcessingIds(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(recordId);
-      return newSet;
-    });
-  }
-};
-    const handleDelete = async (recordId: string) => {
-  try {
-    setProcessingIds(prev => new Set(prev).add(recordId));
-    
-    const recordToDelete = lendingRecords.find(r => r.id === recordId);
-    if (!recordToDelete) throw new Error("Record not found");
-
-    console.log('🗑️ Deleting lending record:', {
-      id: recordToDelete.id,
-      status: recordToDelete.status,
-      id_equipment: recordToDelete.id_equipment,
-      qty: recordToDelete.qty
-    });
-
-    // ✅ RESTORE EQUIPMENT QUANTITIES if the record was approved/borrow
-    if (recordToDelete.status === 'approved' || recordToDelete.status === 'borrow') {
-      
-      for (let i = 0; i < recordToDelete.id_equipment.length; i++) {
-        const equipmentId = recordToDelete.id_equipment[i];
-        const quantity = recordToDelete.qty?.[i] || 1;
-        
-        console.log(`📈 Restoring ${equipmentId} by ${quantity} (lending deleted)`);
-        
+    const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rejected') => {
         try {
-          // Get current equipment data
-          const { data: equipment, error: equipmentError } = await supabase
-            .from('equipment')
-            .select('id, name, quantity')
-            .eq('id', equipmentId)
-            .single();
+            setProcessingIds(prev => new Set(prev).add(recordId));
 
-          if (equipmentError || !equipment) {
-            console.warn(`⚠️ Equipment ${equipmentId} not found for restoration`);
-            continue;
-          }
+            const record = lendingRecords.find(r => r.id === recordId);
+            if (!record) throw new Error("Lending record not found");
 
-          // Restore quantity
-          const newQuantity = equipment.quantity + quantity;
-          const { error: updateError } = await supabase
-            .from('equipment')
-            .update({ 
-              quantity: newQuantity,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', equipmentId);
+            console.log('🔧 FIXED: Updating lending status with equipment management:', {
+                recordId: record.id,
+                currentStatus: record.status,
+                newStatus,
+                id_equipment: record.id_equipment,
+                qty: record.qty
+            });
 
-          if (updateError) {
-            console.warn(`⚠️ Failed to restore equipment ${equipmentId}:`, updateError);
-          } else {
-            console.log(`✅ Restored ${equipment.name}: ${equipment.quantity} → ${newQuantity}`);
-          }
-        } catch (error) {
-          console.warn(`⚠️ Error restoring equipment ${equipmentId}:`, error);
-          // Don't fail delete operation for this
+            // ✅ ADD: Equipment quantity management (same as BookingManagement)
+            if (record.id_equipment && record.id_equipment.length > 0) {
+                const validEquipmentList = [];
+                const invalidEquipment = [];
+
+                for (let i = 0; i < record.id_equipment.length; i++) {
+                    const equipmentId = record.id_equipment[i];
+                    const quantity = record.qty?.[i] || 1;
+
+                    console.log(`🔍 Validating equipment ${i + 1}/${record.id_equipment.length}:`, {
+                        equipmentId,
+                        quantity,
+                        index: i
+                    });
+
+                    // ✅ CHECK: Does equipment exist and has sufficient quantity?
+                    const { data: equipment, error: checkError } = await supabase
+                        .from('equipment')
+                        .select('id, name, quantity')
+                        .eq('id', equipmentId)
+                        .single();
+
+                    if (checkError || !equipment) {
+                        console.warn(`⚠️ Equipment ${equipmentId} not found - will be skipped`);
+                        invalidEquipment.push({ equipmentId, index: i, reason: 'not_found' });
+                        continue; // Skip missing equipment
+                    }
+
+                    // For approval, check sufficient quantity
+                    if (newStatus === 'approved' && equipment.quantity < quantity) {
+                        console.warn(`⚠️ Equipment ${equipmentId} insufficient quantity: need ${quantity}, available ${equipment.quantity}`);
+                        invalidEquipment.push({
+                            equipmentId,
+                            index: i,
+                            reason: 'insufficient',
+                            available: equipment.quantity,
+                            needed: quantity
+                        });
+                        continue; // Skip insufficient equipment
+                    }
+
+                    console.log(`✅ Equipment validated:`, {
+                        id: equipment.id,
+                        name: equipment.name,
+                        availableQuantity: equipment.quantity,
+                        requestedQuantity: quantity
+                    });
+
+                    validEquipmentList.push({
+                        id: equipmentId,
+                        quantity: quantity,
+                        currentQuantity: equipment.quantity,
+                        name: equipment.name
+                    });
+                }
+
+                // ✅ REPORT: Invalid equipment found
+                if (invalidEquipment.length > 0) {
+                    console.warn('⚠️ Invalid equipment found:', invalidEquipment);
+
+                    const notFoundCount = invalidEquipment.filter(eq => eq.reason === 'not_found').length;
+                    const insufficientCount = invalidEquipment.filter(eq => eq.reason === 'insufficient').length;
+
+                    let warningMessage = '';
+                    if (notFoundCount > 0) {
+                        warningMessage += `${notFoundCount} equipment not found in database. `;
+                    }
+                    if (insufficientCount > 0) {
+                        warningMessage += `${insufficientCount} equipment has insufficient quantity. `;
+                    }
+
+                    // ✅ OPTION 1: Skip invalid equipment and continue with valid ones
+                    if (validEquipmentList.length > 0) {
+                        warningMessage += `Continuing with ${validEquipmentList.length} valid equipment.`;
+                        toast.warning(warningMessage);
+                    } else {
+                        // ✅ OPTION 2: No valid equipment, cannot proceed with equipment updates
+                        warningMessage += 'No valid equipment to process.';
+                        toast.warning(warningMessage);
+
+                        // Still update record status but skip equipment updates
+                        console.log('ℹ️ Proceeding with status update only (no equipment changes)');
+                    }
+                }
+
+                // ✅ PROCESS: Only valid equipment
+                if (validEquipmentList.length > 0) {
+                    console.log('✅ Processing valid equipment list:', validEquipmentList);
+
+                    for (const equipmentItem of validEquipmentList) {
+                        if (newStatus === 'approved') {
+                            // ✅ APPROVED: Decrease quantity
+                            console.log(`📉 Decreasing ${equipmentItem.id} by ${equipmentItem.quantity}`);
+
+                            const newQuantity = equipmentItem.currentQuantity - equipmentItem.quantity;
+                            const { error: updateError } = await supabase
+                                .from('equipment')
+                                .update({
+                                    quantity: newQuantity,
+                                    updated_at: new Date().toISOString()
+                                })
+                                .eq('id', equipmentItem.id);
+
+                            if (updateError) {
+                                console.error(`❌ Failed to update ${equipmentItem.id}:`, updateError);
+                                // Continue with other equipment instead of failing completely
+                            } else {
+                                console.log(`✅ ${equipmentItem.name}: ${equipmentItem.currentQuantity} → ${newQuantity}`);
+                            }
+
+                        } else if (newStatus === 'rejected' && (record.status === 'approved' || record.status === 'borrow')) {
+                            // ✅ REJECTED: Restore quantity
+                            console.log(`📈 Restoring ${equipmentItem.id} by ${equipmentItem.quantity}`);
+
+                            const newQuantity = equipmentItem.currentQuantity + equipmentItem.quantity;
+                            const { error: updateError } = await supabase
+                                .from('equipment')
+                                .update({
+                                    quantity: newQuantity,
+                                    updated_at: new Date().toISOString()
+                                })
+                                .eq('id', equipmentItem.id);
+
+                            if (updateError) {
+                                console.error(`❌ Failed to restore ${equipmentItem.id}:`, updateError);
+                            } else {
+                                console.log(`✅ ${equipmentItem.name}: ${equipmentItem.currentQuantity} → ${newQuantity}`);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ✅ UPDATE LENDING STATUS (always proceed with this)
+            let finalStatus = newStatus;
+            if (newStatus === 'approved') {
+                finalStatus = 'borrow'; // Change to 'borrow' when approved
+            }
+
+            const { error: recordError } = await supabase
+                .from('lending_tool')
+                .update({
+                    status: finalStatus,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', recordId);
+
+            if (recordError) throw recordError;
+
+            console.log('✅ FIXED: Lending status updated successfully');
+
+            // Success notification
+            const statusText = newStatus === 'approved'
+                ? getText('approved', 'disetujui')
+                : getText('rejected', 'ditolak');
+
+            toast.success(getText(`Tool lending ${statusText} successfully`, `Peminjaman alat berhasil ${statusText}`));
+
+            // Refresh data
+            await fetchLendingRecords();
+            await fetchAllEquipment();
+
+            // Close modal if open
+            if (selectedRecord?.id === recordId) {
+                setShowDetailModal(false);
+            }
+
+        } catch (error: any) {
+            console.error('❌ Error updating lending status:', error);
+            toast.error(error.message || getText('Failed to update lending status', 'Gagal memperbarui status peminjaman'));
+        } finally {
+            setProcessingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(recordId);
+                return newSet;
+            });
         }
-      }
-      
-      console.log(`✅ Equipment quantities restored after lending deletion`);
-    }
-    
-    // ✅ DELETE THE LENDING RECORD
-    const { error } = await supabase
-      .from('lending_tool')
-      .delete()
-      .eq('id', recordId);
+    };
+    const handleDelete = async (recordId: string) => {
+        try {
+            setProcessingIds(prev => new Set(prev).add(recordId));
 
-    if (error) throw error;
-    
-    toast.success(getText('Lending record deleted successfully', 'Data peminjaman berhasil dihapus'));
-    setShowDeleteConfirm(null);
-    await fetchLendingRecords();
-    await fetchAllEquipment(); // Refresh equipment data
-    
-  } catch (error: any) {
-    console.error('❌ Error deleting lending record:', error);
-    toast.error(error.message || getText('Failed to delete lending record', 'Gagal menghapus data peminjaman'));
-  } finally {
-    setProcessingIds(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(recordId);
-      return newSet;
-    });
-  }
-};
+            const recordToDelete = lendingRecords.find(r => r.id === recordId);
+            if (!recordToDelete) throw new Error("Record not found");
+
+            console.log('🗑️ Deleting lending record:', {
+                id: recordToDelete.id,
+                status: recordToDelete.status,
+                id_equipment: recordToDelete.id_equipment,
+                qty: recordToDelete.qty
+            });
+
+            // ✅ RESTORE EQUIPMENT QUANTITIES if the record was approved/borrow
+            if (recordToDelete.status === 'approved' || recordToDelete.status === 'borrow') {
+
+                for (let i = 0; i < recordToDelete.id_equipment.length; i++) {
+                    const equipmentId = recordToDelete.id_equipment[i];
+                    const quantity = recordToDelete.qty?.[i] || 1;
+
+                    console.log(`📈 Restoring ${equipmentId} by ${quantity} (lending deleted)`);
+
+                    try {
+                        // Get current equipment data
+                        const { data: equipment, error: equipmentError } = await supabase
+                            .from('equipment')
+                            .select('id, name, quantity')
+                            .eq('id', equipmentId)
+                            .single();
+
+                        if (equipmentError || !equipment) {
+                            console.warn(`⚠️ Equipment ${equipmentId} not found for restoration`);
+                            continue;
+                        }
+
+                        // Restore quantity
+                        const newQuantity = equipment.quantity + quantity;
+                        const { error: updateError } = await supabase
+                            .from('equipment')
+                            .update({
+                                quantity: newQuantity,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', equipmentId);
+
+                        if (updateError) {
+                            console.warn(`⚠️ Failed to restore equipment ${equipmentId}:`, updateError);
+                        } else {
+                            console.log(`✅ Restored ${equipment.name}: ${equipment.quantity} → ${newQuantity}`);
+                        }
+                    } catch (error) {
+                        console.warn(`⚠️ Error restoring equipment ${equipmentId}:`, error);
+                        // Don't fail delete operation for this
+                    }
+                }
+
+                console.log(`✅ Equipment quantities restored after lending deletion`);
+            }
+
+            // ✅ DELETE THE LENDING RECORD
+            const { error } = await supabase
+                .from('lending_tool')
+                .delete()
+                .eq('id', recordId);
+
+            if (error) throw error;
+
+            toast.success(getText('Lending record deleted successfully', 'Data peminjaman berhasil dihapus'));
+            setShowDeleteConfirm(null);
+            await fetchLendingRecords();
+            await fetchAllEquipment(); // Refresh equipment data
+
+        } catch (error: any) {
+            console.error('❌ Error deleting lending record:', error);
+            toast.error(error.message || getText('Failed to delete lending record', 'Gagal menghapus data peminjaman'));
+        } finally {
+            setProcessingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(recordId);
+                return newSet;
+            });
+        }
+    };
     const filteredRecords = lendingRecords.filter(record => {
         const userName = record.user?.full_name || record.user_info?.full_name || '';
         const userIdentity = record.user?.identity_number || record.user_info?.identity_number || '';
         const equipmentNames = record.equipment_details?.map(eq => eq.name).join(' ') || '';
-        
-        const matchesSearch = 
+
+        const matchesSearch =
             userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
             userIdentity.toLowerCase().includes(searchTerm.toLowerCase()) ||
             equipmentNames.toLowerCase().includes(searchTerm.toLowerCase());
-        
+
         // ✅ FILTER STATUS
         const matchesStatus = statusFilter === 'all' || record.status === statusFilter;
-        
+
         let matchesDate = true;
         if (dateFilter !== 'all') {
             const recordDate = new Date(record.date);
             const today = new Date();
-            today.setHours(0,0,0,0);
+            today.setHours(0, 0, 0, 0);
             const tomorrow = new Date(today);
             tomorrow.setDate(tomorrow.getDate() + 1);
             const nextWeek = new Date(today);
@@ -449,7 +481,7 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
                 case 'past': matchesDate = recordDate < today; break;
             }
         }
-        
+
         return matchesSearch && matchesStatus && matchesDate;
     });
 
@@ -458,8 +490,8 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
     };
 
     const getUserContact = (record: LendingRecord) => {
-        return record.user?.phone_number || record.user_info?.phone_number || 
-               record.user?.identity_number || record.user_info?.identity_number || 'No contact';
+        return record.user?.phone_number || record.user_info?.phone_number ||
+            record.user?.identity_number || record.user_info?.identity_number || 'No contact';
     };
 
     // ✅ FUNGSI STATUS COLOR
@@ -489,13 +521,16 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
         return record.qty.reduce((total, qty) => total + qty, 0);
     };
 
-    if (profile?.role !== 'super_admin') {
+    // Access control: allow super_admin and laboratory
+    const hasAccess = profile?.role === 'super_admin' || profile?.role === 'laboratory';
+
+    if (!hasAccess) {
         return (
             <div className="flex items-center justify-center h-64">
                 <div className="text-center">
                     <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Access Denied</h3>
-                    <p className="text-gray-600">You don't have permission to access tool administration.</p>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">{getText('Access Denied', 'Akses Ditolak')}</h3>
+                    <p className="text-gray-600">{getText("You don't have permission to access tool lending management.", "Anda tidak memiliki izin untuk mengakses manajemen peminjaman alat.")}</p>
                 </div>
             </div>
         );
@@ -525,35 +560,35 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
             {/* ✅ STATISTICS CARDS - DENGAN STATUS BARU */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
                 {[
-                    { 
-                        label: getText('Pending', 'Menunggu'), 
-                        count: lendingRecords.filter(r => r.status === 'pending').length, 
-                        color: 'bg-yellow-500', 
-                        icon: Clock 
+                    {
+                        label: getText('Pending', 'Menunggu'),
+                        count: lendingRecords.filter(r => r.status === 'pending').length,
+                        color: 'bg-yellow-500',
+                        icon: Clock
                     },
-                    { 
-                        label: getText('Approved', 'Disetujui'), 
-                        count: lendingRecords.filter(r => r.status === 'approved').length, 
-                        color: 'bg-green-500', 
-                        icon: CheckCircle 
+                    {
+                        label: getText('Approved', 'Disetujui'),
+                        count: lendingRecords.filter(r => r.status === 'approved').length,
+                        color: 'bg-green-500',
+                        icon: CheckCircle
                     },
-                    { 
-                        label: getText('Rejected', 'Ditolak'), 
-                        count: lendingRecords.filter(r => r.status === 'rejected').length, 
-                        color: 'bg-red-500', 
-                        icon: XCircle 
+                    {
+                        label: getText('Rejected', 'Ditolak'),
+                        count: lendingRecords.filter(r => r.status === 'rejected').length,
+                        color: 'bg-red-500',
+                        icon: XCircle
                     },
-                    { 
-                        label: getText('Borrowed', 'Dipinjam'), 
-                        count: lendingRecords.filter(r => r.status === 'borrow').length, 
-                        color: 'bg-blue-500', 
-                        icon: Package 
+                    {
+                        label: getText('Borrowed', 'Dipinjam'),
+                        count: lendingRecords.filter(r => r.status === 'borrow').length,
+                        color: 'bg-blue-500',
+                        icon: Package
                     },
-                    { 
-                        label: getText('Completed', 'Selesai'), 
-                        count: lendingRecords.filter(r => r.status === 'completed').length, 
-                        color: 'bg-gray-500', 
-                        icon: Check 
+                    {
+                        label: getText('Completed', 'Selesai'),
+                        count: lendingRecords.filter(r => r.status === 'completed').length,
+                        color: 'bg-gray-500',
+                        icon: Check
                     }
                 ].map((stat, index) => (
                     <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -676,7 +711,7 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
                                 filteredRecords.map((record) => {
                                     const isProcessing = processingIds.has(record.id);
                                     const StatusIcon = getStatusIcon(record.status);
-                                    
+
                                     return (
                                         <tr key={record.id} className="hover:bg-gray-50 transition-colors duration-200">
                                             <td className="px-6 py-4 whitespace-nowrap">
@@ -749,7 +784,7 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
                                                     >
                                                         <Eye className="h-4 w-4" />
                                                     </button>
-                                                    
+
                                                     {/* ✅ APPROVE/REJECT BUTTONS */}
                                                     {record.status === 'pending' && (
                                                         <>
@@ -761,7 +796,7 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
                                                             >
                                                                 <Check className="h-4 w-4" />
                                                             </button>
-                                                            
+
                                                             <button
                                                                 onClick={() => handleStatusUpdate(record.id, 'rejected')}
                                                                 disabled={isProcessing}
@@ -772,7 +807,7 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
                                                             </button>
                                                         </>
                                                     )}
-                                                    
+
                                                     <button
                                                         onClick={() => setShowDeleteConfirm(record.id)}
                                                         disabled={isProcessing}
@@ -949,15 +984,15 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
                                             {getText('Permit Documents', 'Dokumen Izin')}
                                             <span className="ml-2 text-sm text-gray-500">({selectedRecord.attachments.length} files)</span>
                                         </h4>
-                                        
+
                                         <div className="bg-green-50 rounded-lg p-4">
                                             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                                 {selectedRecord.attachments.map((attachment, index) => {
                                                     const isPDF = attachment.startsWith('data:application/pdf') || attachment.toLowerCase().includes('.pdf');
-                                                    
+
                                                     return (
                                                         <div key={index} className="relative group">
-                                                            <div 
+                                                            <div
                                                                 onClick={() => window.open(attachment, '_blank')}
                                                                 className="cursor-pointer bg-white rounded-lg border border-green-200 p-3 hover:shadow-md transition-all duration-200 hover:scale-105"
                                                             >
@@ -986,14 +1021,14 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
                                                                     </div>
                                                                 )}
                                                             </div>
-                                                            
+
                                                             <button
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     const modal = document.createElement('div');
                                                                     modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4';
                                                                     modal.onclick = () => document.body.removeChild(modal);
-                                                                    
+
                                                                     if (isPDF) {
                                                                         modal.innerHTML = `
                                                                             <div class="bg-white rounded-lg p-4 max-w-4xl w-full h-full max-h-[90vh] overflow-auto">
@@ -1020,7 +1055,7 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
                                                                             </div>
                                                                         `;
                                                                     }
-                                                                    
+
                                                                     document.body.appendChild(modal);
                                                                 }}
                                                                 className="absolute top-1 right-1 bg-green-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-green-700"
@@ -1032,7 +1067,7 @@ const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rej
                                                     );
                                                 })}
                                             </div>
-                                            
+
                                             <div className="mt-4 pt-4 border-t border-green-200">
                                                 <button
                                                     onClick={() => {

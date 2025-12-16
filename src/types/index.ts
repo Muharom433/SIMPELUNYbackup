@@ -4,12 +4,14 @@ export interface User {
   username: string;
   full_name: string;
   identity_number: string;
-  role: 'student' | 'department_admin' | 'super_admin';
+  role: 'student' | 'department_admin' | 'super_admin' | 'lecturer' | 'laboratory' | 'staffing' | 'purchasing' | 'technician' | 'frontdesk';
   department_id: string | null;
   study_program_id?: string | null;
   phone_number?: string | null;
   created_at: string;
   updated_at: string;
+  attachments?: string | null;
+  address?: string | null;
 }
 
 export interface Department {

@@ -30,38 +30,44 @@ import {
   Trash2,
   Plus,
   X,
+  PlayCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 
 const systemSettingsSchema = z.object({
-  // General Settings
+  // General & Branding Settings
   system_name: z.string().min(1, 'System name is required'),
   system_description: z.string().optional(),
+  system_version: z.string().min(1, 'Version is required'),
+  developer_name: z.string().min(1, 'Developer name is required'),
+  system_logo: z.string().optional(), // Base64 string
+  dashboard_video_url: z.string().url('Must be a valid URL').optional().or(z.literal('')),
+
   timezone: z.string().min(1, 'Timezone is required'),
   date_format: z.string().min(1, 'Date format is required'),
   time_format: z.string().min(1, 'Time format is required'),
-  
+
   // Booking Settings
   max_booking_duration: z.number().min(1, 'Max booking duration must be at least 1 hour'),
   advance_booking_days: z.number().min(1, 'Advance booking days must be at least 1'),
   auto_approval: z.boolean(),
   require_approval_for_equipment: z.boolean(),
   booking_reminder_hours: z.number().min(0, 'Reminder hours cannot be negative'),
-  
+
   // Notification Settings
   email_notifications: z.boolean(),
   sms_notifications: z.boolean(),
   push_notifications: z.boolean(),
   notification_email: z.string().email('Invalid email address').optional(),
-  
+
   // Security Settings
   session_timeout: z.number().min(15, 'Session timeout must be at least 15 minutes'),
   password_min_length: z.number().min(6, 'Password minimum length must be at least 6'),
   require_2fa: z.boolean(),
   login_attempts_limit: z.number().min(3, 'Login attempts limit must be at least 3'),
-  
+
   // Maintenance Settings
   maintenance_mode: z.boolean(),
   maintenance_message: z.string().optional(),
@@ -77,6 +83,36 @@ interface SystemSettings extends SystemSettingsForm {
   updated_by: string;
 }
 
+// Setting categories for organization (outside component for reuse)
+const settingCategories: Record<string, string> = {
+  system_name: 'branding',
+  system_description: 'branding',
+  system_version: 'branding',
+  developer_name: 'branding',
+  system_logo: 'branding',
+  dashboard_video_url: 'branding',
+  timezone: 'general',
+  date_format: 'general',
+  time_format: 'general',
+  max_booking_duration: 'booking',
+  advance_booking_days: 'booking',
+  auto_approval: 'booking',
+  require_approval_for_equipment: 'booking',
+  booking_reminder_hours: 'booking',
+  email_notifications: 'notifications',
+  sms_notifications: 'notifications',
+  push_notifications: 'notifications',
+  notification_email: 'notifications',
+  session_timeout: 'security',
+  password_min_length: 'security',
+  require_2fa: 'security',
+  login_attempts_limit: 'security',
+  maintenance_mode: 'maintenance',
+  maintenance_message: 'maintenance',
+  backup_frequency: 'maintenance',
+  auto_cleanup_days: 'maintenance',
+};
+
 const SystemSettings: React.FC = () => {
   const { profile } = useAuth();
   const [settings, setSettings] = useState<SystemSettings | null>(null);
@@ -85,11 +121,15 @@ const SystemSettings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('general');
   const [showMaintenanceConfirm, setShowMaintenanceConfirm] = useState(false);
   const [backupInProgress, setBackupInProgress] = useState(false);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
   const form = useForm<SystemSettingsForm>({
     resolver: zodResolver(systemSettingsSchema),
     defaultValues: {
-      system_name: 'Faculty Room Booking System',
+      system_name: 'SIMPEL Kuliah',
+      system_description: 'Sistem Manajemen Kampus Cerdas',
+      system_version: '2.0',
+      developer_name: 'Swarna Works Agency',
       timezone: 'Asia/Jakarta',
       date_format: 'DD/MM/YYYY',
       time_format: '24h',
@@ -112,7 +152,7 @@ const SystemSettings: React.FC = () => {
   });
 
   const tabs = [
-    { id: 'general', label: 'General', icon: Settings },
+    { id: 'general', label: 'General & Branding', icon: Settings },
     { id: 'booking', label: 'Booking', icon: Calendar },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'security', label: 'Security', icon: Shield },
@@ -123,40 +163,117 @@ const SystemSettings: React.FC = () => {
     fetchSettings();
   }, []);
 
+
+
   const fetchSettings = async () => {
     try {
       setLoading(true);
-      // Mock settings data since we don't have a settings table yet
-      const mockSettings: SystemSettings = {
-        id: '1',
-        system_name: 'Faculty Room Booking System',
-        system_description: 'Comprehensive room booking and resource management system for academic institutions',
-        timezone: 'Asia/Jakarta',
-        date_format: 'DD/MM/YYYY',
-        time_format: '24h',
-        max_booking_duration: 8,
-        advance_booking_days: 30,
-        auto_approval: false,
-        require_approval_for_equipment: true,
-        booking_reminder_hours: 2,
-        email_notifications: true,
-        sms_notifications: false,
-        push_notifications: true,
-        notification_email: 'admin@faculty.edu',
-        session_timeout: 60,
-        password_min_length: 8,
-        require_2fa: false,
-        login_attempts_limit: 5,
-        maintenance_mode: false,
-        maintenance_message: 'System is under maintenance. Please try again later.',
-        backup_frequency: 'daily',
-        auto_cleanup_days: 90,
-        updated_at: new Date().toISOString(),
-        updated_by: 'System Administrator',
-      };
 
-      setSettings(mockSettings);
-      form.reset(mockSettings);
+      // Fetch all key-value pairs from system_settings table
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('setting_key, setting_value, updated_at, updated_by');
+
+      if (error) {
+        console.error('Error fetching settings from DB:', error);
+      }
+
+      if (data && data.length > 0) {
+        // Convert key-value array to object
+        const settingsObj: Partial<SystemSettings> = {};
+        let latestUpdate = '';
+        let updatedByUser = '';
+
+        data.forEach((row: { setting_key: string; setting_value: any; updated_at?: string; updated_by?: string }) => {
+          if (row.setting_key && row.setting_value !== undefined) {
+            (settingsObj as any)[row.setting_key] = row.setting_value;
+          }
+          // Track the latest update time
+          if (row.updated_at && row.updated_at > latestUpdate) {
+            latestUpdate = row.updated_at;
+            updatedByUser = row.updated_by || '';
+          }
+        });
+
+        const mergedSettings: SystemSettings = {
+          id: '1',
+          system_name: 'SIMPEL Kuliah',
+          system_description: 'Sistem Manajemen Kampus Cerdas',
+          system_version: '2.0',
+          developer_name: 'Swarna Works Agency',
+          timezone: 'Asia/Jakarta',
+          date_format: 'DD/MM/YYYY',
+          time_format: '24h',
+          max_booking_duration: 8,
+          advance_booking_days: 30,
+          auto_approval: false,
+          require_approval_for_equipment: true,
+          booking_reminder_hours: 2,
+          email_notifications: true,
+          sms_notifications: false,
+          push_notifications: true,
+          notification_email: 'admin@faculty.edu',
+          session_timeout: 60,
+          password_min_length: 8,
+          require_2fa: false,
+          login_attempts_limit: 5,
+          maintenance_mode: false,
+          maintenance_message: 'System is under maintenance. Please try again later.',
+          backup_frequency: 'daily',
+          auto_cleanup_days: 90,
+          updated_at: latestUpdate || new Date().toISOString(),
+          updated_by: updatedByUser || 'System Administrator',
+          ...settingsObj,
+        };
+
+        setSettings(mergedSettings);
+        form.reset({
+          ...mergedSettings,
+          auto_approval: mergedSettings.auto_approval ?? false,
+          require_approval_for_equipment: mergedSettings.require_approval_for_equipment ?? true,
+          email_notifications: mergedSettings.email_notifications ?? true,
+          sms_notifications: mergedSettings.sms_notifications ?? false,
+          push_notifications: mergedSettings.push_notifications ?? true,
+          require_2fa: mergedSettings.require_2fa ?? false,
+          maintenance_mode: mergedSettings.maintenance_mode ?? false,
+        });
+        if (mergedSettings.system_logo) {
+          setLogoPreview(mergedSettings.system_logo);
+        }
+      } else {
+        // Fallback/Default if no data in DB yet
+        const defaultSettings: SystemSettings = {
+          id: '1',
+          system_name: 'SIMPEL Kuliah',
+          system_description: 'Sistem Manajemen Kampus Cerdas',
+          system_version: '2.0',
+          developer_name: 'Swarna Works Agency',
+          timezone: 'Asia/Jakarta',
+          date_format: 'DD/MM/YYYY',
+          time_format: '24h',
+          max_booking_duration: 8,
+          advance_booking_days: 30,
+          auto_approval: false,
+          require_approval_for_equipment: true,
+          booking_reminder_hours: 2,
+          email_notifications: true,
+          sms_notifications: false,
+          push_notifications: true,
+          notification_email: 'admin@faculty.edu',
+          session_timeout: 60,
+          password_min_length: 8,
+          require_2fa: false,
+          login_attempts_limit: 5,
+          maintenance_mode: false,
+          maintenance_message: 'System is under maintenance. Please try again later.',
+          backup_frequency: 'daily',
+          auto_cleanup_days: 90,
+          updated_at: new Date().toISOString(),
+          updated_by: 'System Administrator',
+        };
+        setSettings(defaultSettings);
+        form.reset(defaultSettings);
+      }
     } catch (error) {
       console.error('Error fetching settings:', error);
       toast.error('Failed to load system settings');
@@ -165,14 +282,55 @@ const SystemSettings: React.FC = () => {
     }
   };
 
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error('Image size must be less than 2MB');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        setLogoPreview(base64String);
+        form.setValue('system_logo', base64String, { shouldDirty: true });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmit = async (data: SystemSettingsForm) => {
     try {
       setSaving(true);
-      
-      // Mock save operation
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      toast.success('System settings updated successfully');
+
+      const timestamp = new Date().toISOString();
+      const updatedBy = profile?.id || null;
+
+      // Convert form data object to array of key-value rows for upsert
+      const settingsRows = Object.entries(data).map(([key, value]) => ({
+        setting_key: key,
+        setting_value: value, // JSONB can store any type
+        category: settingCategories[key] || 'general',
+        description: `${key.replace(/_/g, ' ')} setting`,
+        updated_by: updatedBy,
+        updated_at: timestamp,
+      }));
+
+      // Upsert all settings (insert or update based on setting_key)
+      const { error } = await supabase
+        .from('system_settings')
+        .upsert(settingsRows, {
+          onConflict: 'setting_key',
+          ignoreDuplicates: false
+        });
+
+      if (error) throw error;
+
+      // Update local state and notify
+      setSettings(prev => prev ? { ...prev, ...data, updated_at: timestamp } : null);
+      window.dispatchEvent(new Event('system-settings-updated'));
+
+      toast.success('System settings saved to database');
       fetchSettings();
     } catch (error: any) {
       console.error('Error saving settings:', error);
@@ -185,10 +343,8 @@ const SystemSettings: React.FC = () => {
   const handleBackup = async () => {
     try {
       setBackupInProgress(true);
-      
       // Mock backup operation
       await new Promise(resolve => setTimeout(resolve, 3000));
-      
       toast.success('System backup completed successfully');
     } catch (error) {
       console.error('Error creating backup:', error);
@@ -209,7 +365,7 @@ const SystemSettings: React.FC = () => {
   const confirmMaintenanceMode = () => {
     form.setValue('maintenance_mode', true);
     setShowMaintenanceConfirm(false);
-    toast.warning('Maintenance mode will be enabled after saving settings');
+    toast('Maintenance mode will be enabled after saving settings', { icon: '⚠️' });
   };
 
   if (profile?.role !== 'super_admin') {
@@ -262,16 +418,15 @@ const SystemSettings: React.FC = () => {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200">
         {/* Tabs */}
         <div className="border-b border-gray-200">
-          <nav className="flex space-x-8 px-6">
+          <nav className="flex space-x-8 px-6 overflow-x-auto">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200 ${
-                  activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
+                className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200 whitespace-nowrap ${activeTab === tab.id
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
               >
                 <tab.icon className="h-5 w-5" />
                 <span>{tab.label}</span>
@@ -281,12 +436,45 @@ const SystemSettings: React.FC = () => {
         </div>
 
         <form onSubmit={form.handleSubmit(handleSubmit)} className="p-6">
-          {/* General Settings */}
+          {/* General & Branding Settings */}
           {activeTab === 'general' && (
             <div className="space-y-6">
               <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-4">General Configuration</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Branding Configuration</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                  {/* Logo Upload */}
+                  <div className="col-span-1 md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">System Logo</label>
+                    <div className="flex items-center space-x-6">
+                      <div className="relative h-24 w-24 rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden bg-gray-50 hover:bg-gray-100 transition-colors">
+                        {logoPreview ? (
+                          <img src={logoPreview} alt="System Logo" className="h-full w-full object-cover" />
+                        ) : (
+                          <Upload className="h-8 w-8 text-gray-400" />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <label className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none cursor-pointer">
+                          <Upload className="h-4 w-4 mr-2" />
+                          Change Logo
+                          <input type="file" className="hidden" accept="image/*" onChange={handleLogoChange} />
+                        </label>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Recommended size: 512x512px. Max size: 2MB.
+                        </p>
+                        {logoPreview && (
+                          <button
+                            type="button"
+                            onClick={() => { setLogoPreview(null); form.setValue('system_logo', ''); }}
+                            className="mt-2 text-xs text-red-600 hover:text-red-800 font-medium"
+                          >
+                            Remove Logo
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       System Name *
@@ -305,57 +493,116 @@ const SystemSettings: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Timezone *
+                      System Description
                     </label>
-                    <select
-                      {...form.register('timezone')}
+                    <input
+                      {...form.register('system_description')}
+                      type="text"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="Asia/Jakarta">Asia/Jakarta (WIB)</option>
-                      <option value="Asia/Makassar">Asia/Makassar (WITA)</option>
-                      <option value="Asia/Jayapura">Asia/Jayapura (WIT)</option>
-                      <option value="UTC">UTC</option>
-                    </select>
+                    />
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Date Format *
+                      Version *
                     </label>
-                    <select
-                      {...form.register('date_format')}
+                    <input
+                      {...form.register('system_version')}
+                      type="text"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="DD/MM/YYYY">DD/MM/YYYY</option>
-                      <option value="MM/DD/YYYY">MM/DD/YYYY</option>
-                      <option value="YYYY-MM-DD">YYYY-MM-DD</option>
-                    </select>
+                      placeholder="e.g. 2.0.0"
+                    />
+                    {form.formState.errors.system_version && (
+                      <p className="mt-1 text-sm text-red-600">
+                        {form.formState.errors.system_version.message}
+                      </p>
+                    )}
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Time Format *
+                      Developer Name *
                     </label>
-                    <select
-                      {...form.register('time_format')}
+                    <input
+                      {...form.register('developer_name')}
+                      type="text"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="24h">24 Hour (14:30)</option>
-                      <option value="12h">12 Hour (2:30 PM)</option>
-                    </select>
+                      placeholder="e.g. Swarna Works Agency"
+                    />
+                    {form.formState.errors.developer_name && (
+                      <p className="mt-1 text-sm text-red-600">
+                        {form.formState.errors.developer_name.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="col-span-1 md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                      <PlayCircle className="h-4 w-4 mr-2 text-gray-500" />
+                      Dashboard Video URL
+                    </label>
+                    <input
+                      {...form.register('dashboard_video_url')}
+                      type="text"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="e.g. https://www.youtube.com/embed/dQw4w9WgXcQ"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Enter a valid YouTube Embed URL to display on the dashboard. Leave empty to hide the video.
+                    </p>
+                    {form.formState.errors.dashboard_video_url && (
+                      <p className="mt-1 text-sm text-red-600">
+                        {form.formState.errors.dashboard_video_url.message}
+                      </p>
+                    )}
                   </div>
                 </div>
 
-                <div className="mt-6">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    System Description
-                  </label>
-                  <textarea
-                    {...form.register('system_description')}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Brief description of the system..."
-                  />
+                <div className="border-t border-gray-200 pt-6 mt-6">
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">Localization</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Timezone *
+                      </label>
+                      <select
+                        {...form.register('timezone')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="Asia/Jakarta">Asia/Jakarta (WIB)</option>
+                        <option value="Asia/Makassar">Asia/Makassar (WITA)</option>
+                        <option value="Asia/Jayapura">Asia/Jayapura (WIT)</option>
+                        <option value="UTC">UTC</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Date Format *
+                      </label>
+                      <select
+                        {...form.register('date_format')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                        <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                        <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Time Format *
+                      </label>
+                      <select
+                        {...form.register('time_format')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="24h">24 Hour (14:30)</option>
+                        <option value="12h">12 Hour (2:30 PM)</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -454,7 +701,7 @@ const SystemSettings: React.FC = () => {
             <div className="space-y-6">
               <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Notification Configuration</h3>
-                
+
                 <div className="space-y-4 mb-6">
                   <div className="flex items-center">
                     <input
@@ -592,7 +839,7 @@ const SystemSettings: React.FC = () => {
             <div className="space-y-6">
               <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Maintenance Configuration</h3>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">

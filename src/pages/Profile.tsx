@@ -16,15 +16,89 @@ import {
   CheckCircle,
   AlertCircle,
   Calendar,
-  MapPin
+  MapPin,
+  Camera
 } from 'lucide-react';
 import { User as UserType } from '../types';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../hooks/useAuth';
+import Cropper from 'react-easy-crop';
+
+// Crop Helpers
+const createImage = (url: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const image = new Image()
+    image.addEventListener('load', () => resolve(image))
+    image.addEventListener('error', (error) => reject(error))
+    image.setAttribute('crossOrigin', 'anonymous')
+    image.src = url
+  })
+
+function getRadianAngle(degreeValue: number) {
+  return (degreeValue * Math.PI) / 180
+}
+
+function rotateSize(width: number, height: number, rotation: number) {
+  const rotRad = getRadianAngle(rotation)
+
+  return {
+    width:
+      Math.abs(Math.cos(rotRad) * width) + Math.abs(Math.sin(rotRad) * height),
+    height:
+      Math.abs(Math.sin(rotRad) * width) + Math.abs(Math.cos(rotRad) * height),
+  }
+}
+
+async function getCroppedImg(
+  imageSrc: string,
+  pixelCrop: { x: number; y: number; width: number; height: number },
+  rotation = 0,
+  flip = { horizontal: false, vertical: false }
+): Promise<string | null> {
+  const image = await createImage(imageSrc)
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+
+  if (!ctx) {
+    return null
+  }
+
+  const rotRad = getRadianAngle(rotation)
+
+  const { width: bBoxWidth, height: bBoxHeight } = rotateSize(
+    image.width,
+    image.height,
+    rotation
+  )
+
+  canvas.width = bBoxWidth
+  canvas.height = bBoxHeight
+
+  ctx.translate(bBoxWidth / 2, bBoxHeight / 2)
+  ctx.rotate(rotRad)
+  ctx.scale(flip.horizontal ? -1 : 1, flip.vertical ? -1 : 1)
+  ctx.translate(-image.width / 2, -image.height / 2)
+
+  ctx.drawImage(image, 0, 0)
+
+  const data = ctx.getImageData(
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height
+  )
+
+  canvas.width = pixelCrop.width
+  canvas.height = pixelCrop.height
+
+  ctx.putImageData(data, 0, 0)
+
+  return canvas.toDataURL('image/jpeg');
+}
 
 const Profile: React.FC = () => {
-  const { user } = useAuth(); // Get user from auth hook instead of props
+  const { user, refreshUser } = useAuth(); // Get user and refreshUser from auth hook
   const { getText } = useLanguage();
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -55,8 +129,89 @@ const Profile: React.FC = () => {
     department_name: '',
     study_program_name: '',
     created_at: '',
-    last_login: ''
+    last_login: '',
+    attachments: '' as string | null
   });
+
+
+
+  // Crop state
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+  const [isCropModalOpen, setIsCropModalOpen] = useState(false);
+
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const onCropComplete = (croppedArea: any, croppedAreaPixels: any) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  };
+
+  const showCroppedImage = async () => {
+    try {
+      if (!imageSrc || !croppedAreaPixels) return;
+      setLoading(true);
+      const croppedImage = await getCroppedImg(
+        imageSrc,
+        croppedAreaPixels
+      );
+
+      if (!croppedImage) return;
+
+      if (!supabase) return;
+
+      const { error } = await supabase
+        .from('users')
+        .update({
+          attachments: croppedImage,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user?.id);
+
+      if (error) throw error;
+
+      setMessage({
+        type: 'success',
+        text: getText('Profile photo updated', 'Foto profil diperbarui')
+      });
+
+      await refreshUser();
+      await fetchUserDetails();
+      setIsCropModalOpen(false);
+      setImageSrc(null);
+    } catch (e) {
+      console.error(e);
+      setMessage({
+        type: 'error',
+        text: getText('Failed to save cropped image', 'Gagal menyimpan foto')
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+
+      // Limit file size to 5MB
+      if (file.size > 5 * 1024 * 1024) {
+        setMessage({
+          type: 'error',
+          text: getText('File size too large (max 5MB)', 'Ukuran file terlalu besar (maks 5MB)')
+        });
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.addEventListener('load', () => {
+        setImageSrc(reader.result?.toString() || '');
+        setIsCropModalOpen(true);
+      });
+      reader.readAsDataURL(file);
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -65,7 +220,7 @@ const Profile: React.FC = () => {
   }, [user]);
 
   const fetchUserDetails = async () => {
-    if (!user) return;
+    if (!user || !supabase) return;
 
     try {
       let query = supabase
@@ -79,7 +234,7 @@ const Profile: React.FC = () => {
         .single();
 
       const { data, error } = await query;
-      
+
       if (error) throw error;
 
       if (data) {
@@ -87,13 +242,14 @@ const Profile: React.FC = () => {
           department_name: data.department?.name || '',
           study_program_name: data.study_program?.name || '',
           created_at: data.created_at || '',
-          last_login: data.last_login || ''
+          last_login: data.last_login || '',
+          attachments: data.attachments || null
         });
-        
+
         setProfileData({
           full_name: data.full_name || '',
           email: data.email || '',
-          phone: data.phone || '',
+          phone: data.phone_number || '',
           identity_number: data.identity_number || '',
           address: data.address || ''
         });
@@ -107,6 +263,15 @@ const Profile: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     setMessage({ type: '', text: '' });
+
+    if (!supabase) {
+      setMessage({
+        type: 'error',
+        text: getText('Database connection error', 'Koneksi database error')
+      });
+      setLoading(false);
+      return;
+    }
 
     try {
       const { error } = await supabase
@@ -126,9 +291,10 @@ const Profile: React.FC = () => {
         text: getText('Profile updated successfully', 'Profil berhasil diperbarui')
       });
       setIsEditingProfile(false);
-      
-      // Refresh user details
-      fetchUserDetails();
+
+      // Refresh user details to update global context
+      await refreshUser();
+      await fetchUserDetails();
     } catch (error) {
       console.error('Error updating profile:', error);
       setMessage({
@@ -144,6 +310,15 @@ const Profile: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     setMessage({ type: '', text: '' });
+
+    if (!supabase) {
+      setMessage({
+        type: 'error',
+        text: getText('Database connection error', 'Koneksi database error')
+      });
+      setLoading(false);
+      return;
+    }
 
     // Validate password match
     if (passwordData.newPassword !== passwordData.confirmPassword) {
@@ -215,6 +390,16 @@ const Profile: React.FC = () => {
         return getText('Student', 'Mahasiswa');
       case 'lecturer':
         return getText('Lecturer', 'Dosen');
+      case 'laboratory':
+        return getText('Laboratory', 'Laboratorium');
+      case 'staffing':
+        return getText('Staffing', 'Kepegawaian');
+      case 'purchasing':
+        return getText('Purchasing', 'Pengadaan');
+      case 'technician':
+        return getText('Technician', 'Teknisi');
+      case 'frontdesk':
+        return getText('Front Desk', 'Front Desk');
       default:
         return role;
     }
@@ -230,6 +415,16 @@ const Profile: React.FC = () => {
         return <GraduationCap className="h-5 w-5 text-green-600" />;
       case 'lecturer':
         return <UserIcon className="h-5 w-5 text-orange-600" />;
+      case 'laboratory':
+        return <Building2 className="h-5 w-5 text-orange-500" />;
+      case 'staffing':
+        return <UserIcon className="h-5 w-5 text-teal-600" />;
+      case 'purchasing':
+        return <CreditCard className="h-5 w-5 text-cyan-600" />;
+      case 'technician':
+        return <GraduationCap className="h-5 w-5 text-yellow-600" />;
+      case 'frontdesk':
+        return <Calendar className="h-5 w-5 text-pink-600" />;
       default:
         return <UserIcon className="h-5 w-5 text-gray-600" />;
     }
@@ -248,6 +443,71 @@ const Profile: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Crop Modal */}
+      {isCropModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl overflow-hidden">
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-gray-900">
+                {getText('Crop Photo', 'Potong Foto')}
+              </h3>
+              <button
+                onClick={() => setIsCropModalOpen(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="relative h-[600px] w-full bg-gray-100">
+              {imageSrc && (
+                <Cropper
+                  image={imageSrc}
+                  crop={crop}
+                  zoom={zoom}
+                  aspect={1}
+                  onCropChange={setCrop}
+                  onCropComplete={onCropComplete}
+                  onZoomChange={setZoom}
+                />
+              )}
+            </div>
+
+            <div className="p-4 space-y-4">
+              <div className="flex items-center space-x-2">
+                <span className="text-sm font-medium text-gray-600">Zoom</span>
+                <input
+                  type="range"
+                  value={zoom}
+                  min={1}
+                  max={3}
+                  step={0.1}
+                  aria-labelledby="Zoom"
+                  onChange={(e) => setZoom(Number(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => setIsCropModalOpen(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
+                >
+                  {getText('Cancel', 'Batal')}
+                </button>
+                <button
+                  onClick={showCroppedImage}
+                  disabled={loading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
+                >
+                  {loading ? getText('Saving...', 'Menyimpan...') : getText('Save Photo', 'Simpan Foto')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-8">
@@ -268,19 +528,17 @@ const Profile: React.FC = () => {
 
         {/* Message Alert */}
         {message.text && (
-          <div className={`mb-6 p-4 rounded-lg flex items-center space-x-3 ${
-            message.type === 'success' 
-              ? 'bg-green-50 border border-green-200' 
-              : 'bg-red-50 border border-red-200'
-          }`}>
+          <div className={`mb-6 p-4 rounded-lg flex items-center space-x-3 ${message.type === 'success'
+            ? 'bg-green-50 border border-green-200'
+            : 'bg-red-50 border border-red-200'
+            }`}>
             {message.type === 'success' ? (
               <CheckCircle className="h-5 w-5 text-green-600" />
             ) : (
               <AlertCircle className="h-5 w-5 text-red-600" />
             )}
-            <span className={`text-sm font-medium ${
-              message.type === 'success' ? 'text-green-800' : 'text-red-800'
-            }`}>
+            <span className={`text-sm font-medium ${message.type === 'success' ? 'text-green-800' : 'text-red-800'
+              }`}>
               {message.text}
             </span>
           </div>
@@ -291,8 +549,34 @@ const Profile: React.FC = () => {
           <div className="lg:col-span-1">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <div className="text-center">
-                <div className="mx-auto h-24 w-24 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center mb-4">
-                  <UserIcon className="h-12 w-12 text-white" />
+                <div className="relative mx-auto h-24 w-24 mb-4">
+                  <div className={`h-24 w-24 rounded-xl flex items-center justify-center overflow-hidden ${userDetails.attachments ? 'bg-white' : 'bg-gradient-to-r from-blue-500 to-indigo-500'
+                    }`}>
+                    {userDetails.attachments ? (
+                      <img
+                        src={userDetails.attachments}
+                        alt="Profile"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <UserIcon className="h-12 w-12 text-white" />
+                    )}
+                  </div>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={loading}
+                    className="absolute -bottom-2 -right-2 p-2 bg-white rounded-full shadow-lg border border-gray-100 text-gray-600 hover:text-blue-600 transition-colors"
+                    title={getText('Change Photo', 'Ubah Foto')}
+                  >
+                    <Camera className="h-4 w-4" />
+                  </button>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    accept="image/*"
+                    onChange={handlePhotoUpload}
+                  />
                 </div>
                 <h3 className="text-xl font-bold text-gray-900 mb-1">{user.full_name}</h3>
                 <div className="flex items-center justify-center space-x-2 mb-4">
@@ -301,7 +585,7 @@ const Profile: React.FC = () => {
                     {getRoleDisplay(user.role)}
                   </span>
                 </div>
-                
+
                 {/* Quick Info */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between text-sm">

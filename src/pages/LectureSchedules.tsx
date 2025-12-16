@@ -132,12 +132,12 @@ const LectureSchedules: React.FC = () => {
   const [rescheduleFilter, setRescheduleFilter] = useState<string>('pending');
   const [roomSearchTerm, setRoomSearchTerm] = useState('');
   const [showRoomDropdown, setShowRoomDropdown] = useState(false);
-  
+
   const [sortConfig, setSortConfig] = useState<{ key: keyof LectureSchedule; direction: 'ascending' | 'descending' } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
 
-  const form = useForm<ScheduleForm>({ 
+  const form = useForm<ScheduleForm>({
     resolver: zodResolver(scheduleSchema),
     defaultValues: {
       semester: 1,
@@ -150,7 +150,7 @@ const LectureSchedules: React.FC = () => {
   const rescheduleForm = useForm<RescheduleForm>({
     resolver: zodResolver(rescheduleSchema),
   });
-  
+
   // Get unique rooms from schedules for filter dropdown
   const uniqueRooms = useMemo(() => {
     const roomsFromSchedules = schedules
@@ -163,19 +163,19 @@ const LectureSchedules: React.FC = () => {
 
   // Filter rooms for dropdown with search
   const filteredRooms = useMemo(() => {
-    return rooms.filter(room => 
-      room.is_available && 
+    return rooms.filter(room =>
+      room.is_available &&
       (room.name.toLowerCase().includes(roomSearchTerm.toLowerCase()) ||
-       room.code.toLowerCase().includes(roomSearchTerm.toLowerCase()))
+        room.code.toLowerCase().includes(roomSearchTerm.toLowerCase()))
     ).sort((a, b) => a.name.localeCompare(b.name));
   }, [rooms, roomSearchTerm]);
 
   // Get selected room details
- // ✅ Update selectedRoom computation
-const selectedRoom = useMemo(() => {
-  const roomValue = form.watch('room');
-  return rooms.find(room => room.id === roomValue);
-}, [rooms, form.watch('room')]);
+  // ✅ Update selectedRoom computation
+  const selectedRoom = useMemo(() => {
+    const roomValue = form.watch('room');
+    return rooms.find(room => room.id === roomValue);
+  }, [rooms, form.watch('room')]);
 
   const dayNames = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
@@ -189,12 +189,13 @@ const selectedRoom = useMemo(() => {
 
   const fetchRooms = async () => {
     try {
+      // Only select needed columns to optimize query performance
       const { data, error } = await supabase
         .from('rooms')
-        .select('*')
+        .select('id, name, code, capacity, department_id, is_available')
         .eq('is_available', true)
         .order('name');
-      
+
       if (error) throw error;
       setRooms(data || []);
     } catch (error: any) {
@@ -204,52 +205,52 @@ const selectedRoom = useMemo(() => {
   };
 
   // ✅ KODE YANG BENAR - tanpa JOIN
-const fetchSchedules = async () => {
-  try {
-    setLoading(true);
-    const pageSize = 1000;
-    let allData: LectureSchedule[] = [];
-    let from = 0;
-    let to = pageSize - 1;
-    let keepFetching = true;
-    while (keepFetching) {
-      const { data, error } = await supabase
-        .from('lecture_schedules')
-        .select('*')
-        .order('day', { ascending: true })
-        .order('start_time', { ascending: true })
-        .range(from, to);
-      if (error) throw error;
-      if (data && data.length > 0) {
-        allData = allData.concat(data);
-        if (data.length < pageSize) {
-          // Data batch kurang dari pageSize berarti sudah habis
-          keepFetching = false;
+  const fetchSchedules = async () => {
+    try {
+      setLoading(true);
+      const pageSize = 1000;
+      let allData: LectureSchedule[] = [];
+      let from = 0;
+      let to = pageSize - 1;
+      let keepFetching = true;
+      while (keepFetching) {
+        const { data, error } = await supabase
+          .from('lecture_schedules')
+          .select('*')
+          .order('day', { ascending: true })
+          .order('start_time', { ascending: true })
+          .range(from, to);
+        if (error) throw error;
+        if (data && data.length > 0) {
+          allData = allData.concat(data);
+          if (data.length < pageSize) {
+            // Data batch kurang dari pageSize berarti sudah habis
+            keepFetching = false;
+          } else {
+            // Siapkan range untuk batch berikutnya
+            from += pageSize;
+            to += pageSize;
+          }
         } else {
-          // Siapkan range untuk batch berikutnya
-          from += pageSize;
-          to += pageSize;
+          // Tidak ada data lagi
+          keepFetching = false;
         }
-      } else {
-        // Tidak ada data lagi
-        keepFetching = false;
       }
+      setSchedules(allData);
+    } catch (error: any) {
+      console.error('Error fetching schedules:', error);
+      alert.error(error.message || 'Failed to load lecture schedules');
+    } finally {
+      setLoading(false);
     }
-    setSchedules(allData);
-  } catch (error: any) {
-    console.error('Error fetching schedules:', error);
-    alert.error(error.message || 'Failed to load lecture schedules');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const fetchRescheduleRequests = async () => {
     try {
       const { data, error } = await supabase
         .from('reschedule')
         .select('*');
-      
+
       if (error) throw error;
       setRescheduleRequests(data || []);
     } catch (error: any) {
@@ -258,56 +259,56 @@ const fetchSchedules = async () => {
   };
 
   // ✅ Update handleSubmit
-const handleSubmit = async (data: ScheduleForm) => {
-  try {
-    setLoading(true);
-    
-    // Dapatkan nama room dari rooms berdasarkan room_id yang dipilih
-    const selectedRoomData = rooms.find(r => r.id === data.room);
-    
-    const scheduleData = {
-      course_name: data.course_name,
-      course_code: data.course_code,
-      lecturer: data.lecturer,
-      room: selectedRoomData?.name || data.room, // Simpan nama room, bukan ID
-      subject_study: data.subject_study,
-      day: data.day,
-      start_time: data.start_time,
-      end_time: data.end_time,
-      semester: data.semester,
-      academics_year: data.academics_year,
-      type: data.type,
-      class: data.class,
-      amount: data.amount,
-      kurikulum: data.kurikulum,
-    };
+  const handleSubmit = async (data: ScheduleForm) => {
+    try {
+      setLoading(true);
 
-    if (editingSchedule) {
-      const { error } = await supabase
-        .from('lecture_schedules')
-        .update(scheduleData)
-        .eq('id', editingSchedule.id);
-      if (error) throw error;
-      alert.success(getText('Schedule updated successfully!', 'Jadwal berhasil diperbarui!'));
-    } else {
-      const { error } = await supabase
-        .from('lecture_schedules')
-        .insert(scheduleData);
-      if (error) throw error;
-      alert.success(getText('Schedule created successfully!', 'Jadwal berhasil dibuat!'));
+      // Dapatkan nama room dari rooms berdasarkan room_id yang dipilih
+      const selectedRoomData = rooms.find(r => r.id === data.room);
+
+      const scheduleData = {
+        course_name: data.course_name,
+        course_code: data.course_code,
+        lecturer: data.lecturer,
+        room: selectedRoomData?.name || data.room, // Simpan nama room, bukan ID
+        subject_study: data.subject_study,
+        day: data.day,
+        start_time: data.start_time,
+        end_time: data.end_time,
+        semester: data.semester,
+        academics_year: data.academics_year,
+        type: data.type,
+        class: data.class,
+        amount: data.amount,
+        kurikulum: data.kurikulum,
+      };
+
+      if (editingSchedule) {
+        const { error } = await supabase
+          .from('lecture_schedules')
+          .update(scheduleData)
+          .eq('id', editingSchedule.id);
+        if (error) throw error;
+        alert.success(getText('Schedule updated successfully!', 'Jadwal berhasil diperbarui!'));
+      } else {
+        const { error } = await supabase
+          .from('lecture_schedules')
+          .insert(scheduleData);
+        if (error) throw error;
+        alert.success(getText('Schedule created successfully!', 'Jadwal berhasil dibuat!'));
+      }
+
+      setShowModal(false);
+      setEditingSchedule(null);
+      form.reset();
+      fetchSchedules();
+    } catch (error: any) {
+      console.error('Error saving schedule:', error);
+      alert.error(error.message || 'Failed to save schedule');
+    } finally {
+      setLoading(false);
     }
-
-    setShowModal(false);
-    setEditingSchedule(null);
-    form.reset();
-    fetchSchedules();
-  } catch (error: any) {
-    console.error('Error saving schedule:', error);
-    alert.error(error.message || 'Failed to save schedule');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const handleRescheduleSubmit = async (data: RescheduleForm) => {
     try {
@@ -324,11 +325,11 @@ const handleSubmit = async (data: ScheduleForm) => {
           class: data.class,
           is_done: null
         });
-      
+
       if (error) throw error;
-      
+
       alert.success(getText('Reschedule request submitted successfully!', 'Permintaan reschedule berhasil dikirim!'));
-      
+
       setShowRescheduleModal(false);
       rescheduleForm.reset();
       fetchRescheduleRequests();
@@ -368,7 +369,7 @@ const handleSubmit = async (data: ScheduleForm) => {
         .from('lecture_schedules')
         .delete()
         .eq('id', scheduleId);
-      
+
       if (error) throw error;
       alert.success(getText('Schedule deleted successfully!', 'Jadwal berhasil dihapus!'));
       setShowDeleteConfirm(null);
@@ -393,9 +394,9 @@ const handleSubmit = async (data: ScheduleForm) => {
         .eq('end_time', request.end_time)
         .eq('room', request.room)
         .eq('class', request.class);
-      
+
       if (error) throw error;
-      
+
       alert.success(getText(
         `Reschedule request ${isDone ? 'completed' : 'unchecked'} successfully!`,
         `Permintaan reschedule berhasil ${isDone ? 'diselesaikan' : 'dibatalkan'}!`
@@ -412,39 +413,39 @@ const handleSubmit = async (data: ScheduleForm) => {
   const generatePDF = () => {
     try {
       const pendingRequests = rescheduleRequests.filter(request => request.is_done !== true);
-      
+
       if (pendingRequests.length === 0) {
         alert.error(getText('No pending reschedule requests to export', 'Tidak ada permintaan reschedule yang belum selesai untuk diekspor'));
         return;
       }
 
       const doc = new jsPDF();
-      
+
       doc.setFontSize(18);
       doc.setTextColor(40, 40, 40);
       doc.text(getText('Reschedule Requests Report', 'Laporan Permintaan Reschedule'), 20, 30);
-      
+
       doc.setFontSize(12);
       doc.setTextColor(100, 100, 100);
       const currentDate = new Date().toLocaleDateString('id-ID', {
         year: 'numeric',
-        month: 'long', 
+        month: 'long',
         day: 'numeric'
       });
       doc.text(getText(`Generated on: ${currentDate}`, `Dibuat pada: ${currentDate}`), 20, 45);
       doc.text(getText(`Total Pending Requests: ${pendingRequests.length}`, `Total Permintaan Belum Selesai: ${pendingRequests.length}`), 20, 55);
-      
+
       let yPosition = 75;
       const columnWidths = [15, 35, 25, 45, 35, 25];
       const columnPositions = [20, 35, 70, 95, 140, 175];
-      
+
       doc.setFillColor(59, 130, 246);
       doc.rect(20, yPosition - 8, 180, 15, 'F');
-      
+
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
-      
+
       const headers = [
         getText('No', 'No'),
         getText('Course Code', 'Kode MK'),
@@ -453,23 +454,23 @@ const handleSubmit = async (data: ScheduleForm) => {
         getText('Room', 'Ruangan'),
         getText('Class', 'Kelas')
       ];
-      
+
       headers.forEach((header, index) => {
         doc.text(header, columnPositions[index] + 2, yPosition);
       });
-      
+
       yPosition += 20;
-      
+
       doc.setTextColor(40, 40, 40);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
-      
+
       pendingRequests.forEach((request, index) => {
         if (index % 2 === 0) {
           doc.setFillColor(245, 247, 250);
           doc.rect(20, yPosition - 8, 180, 12, 'F');
         }
-        
+
         const rowData = [
           (index + 1).toString(),
           request.course_code,
@@ -478,19 +479,19 @@ const handleSubmit = async (data: ScheduleForm) => {
           request.room,
           request.class
         ];
-        
+
         rowData.forEach((data, colIndex) => {
           doc.text(data, columnPositions[colIndex] + 2, yPosition);
         });
-        
+
         yPosition += 12;
-        
+
         if (yPosition > 270) {
           doc.addPage();
           yPosition = 30;
         }
       });
-      
+
       const pageCount = doc.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
@@ -500,24 +501,24 @@ const handleSubmit = async (data: ScheduleForm) => {
           getText(
             `Page ${i} of ${pageCount} - SIMPEL Kuliah System`,
             `Halaman ${i} dari ${pageCount} - Sistem SIMPEL Kuliah`
-          ), 
-          20, 
+          ),
+          20,
           280
         );
       }
-      
+
       const fileName = getText(
         `Reschedule_Requests_${new Date().toISOString().split('T')[0]}.pdf`,
         `Permintaan_Reschedule_${new Date().toISOString().split('T')[0]}.pdf`
       );
-      
+
       doc.save(fileName);
-      
+
       alert.success(getText(
         `PDF exported successfully! (${pendingRequests.length} pending requests)`,
         `PDF berhasil diekspor! (${pendingRequests.length} permintaan belum selesai)`
       ));
-      
+
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert.error(getText('Failed to generate PDF', 'Gagal membuat PDF'));
@@ -526,15 +527,15 @@ const handleSubmit = async (data: ScheduleForm) => {
 
   const filteredSchedules = useMemo(() => {
     return schedules.filter(schedule => {
-      const matchesSearch = 
+      const matchesSearch =
         (schedule.course_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
         (schedule.course_code?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
         (schedule.lecturer?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
         (schedule.room?.toLowerCase() || '').includes(searchTerm.toLowerCase());
-      
+
       const matchesRoom = roomFilter === 'all' || schedule.room?.toLowerCase() === roomFilter.toLowerCase();
       const matchesDay = dayFilter === 'all' || schedule.day?.toLowerCase() === dayFilter.toLowerCase();
-      
+
       return matchesSearch && matchesRoom && matchesDay;
     });
   }, [schedules, searchTerm, roomFilter, dayFilter]);
@@ -581,11 +582,11 @@ const handleSubmit = async (data: ScheduleForm) => {
 
   const dayIntensityStats = useMemo(() => {
     if (profile?.role !== 'super_admin') return [];
-    
+
     const stats = dayNames.map(day => {
       const daySchedules = schedules.filter(s => s.day?.toLowerCase() === day.toLowerCase());
       const count = daySchedules.length;
-      
+
       let intensity, color;
       if (count === 0) {
         intensity = 'Empty';
@@ -603,7 +604,7 @@ const handleSubmit = async (data: ScheduleForm) => {
         intensity = 'Very Busy';
         color = '#EF4444';
       }
-      
+
       return {
         day,
         count,
@@ -635,13 +636,13 @@ const handleSubmit = async (data: ScheduleForm) => {
       'Monday': 'Senin', 'Tuesday': 'Selasa', 'Wednesday': 'Rabu',
       'Thursday': 'Kamis', 'Friday': 'Jumat', 'Saturday': 'Sabtu'
     };
-    
+
     const currentIndonesianDay = dayMapping[currentDayName];
-    
+
     if (schedule.day?.toLowerCase() !== currentIndonesianDay?.toLowerCase() || !schedule.start_time || !schedule.end_time) {
       return false;
     }
-    
+
     try {
       const now = currentTime;
       const [startHour, startMinute] = schedule.start_time.split(':').map(Number);
@@ -732,24 +733,24 @@ const handleSubmit = async (data: ScheduleForm) => {
               </div>
             </div>
           </div>
-          
+
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={dayIntensityStats} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="day" 
+                <XAxis
+                  dataKey="day"
                   tick={{ fontSize: 12 }}
                   stroke="#64748b"
                 />
-                <YAxis 
+                <YAxis
                   tick={{ fontSize: 12 }}
                   stroke="#64748b"
                 />
-                <Tooltip content={<CustomTooltip />}/>
-                  <Line 
+                <Tooltip content={<CustomTooltip />} />
+                <Line
                   type="monotone"
-                  dataKey="count" 
+                  dataKey="count"
                   stroke="#0d9488"
                   strokeWidth={3}
                   dot={{ fill: '#0d9488', strokeWidth: 2, r: 6 }}
@@ -758,7 +759,7 @@ const handleSubmit = async (data: ScheduleForm) => {
               </LineChart>
             </ResponsiveContainer>
           </div>
-          
+
           <div className="flex flex-wrap items-center justify-center gap-4 mt-4 pt-4 border-t border-gray-100">
             <div className="flex items-center gap-2 text-xs">
               <div className="w-3 h-3 rounded bg-gray-400"></div>
@@ -821,7 +822,7 @@ const handleSubmit = async (data: ScheduleForm) => {
               </select>
             </div>
           </div>
-          
+
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => fetchSchedules()}
@@ -830,7 +831,7 @@ const handleSubmit = async (data: ScheduleForm) => {
             >
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
-            
+
             {/* Department Admin Actions */}
             {profile?.role === 'department_admin' && (
               <button
@@ -979,7 +980,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                         <div>
                           <div className="text-sm font-medium text-gray-900">{schedule.day}</div>
                           <div className="text-xs text-gray-500">
-                            {schedule.start_time?.substring(0,5)} - {schedule.end_time?.substring(0,5)}
+                            {schedule.start_time?.substring(0, 5)} - {schedule.end_time?.substring(0, 5)}
                           </div>
                         </div>
                       </td>
@@ -1076,7 +1077,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                 </button>
               </div>
             </div>
-            
+
             <form onSubmit={form.handleSubmit(handleSubmit)} className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
@@ -1091,7 +1092,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                     <p className="text-red-500 text-sm">{form.formState.errors.course_name.message}</p>
                   )}
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">{getText('Course Code', 'Kode Mata Kuliah')} *</label>
                   <input
@@ -1119,79 +1120,79 @@ const handleSubmit = async (data: ScheduleForm) => {
                     <p className="text-red-500 text-sm">{form.formState.errors.lecturer.message}</p>
                   )}
                 </div>
-                
+
                 {/* Room Dropdown with Search */}
-<div className="space-y-2">
-  <label className="block text-sm font-semibold text-gray-700">{getText('Room', 'Ruangan')} *</label>
-  <div className="relative">
-    <button
-      type="button"
-      onClick={() => setShowRoomDropdown(!showRoomDropdown)}
-      className="w-full border-2 border-gray-200 rounded-lg p-3 text-left focus:border-teal-500 focus:ring-0 transition-colors flex items-center justify-between"
-    >
-      <div className="flex items-center gap-2">
-        <MapPin className="h-4 w-4 text-gray-400" />
-        <span className={selectedRoom ? 'text-gray-900' : 'text-gray-500'}>
-          {selectedRoom 
-            ? `${selectedRoom.name} (${selectedRoom.code}) - ${selectedRoom.capacity} ${getText('seats', 'kursi')}`
-            : getText('Select room', 'Pilih ruangan')
-          }
-        </span>
-      </div>
-      <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${showRoomDropdown ? 'rotate-180' : ''}`} />
-    </button>
-    
-    {showRoomDropdown && (
-      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-hidden">
-        <div className="p-3 border-b border-gray-200">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder={getText('Search rooms...', 'Cari ruangan...')}
-              value={roomSearchTerm}
-              onChange={(e) => setRoomSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
-            />
-          </div>
-        </div>
-        <div className="max-h-40 overflow-y-auto">
-          {filteredRooms.length === 0 ? (
-            <div className="p-3 text-sm text-gray-500 text-center">
-              {getText('No rooms found', 'Tidak ada ruangan ditemukan')}
-            </div>
-          ) : (
-            filteredRooms.map((room) => (
-              <button
-                key={room.id}
-                type="button"
-                onClick={() => {
-                  form.setValue('room', room.id); // Simpan ID untuk sementara, nanti di-convert ke nama
-                  setShowRoomDropdown(false);
-                  setRoomSearchTerm('');
-                }}
-                className="w-full p-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0 transition-colors"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">{room.name}</div>
-                    <div className="text-xs text-gray-500">{room.code}</div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">{getText('Room', 'Ruangan')} *</label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowRoomDropdown(!showRoomDropdown)}
+                      className="w-full border-2 border-gray-200 rounded-lg p-3 text-left focus:border-teal-500 focus:ring-0 transition-colors flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-gray-400" />
+                        <span className={selectedRoom ? 'text-gray-900' : 'text-gray-500'}>
+                          {selectedRoom
+                            ? `${selectedRoom.name} (${selectedRoom.code}) - ${selectedRoom.capacity} ${getText('seats', 'kursi')}`
+                            : getText('Select room', 'Pilih ruangan')
+                          }
+                        </span>
+                      </div>
+                      <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${showRoomDropdown ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {showRoomDropdown && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-hidden">
+                        <div className="p-3 border-b border-gray-200">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                            <input
+                              type="text"
+                              placeholder={getText('Search rooms...', 'Cari ruangan...')}
+                              value={roomSearchTerm}
+                              onChange={(e) => setRoomSearchTerm(e.target.value)}
+                              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                            />
+                          </div>
+                        </div>
+                        <div className="max-h-40 overflow-y-auto">
+                          {filteredRooms.length === 0 ? (
+                            <div className="p-3 text-sm text-gray-500 text-center">
+                              {getText('No rooms found', 'Tidak ada ruangan ditemukan')}
+                            </div>
+                          ) : (
+                            filteredRooms.map((room) => (
+                              <button
+                                key={room.id}
+                                type="button"
+                                onClick={() => {
+                                  form.setValue('room', room.id); // Simpan ID untuk sementara, nanti di-convert ke nama
+                                  setShowRoomDropdown(false);
+                                  setRoomSearchTerm('');
+                                }}
+                                className="w-full p-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0 transition-colors"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <div className="text-sm font-medium text-gray-900">{room.name}</div>
+                                    <div className="text-xs text-gray-500">{room.code}</div>
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {room.capacity} {getText('seats', 'kursi')}
+                                  </div>
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <div className="text-xs text-gray-500">
-                    {room.capacity} {getText('seats', 'kursi')}
-                  </div>
+                  {form.formState.errors.room && (
+                    <p className="text-red-500 text-sm">{form.formState.errors.room.message}</p>
+                  )}
                 </div>
-              </button>
-            ))
-          )}
-        </div>
-      </div>
-    )}
-  </div>
-  {form.formState.errors.room && (
-    <p className="text-red-500 text-sm">{form.formState.errors.room.message}</p>
-  )}
-</div>
               </div>
 
               <div className="space-y-2">
@@ -1223,7 +1224,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                     <p className="text-red-500 text-sm">{form.formState.errors.day.message}</p>
                   )}
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">{getText('Start Time', 'Waktu Mulai')} *</label>
                   <input
@@ -1235,7 +1236,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                     <p className="text-red-500 text-sm">{form.formState.errors.start_time.message}</p>
                   )}
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">{getText('End Time', 'Waktu Selesai')} *</label>
                   <input
@@ -1264,7 +1265,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                     <p className="text-red-500 text-sm">{form.formState.errors.semester.message}</p>
                   )}
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">{getText('Academic Year', 'Tahun Akademik')} *</label>
                   <input
@@ -1277,7 +1278,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                     <p className="text-red-500 text-sm">{form.formState.errors.academics_year.message}</p>
                   )}
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">{getText('Class Type', 'Tipe Kelas')} *</label>
                   <select
@@ -1306,7 +1307,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                     <p className="text-red-500 text-sm">{form.formState.errors.class.message}</p>
                   )}
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">{getText('Amount', 'Jumlah')}</label>
                   <input
@@ -1320,7 +1321,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                     <p className="text-red-500 text-sm">{form.formState.errors.amount.message}</p>
                   )}
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">{getText('Curriculum', 'Kurikulum')}</label>
                   <input
@@ -1385,7 +1386,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                 </button>
               </div>
             </div>
-            
+
             <form onSubmit={rescheduleForm.handleSubmit(handleRescheduleSubmit)} className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
@@ -1400,7 +1401,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                     <p className="text-red-500 text-sm">{rescheduleForm.formState.errors.course_code.message}</p>
                   )}
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">{getText('Day', 'Hari')} *</label>
                   <select
@@ -1430,7 +1431,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                     <p className="text-red-500 text-sm">{rescheduleForm.formState.errors.start_time.message}</p>
                   )}
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">{getText('End Time', 'Waktu Selesai')} *</label>
                   <input
@@ -1457,7 +1458,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                     <p className="text-red-500 text-sm">{rescheduleForm.formState.errors.room.message}</p>
                   )}
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">{getText('Class/Rombel', 'Kelas/Rombel')} *</label>
                   <input
@@ -1535,7 +1536,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                 </div>
               </div>
             </div>
-            
+
             <div className="p-6 max-h-[80vh] overflow-y-auto">
               {/* Filter */}
               <div className="mb-6 flex items-center gap-4">
@@ -1578,11 +1579,10 @@ const handleSubmit = async (data: ScheduleForm) => {
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
                             <h4 className="text-lg font-semibold text-gray-900">{request.course_code}</h4>
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                              request.is_done === null ? 'bg-yellow-100 text-yellow-800' :
-                              request.is_done === true ? 'bg-green-100 text-green-800' :
-                              'bg-red-100 text-red-800'
-                            }`}>
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${request.is_done === null ? 'bg-yellow-100 text-yellow-800' :
+                                request.is_done === true ? 'bg-green-100 text-green-800' :
+                                  'bg-red-100 text-red-800'
+                              }`}>
                               {getText(
                                 request.is_done === null ? 'Pending' : request.is_done === true ? 'Completed' : 'Unchecked',
                                 request.is_done === null ? 'Menunggu' : request.is_done === true ? 'Selesai' : 'Belum Selesai'
@@ -1608,7 +1608,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                             </div>
                           </div>
                         </div>
-                        
+
                         <div className="flex items-center gap-3 ml-4">
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input
@@ -1623,7 +1623,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                           </label>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center justify-between text-xs text-gray-500 pt-4 border-t border-gray-200">
                         <div className="text-sm text-gray-600">
                           {getText('Course Code', 'Kode Mata Kuliah')}: <span className="font-medium">{request.course_code}</span>
@@ -1651,7 +1651,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                 <p className="text-sm text-gray-600 mt-1">{getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')}</p>
               </div>
             </div>
-            
+
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
               <p className="text-sm text-red-800">
                 {getText(
@@ -1660,7 +1660,7 @@ const handleSubmit = async (data: ScheduleForm) => {
                 )}
               </p>
             </div>
-            
+
             <div className="flex space-x-3">
               <button
                 onClick={() => setShowDeleteConfirm(null)}
@@ -1692,11 +1692,11 @@ const handleSubmit = async (data: ScheduleForm) => {
 
       {/* ExcelUploadModal - Super Admin Only */}
       {profile?.role === 'super_admin' && (
-        <ExcelUploadModal 
-          isOpen={showUploadModal} 
-          onClose={() => setShowUploadModal(false)} 
-          onSuccess={() => { 
-            fetchSchedules(); 
+        <ExcelUploadModal
+          isOpen={showUploadModal}
+          onClose={() => setShowUploadModal(false)}
+          onSuccess={() => {
+            fetchSchedules();
           }}
         />
       )}

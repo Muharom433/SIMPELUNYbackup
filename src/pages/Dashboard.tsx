@@ -50,6 +50,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useSystemBranding } from '../contexts/SystemSettingsContext';
 import peopleImage from '../assets/people.svg';
 import buildImage from '../assets/Build.png';
 import shapeImage from '../assets/Shape.png';
@@ -97,6 +98,9 @@ interface PublicReport {
   attachments: string[];
   created_at: string;
   updated_at: string;
+  room?: {
+    name: string;
+  };
 }
 
 interface ReportComment {
@@ -110,6 +114,7 @@ interface ReportComment {
 
 const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const { getText } = useLanguage();
+  const { dashboard_video_url } = useSystemBranding();
   const [stats, setStats] = useState<DashboardStats>({
     totalBookings: 1247,
     pendingBookings: 23,
@@ -175,9 +180,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   };
 
   const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-US', { 
-      hour12: false, 
-      hour: '2-digit', 
+    return date.toLocaleTimeString('en-US', {
+      hour12: false,
+      hour: '2-digit',
       minute: '2-digit',
       second: '2-digit'
     });
@@ -231,7 +236,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Overlay dengan Gradasi Gelap */}
       {showOverlay && (
-        <div 
+        <div
           className="fixed inset-0 z-50 cursor-pointer"
           onClick={handleOverlayClick}
           style={{
@@ -246,7 +251,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
               <div className="relative">
                 {/* Glow Effect */}
                 <div className="absolute -inset-4 bg-blue-400 rounded-full blur-xl opacity-30 animate-pulse"></div>
-                
+
                 {/* Panah dengan Animasi Bounce */}
                 <div className="relative bg-white/20 backdrop-blur-md rounded-full p-6 shadow-2xl border border-white/30">
                   <ChevronDown className="w-12 h-12 text-white animate-bounce" />
@@ -269,18 +274,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       )}
 
       {/* Hero Section */}
-      <div className="relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden" style={{background: 'linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)'}}>
+      <div className="relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden" style={{ background: 'linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)' }}>
         {/* Background Faded Abstract Shapes with Glassmorphism */}
         <div className="absolute inset-0">
           {/* Large abstract shape - top right */}
-          <div 
+          <div
             className="absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full opacity-60 backdrop-blur-xl filter blur-sm"
             style={{
               background: 'radial-gradient(circle at 30% 30%, #daa06d 0%, #e8d5c4 40%, transparent 70%)'
             }}
           ></div>
           {/* Medium oval shape - center right */}
-          <div 
+          <div
             className="absolute top-1/4 -right-20 w-[400px] h-[300px] rounded-full opacity-50 backdrop-blur-lg filter blur-md"
             style={{
               background: 'radial-gradient(ellipse at 20% 40%, #c4926b 0%, #f0e6d6 50%, transparent 80%)',
@@ -288,7 +293,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             }}
           ></div>
           {/* Abstract blob - bottom right */}
-          <div 
+          <div
             className="absolute bottom-0 right-0 w-[350px] h-[350px] opacity-55 backdrop-blur-lg filter blur-sm"
             style={{
               background: 'radial-gradient(circle at 40% 60%, #b8956f 0%, #e8d5c4 60%, transparent 85%)',
@@ -296,7 +301,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             }}
           ></div>
           {/* Flowing shape - top left */}
-          <div 
+          <div
             className="absolute -top-20 -left-32 w-[450px] h-[300px] opacity-45 backdrop-blur-xl filter blur-lg"
             style={{
               background: 'radial-gradient(ellipse at 70% 50%, #daa06d 0%, #f5f0ea 45%, transparent 75%)',
@@ -305,7 +310,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             }}
           ></div>
           {/* Curved shape - bottom left */}
-          <div 
+          <div
             className="absolute bottom-10 -left-24 w-[300px] h-[200px] opacity-40 backdrop-blur-md filter blur-md"
             style={{
               background: 'radial-gradient(ellipse at 60% 30%, #c4926b 0%, #f0e6d6 55%, transparent 80%)',
@@ -314,7 +319,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             }}
           ></div>
           {/* Extra flowing element - center */}
-          <div 
+          <div
             className="absolute top-1/2 left-1/4 w-[250px] h-[400px] opacity-30 backdrop-blur-lg filter blur-xl"
             style={{
               background: 'linear-gradient(135deg, #e8d5c4 0%, #f5f0ea 50%, transparent 100%)',
@@ -325,25 +330,25 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         </div>
         {/* Animated Background Elements */}
         <div className="absolute inset-0">
-          <div 
+          <div
             className="absolute top-20 left-10 w-72 h-72 rounded-full mix-blend-multiply filter blur-xl opacity-20"
-            style={{ 
+            style={{
               background: '#daa06d',
               transform: `translateY(${scrollY * 0.5}px)`,
               animation: 'blob 7s infinite'
             }}
           ></div>
-          <div 
+          <div
             className="absolute top-40 right-10 w-72 h-72 rounded-full mix-blend-multiply filter blur-xl opacity-20"
-            style={{ 
+            style={{
               background: '#c4926b',
               transform: `translateY(${scrollY * 0.3}px)`,
               animation: 'blob 7s infinite 2s'
             }}
           ></div>
-          <div 
+          <div
             className="absolute bottom-20 left-20 w-72 h-72 rounded-full mix-blend-multiply filter blur-xl opacity-20"
-            style={{ 
+            style={{
               background: '#b8956f',
               transform: `translateY(${scrollY * 0.4}px)`,
               animation: 'blob 7s infinite 4s'
@@ -355,28 +360,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           <div className="max-w-7xl mx-auto">
             <div className="grid lg:grid-cols-2 gap-8 items-center">
               {/* Left Content */}
-              <div className="space-y-6" style={{color: '#2c1810'}}>
+              <div className="space-y-6" style={{ color: '#2c1810' }}>
                 <div className="space-y-4">
                   <div className="inline-flex items-center px-4 py-2 bg-white bg-opacity-30 backdrop-blur-sm rounded-full text-sm font-medium">
-                    <Star className="w-4 h-4 mr-2" style={{color: '#8b4513'}} />
+                    <Star className="w-4 h-4 mr-2" style={{ color: '#8b4513' }} />
                     Best Faculty Management System
                   </div>
                   <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold leading-tight">
                     Faculty of
-                    <span className="block bg-clip-text text-transparent" style={{background: 'linear-gradient(to right, #8b4513, #654321)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'}}>
+                    <span className="block bg-clip-text text-transparent" style={{ background: 'linear-gradient(to right, #8b4513, #654321)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                       Vocational
                     </span>
                   </h1>
-                  <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold" style={{color: '#3c2415'}}>
+                  <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold" style={{ color: '#3c2415' }}>
                     Yogyakarta State University
                   </h2>
-                  <p className="text-sm sm:text-base lg:text-lg leading-relaxed max-w-lg" style={{color: '#4a2c1a'}}>
+                  <p className="text-sm sm:text-base lg:text-lg leading-relaxed max-w-lg" style={{ color: '#4a2c1a' }}>
                     SIMPEL kuliah or Sistem Pelayanan kuliah is an Innovation to improve our services.
                   </p>
                 </div>
 
                 {/* Contact Info */}
-                <div className="flex items-center space-x-6 text-sm" style={{color: '#654321'}}>
+                <div className="flex items-center space-x-6 text-sm" style={{ color: '#654321' }}>
                   <div className="flex items-center space-x-2">
                     <MapPin className="w-4 h-4" />
                     <span>Faculty of Vocational</span>
@@ -386,7 +391,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
               {/* Right Content - People Image with Text Bubbles */}
               <div className="relative">
-                <div 
+                <div
                   className="relative transform transition-transform duration-1000"
                   style={{ transform: `translateY(${scrollY * 0.1}px) rotateY(${scrollY * 0.02}deg)` }}
                 >
@@ -394,9 +399,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                   <div className="relative flex items-center justify-center min-h-[500px]">
                     {/* People Image */}
                     <div className="relative z-10">
-                      <img 
-                        src={peopleImage} 
-                        alt="Graduate Student" 
+                      <img
+                        src={peopleImage}
+                        alt="Graduate Student"
                         className="w-full h-auto max-w-xs lg:max-w-md object-contain"
                         onError={(e) => {
                           // Fallback if image doesn't load
@@ -404,52 +409,52 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                           e.currentTarget.nextElementSibling.style.display = 'flex';
                         }}
                       />
-                      <div className="w-full h-80 flex items-center justify-center" style={{display: 'none'}}>
+                      <div className="w-full h-80 flex items-center justify-center" style={{ display: 'none' }}>
                         <Users className="w-32 h-32 text-amber-400" />
                       </div>
                     </div>
-                    
+
                     {/* Building Text - Top Left Corner */}
-                    <div 
+                    <div
                       className="absolute top-16 -left-8 lg:top-20 lg:-left-12 z-20"
                       style={{ animation: 'float 6s ease-in-out infinite' }}
                     >
-                      <img 
-                        src={buildImage} 
-                        alt="Building Career" 
+                      <img
+                        src={buildImage}
+                        alt="Building Career"
                         className="w-80 h-auto lg:w-104 drop-shadow-lg"
                         onError={(e) => {
                           e.currentTarget.style.display = 'none';
                           e.currentTarget.nextElementSibling.style.display = 'block';
                         }}
                       />
-                      <div 
+                      <div
                         className="bg-white rounded-2xl p-3 shadow-xl border border-gray-100"
-                        style={{display: 'none'}}
+                        style={{ display: 'none' }}
                       >
                         <span className="text-base font-bold text-amber-700">
                           BUILDING CAREER
                         </span>
                       </div>
                     </div>
-                    
+
                     {/* Shaping Text - Bottom Right Corner */}
-                    <div 
+                    <div
                       className="absolute bottom-2 -right-12 lg:bottom-4 lg:-right-20 z-20"
                       style={{ animation: 'float 6s ease-in-out infinite 3s' }}
                     >
-                      <img 
-                        src={shapeImage} 
-                        alt="Shaping Future" 
+                      <img
+                        src={shapeImage}
+                        alt="Shaping Future"
                         className="w-80 h-auto lg:w-104 drop-shadow-lg"
                         onError={(e) => {
                           e.currentTarget.style.display = 'none';
                           e.currentTarget.nextElementSibling.style.display = 'block';
                         }}
                       />
-                      <div 
+                      <div
                         className="bg-white rounded-2xl p-3 shadow-xl border border-gray-100"
-                        style={{display: 'none'}}
+                        style={{ display: 'none' }}
                       >
                         <span className="text-base font-bold text-orange-700">
                           SHAPING FUTURE
@@ -475,12 +480,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                   <BookMarked className="w-4 h-4 mr-2" />
                   {getText('About Application', 'Tentang Aplikasi')}
                 </div>
-                
+
                 <h2 className="text-4xl lg:text-5xl font-bold text-gray-900 leading-tight">
                   {getText('SIMPEL Kuliah', 'SIMPEL Kuliah')}
                   <span className="block text-blue-600">{getText('Smart Campus Solution', 'Solusi Kampus Cerdas')}</span>
                 </h2>
-                
+
                 <div className="space-y-6 text-gray-600 leading-relaxed">
                   <div>
                     <p className="text-lg">
@@ -498,25 +503,34 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             <div className="relative">
               <div className="relative bg-gradient-to-br from-gray-100 to-gray-200 rounded-3xl p-8 shadow-2xl">
                 <div className="aspect-video rounded-2xl overflow-hidden shadow-xl">
-                  <iframe
-                    width="100%"
-                    height="100%"
-                    src="https://www.youtube.com/embed/SI0p9klzU8A?si=fy6mcyL2hwp6Hf8E"
-                    title="SIMPEL Kuliah Demo Video"
-                    frameBorder="0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    referrerPolicy="strict-origin-when-cross-origin"
-                    allowFullScreen
-                    className="rounded-2xl"
-                  ></iframe>
+                  {dashboard_video_url ? (
+                    <iframe
+                      width="100%"
+                      height="100%"
+                      src={dashboard_video_url}
+                      title="SIMPEL Kuliah Demo Video"
+                      frameBorder="0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      referrerPolicy="strict-origin-when-cross-origin"
+                      allowFullScreen
+                      className="rounded-2xl"
+                    ></iframe>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gray-800 text-white">
+                      <div className="text-center p-6">
+                        <Play className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                        <p className="text-sm text-gray-400">Video tutorial belum diset.</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                
+
                 <div className="mt-6 text-center">
                   <h4 className="text-lg font-semibold text-gray-900 mb-2">
                     {getText('SIMPEL Access Tutorial', 'Tutorial Akses SIMPEL')}
                   </h4>
                 </div>
-                
+
                 {/* Decorative elements */}
                 <div className="absolute -top-4 -right-4 w-20 h-20 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full opacity-20"></div>
                 <div className="absolute -bottom-6 -left-6 w-32 h-32 bg-gradient-to-br from-green-400 to-green-600 rounded-full opacity-10"></div>
@@ -582,11 +596,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 // ReportsSection Component untuk public reports display
 const ReportsSection = () => {
   const { getText } = useLanguage();
-  const [reports, setReports] = useState([]);
+  const [reports, setReports] = useState<PublicReport[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedReport, setSelectedReport] = useState(null);
+  const [selectedReport, setSelectedReport] = useState<PublicReport | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [comments, setComments] = useState([]);
+  const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState('');
   const [commenterInfo, setCommenterInfo] = useState({ name: '', email: '' });
   const [currentPage, setCurrentPage] = useState(1);
@@ -600,7 +614,12 @@ const ReportsSection = () => {
   const fetchReports = async () => {
     try {
       setLoading(true);
-      
+
+      // Calculate start of current month for filtering
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+
       // Real database query with pagination
       const { data, error, count } = await supabase
         .from('reports')
@@ -608,14 +627,18 @@ const ReportsSection = () => {
           *,
           room:rooms(name)
         `, { count: 'exact' })
+        // Exclude internal technician tasks (requires DB migration)
+        // .neq('source', 'technician')
+        // Show unresolved OR (resolved AND updated/resolved this month)
+        .or(`status.neq.resolved,and(status.eq.resolved,updated_at.gte.${startOfMonth.toISOString()})`)
         .order('created_at', { ascending: false })
         .range((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage - 1);
 
       if (error) throw error;
-      
+
       setReports(data || []);
       setTotalPages(Math.ceil((count || 0) / itemsPerPage));
-      
+
     } catch (error) {
       console.error('Error fetching reports:', error);
     } finally {
@@ -640,7 +663,7 @@ const ReportsSection = () => {
 
   const addComment = async () => {
     if (!newComment.trim() || !commenterInfo.name.trim()) return;
-    
+
     try {
       const { error } = await supabase
         .from('report_comments')
@@ -652,7 +675,7 @@ const ReportsSection = () => {
         });
 
       if (error) throw error;
-      
+
       setNewComment('');
       setCommenterInfo({ name: '', email: '' });
       fetchComments(selectedReport.id);
@@ -713,7 +736,7 @@ const ReportsSection = () => {
             <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
             {getText('Community Reports', 'Laporan Komunitas')}
           </div>
-          
+
           <h2 className="text-2xl sm:text-3xl lg:text-4xl xl:text-5xl font-bold text-gray-900 mb-4 sm:mb-6 px-4">
             {getText('Recent Issues & Updates', 'Masalah & Pembaruan Terkini')}
           </h2>
@@ -726,7 +749,7 @@ const ReportsSection = () => {
               {reports.map((report, index) => {
                 const CategoryIcon = getCategoryIcon(report.category);
                 return (
-                  <div 
+                  <div
                     key={report.id}
                     className="group p-4 sm:p-6 rounded-xl sm:rounded-2xl hover:bg-orange-50/50 transition-all duration-300 border border-transparent hover:border-orange-200/50"
                   >
@@ -820,7 +843,7 @@ const ReportsSection = () => {
                         <span className={`text-sm font-medium ${getStatusColor(report.status)} capitalize`}>
                           {report.status.replace('_', ' ')}
                         </span>
-                        
+
                         <button
                           onClick={() => {
                             setSelectedReport(report);
@@ -851,7 +874,7 @@ const ReportsSection = () => {
               >
                 <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" />
               </button>
-              
+
               {/* Show fewer page numbers on mobile */}
               {totalPages <= 5 ? (
                 // Show all pages if 5 or fewer
@@ -859,11 +882,10 @@ const ReportsSection = () => {
                   <button
                     key={i + 1}
                     onClick={() => setCurrentPage(i + 1)}
-                    className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 ${
-                      currentPage === i + 1
-                        ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg'
-                        : 'text-gray-600 hover:bg-orange-100'
-                    }`}
+                    className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 ${currentPage === i + 1
+                      ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg'
+                      : 'text-gray-600 hover:bg-orange-100'
+                      }`}
                   >
                     {i + 1}
                   </button>
@@ -882,7 +904,7 @@ const ReportsSection = () => {
                       {currentPage > 3 && <span className="text-gray-400 px-1">...</span>}
                     </>
                   )}
-                  
+
                   {[...Array(3)].map((_, i) => {
                     const pageNum = currentPage - 1 + i;
                     if (pageNum < 1 || pageNum > totalPages) return null;
@@ -890,17 +912,16 @@ const ReportsSection = () => {
                       <button
                         key={pageNum}
                         onClick={() => setCurrentPage(pageNum)}
-                        className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 ${
-                          currentPage === pageNum
-                            ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg'
-                            : 'text-gray-600 hover:bg-orange-100'
-                        }`}
+                        className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 ${currentPage === pageNum
+                          ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg'
+                          : 'text-gray-600 hover:bg-orange-100'
+                          }`}
                       >
                         {pageNum}
                       </button>
                     );
                   })}
-                  
+
                   {currentPage < totalPages - 1 && (
                     <>
                       {currentPage < totalPages - 2 && <span className="text-gray-400 px-1">...</span>}
@@ -914,7 +935,7 @@ const ReportsSection = () => {
                   )}
                 </>
               )}
-              
+
               <button
                 onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                 disabled={currentPage === totalPages}
@@ -946,7 +967,7 @@ const ReportsSection = () => {
               <div className="bg-gradient-to-br from-orange-50 to-red-50 rounded-xl sm:rounded-2xl p-4 sm:p-6 mb-6 sm:mb-8">
                 <h4 className="text-lg sm:text-xl font-semibold text-gray-900 mb-3 sm:mb-4">{selectedReport.title}</h4>
                 <p className="text-sm sm:text-base text-gray-700 mb-4">{selectedReport.description}</p>
-                
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs sm:text-sm">
                   <div><span className="font-medium">Category:</span> {selectedReport.category}</div>
                   <div><span className="font-medium">Priority:</span> {selectedReport.priority}</div>
@@ -958,7 +979,7 @@ const ReportsSection = () => {
               {/* Comments Section */}
               <div className="space-y-4 sm:space-y-6">
                 <h5 className="text-base sm:text-lg font-semibold text-gray-900">Comments</h5>
-                
+
                 {comments.length === 0 ? (
                   <div className="text-center py-6 sm:py-8 text-gray-500">
                     <MessageSquare className="h-8 w-8 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 opacity-50" />
@@ -983,7 +1004,7 @@ const ReportsSection = () => {
                 {/* Add Comment Form - Mobile Optimized */}
                 <div className="bg-gray-50 rounded-xl sm:rounded-2xl p-4 sm:p-6">
                   <h6 className="font-medium text-gray-900 mb-3 sm:mb-4 text-sm sm:text-base">Add Your Comment</h6>
-                  
+
                   <div className="space-y-3 sm:space-y-0 sm:grid sm:grid-cols-2 sm:gap-4 mb-4">
                     <input
                       type="text"
@@ -1000,7 +1021,7 @@ const ReportsSection = () => {
                       className="w-full px-3 sm:px-4 py-2 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
                     />
                   </div>
-                  
+
                   <textarea
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
@@ -1008,7 +1029,7 @@ const ReportsSection = () => {
                     rows={3}
                     className="w-full px-3 sm:px-4 py-2 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 mb-4 resize-none"
                   />
-                  
+
                   <button
                     onClick={addComment}
                     disabled={!newComment.trim() || !commenterInfo.name.trim()}

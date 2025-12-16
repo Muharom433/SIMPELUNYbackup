@@ -1,23 +1,265 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-    Wrench, Plus, Search, Edit, Trash2, Eye, Package, AlertCircle, RefreshCw, X, 
+    Wrench, Plus, Search, Edit, Trash2, Eye, Package, AlertCircle, RefreshCw, X,
     Camera, Cpu, Wifi, Zap, FlaskConical, Armchair, Shield,
     MapPin, Hash, Layers, CheckCircle, XCircle, Star, AlertTriangle, Building,
     User, Phone, CreditCard, Clock, Calendar, Users, Activity, TrendingUp,
-    ChevronDown, ChevronUp
+    ChevronDown, ChevronUp, Warehouse, ArrowRight, History, BoxIcon,
+    PackagePlus, PackageMinus, ArchiveRestore, ClipboardList, Filter,
+    Download, Upload, BarChart3, Home, Store, Grid, List, Check, ChevronRight, Image,
+    ChevronLeft, UploadCloud, DownloadCloud, Tag, BarChart, Bell,
+    FileText, Database, ShieldAlert, Battery, HardDrive, Monitor,
+    Smartphone, Headphones, Printer, Router, Server, Keyboard, Mouse,
+    ExternalLink, Info, AlertOctagon, CalendarDays, UserCheck,
+    UserX, RotateCcw, QrCode, BatteryCharging, Power, Globe,
+    BookOpen, FileCheck, ShieldCheck, Map, Navigation, Target,
+    DatabaseBackup, ShieldOff, BatteryFull, BatteryLow, FolderOpen,
+    Package2, Boxes, Archive, Folder, Files, LayoutGrid, Table, Maximize2
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { Equipment, Room, Department, User as UserType } from '../types';
+import { Equipment, Room, Department, User as UserType, Tabel, Rack, Box } from '../types';
 import toast from 'react-hot-toast';
-import { format } from 'date-fns';
+import { format, differenceInDays, parseISO } from 'date-fns';
 import { useLanguage } from '../contexts/LanguageContext';
 
-// Dynamic schema validation based on user role
-const createEquipmentSchema = (userRole: string) => {
+// ==================== TYPES ====================
+interface Stock {
+    id: string;
+    nama: string;
+    code: string;
+    category: string;
+    spesification?: string;
+    quantity: number;
+    unit: string;
+    attachments?: string; // Base64 photo string
+    created_at?: string;
+    updated_at?: string;
+}
+
+interface EquipmentWithDetails extends Equipment {
+    rooms?: Room & { department: Department };
+    stock?: Stock;
+}
+
+interface LendingDetail {
+    id: string;
+    date: string;
+    borrowed_quantity: number;
+    returned_quantity: number;
+    missing_quantity: number;
+    status: 'active' | 'returned' | 'overdue' | 'approved' | 'borrow' | 'pending' | 'cancelled';
+    created_at: string;
+    user?: UserType;
+    checkout?: {
+        id: string;
+        checkout_date: string;
+        expected_return_date: string;
+        actual_return_date?: string;
+        status: string;
+    };
+    source?: 'lending_tool' | 'booking';
+    user_name?: string;
+    user_email?: string;
+    user_identity?: string;
+}
+
+interface StockTrackRecord {
+    equipment_id: string;
+    equipment_name: string;
+    equipment_code: string;
+    room_name?: string;
+    room_code?: string;
+    department_name?: string;
+    quantity_claimed: number;
+    claimed_at: string;
+    condition: string;
+}
+
+// ==================== REUSABLE COMPONENTS ====================
+interface DropdownSearchProps {
+    items: Array<{ id: string; name?: string; nama?: string; code?: string;[key: string]: any }>;
+    selectedItem: { id: string; name?: string; nama?: string;[key: string]: any } | null;
+    onSelect: (item: any) => void;
+    placeholder: string;
+    searchPlaceholder?: string;
+    disabled?: boolean;
+    className?: string;
+    renderItem?: (item: any) => React.ReactNode;
+    showCode?: boolean;
+}
+
+const DropdownSearch: React.FC<DropdownSearchProps> = ({
+    items,
+    selectedItem,
+    onSelect,
+    placeholder,
+    searchPlaceholder = 'Search...',
+    disabled = false,
+    className = '',
+    renderItem,
+    showCode = false
+}) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+    const filteredItems = items.filter(item => {
+        const itemName = item?.name || item?.nama || item?.description || '';
+        const itemCode = item?.code || '';
+        const search = searchTerm.toLowerCase();
+
+        return itemName.toLowerCase().includes(search) ||
+            itemCode.toLowerCase().includes(search);
+    });
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const defaultRenderItem = (item: any) => {
+        const displayName = item?.name || item?.nama || 'Unknown';
+        const displayCode = item?.code || '';
+
+        return (
+            <div className="flex items-center justify-between p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-all">
+                <div className="flex-1">
+                    <div className="font-medium text-gray-900">{displayName}</div>
+                    {showCode && displayCode && (
+                        <div className="text-xs text-gray-500 font-mono mt-1">{displayCode}</div>
+                    )}
+                </div>
+                {selectedItem?.id === item.id && (
+                    <Check className="h-5 w-5 text-blue-600" />
+                )}
+            </div>
+        );
+    };
+
+    const selectedDisplayName = selectedItem?.name || selectedItem?.nama || selectedItem?.description || '';
+    const selectedDisplayCode = selectedItem?.code || '';
+
+    return (
+        <div className={`relative ${className}`} ref={dropdownRef}>
+            <button
+                type="button"
+                onClick={() => !disabled && setIsOpen(!isOpen)}
+                disabled={disabled}
+                className={`w-full px-4 py-3 text-left bg-white border-2 rounded-xl shadow-sm flex items-center justify-between transition-all ${disabled
+                    ? 'bg-gray-100 text-gray-400 border-gray-200'
+                    : 'border-gray-300 hover:border-blue-500 focus:border-blue-500'
+                    }`}
+            >
+                <div className="flex items-center space-x-3">
+                    {selectedItem ? (
+                        <>
+                            <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                                <Tag className="h-4 w-4 text-blue-600" />
+                            </div>
+                            <div>
+                                <div className="font-medium text-gray-900">{selectedDisplayName}</div>
+                                {showCode && selectedDisplayCode && (
+                                    <div className="text-xs text-gray-500 font-mono">{selectedDisplayCode}</div>
+                                )}
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
+                                <Search className="h-4 w-4 text-gray-400" />
+                            </div>
+                            <span className="text-gray-500">{placeholder}</span>
+                        </>
+                    )}
+                </div>
+                <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isOpen && (
+                <div className="absolute z-50 mt-2 w-full bg-white border-2 border-gray-200 rounded-xl shadow-xl max-h-[500px] overflow-auto">
+                    <div className="p-3 border-b border-gray-100">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                            <input
+                                type="text"
+                                placeholder={searchPlaceholder}
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500"
+                                autoFocus
+                            />
+                        </div>
+                    </div>
+
+                    <div className="py-2">
+                        {filteredItems.length === 0 ? (
+                            <div className="p-4 text-center text-gray-500">
+                                <AlertCircle className="h-6 w-6 text-gray-400 mx-auto mb-2" />
+                                <p className="text-sm">No items found</p>
+                            </div>
+                        ) : (
+                            filteredItems.map((item) => (
+                                <div
+                                    key={item.id}
+                                    onClick={() => {
+                                        onSelect(item);
+                                        setIsOpen(false);
+                                        setSearchTerm('');
+                                    }}
+                                >
+                                    {renderItem ? renderItem(item) : defaultRenderItem(item)}
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ==================== SCHEMAS ====================
+const stockSchema = z.object({
+    nama: z.string().min(2, 'Stock name must be at least 2 characters'),
+    code: z.string().min(2, 'Stock code must be at least 2 characters'),
+    category: z.string().min(1, 'Please select a category'),
+    spesification: z.string().optional(),
+    quantity: z.number().min(0, 'Quantity cannot be negative'),
+    unit: z.string().min(1, 'Unit is required (e.g., pcs, set)'),
+});
+
+type StockForm = z.infer<typeof stockSchema>;
+
+const createEquipmentClaimSchema = (maxQuantity: number, userRole: string) => {
+    const baseSchema = {
+        stock_id: z.string().min(1, 'Please select a stock item'),
+        name: z.string().min(2, 'Equipment name must be at least 2 characters'),
+        code: z.string().min(2, 'Equipment code must be at least 2 characters'),
+        quantity: z.number().min(1, 'Minimum quantity is 1').max(maxQuantity, `Maximum available: ${maxQuantity}`),
+        is_mandatory: z.boolean().optional(),
+        is_available: z.boolean().optional(),
+        condition: z.enum(['GOOD', 'BROKEN', 'MAINTENANCE']).default('GOOD'),
+        Spesification: z.string().optional(),
+        table_id: z.string().optional(),
+        rack_id: z.string().optional(),
+        box_id: z.string().optional(),
+        rooms_id: z.string().min(1, 'Please select a room location'),
+    };
+
+    return z.object(baseSchema);
+};
+
+const createEquipmentEditSchema = (userRole: string) => {
     const baseSchema = {
         name: z.string().min(2, 'Equipment name must be at least 2 characters'),
         code: z.string().min(2, 'Equipment code must be at least 2 characters'),
@@ -27,775 +269,1033 @@ const createEquipmentSchema = (userRole: string) => {
         condition: z.enum(['GOOD', 'BROKEN', 'MAINTENANCE']).default('GOOD'),
         Spesification: z.string().optional(),
         quantity: z.number().min(0, 'Quantity cannot be negative'),
-        unit: z.string().min(1, 'Unit is required (e.g., pcs, set)'),
+        unit: z.string().min(1, 'Unit is required'),
+        table_id: z.string().optional(),
+        rack_id: z.string().optional(),
+        box_id: z.string().optional(),
+        rooms_id: z.string().min(1, 'Please select a room location'),
     };
 
-    // For department admin, room is mandatory
-    if (userRole === 'department_admin') {
-        return z.object({
-            ...baseSchema,
-            rooms_id: z.string().min(1, 'Please select a room location'),
-        });
-    }
-    
-    // For super admin, room is optional
-    return z.object({
-        ...baseSchema,
-        rooms_id: z.string().optional(),
-    });
+    return z.object(baseSchema);
 };
 
-type EquipmentForm = z.infer<ReturnType<typeof createEquipmentSchema>>;
+type EquipmentClaimForm = z.infer<ReturnType<typeof createEquipmentClaimSchema>>;
+type EquipmentEditForm = z.infer<ReturnType<typeof createEquipmentEditSchema>>;
 
-interface EquipmentWithDetails extends Equipment {
-  rooms?: Room & { department: Department };
-}
-
-interface LendingDetail {
-  id: string;
-  date: string;
-  borrowed_quantity: number;
-  returned_quantity: number;
-  missing_quantity: number;
-  status: 'active' | 'returned' | 'overdue' | 'approved' | 'borrow';
-  created_at: string;
-  user?: UserType;
-  checkout?: {
-    id: string;
-    checkout_date: string;
-    expected_return_date: string;
-    status: string;
-  };
-  source?: 'lending_tool' | 'booking';
-}
-
+// ==================== MAIN COMPONENT ====================
 const ToolAdministration: React.FC = () => {
     const { profile } = useAuth();
     const { getText } = useLanguage();
-    
-    // Create schema based on user role
-    const equipmentSchema = useMemo(() => {
-        return createEquipmentSchema(profile?.role || 'student');
-    }, [profile?.role]);
 
+    // Tab state
+    // Laboratory should default to equipment tab (no access to stock)
+    const [activeTab, setActiveTab] = useState<'stock' | 'equipment'>(
+        profile?.role === 'laboratory' ? 'equipment' : 'stock'
+    );
+
+    // Stock states
+    const [stocks, setStocks] = useState<Stock[]>([]);
+    const [loadingStocks, setLoadingStocks] = useState(true);
+    const [stockSearchTerm, setStockSearchTerm] = useState('');
+    const [stockCategoryFilter, setStockCategoryFilter] = useState<string>('all');
+
+    // Equipment states
     const [equipment, setEquipment] = useState<EquipmentWithDetails[]>([]);
     const [rooms, setRooms] = useState<Room[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [categoryFilter, setCategoryFilter] = useState<string>('all');
+    const [tables, setTables] = useState<Tabel[]>([]);
+    const [racks, setRacks] = useState<Rack[]>([]);
+    const [boxes, setBoxes] = useState<Box[]>([]);
+    const [loadingEquipment, setLoadingEquipment] = useState(true);
+    const [equipmentSearchTerm, setEquipmentSearchTerm] = useState('');
+    const [equipmentCategoryFilter, setEquipmentCategoryFilter] = useState<string>('all');
     const [roomFilter, setRoomFilter] = useState<string>('all');
-    const [showModal, setShowModal] = useState(false);
-    const [editingEquipment, setEditingEquipment] = useState<EquipmentWithDetails | null>(null);
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+
+    // Modal states
+    const [showStockModal, setShowStockModal] = useState(false);
+    const [showStockDetailModal, setShowStockDetailModal] = useState(false);
+    const [showStockTrackModal, setShowStockTrackModal] = useState(false);
+    const [showClaimModal, setShowClaimModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [showDetailModal, setShowDetailModal] = useState(false);
+    const [showTrackRecordModal, setShowTrackRecordModal] = useState(false);
+    const [showDirectAddModal, setShowDirectAddModal] = useState(false);
+
+    // Selected items
+    const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
     const [selectedEquipment, setSelectedEquipment] = useState<EquipmentWithDetails | null>(null);
+    const [editingStock, setEditingStock] = useState<Stock | null>(null);
+    const [editingEquipment, setEditingEquipment] = useState<EquipmentWithDetails | null>(null);
+
+    // Track record states
     const [lendingDetails, setLendingDetails] = useState<LendingDetail[]>([]);
-    const [loadingLending, setLoadingLending] = useState(false);
+    const [loadingTrack, setLoadingTrack] = useState(false);
 
-    // Room search dropdown states
-    const [roomSearchTerm, setRoomSearchTerm] = useState('');
-    const [showRoomDropdown, setShowRoomDropdown] = useState(false);
-    const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+    // Stock track record states
+    const [stockTrackRecords, setStockTrackRecords] = useState<StockTrackRecord[]>([]);
+    const [loadingStockTrack, setLoadingStockTrack] = useState(false);
 
-    const form = useForm<EquipmentForm>({
-        resolver: zodResolver(equipmentSchema),
-        defaultValues: { is_mandatory: false, is_available: true, condition: 'GOOD', quantity: 1 },
+    // Stock image states
+    const [stockImagePreview, setStockImagePreview] = useState<string>('');
+    const [showStockImageFullscreen, setShowStockImageFullscreen] = useState(false);
+
+    // Equipment image states
+    const [equipmentImagePreview, setEquipmentImagePreview] = useState<string>('');
+    const [showEquipmentImageFullscreen, setShowEquipmentImageFullscreen] = useState(false);
+
+    // Claim form states
+    const [selectedStockForClaim, setSelectedStockForClaim] = useState<Stock | null>(null);
+    const [selectedRoomForClaim, setSelectedRoomForClaim] = useState<Room | null>(null);
+    const [selectedTableForClaim, setSelectedTableForClaim] = useState<Tabel | null>(null);
+    const [selectedRackForClaim, setSelectedRackForClaim] = useState<Rack | null>(null);
+    const [selectedBoxForClaim, setSelectedBoxForClaim] = useState<Box | null>(null);
+
+    const [selectedRoomForEdit, setSelectedRoomForEdit] = useState<Room | null>(null);
+    const [selectedTableForEdit, setSelectedTableForEdit] = useState<Tabel | null>(null);
+    const [selectedRackForEdit, setSelectedRackForEdit] = useState<Rack | null>(null);
+    const [selectedBoxForEdit, setSelectedBoxForEdit] = useState<Box | null>(null);
+
+    // Forms
+    const stockForm = useForm<StockForm>({
+        resolver: zodResolver(stockSchema),
+        defaultValues: { quantity: 1 },
+    });
+
+    const maxClaimQuantity = selectedStockForClaim?.quantity || 1;
+    const equipmentClaimSchema = useMemo(() => {
+        return createEquipmentClaimSchema(maxClaimQuantity, profile?.role || 'student');
+    }, [maxClaimQuantity, profile?.role]);
+
+    const equipmentEditSchema = useMemo(() => {
+        return createEquipmentEditSchema(profile?.role || 'student');
+    }, [profile?.role]);
+
+    const claimForm = useForm<EquipmentClaimForm>({
+        resolver: zodResolver(equipmentClaimSchema),
+        defaultValues: {
+            is_mandatory: false,
+            is_available: true,
+            condition: 'GOOD',
+            quantity: 1,
+        },
+    });
+
+    const editForm = useForm<EquipmentEditForm>({
+        resolver: zodResolver(equipmentEditSchema),
+        defaultValues: {
+            is_mandatory: false,
+            is_available: true,
+            condition: 'GOOD',
+            quantity: 1,
+        },
     });
 
     const categories = [
-        { name: 'Audio Visual', icon: Camera, color: 'from-violet-400 to-purple-400', bgColor: 'bg-violet-50', textColor: 'text-violet-600' },
-        { name: 'Computing', icon: Cpu, color: 'from-blue-400 to-indigo-400', bgColor: 'bg-blue-50', textColor: 'text-blue-600' },
-        { name: 'Connectivity', icon: Wifi, color: 'from-emerald-400 to-green-400', bgColor: 'bg-emerald-50', textColor: 'text-emerald-600' },
-        { name: 'Power', icon: Zap, color: 'from-amber-400 to-yellow-400', bgColor: 'bg-amber-50', textColor: 'text-amber-600' },
-        { name: 'Laboratory', icon: FlaskConical, color: 'from-rose-400 to-pink-400', bgColor: 'bg-rose-50', textColor: 'text-rose-600' },
-        { name: 'Furniture', icon: Armchair, color: 'from-slate-400 to-gray-400', bgColor: 'bg-slate-50', textColor: 'text-slate-600' },
-        { name: 'Safety', icon: Shield, color: 'from-orange-400 to-red-400', bgColor: 'bg-orange-50', textColor: 'text-orange-600' }
+        { name: 'Audio Visual', icon: Camera, color: 'violet' },
+        { name: 'Computing', icon: Cpu, color: 'blue' },
+        { name: 'Connectivity', icon: Wifi, color: 'emerald' },
+        { name: 'Power', icon: Zap, color: 'amber' },
+        { name: 'Laboratory', icon: FlaskConical, color: 'rose' },
+        { name: 'Furniture', icon: Armchair, color: 'slate' },
+        { name: 'Safety', icon: Shield, color: 'orange' },
+        { name: 'Cabinet', icon: Archive, color: 'indigo' },
+        { name: 'Box', icon: Package, color: 'teal' },
     ];
 
-    // Debug logging for department admin
+    // ==================== ROLE-BASED ACCESS ====================
+    const isSuperAdmin = profile?.role === 'super_admin';
+    const isDepartmentAdmin = profile?.role === 'department_admin';
+    const isLaboratory = profile?.role === 'laboratory';
+    const isPurchasing = profile?.role === 'purchasing';
+    const hasAccess = isSuperAdmin || isDepartmentAdmin || isLaboratory || isPurchasing;
+
+    // ==================== INITIAL DATA LOADING ====================
     useEffect(() => {
-        if (profile?.role === 'department_admin') {
-            console.log('🔍 Department Admin Profile:', {
-                role: profile.role,
-                department_id: profile.department_id,
-                full_name: profile.full_name,
-                email: profile.email
-            });
-        }
-    }, [profile]);
+        if (!hasAccess) return;
 
-    useEffect(() => {
-        if (profile) {
-            fetchRooms();
-            fetchEquipment();
-        }
-    }, [profile]);
+        const loadInitialData = async () => {
+            try {
+                setLoadingStocks(true);
+                setLoadingEquipment(true);
 
-    const fetchRooms = async () => {
-        try {
-            console.log('🏢 Fetching rooms for profile:', profile?.role, profile?.department_id);
-            
-            if (profile?.role === 'department_admin' && profile.department_id) {
-                // For department admin, only get rooms in their department
-                const { data, error } = await supabase
-                    .from('rooms')
-                    .select('*, department:departments(*)')
-                    .eq('department_id', profile.department_id)
-                    .order('name');
-                
-                if (error) throw error;
-                console.log('🏢 Department admin rooms:', data?.length, 'rooms found');
-                console.log('🏢 Rooms data:', data);
-                setRooms(data || []);
-                
-                if (!data || data.length === 0) {
-                    toast.error(getText(
-                        'No rooms found in your department. Please contact administrator.',
-                        'Tidak ada ruangan ditemukan di departemen Anda. Silakan hubungi administrator.'
-                    ));
+                // Load stocks
+                const { data: stocksData, error: stocksError } = await supabase
+                    .from('stock')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (stocksError) throw stocksError;
+                setStocks(stocksData || []);
+
+                // Load rooms based on role
+                // Super admin and purchasing see ALL rooms
+                // Laboratory: department MUST match AND (study_program NULL OR same)
+                // Department admin filters by department_id
+                let roomsQuery = supabase.from('rooms').select('id, name, code, department_id, study_program_id, department:departments(id, name, code)');
+
+                if (isDepartmentAdmin && profile?.department_id) {
+                    // Department admin filters by department_id
+                    roomsQuery = roomsQuery.eq('department_id', profile.department_id);
                 }
-            } else if (profile?.role === 'super_admin') {
-                // For super admin, get all rooms
-                const { data, error } = await supabase
-                    .from('rooms')
-                    .select('*, department:departments(*)')
-                    .order('name');
-                
-                if (error) throw error;
-                console.log('🏢 Super admin rooms:', data?.length, 'rooms found');
-                setRooms(data || []);
-            } else {
-                // For other roles, no rooms
-                console.log('🏢 No rooms for role:', profile?.role);
-                setRooms([]);
-            }
-        } catch (error) {
-            console.error('❌ Error fetching rooms:', error);
-            toast.error(getText('Failed to load rooms', 'Gagal memuat ruangan'));
-            setRooms([]);
-        }
-    };
+                // For laboratory, we fetch all by department first then filter in client
+                // Super admin and purchasing: no filter, see all rooms
 
-    const fetchEquipment = async () => {
-        try {
-            setLoading(true);
-            console.log('🔧 Fetching equipment for profile:', profile?.role, profile?.department_id);
-            
-            if (profile?.role === 'department_admin' && profile.department_id) {
-                // Step 1: Get all room IDs in the department
-                const { data: departmentRooms, error: roomError } = await supabase
-                    .from('rooms')
-                    .select('id, name, code')
-                    .eq('department_id', profile.department_id);
-                
-                if (roomError) throw roomError;
-                
-                console.log('🔧 Department rooms for equipment:', departmentRooms?.length, 'rooms');
-                console.log('🔧 Room IDs:', departmentRooms?.map(r => r.id));
-                
-                if (departmentRooms && departmentRooms.length > 0) {
-                    const roomIds = departmentRooms.map(room => room.id);
-                    
-                    // Step 2: Get equipment only from those rooms
-                    const { data, error } = await supabase
-                        .from('equipment')
-                        .select(`
-                            *,
-                            rooms (
-                                id,
-                                name,
-                                code,
-                                department_id,
-                                department:departments(
-                                    id,
-                                    name,
-                                    code
-                                )
-                            )
-                        `)
-                        .in('rooms_id', roomIds)
-                        .not('rooms_id', 'is', null)
-                        .order('created_at', { ascending: false });
-                    
-                    if (error) throw error;
-                    console.log('🔧 Department admin equipment:', data?.length, 'items found');
-                    console.log('🔧 Equipment data:', data);
-                    setEquipment(data || []);
-                    
-                    if (!data || data.length === 0) {
-                        toast.info(getText(
-                            'No equipment found in your department rooms. Add some equipment to get started.',
-                            'Tidak ada peralatan ditemukan di ruangan departemen Anda. Tambahkan peralatan untuk memulai.'
-                        ));
-                    }
-                } else {
-                    // No rooms in department, no equipment
-                    console.log('🔧 No rooms in department, no equipment shown');
-                    setEquipment([]);
-                    toast.warning(getText(
-                        'No rooms assigned to your department. Please contact administrator.',
-                        'Tidak ada ruangan yang ditugaskan ke departemen Anda. Silakan hubungi administrator.'
-                    ));
+                const { data: roomsData, error: roomsError } = await roomsQuery.order('name');
+
+                if (roomsError) throw roomsError;
+
+                // Apply laboratory filter in client side (complex logic)
+                let filteredRooms = roomsData || [];
+                if (isLaboratory && profile?.department_id) {
+                    const laborDeptId = profile.department_id;
+                    const laborStudyProgramId = profile.study_program_id;
+
+                    filteredRooms = filteredRooms.filter((room: any) => {
+                        // Department must match
+                        if (room.department_id !== laborDeptId) return false;
+
+                        // Study program check: null OR same as laboran
+                        if (room.study_program_id === null || room.study_program_id === laborStudyProgramId) {
+                            return true;
+                        }
+
+                        // Study program is different from laboran → don't show
+                        return false;
+                    });
+
+                    console.log(`🔬 Laboran rooms filter: ${filteredRooms.length} rooms from ${roomsData?.length || 0}`);
                 }
-            } else if (profile?.role === 'super_admin') {
-                // For super admin, get all equipment
-                const { data, error } = await supabase
+
+                setRooms(filteredRooms as any);
+
+                // Load tables (cabinets) - OPTIMIZED
+                const { data: tablesData, error: tablesError } = await supabase.from('table').select('id, room_id, description, rack');
+                if (tablesError) throw tablesError;
+                setTables(tablesData || []);
+
+                // Load racks - OPTIMIZED
+                const { data: racksData, error: racksError } = await supabase.from('rack').select('id, name, table_id').order('name');
+                if (racksError) throw racksError;
+                setRacks(racksData || []);
+
+                // Load boxes - OPTIMIZED
+                const { data: boxesData, error: boxesError } = await supabase.from('box').select('id, name, description, rack_id').order('name');
+                if (boxesError) throw boxesError;
+                setBoxes(boxesData || []);
+
+                // Load equipment based on role
+                // Super admin and purchasing see ALL equipment
+                // Laboratory filters by accessible rooms (based on filter above)
+                // Department admin filters by department_id (through rooms)
+                let equipmentQuery = supabase
                     .from('equipment')
                     .select(`
                         *,
-                        rooms (
-                            id,
-                            name,
-                            code,
-                            department_id,
-                            department:departments(
-                                id,
-                                name,
-                                code
-                            )
-                        )
+                        rooms:rooms_id(
+                            id, name, code, department_id, study_program_id, floor,
+                            department:departments(id, name, code),
+                            building:building_id(name, campus:campus_id(name))
+                        ),
+                        stock:stock_id(id, nama, code, category, quantity, unit)
                     `)
                     .order('created_at', { ascending: false });
 
-                if (error) throw error;
-                console.log('🔧 Super admin equipment:', data?.length, 'items found');
-                setEquipment(data || []);
-            } else {
-                // For other roles, no equipment
-                console.log('🔧 No equipment for role:', profile?.role);
-                setEquipment([]);
+                // Get room IDs from filtered rooms for laboran and department_admin
+                const accessibleRoomIds = filteredRooms.map(room => room.id);
+
+                // Filter equipment based on accessible room IDs (only for laboratory and department_admin)
+                if (isLaboratory && profile?.department_id) {
+                    if (accessibleRoomIds.length > 0) {
+                        equipmentQuery = equipmentQuery.in('rooms_id', accessibleRoomIds);
+                    } else {
+                        // If no rooms found for lab, show empty
+                        equipmentQuery = equipmentQuery.in('rooms_id', ['nomatch']);
+                    }
+                } else if (isDepartmentAdmin && profile?.department_id) {
+                    const departmentRoomIds = (roomsData || [])
+                        .filter((r: any) => r.department_id === profile.department_id)
+                        .map(room => room.id);
+                    if (departmentRoomIds.length > 0) {
+                        equipmentQuery = equipmentQuery.in('rooms_id', departmentRoomIds);
+                    }
+                }
+                // Super admin and purchasing: no filter, see all equipment
+
+                const { data: equipmentData, error: equipmentError } = await equipmentQuery;
+
+                if (equipmentError) throw equipmentError;
+
+                const mappedEquipmentFn = (data: any[]) => {
+                    return data.map(item => ({
+                        ...item,
+                        table_id: item.table_id
+                    }));
+                };
+
+                setEquipment(mappedEquipmentFn(equipmentData || []));
+
+            } catch (error) {
+                console.error('Error loading initial data:', error);
+                toast.error('Failed to load data');
+            } finally {
+                setLoadingStocks(false);
+                setLoadingEquipment(false);
             }
+        };
+
+        loadInitialData();
+    }, [profile, hasAccess]);
+
+    // ==================== STOCK TRACK RECORD ====================
+    const fetchStockTrackRecord = async (stockId: string) => {
+        try {
+            setLoadingStockTrack(true);
+
+            const { data: equipmentData, error: equipmentError } = await supabase
+                .from('equipment')
+                .select(`
+                    id,
+                    name,
+                    code,
+                    quantity,
+                    condition,
+                    created_at,
+                    rooms:rooms_id(id, name, code, department:departments(id, name, code))
+                `)
+                .eq('stock_id', stockId)
+                .order('created_at', { ascending: false });
+
+            if (equipmentError) throw equipmentError;
+
+            if (!equipmentData || equipmentData.length === 0) {
+                setStockTrackRecords([]);
+                return;
+            }
+
+            const trackRecords: StockTrackRecord[] = equipmentData.map(eq => ({
+                equipment_id: eq.id,
+                equipment_name: eq.name,
+                equipment_code: eq.code,
+                room_name: eq.rooms?.name,
+                room_code: eq.rooms?.code,
+                department_name: eq.rooms?.department?.name,
+                quantity_claimed: eq.quantity,
+                claimed_at: eq.created_at,
+                condition: eq.condition
+            }));
+
+            setStockTrackRecords(trackRecords);
+
         } catch (error) {
-            console.error('❌ Error fetching equipment:', error);
-            toast.error(getText('Failed to load equipment', 'Gagal memuat peralatan'));
-            setEquipment([]);
-        } finally { 
-            setLoading(false); 
+            console.error('Error fetching stock track record:', error);
+            toast.error('Failed to load stock track record');
+            setStockTrackRecords([]);
+        } finally {
+            setLoadingStockTrack(false);
         }
     };
 
-    
-// ✅ SUPER DEBUG VERSION - Let's find out why gaps aren't showing
-const fetchLendingDetails = async (equipmentId: string) => {
-    try {
-        setLoadingLending(true);
-        
-        console.log('🔍 SUPER DEBUG GAP ANALYSIS for equipment:', equipmentId);
-        console.log('🔍 Equipment ID type:', typeof equipmentId, equipmentId);
+    // ==================== GAP ANALYSIS ====================
+    // ==================== ENHANCED TRACK RECORD: Checkouts + Borrowed Bookings + Borrowed Lending Tools ====================
 
-        // ✅ STEP 0: Debug - Check what's in the tables first
-        console.log('📊 DEBUG: Checking all tables for this equipment...');
-        
-        // Check all lending_tool records
-        const { data: allLendings, error: allLendingsError } = await supabase
-            .from('lending_tool')
-            .select('*')
-            .contains('id_equipment', [equipmentId]);
-        
-        console.log('📋 ALL lending_tool records with this equipment:', {
-            equipmentId,
-            count: allLendings?.length || 0,
-            records: allLendings
-        });
+    const fetchGapAnalysis = async (equipmentId: string) => {
+        try {
+            setLoadingTrack(true);
+            const allRecords: LendingDetail[] = [];
 
-        // Check all bookings
-        const { data: allBookings, error: allBookingsError } = await supabase
-            .from('bookings')
-            .select('*')
-            .contains('equipment_requested', [equipmentId]);
-        
-        console.log('📅 ALL bookings with this equipment:', {
-            equipmentId,
-            count: allBookings?.length || 0,
-            records: allBookings
-        });
-
-        // Check all checkouts related to this equipment
-        const { data: allCheckouts, error: allCheckoutsError } = await supabase
-            .from('checkouts')
-            .select(`
-                *,
-                checkout_items!inner(equipment_id, quantity)
+            // ===== PART 1: FETCH CHECKOUTS WITH checkout_items =====
+            const { data: checkoutsData, error: checkoutsError } = await supabase
+                .from('checkouts')
+                .select(`
+                id,
+                user_id,
+                booking_id,
+                lendingTool_id,
+                checkout_date,
+                expected_return_date,
+                actual_return_date,
+                status,
+                type,
+                checkout_items!inner (
+                    checkout_id,
+                    equipment_requested,
+                    equipment_quantities,
+                    equipment_back,
+                    quantities_back,
+                    status
+                )
             `)
-            .eq('checkout_items.equipment_id', equipmentId);
-        
-        console.log('🔍 ALL checkouts with this equipment:', {
-            equipmentId,
-            count: allCheckouts?.length || 0,
-            records: allCheckouts
-        });
+                .contains('checkout_items.equipment_requested', [equipmentId])
+                .order('created_at', { ascending: false });
 
-        // Check checkout_items directly
-        const { data: allCheckoutItems, error: itemsError } = await supabase
-            .from('checkout_items')
-            .select('*')
-            .eq('equipment_id', equipmentId);
-        
-        console.log('📦 ALL checkout_items for this equipment:', {
-            equipmentId,
-            count: allCheckoutItems?.length || 0,
-            records: allCheckoutItems
-        });
+            if (checkoutsError) {
+                console.error('Error fetching checkouts:', checkoutsError);
+            }
 
-        // ✅ STEP 1: Get ALL lending_tool records (not just 'borrow')
-        const { data: lendingData, error: lendingError } = await supabase
-            .from('lending_tool')
-            .select('*')
-            .contains('id_equipment', [equipmentId])
-            .order('created_at', { ascending: false });
+            console.log('📊 Checkouts found:', checkoutsData?.length || 0);
 
-        console.log('📋 Lending data query result:', {
-            error: lendingError,
-            count: lendingData?.length || 0,
-            data: lendingData
-        });
+            // Process checkouts
+            if (checkoutsData && checkoutsData.length > 0) {
+                const checkoutRecords = await Promise.all(
+                    checkoutsData.map(async (checkout) => {
+                        const checkoutItem = checkout.checkout_items[0];
+                        if (!checkoutItem) return null;
 
-        if (lendingError) throw lendingError;
+                        const eqIndex = checkoutItem.equipment_requested.findIndex(
+                            (id: string) => id === equipmentId
+                        );
+                        if (eqIndex === -1) return null;
 
-        // ✅ STEP 2: Get ALL bookings (not just 'approved')
-        const { data: bookingData, error: bookingError } = await supabase
-            .from('bookings')
-            .select('*, user:users(id, full_name, identity_number, email, phone_number)')
-            .contains('equipment_requested', [equipmentId])
-            .order('created_at', { ascending: false });
+                        const borrowedQty = checkoutItem.equipment_quantities[eqIndex] || 0;
+                        const returnedQty = checkoutItem.quantities_back?.[eqIndex] || 0;
+                        const missingQty = borrowedQty - returnedQty;
 
-        console.log('📅 Booking data query result:', {
-            error: bookingError,
-            count: bookingData?.length || 0,
-            data: bookingData
-        });
+                        // Get user info
+                        let userName = 'Unknown User';
+                        let userEmail = 'No email';
+                        let userIdentity = 'No ID';
+                        let userData = null;
 
-        if (bookingError) throw bookingError;
+                        if (checkout.user_id) {
+                            const { data: user } = await supabase
+                                .from('users')
+                                .select('id, full_name, identity_number, email')
+                                .eq('id', checkout.user_id)
+                                .single();
 
-        let allGapDetails: LendingDetail[] = [];
+                            if (user) {
+                                userData = user;
+                                userName = user.full_name;
+                                userEmail = user.email;
+                                userIdentity = user.identity_number;
+                            }
+                        }
 
-        // ✅ STEP 3: Process ALL lending tools (regardless of status)
-        if (lendingData && lendingData.length > 0) {
-            console.log('📋 Processing ALL lending tools:', lendingData.length);
-            
-            const detailedLendings = await Promise.all(
-                lendingData.map(async (lending, lendingIndex) => {
-                    console.log(`🔍 Processing lending ${lendingIndex + 1}/${lendingData.length}:`, {
-                        lending_id: lending.id,
-                        status: lending.status,
-                        id_equipment: lending.id_equipment,
-                        qty: lending.qty
+                        // Determine source and date
+                        let source: 'lending_tool' | 'booking' = 'lending_tool';
+                        let sourceId = checkout.lendingTool_id;
+                        let dateString = checkout.checkout_date;
+
+                        if (checkout.booking_id) {
+                            source = 'booking';
+                            sourceId = checkout.booking_id;
+                            const { data: booking } = await supabase
+                                .from('bookings')
+                                .select('start_time')
+                                .eq('id', checkout.booking_id)
+                                .single();
+                            if (booking) dateString = booking.start_time;
+                        } else if (checkout.lendingTool_id) {
+                            const { data: lending } = await supabase
+                                .from('lending_tool')
+                                .select('date')
+                                .eq('id', checkout.lendingTool_id)
+                                .single();
+                            if (lending) dateString = lending.date;
+                        }
+
+                        return {
+                            id: sourceId || checkout.id,
+                            date: dateString,
+                            borrowed_quantity: borrowedQty,
+                            returned_quantity: returnedQty,
+                            missing_quantity: missingQty,
+                            status: checkout.status as any,
+                            created_at: checkout.checkout_date,
+                            source: source,
+                            user: userData,
+                            user_name: userName,
+                            user_email: userEmail,
+                            user_identity: userIdentity,
+                            checkout: {
+                                id: checkout.id,
+                                checkout_date: checkout.checkout_date,
+                                expected_return_date: checkout.expected_return_date,
+                                actual_return_date: checkout.actual_return_date,
+                                status: checkout.status
+                            }
+                        } as LendingDetail;
+                    })
+                );
+
+                allRecords.push(...checkoutRecords.filter((r): r is LendingDetail => r !== null));
+            }
+
+            // ===== PART 2: FETCH BOOKINGS WITH STATUS 'borrowed' =====
+            const { data: borrowedBookings, error: bookingsError } = await supabase
+                .from('bookings')
+                .select(`
+                    id,
+                    user_id,
+                    start_time,
+                    end_time,
+                    purpose,
+                    status,
+                    equipment_requested,
+                    equipment_quantities,
+                    created_at,
+                    user:users!user_id(id, full_name, identity_number, email)
+                `)
+                .eq('status', 'borrowed')
+                .contains('equipment_requested', [equipmentId])
+                .order('created_at', { ascending: false });
+
+            if (bookingsError) {
+                console.error('Error fetching borrowed bookings:', bookingsError);
+            }
+
+            console.log('📋 Borrowed Bookings found:', borrowedBookings?.length || 0);
+
+            if (borrowedBookings && borrowedBookings.length > 0) {
+                for (const booking of borrowedBookings) {
+                    // Check if already in checkout records
+                    const alreadyExists = allRecords.some(r => r.source === 'booking' && r.id === booking.id);
+                    if (alreadyExists) continue;
+
+                    const eqIndex = booking.equipment_requested?.findIndex((id: string) => id === equipmentId) ?? -1;
+                    if (eqIndex === -1) continue;
+
+                    const borrowedQty = booking.equipment_quantities?.[eqIndex] || 1;
+                    const user = booking.user as any;
+
+                    allRecords.push({
+                        id: booking.id,
+                        date: booking.start_time,
+                        borrowed_quantity: borrowedQty,
+                        returned_quantity: 0,
+                        missing_quantity: borrowedQty,
+                        status: 'borrow' as any,
+                        created_at: booking.created_at,
+                        source: 'booking',
+                        user: user,
+                        user_name: user?.full_name || 'Unknown User',
+                        user_email: user?.email || 'No email',
+                        user_identity: user?.identity_number || 'No ID',
+                        checkout: undefined
                     });
+                }
+            }
 
-                    const equipmentIndex = lending.id_equipment.findIndex((id: string) => id === equipmentId);
-                    console.log(`🎯 Equipment index in lending ${lending.id}:`, {
-                        equipmentId,
-                        id_equipment: lending.id_equipment,
-                        found_index: equipmentIndex
-                    });
+            // ===== PART 3: FETCH LENDING_TOOL WITH STATUS 'borrowed' =====
+            const { data: borrowedLendings, error: lendingsError } = await supabase
+                .from('lending_tool')
+                .select(`
+                    id,
+                    user_id,
+                    date,
+                    return_date,
+                    purpose,
+                    status,
+                    equipment_requested,
+                    equipment_quantities,
+                    created_at,
+                    user:users!user_id(id, full_name, identity_number, email)
+                `)
+                .eq('status', 'borrowed')
+                .contains('equipment_requested', [equipmentId])
+                .order('created_at', { ascending: false });
 
-                    if (equipmentIndex === -1) {
-                        console.log(`❌ Equipment ${equipmentId} not found in lending ${lending.id}`);
-                        return null;
-                    }
+            if (lendingsError) {
+                console.error('Error fetching borrowed lendings:', lendingsError);
+            }
 
-                    const borrowedQty = lending.qty[equipmentIndex] || 0;
-                    console.log(`📊 Borrowed quantity for lending ${lending.id}:`, borrowedQty);
+            console.log('🔧 Borrowed Lending Tools found:', borrowedLendings?.length || 0);
 
-                    if (borrowedQty === 0) {
-                        console.log(`❌ Zero borrowed quantity for lending ${lending.id}`);
-                        return null;
-                    }
+            if (borrowedLendings && borrowedLendings.length > 0) {
+                for (const lending of borrowedLendings) {
+                    // Check if already in checkout records
+                    const alreadyExists = allRecords.some(r => r.source === 'lending_tool' && r.id === lending.id);
+                    if (alreadyExists) continue;
 
-                    // Default values
-                    let lendingDetail: LendingDetail = {
+                    const eqIndex = lending.equipment_requested?.findIndex((id: string) => id === equipmentId) ?? -1;
+                    if (eqIndex === -1) continue;
+
+                    const borrowedQty = lending.equipment_quantities?.[eqIndex] || 1;
+                    const user = lending.user as any;
+
+                    allRecords.push({
                         id: lending.id,
                         date: lending.date,
                         borrowed_quantity: borrowedQty,
                         returned_quantity: 0,
                         missing_quantity: borrowedQty,
-                        status: lending.status,
+                        status: 'borrow' as any,
                         created_at: lending.created_at,
-                        source: 'lending_tool'
-                    };
-
-                    // Fetch user info
-                    if (lending.id_user) {
-                        const { data: userData } = await supabase
-                            .from('users')
-                            .select('id, full_name, identity_number, email, phone_number')
-                            .eq('id', lending.id_user)
-                            .single();
-                        
-                        if (userData) {
-                            lendingDetail.user = userData;
-                            console.log(`👤 User found for lending ${lending.id}:`, userData.full_name);
-                        }
-                    }
-
-                    // ✅ SUPER COMPREHENSIVE CHECKOUT CHECK - ALL STATUSES
-                    console.log(`🔍 Looking for checkouts for lending ${lending.id}...`);
-                    
-                    const { data: checkoutData, error: checkoutError } = await supabase
-                        .from('checkouts')
-                        .select(`
-                            id, status, checkout_date, expected_return_date, actual_return_date,
-                            checkout_items!inner(equipment_id, quantity)
-                        `)
-                        .eq('lendingTool_id', lending.id)
-                        .eq('checkout_items.equipment_id', equipmentId)
-                        .order('created_at', { ascending: false });
-
-                    console.log(`🔍 Checkout query result for lending ${lending.id}:`, {
-                        error: checkoutError,
-                        count: checkoutData?.length || 0,
-                        data: checkoutData
+                        source: 'lending_tool',
+                        user: user,
+                        user_name: user?.full_name || 'Unknown User',
+                        user_email: user?.email || 'No email',
+                        user_identity: user?.identity_number || 'No ID',
+                        checkout: undefined
                     });
+                }
+            }
 
-                    if (checkoutData && checkoutData.length > 0) {
-                        // Process ALL checkouts, not just the first one
-                        for (const checkout of checkoutData) {
-                            console.log(`💡 Processing checkout ${checkout.id}:`, {
-                                status: checkout.status,
-                                checkout_items: checkout.checkout_items
-                            });
+            // Sort all records by date descending
+            allRecords.sort((a, b) => new Date(b.date || b.created_at).getTime() - new Date(a.date || a.created_at).getTime());
 
-                            const returnedItem = checkout.checkout_items?.[0];
-                            
-                            if (returnedItem) {
-                                const returnedQty = returnedItem.quantity || 0;
-                                console.log(`📦 Returned quantity for checkout ${checkout.id}:`, returnedQty);
-                                
-                                // Update with the latest return info
-                                lendingDetail.returned_quantity = returnedQty;
-                                lendingDetail.missing_quantity = borrowedQty - returnedQty;
-                                
-                                lendingDetail.checkout = {
-                                    id: checkout.id,
-                                    checkout_date: checkout.checkout_date,
-                                    expected_return_date: checkout.expected_return_date,
-                                    status: checkout.status
-                                };
+            console.log(`✅ Total track records: ${allRecords.length}`);
 
-                                console.log(`📊 Gap calculation for checkout ${checkout.id}:`, {
-                                    borrowed: borrowedQty,
-                                    returned: returnedQty,
-                                    missing: borrowedQty - returnedQty,
-                                    status: checkout.status
-                                });
+            setLendingDetails(allRecords);
 
-                                // ✅ ONLY EXCLUDE IF STATUS IS COMPLETED
-                                if (checkout.status === 'completed') {
-                                    console.log(`✅ Checkout ${checkout.id} is completed, skipping...`);
-                                    continue;
-                                }
-
-                                break; // Use the first non-completed checkout
-                            }
-                        }
-                    } else {
-                        console.log(`❌ NO CHECKOUT found for lending ${lending.id} with equipment ${equipmentId}`);
-                        // No checkout = all items missing
-                        lendingDetail.missing_quantity = borrowedQty;
-                    }
-
-                    // ✅ SHOW ALL GAPS - REGARDLESS OF STATUS (except completed)
-                    const shouldShow = lendingDetail.missing_quantity > 0 && 
-                                     (!lendingDetail.checkout || lendingDetail.checkout.status !== 'completed');
-
-                    console.log(`🤔 Should show lending ${lending.id}?`, {
-                        missing_quantity: lendingDetail.missing_quantity,
-                        checkout_status: lendingDetail.checkout?.status || 'none',
-                        should_show: shouldShow
-                    });
-
-                    if (shouldShow) {
-                        console.log(`🚨 GAP DETECTED - ADDING TO LIST:`, {
-                            lending_id: lending.id,
-                            user: lendingDetail.user?.full_name,
-                            borrowed: lendingDetail.borrowed_quantity,
-                            returned: lendingDetail.returned_quantity,
-                            missing: lendingDetail.missing_quantity,
-                            checkout_status: lendingDetail.checkout?.status || 'none'
-                        });
-                        return lendingDetail;
-                    } else {
-                        console.log(`✅ No gap or completed - not showing lending ${lending.id}`);
-                    }
-                    
-                    return null;
-                })
-            );
-            
-            const validLendings = detailedLendings.filter(Boolean);
-            console.log(`📋 Valid lending gaps found: ${validLendings.length}`);
-            allGapDetails = [...allGapDetails, ...validLendings];
+        } catch (error) {
+            console.error('❌ Error in track record analysis:', error);
+            toast.error('Failed to load track record');
+            setLendingDetails([]);
+        } finally {
+            setLoadingTrack(false);
         }
+    };
 
-        // ✅ STEP 4: Process ALL bookings (regardless of status)
-        if (bookingData && bookingData.length > 0) {
-            console.log('📅 Processing ALL bookings:', bookingData.length);
-            
-            const bookingGaps = await Promise.all(
-                bookingData.map(async (booking, bookingIndex) => {
-                    console.log(`🔍 Processing booking ${bookingIndex + 1}/${bookingData.length}:`, {
-                        booking_id: booking.id,
-                        status: booking.status,
-                        equipment_requested: booking.equipment_requested,
-                        equipment_quantities: booking.equipment_quantities
-                    });
+    // ==================== HANDLE RESOLVE GAP ====================
+    // ==================== NEW HANDLE RESOLVE GAP WITH checkout_items ARRAYS ====================
 
-                    const equipmentIndex = booking.equipment_requested?.findIndex(id => id === equipmentId);
-                    console.log(`🎯 Equipment index in booking ${booking.id}:`, {
-                        equipmentId,
-                        equipment_requested: booking.equipment_requested,
-                        found_index: equipmentIndex
-                    });
+    const handleResolveGap = async (detail: LendingDetail) => {
+        try {
+            if (!selectedEquipment || !detail.checkout) return;
 
-                    if (equipmentIndex === -1) {
-                        console.log(`❌ Equipment ${equipmentId} not found in booking ${booking.id}`);
-                        return null;
-                    }
+            console.log('🔄 Resolving gap for equipment:', selectedEquipment.id);
+            console.log('   Checkout ID:', detail.checkout.id);
+            console.log('   Missing quantity:', detail.missing_quantity);
 
-                    const borrowedQty = booking.equipment_quantities?.[equipmentIndex] || 1;
-                    console.log(`📊 Borrowed quantity for booking ${booking.id}:`, borrowedQty);
+            // ===== STEP 1: GET CURRENT checkout_items =====
+            const { data: currentItems, error: fetchError } = await supabase
+                .from('checkout_items')
+                .select('*')
+                .eq('checkout_id', detail.checkout.id)
+                .single();
 
-                    if (borrowedQty === 0) {
-                        console.log(`❌ Zero borrowed quantity for booking ${booking.id}`);
-                        return null;
-                    }
+            if (fetchError) throw fetchError;
+            if (!currentItems) throw new Error('Checkout items not found');
 
-                    let lendingDetail: LendingDetail = {
-                        id: `booking-${booking.id}`,
-                        date: booking.start_time,
-                        borrowed_quantity: borrowedQty,
-                        returned_quantity: 0,
-                        missing_quantity: borrowedQty,
-                        status: booking.status,
-                        created_at: booking.created_at,
-                        source: 'booking',
-                        user: booking.user
-                    };
+            console.log('   Current checkout_items:', currentItems);
 
-                    // ✅ COMPREHENSIVE CHECKOUT CHECK FOR BOOKINGS
-                    console.log(`🔍 Looking for checkouts for booking ${booking.id}...`);
-                    
-                    const { data: checkoutData, error: checkoutError } = await supabase
-                        .from('checkouts')
-                        .select(`
-                            id, status, checkout_date, expected_return_date,
-                            checkout_items!inner(equipment_id, quantity)
-                        `)
-                        .eq('booking_id', booking.id)
-                        .eq('checkout_items.equipment_id', equipmentId)
-                        .order('created_at', { ascending: false });
-
-                    console.log(`🔍 Checkout query result for booking ${booking.id}:`, {
-                        error: checkoutError,
-                        count: checkoutData?.length || 0,
-                        data: checkoutData
-                    });
-
-                    if (checkoutData && checkoutData.length > 0) {
-                        for (const checkout of checkoutData) {
-                            console.log(`💡 Processing checkout ${checkout.id} for booking:`, {
-                                status: checkout.status,
-                                checkout_items: checkout.checkout_items
-                            });
-
-                            const returnedItem = checkout.checkout_items?.[0];
-                            
-                            if (returnedItem) {
-                                const returnedQty = returnedItem.quantity || 0;
-                                console.log(`📦 Returned quantity for checkout ${checkout.id}:`, returnedQty);
-                                
-                                lendingDetail.returned_quantity = returnedQty;
-                                lendingDetail.missing_quantity = borrowedQty - returnedQty;
-                                
-                                lendingDetail.checkout = {
-                                    id: checkout.id,
-                                    checkout_date: checkout.checkout_date,
-                                    expected_return_date: checkout.expected_return_date,
-                                    status: checkout.status
-                                };
-
-                                console.log(`📊 Gap calculation for booking checkout ${checkout.id}:`, {
-                                    borrowed: borrowedQty,
-                                    returned: returnedQty,
-                                    missing: borrowedQty - returnedQty,
-                                    status: checkout.status
-                                });
-
-                                // ✅ ONLY EXCLUDE IF STATUS IS COMPLETED
-                                if (checkout.status === 'completed') {
-                                    console.log(`✅ Checkout ${checkout.id} is completed, skipping...`);
-                                    continue;
-                                }
-
-                                break; // Use the first non-completed checkout
-                            }
-                        }
-                    } else {
-                        console.log(`❌ NO CHECKOUT found for booking ${booking.id} with equipment ${equipmentId}`);
-                        // No checkout = all items missing
-                        lendingDetail.missing_quantity = borrowedQty;
-                    }
-
-                    // ✅ SHOW ALL GAPS - REGARDLESS OF STATUS (except completed)
-                    const shouldShow = lendingDetail.missing_quantity > 0 && 
-                                     (!lendingDetail.checkout || lendingDetail.checkout.status !== 'completed');
-
-                    console.log(`🤔 Should show booking ${booking.id}?`, {
-                        missing_quantity: lendingDetail.missing_quantity,
-                        checkout_status: lendingDetail.checkout?.status || 'none',
-                        should_show: shouldShow
-                    });
-
-                    if (shouldShow) {
-                        console.log(`🚨 BOOKING GAP DETECTED - ADDING TO LIST:`, {
-                            booking_id: booking.id,
-                            user: lendingDetail.user?.full_name,
-                            borrowed: lendingDetail.borrowed_quantity,
-                            returned: lendingDetail.returned_quantity,
-                            missing: lendingDetail.missing_quantity,
-                            checkout_status: lendingDetail.checkout?.status || 'none'
-                        });
-                        return lendingDetail;
-                    } else {
-                        console.log(`✅ No gap or completed - not showing booking ${booking.id}`);
-                    }
-                    
-                    return null;
-                })
+            // ===== STEP 2: FIND EQUIPMENT INDEX =====
+            const eqIndex = currentItems.equipment_requested.findIndex(
+                (id: string) => id === selectedEquipment.id
             );
 
-            const validBookings = bookingGaps.filter(Boolean);
-            console.log(`📅 Valid booking gaps found: ${validBookings.length}`);
-            allGapDetails = [...allGapDetails, ...validBookings];
-        }
+            if (eqIndex === -1) {
+                throw new Error('Equipment not found in checkout_items');
+            }
 
-        // ✅ FINAL RESULT: All records with quantity gaps
-        console.log(`🎯 FINAL COMPREHENSIVE GAP ANALYSIS for equipment ${equipmentId}:`);
-        console.log(`📋 Total gaps found: ${allGapDetails.length}`);
-        console.log(`🔍 Final gap details:`, allGapDetails);
+            console.log('   Equipment index:', eqIndex);
 
-        if (allGapDetails.length > 0) {
-            console.log(`🔍 Status breakdown:`, {
-                active: allGapDetails.filter(d => d.checkout?.status === 'active').length,
-                returned: allGapDetails.filter(d => d.checkout?.status === 'returned').length,
-                pending: allGapDetails.filter(d => d.checkout?.status === 'pending').length,
-                overdue: allGapDetails.filter(d => d.checkout?.status === 'overdue').length,
-                no_checkout: allGapDetails.filter(d => !d.checkout).length,
-                other: allGapDetails.filter(d => d.checkout && !['active', 'returned', 'pending', 'overdue'].includes(d.checkout.status)).length
+            // ===== STEP 3: UPDATE quantities_back ARRAY =====
+            const borrowedQty = currentItems.equipment_quantities[eqIndex];
+
+            // Initialize quantities_back if not exist
+            let quantitiesBack = currentItems.quantities_back || [];
+
+            // Ensure array has enough elements
+            while (quantitiesBack.length <= eqIndex) {
+                quantitiesBack.push(0);
+            }
+
+            // Set returned quantity = borrowed quantity (fully returned)
+            quantitiesBack[eqIndex] = borrowedQty;
+
+            console.log('   Updated quantities_back:', quantitiesBack);
+
+            // ===== STEP 4: UPDATE checkout_items =====
+            const { error: updateItemsError } = await supabase
+                .from('checkout_items')
+                .update({
+                    quantities_back: quantitiesBack,
+                    status: 'completed',
+                    updated_at: new Date().toISOString()
+                })
+                .eq('checkout_id', detail.checkout.id);
+
+            if (updateItemsError) throw updateItemsError;
+
+            // ===== STEP 5: CHECK IF ALL ITEMS RETURNED =====
+            // Calculate if all equipment in this checkout are fully returned
+            const allReturned = currentItems.equipment_requested.every((eqId: string, idx: number) => {
+                const borrowed = currentItems.equipment_quantities[idx] || 0;
+                const returned = quantitiesBack[idx] || 0;
+                return returned >= borrowed;
             });
 
-            allGapDetails.forEach((detail, index) => {
-                console.log(`📋 Gap ${index + 1}: ${detail.user?.full_name}: ${detail.borrowed_quantity} borrowed - ${detail.returned_quantity} returned = ${detail.missing_quantity} missing (${detail.source}) [${detail.checkout?.status || 'no_checkout'}]`);
-            });
-        } else {
-            console.log(`❓ WHY NO GAPS FOUND? Let's check:
-                - Are there any lending/booking records? ${(lendingData?.length || 0) + (bookingData?.length || 0)}
-                - Are there any checkouts? ${allCheckouts?.length || 0}
-                - Are there any checkout_items? ${allCheckoutItems?.length || 0}
-                - Equipment ID format correct? ${equipmentId}
-            `);
-        }
-        
-        setLendingDetails(allGapDetails);
-        
-    } catch (error) {
-        console.error('❌ Error in super debug gap analysis:', error);
-        toast.error(getText('Failed to load quantity gap analysis', 'Gagal memuat analisis kesenjangan kuantitas'));
-        setLendingDetails([]);
-    } finally {
-        setLoadingLending(false);
-    }
-};
+            console.log('   All items returned:', allReturned);
 
-    // ✅ Real-time update: Auto-refresh after validation queue approval
+            // ===== STEP 6: UPDATE CHECKOUT STATUS IF ALL RETURNED =====
+            if (allReturned) {
+                const { error: updateCheckoutError } = await supabase
+                    .from('checkouts')
+                    .update({
+                        status: 'Active',
+                        actual_return_date: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', detail.checkout.id);
+
+                if (updateCheckoutError) throw updateCheckoutError;
+
+                console.log('   ✅ Checkout marked as completed');
+            }
+
+            // ===== STEP 7: UPDATE SOURCE STATUS (booking/lending_tool) =====
+            if (detail.source === 'booking' && detail.checkout.booking_id) {
+                const { error: bookingError } = await supabase
+                    .from('bookings')
+                    .update({
+                        status: 'returned',
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', detail.checkout.booking_id);
+
+                if (bookingError) console.error('   ⚠️ Error updating booking:', bookingError);
+            } else if (detail.source === 'lending_tool' && detail.checkout.lendingTool_id) {
+                const { error: lendingError } = await supabase
+                    .from('lending_tool')
+                    .update({
+                        status: 'returned',
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', detail.checkout.lendingTool_id);
+
+                if (lendingError) console.error('   ⚠️ Error updating lending:', lendingError);
+            }
+
+            // ===== STEP 8: UPDATE EQUIPMENT STOCK (RETURN TO STOCK) =====
+            const { data: currentEquipment } = await supabase
+                .from('equipment')
+                .select('quantity')
+                .eq('id', selectedEquipment.id)
+                .single();
+
+            if (currentEquipment) {
+                const newQuantity = currentEquipment.quantity + detail.missing_quantity;
+
+                await supabase
+                    .from('equipment')
+                    .update({
+                        quantity: newQuantity,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', selectedEquipment.id);
+
+                console.log(`   ✅ Equipment stock updated: ${currentEquipment.quantity} → ${newQuantity}`);
+            }
+
+            toast.success('✅ Gap resolved successfully!');
+
+            // Refresh gap analysis
+            await fetchGapAnalysis(selectedEquipment.id);
+
+        } catch (error: any) {
+            console.error('❌ Error resolving gap:', error);
+            toast.error(error.message || 'Failed to resolve gap');
+        }
+    };
+
+    // ==================== REAL-TIME UPDATES ====================
     useEffect(() => {
         if (!selectedEquipment) return;
 
-        // Subscribe to checkout status changes
         const checkoutSubscription = supabase
-            .channel('missing_tracker_checkouts')
+            .channel('gap_updates')
             .on('postgres_changes', {
-                event: 'UPDATE',
+                event: '*',
                 schema: 'public',
                 table: 'checkouts'
-            }, (payload) => {
-                console.log('🔄 Checkout updated, refreshing gap data...', payload);
-                fetchLendingDetails(selectedEquipment.id);
+            }, () => {
+                fetchGapAnalysis(selectedEquipment.id);
             })
-            .subscribe();
-
-        // Subscribe to checkout_items changes
-        const checkoutItemsSubscription = supabase
-            .channel('missing_tracker_items')
             .on('postgres_changes', {
                 event: '*',
                 schema: 'public',
                 table: 'checkout_items'
-            }, (payload) => {
-                console.log('🔄 Checkout items updated, refreshing gap data...', payload);
-                fetchLendingDetails(selectedEquipment.id);
+            }, () => {
+                fetchGapAnalysis(selectedEquipment.id);
             })
             .subscribe();
 
         return () => {
             checkoutSubscription.unsubscribe();
-            checkoutItemsSubscription.unsubscribe();
         };
     }, [selectedEquipment?.id]);
 
-    // ✅ NEW FUNCTION: Mark checkout as completed
-    const handleMarkAsCompleted = async (checkoutId: string, equipmentId: string) => {
-    try {
-        console.log('✅ Marking checkout as completed:', checkoutId);
-        
-        // Update checkout status to 'completed'
-        const { error } = await supabase
-            .from('checkouts')
-            .update({ 
-                status: 'completed',
-                actual_return_date: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', checkoutId);
+    const handleOpenTrackRecordModal = async (eq: EquipmentWithDetails) => {
+        setSelectedEquipment(eq);
+        setShowTrackRecordModal(true);
+        await fetchGapAnalysis(eq.id);
+    };
 
-        if (error) throw error;
+    const handleOpenDetailModal = (eq: EquipmentWithDetails) => {
+        setSelectedEquipment(eq);
+        setShowDetailModal(true);
+    };
 
-        toast.success(getText('✅ Checkout marked as completed!', '✅ Checkout berhasil ditandai selesai!'));
-        
-        // Refresh the gap analysis
-        fetchLendingDetails(equipmentId);
-        
-    } catch (error: any) {
-        console.error('❌ Error marking checkout as completed:', error);
-        toast.error(error.message || getText('Failed to mark as completed', 'Gagal menandai sebagai selesai'));
-    }
-};
+    // ==================== NEW: STOCK MODAL HANDLERS ====================
+    const handleOpenStockDetailModal = (stock: Stock) => {
+        setSelectedStock(stock);
+        setShowStockDetailModal(true);
+    };
 
-    const handleSubmit = async (data: EquipmentForm) => {
-        try {
-            setLoading(true);
-            
-            // Validate room belongs to department for department admin only
-            if (profile?.role === 'department_admin') {
-                if (!data.rooms_id) {
-                    toast.error(getText(
-                        'Room selection is required for department admin.',
-                        'Pemilihan ruangan wajib untuk admin departemen.'
-                    ));
-                    return;
-                }
-                
-                if (profile.department_id) {
-                    const selectedRoomData = rooms.find(r => r.id === data.rooms_id);
-                    if (!selectedRoomData || selectedRoomData.department_id !== profile.department_id) {
-                        toast.error(getText(
-                            'You can only assign equipment to rooms in your department.',
-                            'Anda hanya dapat menugaskan peralatan ke ruangan di departemen Anda.'
-                        ));
-                        return;
-                    }
-                }
+    const handleOpenStockTrackModal = async (stock: Stock) => {
+        setSelectedStock(stock);
+        setShowStockTrackModal(true);
+        await fetchStockTrackRecord(stock.id);
+    };
+
+    // ==================== STOCK IMAGE HANDLERS ====================
+    // Handle stock image - to base64
+    const handleStockImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            // Validate file type
+            if (!file.type.startsWith('image/')) {
+                toast.error('Please select an image file');
+                return;
             }
-            
+            // Validate file size (max 5MB)
+            if (file.size > 5 * 1024 * 1024) {
+                toast.error('Image size must be less than 5MB');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const base64String = event.target?.result as string;
+                setStockImagePreview(base64String);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    // Clear stock image
+    const clearStockImage = () => {
+        setStockImagePreview('');
+    };
+
+    // ==================== EQUIPMENT IMAGE HANDLERS ====================
+    // Handle equipment image - to base64
+    const handleEquipmentImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            // Validate file type
+            if (!file.type.startsWith('image/')) {
+                toast.error('Please select an image file');
+                return;
+            }
+            // Validate file size (max 5MB)
+            if (file.size > 5 * 1024 * 1024) {
+                toast.error('Image size must be less than 5MB');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const base64String = event.target?.result as string;
+                setEquipmentImagePreview(base64String);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    // Clear equipment image
+    const clearEquipmentImage = () => {
+        setEquipmentImagePreview('');
+    };
+
+    // ==================== MODAL HANDLERS ====================
+    const handleOpenStockModal = (stock?: Stock) => {
+        setEditingStock(stock || null);
+
+        if (stock) {
+            stockForm.reset({
+                nama: stock.nama,
+                code: stock.code,
+                category: stock.category,
+                spesification: stock.spesification || '',
+                quantity: stock.quantity,
+                unit: stock.unit,
+            });
+            setStockImagePreview(stock.attachments || '');
+        } else {
+            stockForm.reset({ quantity: 1 });
+            setStockImagePreview('');
+        }
+
+        setShowStockModal(true);
+    };
+
+    const handleOpenClaimModal = () => {
+        setSelectedStockForClaim(null);
+        setSelectedRoomForClaim(null);
+        setEquipmentImagePreview('');
+
+        claimForm.reset({
+            is_mandatory: false,
+            is_available: true,
+            condition: 'GOOD',
+            quantity: 1,
+        });
+
+        setShowClaimModal(true);
+    };
+
+    const handleOpenEditModal = (equipmentItem: EquipmentWithDetails) => {
+        setEditingEquipment(equipmentItem);
+        setSelectedRoomForEdit(equipmentItem.rooms || null);
+        setEquipmentImagePreview(equipmentItem.attachments || '');
+
+        // Resolve location objects with hierarchy inference
+        const foundBox = boxes.find(b => b.id === equipmentItem.box_id);
+
+        let rackId = equipmentItem.rack_id;
+        if (!rackId && foundBox) {
+            rackId = foundBox.rack_id;
+        }
+        const foundRack = racks.find(r => r.id === rackId);
+
+        let tableId = equipmentItem.table_id;
+        if (!tableId && foundRack) {
+            tableId = foundRack.table_id;
+        }
+        const foundTable = tables.find(t => t.id === tableId);
+
+        setSelectedBoxForEdit(foundBox || null);
+        setSelectedRackForEdit(foundRack || null);
+        setSelectedTableForEdit(foundTable || null);
+
+        editForm.reset({
+            name: equipmentItem.name,
+            code: equipmentItem.code,
+            category: equipmentItem.category,
+            is_mandatory: equipmentItem.is_mandatory ?? false,
+            is_available: equipmentItem.is_available ?? true,
+            condition: equipmentItem.condition,
+            Spesification: equipmentItem.Spesification || '',
+            quantity: equipmentItem.quantity,
+            unit: equipmentItem.unit,
+            rooms_id: equipmentItem.rooms_id || '',
+            table_id: tableId || '',
+            rack_id: rackId || '',
+            box_id: equipmentItem.box_id || '',
+        });
+
+        setShowEditModal(true);
+    };
+
+    // ==================== FORM SUBMIT HANDLERS ====================
+    const handleStockSubmit = async (data: StockForm) => {
+        try {
+            setLoadingStocks(true);
+
+            const stockData = {
+                nama: data.nama,
+                code: data.code.toUpperCase(),
+                category: data.category,
+                spesification: data.spesification,
+                quantity: data.quantity,
+                unit: data.unit,
+                attachments: stockImagePreview || null,
+            };
+
+            if (editingStock) {
+                const { error } = await supabase.from('stock').update(stockData).eq('id', editingStock.id);
+                if (error) throw error;
+                toast.success('Stock updated! 🎉');
+            } else {
+                const { error } = await supabase.from('stock').insert([stockData]);
+                if (error) throw error;
+                toast.success('Stock created! ✨');
+            }
+
+            setShowStockModal(false);
+            setEditingStock(null);
+            setStockImagePreview('');
+            stockForm.reset();
+
+            const { data: newStocks } = await supabase
+                .from('stock')
+                .select('*')
+                .order('created_at', { ascending: false });
+            setStocks(newStocks || []);
+
+        } catch (error: any) {
+            console.error('Error saving stock:', error);
+            toast.error(error.message || 'Failed to save stock');
+        } finally {
+            setLoadingStocks(false);
+        }
+    };
+
+    const handleClaimSubmit = async (data: EquipmentClaimForm) => {
+        try {
+            if (!selectedStockForClaim) {
+                toast.error('Please select a stock item');
+                return;
+            }
+
+            if (isDepartmentAdmin && !selectedRoomForClaim) {
+                toast.error('Room selection is required');
+                return;
+            }
+
+            setLoadingEquipment(true);
+
+            const equipmentData = {
+                name: data.name,
+                code: data.code.toUpperCase(),
+                category: selectedStockForClaim.category,
+                is_mandatory: data.is_mandatory ?? false,
+                is_available: data.is_available ?? true,
+                condition: data.condition,
+                rooms_id: selectedRoomForClaim?.id || null,
+                table_id: selectedTableForClaim?.id || null,
+                rack_id: selectedRackForClaim?.id || null,
+                box_id: selectedBoxForClaim?.id || null,
+                Spesification: data.Spesification || selectedStockForClaim.spesification,
+                quantity: data.quantity,
+                unit: selectedStockForClaim.unit,
+                stock_id: selectedStockForClaim.id,
+                attachments: equipmentImagePreview || null,
+            };
+
+            const { error: equipmentError } = await supabase.from('equipment').insert([equipmentData]);
+            if (equipmentError) throw equipmentError;
+
+            const newStockQuantity = selectedStockForClaim.quantity - data.quantity;
+            const { error: stockError } = await supabase
+                .from('stock')
+                .update({ quantity: newStockQuantity })
+                .eq('id', selectedStockForClaim.id);
+
+            if (stockError) throw stockError;
+
+            toast.success(`Successfully claimed ${data.quantity} ${selectedStockForClaim.unit}! ✨`);
+
+            setShowClaimModal(false);
+            setSelectedStockForClaim(null);
+            setSelectedRoomForClaim(null);
+            setEquipmentImagePreview('');
+            claimForm.reset();
+
+            await Promise.all([
+                fetchStocks(),
+                fetchEquipment()
+            ]);
+
+        } catch (error: any) {
+            console.error('Error claiming equipment:', error);
+            toast.error(error.message || 'Failed to claim equipment');
+        } finally {
+            setLoadingEquipment(false);
+        }
+    };
+
+    const handleEditSubmit = async (data: EquipmentEditForm) => {
+        try {
+            if (!editingEquipment) return;
+
+            if (isDepartmentAdmin && !selectedRoomForEdit) {
+                toast.error('Room selection is required');
+                return;
+            }
+
+            setLoadingEquipment(true);
+
             const equipmentData = {
                 name: data.name,
                 code: data.code.toUpperCase(),
@@ -803,1464 +1303,2433 @@ const fetchLendingDetails = async (equipmentId: string) => {
                 is_mandatory: data.is_mandatory,
                 is_available: data.is_available,
                 condition: data.condition,
-                rooms_id: data.rooms_id || null, // Allow null for super admin
+                rooms_id: selectedRoomForEdit?.id || null,
+                table_id: selectedTableForEdit?.id || null,
+                rack_id: selectedRackForEdit?.id || null,
+                box_id: selectedBoxForEdit?.id || null,
                 Spesification: data.Spesification,
                 quantity: data.quantity,
                 unit: data.unit,
+                attachments: equipmentImagePreview || null,
             };
 
-            if (editingEquipment) {
-                const { error } = await supabase.from('equipment').update(equipmentData).eq('id', editingEquipment.id);
-                if (error) throw error;
-                toast.success(getText('Equipment updated successfully! 🎉', 'Peralatan berhasil diperbarui! 🎉'));
-            } else {
-                const { error } = await supabase.from('equipment').insert([equipmentData]);
-                if (error) throw error;
-                toast.success(getText('Equipment created successfully! ✨', 'Peralatan berhasil dibuat! ✨'));
-            }
+            const { error } = await supabase.from('equipment').update(equipmentData).eq('id', editingEquipment.id);
+            if (error) throw error;
 
-            setShowModal(false);
+            toast.success('Equipment updated! 🎉');
+
+            setShowEditModal(false);
             setEditingEquipment(null);
-            setSelectedRoom(null);
-            setRoomSearchTerm('');
-            form.reset();
-            fetchEquipment();
+            setSelectedRoomForEdit(null);
+            setEquipmentImagePreview('');
+            editForm.reset();
+
+            await fetchEquipment();
+
         } catch (error: any) {
-            console.error('Error saving equipment:', error);
-            if (error.code === '23505') { 
-                toast.error(getText('Equipment code already exists! Please use a different code.', 'Kode peralatan sudah ada! Gunakan kode yang berbeda.')); 
-            } else { 
-                toast.error(error.message || getText('Failed to save equipment', 'Gagal menyimpan peralatan')); 
-            }
-        } finally { 
-            setLoading(false); 
+            console.error('Error updating equipment:', error);
+            toast.error(error.message || 'Failed to update equipment');
+        } finally {
+            setLoadingEquipment(false);
         }
     };
 
-    const handleEdit = (eq: EquipmentWithDetails) => {
-        setEditingEquipment(eq);
-        setSelectedRoom(eq.rooms || null);
-        setRoomSearchTerm(eq.rooms?.name || '');
-        form.reset({
-            name: eq.name,
-            code: eq.code,
-            category: eq.category,
-            is_mandatory: eq.is_mandatory,
-            is_available: eq.is_available,
-            condition: eq.condition,
-            rooms_id: eq.rooms_id,
-            Spesification: eq.Spesification || '',
-            quantity: eq.quantity,
-            unit: eq.unit,
-        });
-        setShowModal(true);
+    // ==================== DATA FETCH FUNCTIONS ====================
+    const fetchStocks = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('stock')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            setStocks(data || []);
+        } catch (error) {
+            console.error('Error fetching stocks:', error);
+            toast.error('Failed to load stocks');
+        }
     };
 
-    const handleDelete = async (equipmentId: string) => {
+    const fetchEquipment = async () => {
         try {
-            setLoading(true);
+            let query = supabase
+                .from('equipment')
+                .select(`
+                    *,
+                    rooms:rooms_id(
+                        id, name, code, department_id, floor,
+                        department:departments(id, name, code),
+                        building:building_id(name, campus:campus_id(name))
+                    ),
+                    stock:stock_id(id, nama, code, category, quantity, unit)
+                `)
+                .order('created_at', { ascending: false });
+
+            if ((isDepartmentAdmin || isLaboratory) && profile?.department_id) {
+                const { data: departmentRooms } = await supabase
+                    .from('rooms')
+                    .select('id')
+                    .eq('department_id', profile.department_id);
+
+                if (departmentRooms && departmentRooms.length > 0) {
+                    const roomIds = departmentRooms.map(room => room.id);
+                    query = query.in('rooms_id', roomIds);
+                }
+            }
+
+            const { data, error } = await query;
+
+            if (error) throw error;
+            const mappedEquipment = (data || []).map(item => ({
+                ...item,
+                table_id: item.table_id
+            }));
+
+            setEquipment(mappedEquipment);
+        } catch (error) {
+            console.error('Error fetching equipment:', error);
+            toast.error('Failed to load equipment');
+        }
+    };
+
+    // ==================== DELETE HANDLERS ====================
+    const handleDeleteStock = async (stockId: string) => {
+        try {
+            setLoadingStocks(true);
+
+            const { data: usedEquipment } = await supabase
+                .from('equipment')
+                .select('id')
+                .eq('stock_id', stockId)
+                .limit(1);
+
+            if (usedEquipment && usedEquipment.length > 0) {
+                toast.error('Cannot delete stock that is used by equipment');
+                return;
+            }
+
+            const { error } = await supabase.from('stock').delete().eq('id', stockId);
+            if (error) throw error;
+
+            toast.success('Stock deleted! 🗑️');
+            fetchStocks();
+
+        } catch (error: any) {
+            console.error('Error deleting stock:', error);
+            toast.error(error.message || 'Failed to delete stock');
+        } finally {
+            setLoadingStocks(false);
+        }
+    };
+
+    const handleDeleteEquipment = async (equipmentId: string) => {
+        try {
+            setLoadingEquipment(true);
+
             const { error } = await supabase.from('equipment').delete().eq('id', equipmentId);
             if (error) throw error;
-            toast.success(getText('Equipment deleted successfully! 🗑️', 'Peralatan berhasil dihapus! 🗑️'));
-            setShowDeleteConfirm(null);
+
+            toast.success('Equipment deleted! 🗑️');
             fetchEquipment();
+
         } catch (error: any) {
             console.error('Error deleting equipment:', error);
-            toast.error(error.message || getText('Failed to delete equipment', 'Gagal menghapus peralatan'));
-        } finally { 
-            setLoading(false); 
+            toast.error(error.message || 'Failed to delete equipment');
+        } finally {
+            setLoadingEquipment(false);
         }
     };
 
-    const handleViewDetails = (eq: EquipmentWithDetails) => {
-        setSelectedEquipment(eq);
-        fetchLendingDetails(eq.id);
-    };
+    // ==================== FILTER FUNCTIONS ====================
+    const filteredStocks = useMemo(() => {
+        return stocks.filter(stock => {
+            const matchesSearch = stock.nama.toLowerCase().includes(stockSearchTerm.toLowerCase()) ||
+                stock.code.toLowerCase().includes(stockSearchTerm.toLowerCase());
+            const matchesCategory = stockCategoryFilter === 'all' || stock.category === stockCategoryFilter;
+            return matchesSearch && matchesCategory;
+        });
+    }, [stocks, stockSearchTerm, stockCategoryFilter]);
 
-    const handleRoomSelect = (room: Room) => {
-        setSelectedRoom(room);
-        form.setValue('rooms_id', room.id);
-        setRoomSearchTerm(room.name);
-        setShowRoomDropdown(false);
-    };
+    const filteredEquipment = useMemo(() => {
+        return equipment.filter(eq => {
+            const matchesSearch = eq.name.toLowerCase().includes(equipmentSearchTerm.toLowerCase()) ||
+                eq.code.toLowerCase().includes(equipmentSearchTerm.toLowerCase());
+            const matchesCategory = equipmentCategoryFilter === 'all' || eq.category === equipmentCategoryFilter;
+            const matchesRoom = roomFilter === 'all' || eq.rooms_id === roomFilter;
+            return matchesSearch && matchesCategory && matchesRoom;
+        });
+    }, [equipment, equipmentSearchTerm, equipmentCategoryFilter, roomFilter]);
 
-    const clearRoomSelection = () => {
-        setSelectedRoom(null);
-        form.setValue('rooms_id', '');
-        setRoomSearchTerm('');
-    };
+    const availableStocks = useMemo(() => {
+        return stocks.filter(stock => stock.quantity > 0);
+    }, [stocks]);
 
-    // Check if user can add equipment
-    const canAddEquipment = () => {
-        if (profile?.role === 'super_admin') {
-            return true; // Super admin can always add equipment
+    const availableRooms = useMemo(() => {
+        if (isDepartmentAdmin && profile?.department_id) {
+            return rooms.filter(room => room.department_id === profile.department_id);
         }
-        if (profile?.role === 'department_admin') {
-            return rooms.length > 0; // Department admin needs rooms
+        return rooms;
+    }, [rooms, isDepartmentAdmin, profile]);
+
+    const canClaimEquipment = useMemo(() => {
+        if (!hasAccess) return false;
+        if (isSuperAdmin) return availableStocks.length > 0;
+        if (isDepartmentAdmin || isLaboratory) {
+            return availableStocks.length > 0 && availableRooms.length > 0;
         }
         return false;
-    };
+    }, [hasAccess, isSuperAdmin, isDepartmentAdmin, isLaboratory, availableStocks, availableRooms]);
 
-    // Filter rooms for department admin
-    const filteredRooms = rooms.filter(room => {
-        const matchesSearch = room.name.toLowerCase().includes(roomSearchTerm.toLowerCase()) ||
-                            room.code.toLowerCase().includes(roomSearchTerm.toLowerCase());
-        
-        // Additional check for department admin
-        if (profile?.role === 'department_admin' && profile.department_id) {
-            const matchesDepartment = room.department_id === profile.department_id;
-            return matchesSearch && matchesDepartment;
-        }
-        
-        return matchesSearch;
-    });
-
-    // Filter rooms for main filter dropdown
-    const availableRoomsForFilter = rooms.filter(room => {
-        if (profile?.role === 'department_admin' && profile.department_id) {
-            return room.department_id === profile.department_id;
-        }
-        return true;
-    });
-
-    const filteredEquipment = equipment.filter(eq => {
-        const matchesSearch = eq.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                            eq.code.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesCategory = categoryFilter === 'all' || eq.category === categoryFilter;
-        const matchesRoom = roomFilter === 'all' || eq.rooms_id === roomFilter;
-        return matchesSearch && matchesCategory && matchesRoom;
-    });
-
+    // ==================== HELPER FUNCTIONS ====================
     const getCategoryConfig = (categoryName: string) => {
         return categories.find(cat => cat.name === categoryName) || categories[0];
     };
 
-    const getConditionConfig = (condition: string) => {
-        switch (condition) {
-            case 'GOOD':
-                return {
-                    icon: CheckCircle,
-                    label: getText('GOOD', 'BAIK'),
-                    className: 'bg-green-100 text-green-700 border border-green-200'
-                };
-            case 'BROKEN':
-                return {
-                    icon: XCircle,
-                    label: getText('BROKEN', 'RUSAK'),
-                    className: 'bg-red-100 text-red-700 border border-red-200'
-                };
-            case 'MAINTENANCE':
-                return {
-                    icon: AlertTriangle,
-                    label: getText('MAINTENANCE', 'PEMELIHARAAN'),
-                    className: 'bg-yellow-100 text-yellow-700 border border-yellow-200'
-                };
-            default:
-                return {
-                    icon: AlertCircle,
-                    label: getText('UNKNOWN', 'TIDAK DIKETAHUI'),
-                    className: 'bg-gray-100 text-gray-700 border border-gray-200'
-                  };
+    const getConditionBadge = (condition: string) => {
+        const configs = {
+            GOOD: { icon: CheckCircle, label: 'Good', bg: 'bg-green-100', text: 'text-green-700' },
+            BROKEN: { icon: XCircle, label: 'Broken', bg: 'bg-red-100', text: 'text-red-700' },
+            MAINTENANCE: { icon: AlertTriangle, label: 'Maintenance', bg: 'bg-yellow-100', text: 'text-yellow-700' }
+        };
+        return configs[condition] || configs.GOOD;
+    };
+
+    const getSourceBadge = (source: string) => {
+        if (source === 'booking') {
+            return { icon: Building, label: 'Booking', bg: 'bg-purple-100', text: 'text-purple-700' };
         }
+        return { icon: Wrench, label: 'Lending', bg: 'bg-orange-100', text: 'text-orange-700' };
     };
 
-    const getStatusConfig = (is_available: boolean) => {
-        if (is_available) {
-            return {
-                icon: CheckCircle,
-                label: getText('AVAILABLE', 'TERSEDIA'),
-                className: 'bg-blue-50 text-blue-700 border border-blue-200'
-            };
-        } else {
-            return {
-                icon: XCircle,
-                label: getText('IN USE', 'SEDANG DIGUNAKAN'),
-                className: 'bg-gray-100 text-gray-600 border border-gray-200'
-            };
-        }
+    const getStatusBadge = (status: string) => {
+        const configs = {
+            active: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Active' },
+            returned: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Returned' },
+            pending: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Pending' },
+            overdue: { bg: 'bg-red-100', text: 'text-red-700', label: 'Overdue' }
+        };
+        return configs[status] || { bg: 'bg-gray-100', text: 'text-gray-700', label: status };
     };
 
-    const getStatusChip = (condition: string, is_mandatory: boolean = false) => {
-        const conditionConfig = getConditionConfig(condition);
-        const ConditionIcon = conditionConfig.icon;
-        
-        return (
-            <div className="flex flex-col gap-1">
-                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${conditionConfig.className}`}>
-                    <ConditionIcon className="h-3 w-3" />
-                    {conditionConfig.label}
-                </span>
-                {is_mandatory && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                        <Star className="h-3 w-3" />
-                        {getText('REQUIRED', 'WAJIB')}
-                    </span>
-                )}
-            </div>
-        );
-    };
-
-    // Render room selection component
-    const renderRoomSelection = () => {
-        return (
-            <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">
-                    {getText('Room Location', 'Lokasi Ruangan')} 
-                    {profile?.role === 'department_admin' && <span className="text-red-500 ml-1">*</span>}
-                    {profile?.role === 'super_admin' && (
-                        <span className="text-gray-500 text-xs ml-1">
-                            ({getText('Optional', 'Opsional')})
-                        </span>
-                    )}
-                </label>
-                <div className="relative">
-                    <div className="relative">
-                        <input
-                            type="text"
-                            value={roomSearchTerm}
-                            onChange={(e) => {
-                                setRoomSearchTerm(e.target.value);
-                                setShowRoomDropdown(true);
-                            }}
-                            onFocus={() => setShowRoomDropdown(true)}
-                            placeholder={
-                                profile?.role === 'super_admin' 
-                                    ? getText('Search room or leave blank...', 'Cari ruangan atau kosongkan...')
-                                    : getText('Search and select room...', 'Cari dan pilih ruangan...')
-                            }
-                            className="w-full border-2 border-gray-200 rounded-lg p-3 pr-10 focus:border-blue-500 focus:ring-0 transition-colors"
-                        />
-                        {(selectedRoom || roomSearchTerm) && (
-                            <button
-                                type="button"
-                                onClick={clearRoomSelection}
-                                className="absolute right-8 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
-                                title={getText('Clear selection', 'Hapus pilihan')}
-                            >
-                                <X className="h-4 w-4" />
-                            </button>
-                        )}
-                        <button
-                            type="button"
-                            onClick={() => setShowRoomDropdown(!showRoomDropdown)}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400"
-                        >
-                            {showRoomDropdown ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                        </button>
-                    </div>
-                    
-                    {/* Room Dropdown */}
-                    {showRoomDropdown && (
-                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                            {/* Option for No Room (Super Admin only) */}
-                            {profile?.role === 'super_admin' && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setSelectedRoom(null);
-                                        form.setValue('rooms_id', '');
-                                        setRoomSearchTerm('');
-                                        setShowRoomDropdown(false);
-                                    }}
-                                    className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 transition-colors"
-                                >
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <div className="font-medium text-gray-600 italic">
-                                                {getText('No Room Assigned', 'Tidak Ada Ruangan')}
-                                            </div>
-                                            <div className="text-sm text-gray-500">
-                                                {getText('Equipment without specific location', 'Peralatan tanpa lokasi spesifik')}
-                                            </div>
-                                        </div>
-                                        {!selectedRoom && !roomSearchTerm && (
-                                            <CheckCircle className="h-5 w-5 text-green-600" />
-                                        )}
-                                    </div>
-                                </button>
-                            )}
-                            
-                            {filteredRooms.length > 0 ? (
-                                filteredRooms.map((room) => (
-                                    <button
-                                        key={room.id}
-                                        type="button"
-                                        onClick={() => handleRoomSelect(room)}
-                                        className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0 transition-colors"
-                                    >
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <div className="font-medium text-gray-900">{room.name}</div>
-                                                <div className="text-sm text-gray-500 flex items-center gap-2">
-                                                    <span>{room.code}</span>
-                                                    {room.department && (
-                                                        <>
-                                                            <span>•</span>
-                                                            <span className="text-blue-600">{room.department.name}</span>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            {selectedRoom?.id === room.id && (
-                                                <CheckCircle className="h-5 w-5 text-green-600" />
-                                            )}
-                                        </div>
-                                    </button>
-                                ))
-                            ) : roomSearchTerm ? (
-                                <div className="px-4 py-3 text-gray-500 text-center">
-                                    {getText('No rooms found matching search', 'Tidak ada ruangan yang cocok dengan pencarian')}
-                                    {profile?.role === 'department_admin' && (
-                                        <div className="text-xs mt-1">
-                                            {getText('Only rooms in your department are shown', 'Hanya ruangan di departemen Anda yang ditampilkan')}
-                                        </div>
-                                    )}
-                                </div>
-                            ) : (
-                                <div className="px-4 py-3 text-gray-500 text-center">
-                                    {getText('No rooms available', 'Tidak ada ruangan tersedia')}
-                                    {profile?.role === 'department_admin' && (
-                                        <div className="text-xs mt-1">
-                                            {getText('Only rooms in your department are shown', 'Hanya ruangan di departemen Anda yang ditampilkan')}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    )}
+    // ==================== RENDER GAP ANALYSIS ====================
+    const renderSimpleGapAnalysis = () => {
+        if (loadingTrack) {
+            return (
+                <div className="text-center py-8">
+                    <RefreshCw className="h-8 w-8 animate-spin text-blue-500 mx-auto mb-3" />
+                    <p className="text-gray-600">Analyzing gaps...</p>
                 </div>
-                
-                {/* Selected Room Display */}
-                {selectedRoom ? (
-                    <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-blue-100 rounded-lg">
-                                    <MapPin className="h-4 w-4 text-blue-600" />
-                                </div>
-                                <div>
-                                    <div className="font-medium text-blue-900">{selectedRoom.name}</div>
-                                    <div className="text-sm text-blue-700">
-                                        {selectedRoom.code}
-                                        {selectedRoom.department && (
-                                            <span className="ml-2">• {selectedRoom.department.name}</span>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={clearRoomSelection}
-                                className="p-1 text-blue-600 hover:text-blue-800"
-                                title={getText('Remove selection', 'Hapus pilihan')}
-                            >
-                                <X className="h-4 w-4" />
-                            </button>
-                        </div>
-                    </div>
-                ) : profile?.role === 'super_admin' && !roomSearchTerm ? (
-                    <div className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+            );
+        }
+
+        if (lendingDetails.length === 0) {
+            return (
+                <div className="text-center py-12 bg-green-50 rounded-xl border-2 border-green-200">
+                    <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-3" />
+                    <h4 className="text-lg font-bold text-green-800 mb-1">✅ All Clear!</h4>
+                    <p className="text-green-600">No missing items detected</p>
+                </div>
+            );
+        }
+
+        const gapsByUser = lendingDetails.reduce((acc, gap) => {
+            const userName = gap.user_name || 'Unknown User';
+            if (!acc[userName]) {
+                acc[userName] = [];
+            }
+            acc[userName].push(gap);
+            return acc;
+        }, {} as Record<string, LendingDetail[]>);
+
+        const totalMissing = lendingDetails.reduce((sum, gap) => sum + gap.missing_quantity, 0);
+
+        return (
+            <div className="space-y-4">
+                <div className="bg-gradient-to-r from-red-500 to-pink-500 rounded-xl p-4 text-white">
+                    <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                            <div className="p-2 bg-gray-100 rounded-lg">
-                                <Package className="h-4 w-4 text-gray-600" />
-                            </div>
+                            <AlertTriangle className="h-8 w-8" />
                             <div>
-                                <div className="font-medium text-gray-700">
-                                    {getText('No Room Assigned', 'Tidak Ada Ruangan')}
-                                </div>
-                                <div className="text-sm text-gray-500">
-                                    {getText('Equipment will be created without specific location', 'Peralatan akan dibuat tanpa lokasi spesifik')}
-                                </div>
+                                <h3 className="text-xl font-bold">Gap Detected</h3>
+                                <p className="text-sm opacity-90">{Object.keys(gapsByUser).length} users with missing items</p>
                             </div>
                         </div>
+                        <div className="text-right">
+                            <div className="text-3xl font-bold">{totalMissing}</div>
+                            <div className="text-sm opacity-90">Missing {selectedEquipment?.unit}</div>
+                        </div>
                     </div>
-                ) : null}
-                
-                {/* Validation Error */}
-                {form.formState.errors.rooms_id && (
-                    <p className="text-red-500 text-sm flex items-center gap-1">
-                        <AlertTriangle className="h-4 w-4" />
-                        {form.formState.errors.rooms_id.message}
-                    </p>
-                )}
-                
-                {/* Role-specific Help Text */}
-                {profile?.role === 'department_admin' ? (
-                    <p className="text-xs text-gray-500">
-                        {getText(
-                            'You can only assign equipment to rooms in your department.',
-                            'Anda hanya dapat menugaskan peralatan ke ruangan di departemen Anda.'
-                        )}
-                    </p>
-                ) : profile?.role === 'super_admin' ? (
-                    <p className="text-xs text-gray-500">
-                        {getText(
-                            'You can assign equipment to any room or leave it unassigned.',
-                            'Anda dapat menugaskan peralatan ke ruangan mana pun atau membiarkannya tanpa penugasan.'
-                        )}
-                    </p>
-                ) : null}
-            </div>
-        );
-    };
-
-    // ✅ UPDATED: Enhanced rendering function for quantity gaps
-    const renderQuantityGapDisplay = () => {
-    if (loadingLending) {
-        return (
-            <div className="bg-gray-50 rounded-lg p-8 text-center">
-                <RefreshCw className="h-8 w-8 animate-spin text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600">
-                    {getText('Analyzing all quantity gaps...', 'Menganalisis semua kesenjangan kuantitas...')}
-                </p>
-                <p className="text-sm text-gray-500 mt-2">
-                    Checking active, returned, pending, and overdue checkouts...
-                </p>
-            </div>
-        );
-    }
-
-    if (lendingDetails.length === 0) {
-        return (
-            <div className="bg-green-50 rounded-lg p-8 text-center border border-green-200">
-                <CheckCircle className="h-16 w-16 text-green-400 mx-auto mb-4" />
-                <h4 className="text-lg font-medium text-green-800 mb-2">
-                    {getText('✅ No Quantity Gaps Found!', '✅ Tidak Ada Kesenjangan Kuantitas!')}
-                </h4>
-                <p className="text-green-600">
-                    {getText(
-                        'All transactions have matching quantities or are completed.',
-                        'Semua transaksi memiliki kuantitas yang sesuai atau sudah diselesaikan.'
-                    )}
-                </p>
-                <div className="mt-3 text-sm text-green-600 bg-green-100 rounded-lg p-3">
-                    <strong>Checked statuses:</strong> active, returned, pending, overdue<br/>
-                    <strong>Excluded:</strong> completed checkouts
                 </div>
-            </div>
-        );
-    }
 
-    return (
-        <div className="space-y-4">
-            {/* Enhanced Header */}
-            <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                        <AlertTriangle className="h-6 w-6 text-red-600 mr-3" />
-                        <div>
-                            <h4 className="text-lg font-semibold text-red-800">
-                                🚨 QUANTITY GAPS DETECTED
-                            </h4>
-                            <p className="text-sm text-red-600">
-                                {getText(
-                                    'Found quantity gaps in active, returned, pending, or overdue checkouts',
-                                    'Ditemukan kesenjangan kuantitas pada checkout aktif, dikembalikan, tertunda, atau terlambat'
-                                )}
-                            </p>
-                            <div className="mt-2 flex items-center space-x-4 text-xs">
-                                {['active', 'returned', 'pending', 'overdue', 'no_checkout'].map(status => {
-                                    const count = status === 'no_checkout' 
-                                        ? lendingDetails.filter(d => !d.checkout).length
-                                        : lendingDetails.filter(d => d.checkout?.status === status).length;
-                                    if (count === 0) return null;
-                                    
+                {Object.entries(gapsByUser).map(([userName, userGaps]) => {
+                    const userTotalMissing = userGaps.reduce((sum, gap) => sum + gap.missing_quantity, 0);
+
+                    return (
+                        <div key={userName} className="bg-white rounded-xl border-2 border-gray-200 overflow-hidden">
+                            <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-4 border-b-2 border-gray-200">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold">
+                                            {userName.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div>
+                                            <h4 className="font-bold text-gray-900">{userName}</h4>
+                                            <p className="text-sm text-gray-600">
+                                                {userGaps[0].user_identity || 'No ID'} • {userGaps[0].user_email || 'No email'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-2xl font-bold text-red-600">{userTotalMissing}</div>
+                                        <div className="text-xs text-gray-600">Missing</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="divide-y divide-gray-100">
+                                {userGaps.map((gap) => {
+                                    const sourceBadge = getSourceBadge(gap.source || 'lending_tool');
+                                    const SourceIcon = sourceBadge.icon;
+                                    const statusBadge = gap.checkout ? getStatusBadge(gap.checkout.status) : null;
+
                                     return (
-                                        <span key={status} className="px-2 py-1 bg-red-100 text-red-700 rounded">
-                                            {status.replace('_', ' ')}: {count}
-                                        </span>
+                                        <div key={gap.id} className="p-4 hover:bg-gray-50">
+                                            <div className="flex items-start justify-between gap-4">
+                                                <div className="flex-1 space-y-2">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold ${sourceBadge.bg} ${sourceBadge.text}`}>
+                                                            <SourceIcon className="h-3 w-3" />
+                                                            {sourceBadge.label}
+                                                        </span>
+
+                                                        {statusBadge && (
+                                                            <span className={`px-2 py-1 rounded-lg text-xs font-bold ${statusBadge.bg} ${statusBadge.text}`}>
+                                                                {statusBadge.label}
+                                                            </span>
+                                                        )}
+
+                                                        {!gap.checkout && (
+                                                            <span className="px-2 py-1 rounded-lg text-xs font-bold bg-gray-100 text-gray-700">
+                                                                No Checkout
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="text-sm text-gray-600">
+                                                        📅 {format(new Date(gap.date), 'MMM dd, yyyy')}
+                                                    </div>
+
+                                                    <div className="flex items-center gap-4 text-sm">
+                                                        <span className="text-blue-600 font-medium">
+                                                            Borrowed: {gap.borrowed_quantity}
+                                                        </span>
+                                                        <span className="text-green-600 font-medium">
+                                                            Returned: {gap.returned_quantity}
+                                                        </span>
+                                                        <span className="text-red-600 font-bold">
+                                                            Missing: {gap.missing_quantity}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                <button
+                                                    onClick={() => handleResolveGap(gap)}
+                                                    className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium text-sm"
+                                                >
+                                                    <CheckCircle className="h-4 w-4" />
+                                                    Resolve
+                                                </button>
+                                            </div>
+                                        </div>
                                     );
                                 })}
-                            </div>
-                        </div>
-                    </div>
-                    <div className="text-right">
-                        <div className="text-3xl font-bold text-red-800">
-                            {lendingDetails.reduce((total, detail) => total + detail.missing_quantity, 0)}
-                        </div>
-                        <div className="text-sm text-red-600">
-                            {getText('Total Missing', 'Total Hilang')}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Gap Cards with Enhanced Status Display */}
-            <div className="space-y-3">
-                {lendingDetails.map((detail) => (
-                    <div key={detail.id} className="border-l-4 border-red-500 bg-red-50 rounded-lg p-4 shadow-sm">
-                        <div className="flex items-start justify-between">
-                            <div className="flex items-start space-x-4">
-                                <div className={`flex-shrink-0 h-12 w-12 rounded-full flex items-center justify-center ${
-                                    detail.source === 'booking' 
-                                        ? 'bg-gradient-to-r from-purple-500 to-indigo-500' 
-                                        : 'bg-gradient-to-r from-orange-500 to-red-500'
-                                }`}>
-                                    {detail.source === 'booking' ? (
-                                        <Building className="h-6 w-6 text-white" />
-                                    ) : (
-                                        <Wrench className="h-6 w-6 text-white" />
-                                    )}
-                                </div>
-                                <div className="flex-1">
-                                    <h4 className="font-semibold text-gray-900">
-                                        {detail.user?.full_name || getText('Unknown User', 'Pengguna Tidak Dikenal')}
-                                    </h4>
-                                    <div className="space-y-1 mt-2">
-                                        <div className="flex items-center text-sm text-gray-600">
-                                            <Hash className="h-4 w-4 mr-2" />
-                                            ID: {detail.user?.identity_number || 'N/A'}
-                                        </div>
-                                        <div className="flex items-center text-sm text-gray-600">
-                                            <Calendar className="h-4 w-4 mr-2" />
-                                            Date: {format(new Date(detail.date), 'MMM d, yyyy')}
-                                        </div>
-                                        <div className="flex items-center text-sm space-x-2">
-                                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                                {detail.source === 'booking' ? '📋 BOOKING' : '🔧 LENDING'}
-                                            </span>
-                                            
-                                            {/* Enhanced Checkout Status Display */}
-                                            {detail.checkout ? (
-                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                                    detail.checkout.status === 'active' 
-                                                        ? 'bg-yellow-100 text-yellow-800' 
-                                                        : detail.checkout.status === 'returned'
-                                                        ? 'bg-blue-100 text-blue-800'
-                                                        : detail.checkout.status === 'pending'
-                                                        ? 'bg-purple-100 text-purple-800'
-                                                        : detail.checkout.status === 'overdue'
-                                                        ? 'bg-red-100 text-red-800'
-                                                        : 'bg-gray-100 text-gray-800'
-                                                }`}>
-                                                    {detail.checkout.status === 'active' && '⏳ ACTIVE'}
-                                                    {detail.checkout.status === 'returned' && '🔄 RETURNED'}
-                                                    {detail.checkout.status === 'pending' && '⏸️ PENDING'}
-                                                    {detail.checkout.status === 'overdue' && '⚠️ OVERDUE'}
-                                                </span>
-                                            ) : (
-                                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                                    ❌ NO CHECKOUT
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            {/* Quantity calculation card */}
-                            <div className="text-right space-y-2">
-                                <div className="bg-white rounded-lg p-3 border border-red-200">
-                                    <div className="text-xs text-gray-600 mb-2 font-medium">
-                                        {getText('QUANTITY GAP', 'KESENJANGAN KUANTITAS')}
-                                    </div>
-                                    
-                                    <div className="space-y-1">
-                                        <div className="flex items-center justify-between text-sm">
-                                            <span className="text-blue-600">📋 {getText('Borrowed', 'Dipinjam')}:</span>
-                                            <span className="font-bold text-blue-600">{detail.borrowed_quantity}</span>
-                                        </div>
-                                        
-                                        <div className="flex items-center justify-between text-sm">
-                                            <span className="text-green-600">✅ {getText('Returned', 'Dikembalikan')}:</span>
-                                            <span className="font-bold text-green-600">{detail.returned_quantity}</span>
-                                        </div>
-                                        
-                                        <div className="border-t border-gray-200 pt-1">
-                                            <div className="flex items-center justify-between text-sm">
-                                                <span className="text-red-600 font-medium">🚨 {getText('Missing', 'Hilang')}:</span>
-                                                <span className="font-bold text-red-600 text-lg">
-                                                    {detail.missing_quantity}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="text-xs text-red-700 bg-red-100 px-2 py-1 rounded text-center">
-                                    {detail.borrowed_quantity} - {detail.returned_quantity} = <strong>{detail.missing_quantity}</strong>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        {/* Enhanced Action area */}
-                        <div className="mt-4 p-3 bg-red-100 border border-red-200 rounded-md">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center">
-                                    <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
-                                    <span className="text-sm font-medium text-red-800">
-                                        <strong>{getText('Gap Found:', 'Kesenjangan Ditemukan:')}</strong> {detail.missing_quantity} {selectedEquipment?.unit} {getText('missing', 'hilang')}
-                                        
-                                        {/* Enhanced status explanations */}
-                                        {detail.checkout?.status === 'active' && (
-                                            <span className="ml-2 text-red-700">
-                                                ({getText('Active checkout with quantity gap', 'Checkout aktif dengan kesenjangan kuantitas')})
-                                            </span>
-                                        )}
-                                        {detail.checkout?.status === 'returned' && (
-                                            <span className="ml-2 text-red-700">
-                                                ({getText('Returned checkout with quantity gap', 'Checkout dikembalikan dengan kesenjangan kuantitas')})
-                                            </span>
-                                        )}
-                                        {detail.checkout?.status === 'pending' && (
-                                            <span className="ml-2 text-red-700">
-                                                ({getText('Pending checkout with quantity gap', 'Checkout tertunda dengan kesenjangan kuantitas')})
-                                            </span>
-                                        )}
-                                        {detail.checkout?.status === 'overdue' && (
-                                            <span className="ml-2 text-red-700">
-                                                ({getText('Overdue checkout with quantity gap', 'Checkout terlambat dengan kesenjangan kuantitas')})
-                                            </span>
-                                        )}
-                                        {!detail.checkout && (
-                                            <span className="ml-2 text-red-700">
-                                                ({getText('No checkout record - all items missing', 'Tidak ada record checkout - semua barang hilang')})
-                                            </span>
-                                        )}
-                                    </span>
-                                </div>
-                                
-                                {/* Complete button - show for any checkout that exists */}
-                                {detail.checkout && (
-                                    <button
-                                        onClick={() => handleMarkAsCompleted(detail.checkout!.id, selectedEquipment!.id)}
-                                        className="ml-3 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 transition-colors"
-                                        title={getText('Mark this case as completed', 'Tandai kasus ini sebagai selesai')}
-                                    >
-                                        ✅ {getText('Mark Completed', 'Tandai Selesai')}
-                                    </button>
-                                )}
-                            </div>
-                            
-                            {/* Help text */}
-                            <div className="mt-2 text-xs text-red-600">
-                                {detail.checkout ? (
-                                    getText(
-                                        'Click "Mark Completed" to close this case if the gap is acceptable or resolved offline.',
-                                        'Klik "Tandai Selesai" untuk menutup kasus ini jika kesenjangan dapat diterima atau diselesaikan secara offline.'
-                                    )
-                                ) : (
-                                    getText(
-                                        'No checkout record found. This indicates items were never returned through the system.',
-                                        'Tidak ada record checkout ditemukan. Ini menunjukkan barang tidak pernah dikembalikan melalui sistem.'
-                                    )
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-};
-
-    // Show loading state while profile is being loaded
-    if (!profile) {
-        return (
-            <div className="flex items-center justify-center h-64">
-                <div className="text-center">
-                    <RefreshCw className="h-8 w-8 animate-spin text-blue-500 mx-auto mb-4" />
-                    <p className="text-gray-600">
-                        {getText('Loading profile...', 'Memuat profil...')}
-                    </p>
-                </div>
-            </div>
-        );
-    }
-
-    // Enhanced access control check
-    if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
-        return (
-            <div className="flex items-center justify-center h-64">
-                <div className="text-center">
-                    <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                        {getText('Access Denied', 'Akses Ditolak')}
-                    </h3>
-                    <p className="text-gray-600">
-                        {getText(
-                            "You don't have permission to access tool administration.", 
-                            'Anda tidak memiliki izin untuk mengakses administrasi alat.'
-                        )}
-                    </p>
-                    <div className="mt-4 text-sm text-gray-500">
-                        {getText('Current role', 'Peran saat ini')}: {profile?.role || 'None'}
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    // Check if department admin has department_id
-    if (profile?.role === 'department_admin' && !profile.department_id) {
-        return (
-            <div className="flex items-center justify-center h-64">
-                <div className="text-center">
-                    <AlertCircle className="h-16 w-16 text-amber-500 mx-auto mb-4" />
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                        {getText('Department Not Assigned', 'Departemen Belum Ditentukan')}
-                    </h3>
-                    <p className="text-gray-600">
-                        {getText(
-                            'Your account is not assigned to any department. Please contact the system administrator.',
-                            'Akun Anda belum ditugaskan ke departemen manapun. Silakan hubungi administrator sistem.'
-                        )}
-                    </p>
-                    <div className="mt-4 text-sm text-gray-500">
-                        {getText('User ID', 'ID Pengguna')}: {profile.id}
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <div className="space-y-8">
-            {/* Header Section */}
-            <div className="bg-gradient-to-br from-blue-500 via-purple-500 to-indigo-600 rounded-xl p-6 text-white">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-3xl font-bold flex items-center space-x-3 mb-2">
-                            <div className="p-2 bg-white bg-opacity-20 rounded-lg backdrop-blur-sm">
-                                <Wrench className="h-8 w-8" />
-                            </div>
-                            <span>{getText('Equipment Management', 'Manajemen Peralatan')}</span>
-                        </h1>
-                        <p className="text-lg opacity-90">
-                            {getText('Manage your laboratory and classroom equipment', 'Kelola peralatan laboratorium dan ruang kelas Anda')}
-                            {profile?.role === 'department_admin' && (
-                                <span className="block text-sm mt-1">
-                                    {getText('Department', 'Departemen')}: {rooms[0]?.department?.name || 'Loading...'}
-                                </span>
-                            )}
-                        </p>
-                      <div className="mt-3 flex items-center space-x-4 text-sm">
-                            <div className="flex items-center space-x-2 opacity-80">
-                                <Package className="h-4 w-4" />
-                                <span>{getText('Total', 'Total')}: {equipment.length}</span>
-                            </div>
-                            <div className="flex items-center space-x-2 opacity-80">
-                                <CheckCircle className="h-4 w-4" />
-                                <span>{getText('Available', 'Tersedia')}: {equipment.filter(eq => eq.is_available).length}</span>
-                            </div>
-                            <div className="flex items-center space-x-2 opacity-80">
-                                <AlertTriangle className="h-4 w-4" />
-                                <span>{getText('Good Condition', 'Kondisi Baik')}: {equipment.filter(eq => eq.condition === 'GOOD').length}</span>
-                            </div>
-                            <div className="flex items-center space-x-2 opacity-80">
-                                <Building className="h-4 w-4" />
-                                <span>{getText('Rooms', 'Ruangan')}: {rooms.length}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="hidden lg:block text-right">
-                        <div className="text-4xl font-bold opacity-90">{equipment.length}</div>
-                        <div className="text-sm opacity-70">{getText('Total Equipment', 'Total Peralatan')}</div>
-                        {profile?.role === 'department_admin' && (
-                            <div className="text-xs opacity-60 mt-1">
-                                {getText('Your Department Only', 'Hanya Departemen Anda')}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            {/* Filters Section */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-                <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
-                    <div className="relative flex-1 w-full max-w-md">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                        <input 
-                            type="text" 
-                            placeholder={getText('Search equipment...', 'Cari peralatan...')} 
-                            value={searchTerm} 
-                            onChange={(e) => setSearchTerm(e.target.value)} 
-                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
-                        />
-                    </div>
-                    
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <select 
-                            value={categoryFilter} 
-                            onChange={(e) => setCategoryFilter(e.target.value)} 
-                            className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 appearance-none bg-white text-sm"
-                        >
-                            <option value="all">{getText('All Categories', 'Semua Kategori')}</option>
-                            {categories.map(cat => (
-                                <option key={cat.name} value={cat.name}>{cat.name}</option>
-                            ))}
-                        </select>
-
-                        <select 
-                            value={roomFilter} 
-                            onChange={(e) => setRoomFilter(e.target.value)}
-                          className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 appearance-none bg-white text-sm"
-                        >
-                            <option value="all">{getText('All Locations', 'Semua Lokasi')}</option>
-                            {availableRoomsForFilter.map(room => (
-                                <option key={room.id} value={room.id}>
-                                    {room.name} {room.department?.name && `(${room.department.name})`}
-                                </option>
-                            ))}
-                        </select>
-
-                        <button 
-                            onClick={() => {
-                                fetchRooms();
-                                fetchEquipment();
-                            }} 
-                            className="p-2 bg-gray-50 hover:bg-gray-100 border border-gray-300 rounded-lg transition-colors"
-                            title={getText('Refresh', 'Segarkan')}
-                        >
-                            <RefreshCw className={`h-4 w-4 text-gray-600 ${loading ? 'animate-spin' : ''}`} />
-                        </button>
-
-                        <button 
-                            onClick={() => { 
-                                setEditingEquipment(null); 
-                                setSelectedRoom(null);
-                                setRoomSearchTerm('');
-                                form.reset({ is_available: true, condition: 'GOOD', quantity: 1 }); 
-                                setShowModal(true); 
-                            }} 
-                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-                            disabled={!canAddEquipment()}
-                        >
-                            <Plus className="h-4 w-4" />
-                            <span>{getText('Add Equipment', 'Tambah Peralatan')}</span>
-                        </button>
-                    </div>
-                </div>
-                
-                {/* Department Info for Department Admin */}
-                {profile?.role === 'department_admin' && (
-                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                        <div className="flex items-center gap-2 text-blue-800">
-                            <Building className="h-4 w-4" />
-                            <span className="font-medium">
-                                {getText('Department Filter Active', 'Filter Departemen Aktif')}: 
-                            </span>
-                            <span className="font-bold">
-                                {rooms[0]?.department?.name || getText('Loading department...', 'Memuat departemen...')}
-                            </span>
-                        </div>
-                        <div className="text-xs text-blue-600 mt-1">
-                            {getText(
-                                'You can only see and manage equipment in rooms assigned to your department.',
-                                'Anda hanya dapat melihat dan mengelola peralatan di ruangan yang ditugaskan ke departemen Anda.'
-                            )}
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            {/* Equipment Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {loading && (
-                    Array.from({ length: 8 }).map((_, index) => (
-                        <div key={index} className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 animate-pulse">
-                            <div className="h-4 bg-gray-200 rounded w-3/4 mb-3"></div>
-                            <div className="h-3 bg-gray-200 rounded w-1/2 mb-4"></div>
-                            <div className="space-y-2">
-                                <div className="h-3 bg-gray-200 rounded"></div>
-                                <div className="h-3 bg-gray-200 rounded w-2/3"></div>
-                            </div>
-                        </div>
-                    ))
-                )}
-
-                {!loading && filteredEquipment.length === 0 && (
-                    <div className="col-span-full flex flex-col items-center justify-center py-16 text-gray-500">
-                        <Package className="h-16 w-16 mb-4 opacity-50" />
-                        <h3 className="text-xl font-semibold mb-2">
-                            {equipment.length === 0 
-                                ? getText('No Equipment Found', 'Tidak Ada Peralatan Ditemukan')
-                                : getText('No Equipment Match Filter', 'Tidak Ada Peralatan yang Cocok dengan Filter')
-                            }
-                        </h3>
-                        <p className="text-center max-w-md">
-                            {equipment.length === 0 
-                                ? (profile?.role === 'department_admin' 
-                                    ? getText(
-                                        'No equipment found in your department rooms. Add equipment to rooms assigned to your department to get started.',
-                                        'Tidak ada peralatan ditemukan di ruangan departemen Anda. Tambahkan peralatan ke ruangan yang ditugaskan ke departemen Anda untuk memulai.'
-                                      )
-                                    : getText('Add some equipment to get started', 'Tambahkan peralatan untuk memulai')
-                                  )
-                                : getText('Try adjusting your search or filters', 'Coba sesuaikan pencarian atau filter Anda')
-                            }
-                        </p>
-                        {rooms.length === 0 && profile?.role === 'department_admin' && (
-                            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                                <div className="flex items-center gap-2 text-amber-800">
-                                    <AlertTriangle className="h-5 w-5" />
-                                    <span className="font-medium">
-                                        {getText('No Rooms Available', 'Tidak Ada Ruangan Tersedia')}
-                                    </span>
-                                </div>
-                                <p className="text-sm text-amber-700 mt-1">
-                                    {getText(
-                                        'No rooms are assigned to your department. Contact the system administrator to assign rooms to your department.',
-                                        'Tidak ada ruangan yang ditugaskan ke departemen Anda. Hubungi administrator sistem untuk menugaskan ruangan ke departemen Anda.'
-                                    )}
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {!loading && filteredEquipment.map(eq => {
-                    const categoryConfig = getCategoryConfig(eq.category);
-                    const CategoryIcon = categoryConfig.icon;
-                    
-                    return (
-                        <div key={eq.id} className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200">
-                            <div className="p-4">
-                                <div className="flex justify-between items-start mb-3">
-                                    <div className={`p-2 rounded-lg bg-gradient-to-r ${categoryConfig.color} text-white`}>
-                                        <CategoryIcon className="h-5 w-5" />
-                                    </div>
-                                    {getStatusChip(eq.condition, eq.is_mandatory)}
-                                </div>
-                                
-                                <h3 className="font-semibold text-lg text-gray-900 mb-2 hover:text-blue-600 transition-colors">
-                                    {eq.name}
-                                </h3>
-                                
-                                <div className="flex items-center gap-2 mb-3">
-                                    <span className="text-xs font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded">
-                                        {eq.code}
-                                    </span>
-                                </div>
-
-                                <div className="space-y-2 text-sm mb-4">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-gray-600">{getText('Category', 'Kategori')}</span>
-                                        <span className="font-medium text-gray-900">{eq.category}</span>
-                                    </div>
-                                    
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-gray-600">{getText('Location', 'Lokasi')}</span>
-                                        <span className="font-medium text-gray-900 text-right">
-                                            {eq.rooms?.name || getText('Unassigned', 'Belum Ditentukan')}
-                                        </span>
-                                    </div>
-                                    
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-gray-600">{getText('Quantity', 'Jumlah')}</span>
-                                        <span className="font-medium text-gray-900">
-                                            {eq.quantity} {eq.unit}
-                                        </span>
-                                    </div>
-
-                                    {eq.rooms?.department?.name && (
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-gray-600">{getText('Department', 'Departemen')}</span>
-                                            <span className="font-medium text-blue-600 text-right">
-                                                {eq.rooms.department.name}
-                                            </span>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                                    <button 
-                                        onClick={() => handleViewDetails(eq)} 
-                                        className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium transition-colors text-sm"
-                                        title={getText('View Details & Gap Analysis', 'Lihat Detail & Analisis Kesenjangan')}
-                                    >
-                                        <Eye className="h-4 w-4" />
-                                        <span>{getText('View', 'Lihat')}</span>
-                                    </button>
-                                    
-                                    <div className="flex items-center space-x-1">
-                                        <button 
-                                            onClick={() => handleEdit(eq)} 
-                                            className="p-2 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors"
-                                            title={getText('Edit', 'Edit')}
-                                        >
-                                            <Edit className="h-3 w-3" />
-                                        </button>
-                                        <button 
-                                            onClick={() => setShowDeleteConfirm(eq.id)} 
-                                            className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                                            title={getText('Delete', 'Hapus')}
-                                        >
-                                            <Trash2 className="h-3 w-3" />
-                                        </button>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     );
                 })}
             </div>
+        );
+    };
 
-            {/* Add/Edit Modal */}
-            {showModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
-                        <div className="bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-600 p-6 text-white">
-                            <div className="flex items-center justify-between">
-                                <h3 className="text-2xl font-bold flex items-center gap-3">
-                                    <Wrench className="h-6 w-6" />
-                                    {editingEquipment ? 
-                                        getText('Edit Equipment', 'Edit Peralatan') : 
-                                        getText('Add New Equipment', 'Tambah Peralatan Baru')
-                                    }
-                                    {profile?.role === 'department_admin' && (
-                                        <span className="text-sm opacity-80 ml-2">
-                                            ({rooms[0]?.department?.name})
-                                        </span>
-                                    )}
-                                </h3>
-                                <button 
-                                    onClick={() => setShowModal(false)}
-                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+    // ==================== NEW: RENDER STOCK TRACK RECORD ====================
+    const renderStockTrackRecord = () => {
+        if (loadingStockTrack) {
+            return (
+                <div className="text-center py-8">
+                    <RefreshCw className="h-8 w-8 animate-spin text-indigo-500 mx-auto mb-3" />
+                    <p className="text-gray-600">Loading track record...</p>
+                </div>
+            );
+        }
+
+        if (stockTrackRecords.length === 0) {
+            return (
+                <div className="text-center py-12 bg-blue-50 rounded-xl border-2 border-blue-200">
+                    <Package2 className="h-16 w-16 text-blue-500 mx-auto mb-3" />
+                    <h4 className="text-lg font-bold text-blue-800 mb-1">No Claims Yet</h4>
+                    <p className="text-blue-600">This stock has not been claimed as equipment</p>
+                </div>
+            );
+        }
+
+        const totalClaimed = stockTrackRecords.reduce((sum, record) => sum + record.quantity_claimed, 0);
+
+        return (
+            <div className="space-y-4">
+                {/* Summary Header */}
+                <div className="bg-gradient-to-r from-indigo-500 to-purple-500 rounded-xl p-4 text-white">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <History className="h-8 w-8" />
+                            <div>
+                                <h3 className="text-xl font-bold">Claim History</h3>
+                                <p className="text-sm opacity-90">{stockTrackRecords.length} equipment items claimed from this stock</p>
+                            </div>
+                        </div>
+                        <div className="text-right">
+                            <div className="text-3xl font-bold">{totalClaimed}</div>
+                            <div className="text-sm opacity-90">Total {selectedStock?.unit} Claimed</div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Track Records List */}
+                <div className="space-y-3">
+                    {stockTrackRecords.map((record, index) => {
+                        const conditionBadge = getConditionBadge(record.condition);
+                        const ConditionIcon = conditionBadge.icon;
+
+                        return (
+                            <div key={record.equipment_id} className="bg-white rounded-xl border-2 border-gray-200 overflow-hidden hover:shadow-lg transition-all">
+                                <div className="p-4">
+                                    <div className="flex items-start justify-between gap-4">
+                                        {/* Left: Equipment Info */}
+                                        <div className="flex-1 space-y-3">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold">
+                                                    #{index + 1}
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-bold text-lg text-gray-900">{record.equipment_name}</h4>
+                                                    <p className="text-sm text-gray-600 font-mono">{record.equipment_code}</p>
+                                                </div>
+                                            </div>
+
+                                            {/* Location Info */}
+                                            <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 border-2 border-green-200">
+                                                <div className="flex items-start gap-3">
+                                                    <MapPin className="h-5 w-5 text-green-600 mt-0.5" />
+                                                    <div className="flex-1">
+                                                        <p className="text-xs font-bold text-green-700 mb-1">LOCATION</p>
+                                                        {record.room_name ? (
+                                                            <>
+                                                                <p className="font-bold text-gray-900">{record.room_name}</p>
+                                                                <p className="text-sm text-gray-600 font-mono">{record.room_code}</p>
+                                                                {record.department_name && (
+                                                                    <p className="text-sm text-blue-600 mt-1">📍 {record.department_name}</p>
+                                                                )}
+                                                            </>
+                                                        ) : (
+                                                            <p className="text-gray-500 italic">No room assigned</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Date Info */}
+                                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                                <Clock className="h-4 w-4" />
+                                                <span>Claimed on {format(new Date(record.claimed_at), 'MMM dd, yyyy HH:mm')}</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Right: Stats */}
+                                        <div className="text-right space-y-2">
+                                            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border-2 border-blue-200">
+                                                <p className="text-xs text-blue-700 mb-1">Quantity Claimed</p>
+                                                <p className="text-3xl font-bold text-blue-900">{record.quantity_claimed}</p>
+                                                <p className="text-xs text-blue-600">{selectedStock?.unit}</p>
+                                            </div>
+
+                                            <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold ${conditionBadge.bg} ${conditionBadge.text}`}>
+                                                <ConditionIcon className="h-3 w-3" />
+                                                {conditionBadge.label}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* Footer Summary */}
+                <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl p-4 border-2 border-gray-200">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <Database className="h-6 w-6 text-gray-600" />
+                            <div>
+                                <p className="text-sm text-gray-600">Remaining in Stock</p>
+                                <p className="font-bold text-gray-900 text-lg">{selectedStock?.quantity} {selectedStock?.unit}</p>
+                            </div>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-sm text-gray-600">Total Equipment Items</p>
+                            <p className="font-bold text-gray-900 text-lg">{stockTrackRecords.length}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    // ==================== MODAL COMPONENTS ====================
+    // 1. Stock Modal (Add/Edit)
+    const StockModal = () => (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-6 text-white flex-shrink-0">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-2xl font-bold">
+                            {editingStock ? 'Edit Stock' : 'Add Stock'}
+                        </h3>
+                        <button
+                            onClick={() => {
+                                setShowStockModal(false);
+                                setEditingStock(null);
+                            }}
+                            className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                        >
+                            <X className="h-6 w-6" />
+                        </button>
+                    </div>
+                </div>
+
+                <form onSubmit={stockForm.handleSubmit(handleStockSubmit)} className="p-6 space-y-4 flex-1 overflow-y-auto">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Name *</label>
+                            <input
+                                {...stockForm.register('nama')}
+                                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                            />
+                            {stockForm.formState.errors.nama && (
+                                <p className="text-red-500 text-sm mt-1">{stockForm.formState.errors.nama.message}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Code *</label>
+                            <input
+                                {...stockForm.register('code')}
+                                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none font-mono transition-colors"
+                            />
+                            {stockForm.formState.errors.code && (
+                                <p className="text-red-500 text-sm mt-1">{stockForm.formState.errors.code.message}</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-bold mb-2">Category *</label>
+                        <select
+                            {...stockForm.register('category')}
+                            className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                        >
+                            <option value="">Select Category</option>
+                            {categories.map(cat => (
+                                <option key={cat.name} value={cat.name}>{cat.name}</option>
+                            ))}
+                        </select>
+                        {stockForm.formState.errors.category && (
+                            <p className="text-red-500 text-sm mt-1">{stockForm.formState.errors.category.message}</p>
+                        )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Quantity *</label>
+                            <input
+                                type="number"
+                                {...stockForm.register('quantity', { valueAsNumber: true })}
+                                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                            />
+                            {stockForm.formState.errors.quantity && (
+                                <p className="text-red-500 text-sm mt-1">{stockForm.formState.errors.quantity.message}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Unit *</label>
+                            <input
+                                {...stockForm.register('unit')}
+                                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                                placeholder="pcs, set, box"
+                            />
+                            {stockForm.formState.errors.unit && (
+                                <p className="text-red-500 text-sm mt-1">{stockForm.formState.errors.unit.message}</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-bold mb-2">Specification</label>
+                        <textarea
+                            {...stockForm.register('spesification')}
+                            rows={3}
+                            className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-bold mb-2">Stock Photo</label>
+                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 hover:border-blue-400 transition-colors">
+                            {stockImagePreview ? (
+                                <div className="relative group">
+                                    <div className="w-full h-48 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center">
+                                        <img
+                                            src={stockImagePreview}
+                                            alt="Preview"
+                                            className="w-full h-full object-contain"
+                                        />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={clearStockImage}
+                                        className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                    </button>
+                                </div>
+                            ) : (
+                                <label className="flex flex-col items-center justify-center h-32 cursor-pointer">
+                                    <Upload className="h-8 w-8 text-gray-400 mb-2" />
+                                    <span className="text-sm text-gray-500 font-medium">Click to upload photo</span>
+                                    <span className="text-xs text-gray-400 mt-1">Max 5MB (JPG, PNG)</span>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={handleStockImageChange}
+                                        className="hidden"
+                                    />
+                                </label>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-4">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowStockModal(false);
+                                setEditingStock(null);
+                            }}
+                            className="px-6 py-2 border-2 border-gray-300 rounded-xl font-medium hover:bg-gray-50 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={loadingStocks}
+                            className="px-6 py-2 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 disabled:opacity-50 transition-colors"
+                        >
+                            {loadingStocks ? 'Saving...' : (editingStock ? 'Update' : 'Create')}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+
+    // 2. Stock Detail Modal
+    const StockDetailModal = () => (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 p-6 text-white flex-shrink-0">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h3 className="text-2xl font-bold">{selectedStock?.nama}</h3>
+                            <p className="text-sm opacity-90 mt-1">Complete Stock Information</p>
+                        </div>
+                        <button
+                            onClick={() => setShowStockDetailModal(false)}
+                            className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                        >
+                            <X className="h-6 w-6" />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="p-6 overflow-y-auto flex-1 space-y-6">
+                    {/* Stock Photo Banner */}
+                    {selectedStock?.attachments ? (
+                        <div className="relative rounded-xl overflow-hidden shadow-lg h-64 group">
+                            <img
+                                src={selectedStock.attachments}
+                                alt={selectedStock.nama}
+                                className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                            <div className="absolute bottom-0 left-0 right-0 p-6 flex items-end justify-between">
+                                <div>
+                                    <h4 className="text-white font-bold text-2xl drop-shadow-md">{selectedStock.nama}</h4>
+                                    <p className="text-white/80 text-sm font-mono mt-1">{selectedStock.code}</p>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setStockImagePreview(selectedStock.attachments || '');
+                                        setShowStockImageFullscreen(true);
+                                    }}
+                                    className="p-3 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-xl text-white transition-all shadow-lg border border-white/10"
+                                    title="View Fullscreen"
                                 >
-                                    <X className="h-6 w-6" />
+                                    <Maximize2 className="h-5 w-5" />
                                 </button>
                             </div>
                         </div>
-                        
-                        <form onSubmit={form.handleSubmit(handleSubmit)} className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-700">
-                                        {getText('Equipment Name', 'Nama Peralatan')} *
-                                    </label>
-                                    <input 
-                                        {...form.register('name')} 
-                                        className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors" 
-                                        placeholder={getText('Enter equipment name', 'Masukkan nama peralatan')}
-                                    />
-                                    {form.formState.errors.name && (
-                                        <p className="text-red-500 text-sm flex items-center gap-1">
-                                            <AlertTriangle className="h-4 w-4" />
-                                            {form.formState.errors.name.message}
-                                        </p>
-                                    )}
+                    ) : (
+                        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-8 text-center border-2 border-dashed border-blue-100">
+                            <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center mb-4 shadow-sm">
+                                <Package className="h-10 w-10 text-indigo-400 opacity-60" />
+                            </div>
+                            <h4 className="font-bold text-xl text-gray-800">{selectedStock?.nama}</h4>
+                            <p className="text-indigo-400 text-sm mt-2 font-medium italic">No photo available</p>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Left Column */}
+                        <div className="space-y-4">
+                            <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-xl border border-blue-200">
+                                <h4 className="font-bold text-blue-900 mb-3 flex items-center gap-2">
+                                    <Package className="h-5 w-5" />
+                                    Basic Information
+                                </h4>
+                                <div className="space-y-3">
+                                    <div>
+                                        <p className="text-xs text-blue-700 mb-1">Stock Name (Nama)</p>
+                                        <p className="font-bold text-gray-900">{selectedStock?.nama}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-blue-700 mb-1">Stock Code</p>
+                                        <p className="font-mono font-bold text-gray-900">{selectedStock?.code}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-blue-700 mb-1">Category</p>
+                                        <p className="font-bold text-gray-900">{selectedStock?.category}</p>
+                                    </div>
                                 </div>
-                                
+                            </div>
+
+                            <div className="bg-gradient-to-r from-purple-50 to-purple-100 p-4 rounded-xl border border-purple-200">
+                                <h4 className="font-bold text-purple-900 mb-3 flex items-center gap-2">
+                                    <Database className="h-5 w-5" />
+                                    Inventory
+                                </h4>
+                                <div className="space-y-3">
+                                    <div>
+                                        <p className="text-xs text-purple-700 mb-1">Current Quantity</p>
+                                        <p className="text-3xl font-bold text-purple-900">{selectedStock?.quantity}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-purple-700 mb-1">Unit</p>
+                                        <p className="font-bold text-gray-900">{selectedStock?.unit}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-purple-700 mb-1">Stock Status</p>
+                                        <div className={`inline-flex px-3 py-1 rounded-lg text-sm font-bold ${selectedStock && selectedStock.quantity > 20 ? 'bg-green-100 text-green-700'
+                                            : selectedStock && selectedStock.quantity > 0 ? 'bg-yellow-100 text-yellow-700'
+                                                : 'bg-red-100 text-red-700'
+                                            }`}>
+                                            {selectedStock && selectedStock.quantity > 20 ? '✅ In Stock'
+                                                : selectedStock && selectedStock.quantity > 0 ? '⚠️ Low Stock'
+                                                    : '❌ Out of Stock'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Right Column */}
+                        <div className="space-y-4">
+                            {selectedStock?.spesification && (
+                                <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-4 rounded-xl border border-gray-200">
+                                    <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                                        <FileText className="h-5 w-5" />
+                                        Specifications (Spesifikasi)
+                                    </h4>
+                                    <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
+                                        {selectedStock.spesification}
+                                    </p>
+                                </div>
+                            )}
+
+                            <div className="bg-gradient-to-r from-slate-50 to-slate-100 p-4 rounded-xl border border-slate-200">
+                                <h4 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
+                                    <Clock className="h-5 w-5" />
+                                    Timestamps
+                                </h4>
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-700">
-                                        {getText('Equipment Code', 'Kode Peralatan')} *
-                                    </label>
-                                    <input 
-                                        {...form.register('code')} 
-                                        className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors font-mono" 
-                                        placeholder="e.g. LAB-001"
-                                    />
-                                    {form.formState.errors.code && (
-                                        <p className="text-red-500 text-sm flex items-center gap-1">
-                                            <AlertTriangle className="h-4 w-4" />
-                                            {form.formState.errors.code.message}
-                                        </p>
+                                    {selectedStock?.created_at && (
+                                        <div>
+                                            <p className="text-xs text-slate-700 mb-1">Created At</p>
+                                            <p className="font-bold text-gray-900">{format(new Date(selectedStock.created_at), 'MMM dd, yyyy HH:mm')}</p>
+                                        </div>
+                                    )}
+                                    {selectedStock?.updated_at && (
+                                        <div>
+                                            <p className="text-xs text-slate-700 mb-1">Last Updated</p>
+                                            <p className="font-bold text-gray-900">{format(new Date(selectedStock.updated_at), 'MMM dd, yyyy HH:mm')}</p>
+                                        </div>
                                     )}
                                 </div>
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="block text-sm font-semibold text-gray-700">
-                                    {getText('Category', 'Kategori')} *
+                            <div className="bg-gradient-to-r from-amber-50 to-amber-100 p-4 rounded-xl border border-amber-200">
+                                <h4 className="font-bold text-amber-900 mb-3 flex items-center gap-2">
+                                    <Info className="h-5 w-5" />
+                                    Stock ID
+                                </h4>
+                                <p className="font-mono text-xs text-gray-600 break-all">{selectedStock?.id}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="p-6 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+                    <div className="flex flex-wrap gap-3 justify-end">
+                        <button
+                            onClick={() => setShowStockDetailModal(false)}
+                            className="px-5 py-2 border-2 border-gray-300 rounded-xl font-medium hover:bg-white transition-colors"
+                        >
+                            Close
+                        </button>
+                        <button
+                            onClick={() => {
+                                setShowStockDetailModal(false);
+                                handleOpenStockTrackModal(selectedStock!);
+                            }}
+                            className="px-5 py-2 bg-purple-500 text-white rounded-xl font-medium hover:bg-purple-600 transition-colors"
+                        >
+                            View Track Record
+                        </button>
+                        <button
+                            onClick={() => {
+                                setShowStockDetailModal(false);
+                                handleOpenStockModal(selectedStock!);
+                            }}
+                            className="px-5 py-2 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition-colors"
+                        >
+                            Edit Stock
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
+    // 3. Stock Track Record Modal
+    const StockTrackModal = () => (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                <div className="bg-gradient-to-r from-purple-500 to-indigo-500 p-6 text-white flex-shrink-0">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h3 className="text-2xl font-bold">{selectedStock?.nama}</h3>
+                            <p className="text-sm opacity-90 mt-1">Track Record - Equipment Claims from This Stock</p>
+                        </div>
+                        <button
+                            onClick={() => setShowStockTrackModal(false)}
+                            className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                        >
+                            <X className="h-6 w-6" />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="p-6 overflow-y-auto flex-1">
+                    {renderStockTrackRecord()}
+                </div>
+
+                <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+                    <div className="flex justify-end">
+                        <button
+                            onClick={() => setShowStockTrackModal(false)}
+                            className="px-5 py-2 bg-gray-600 text-white rounded-xl font-medium hover:bg-gray-700 transition-colors"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
+    // 4. Claim Equipment Modal
+    const ClaimModal = () => (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full h-[85vh] overflow-hidden flex flex-col">
+                <div className="bg-gradient-to-r from-purple-500 to-purple-600 p-6 text-white flex-shrink-0">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-2xl font-bold">Claim Equipment from Stock</h3>
+                        <button
+                            onClick={() => {
+                                setShowClaimModal(false);
+                                setSelectedStockForClaim(null);
+                                setSelectedRoomForClaim(null);
+                                setEquipmentImagePreview('');
+                            }}
+                            className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                        >
+                            <X className="h-6 w-6" />
+                        </button>
+                    </div>
+                </div>
+
+                <form onSubmit={claimForm.handleSubmit(handleClaimSubmit)} className="p-6 space-y-4 flex-1 overflow-y-auto">
+                    {/* Stock Selection */}
+                    <div>
+                        <label className="block text-sm font-bold mb-2">Select Stock *</label>
+                        <DropdownSearch
+                            items={availableStocks}
+                            selectedItem={selectedStockForClaim}
+                            onSelect={(stock) => {
+                                setSelectedStockForClaim(stock);
+                                claimForm.setValue('stock_id', stock.id);
+                                claimForm.setValue('quantity', 1);
+                                setEquipmentImagePreview(stock.attachments || '');
+                            }}
+                            placeholder="Search by name or code..."
+                            showCode
+                            renderItem={(stock) => (
+                                <div className="p-3 hover:bg-purple-50 rounded-lg cursor-pointer transition-colors">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <div className="font-bold text-gray-900">{stock.nama}</div>
+                                            <div className="text-xs text-gray-500 font-mono">{stock.code}</div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-bold text-purple-600">{stock.quantity} {stock.unit}</div>
+                                            <div className="text-xs text-gray-500">{stock.category}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        />
+                        {claimForm.formState.errors.stock_id && (
+                            <p className="text-red-500 text-sm mt-1">{claimForm.formState.errors.stock_id.message}</p>
+                        )}
+                    </div>
+
+                    {selectedStockForClaim && (
+                        <>
+                            {/* Room Selection */}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">
+                                    Pilih Ruangan *
                                 </label>
-                                <select 
-                                    {...form.register('category')} 
-                                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
-                                >
-                                    <option value="">{getText('Select Category', 'Pilih Kategori')}</option>
-                                    {categories.map(cat => (
-                                        <option key={cat.name} value={cat.name}>{cat.name}</option>
-                                    ))}
-                                </select>
-                                {form.formState.errors.category && (
-                                    <p className="text-red-500 text-sm flex items-center gap-1">
-                                        <AlertTriangle className="h-4 w-4" />
-                                        {form.formState.errors.category.message}
-                                    </p>
+                                <DropdownSearch
+                                    items={availableRooms}
+                                    selectedItem={selectedRoomForClaim}
+                                    onSelect={(room) => {
+                                        setSelectedRoomForClaim(room);
+                                        claimForm.setValue('rooms_id', room.id);
+                                    }}
+                                    placeholder="Search rooms by name or code..."
+                                    showCode
+                                    renderItem={(room) => (
+                                        <div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <div className="font-bold text-gray-900">{room.name}</div>
+                                                    <div className="text-xs text-gray-500 font-mono">{room.code}</div>
+                                                </div>
+                                                {room.department && (
+                                                    <div className="text-xs text-blue-600">{room.department.name}</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                />
+                                {isDepartmentAdmin && claimForm.formState.errors.rooms_id && (
+                                    <p className="text-red-500 text-sm mt-1">{claimForm.formState.errors.rooms_id.message}</p>
                                 )}
                             </div>
 
-                            {/* Room Location Selection */}
-                            {renderRoomSelection()}
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-700">
-                                        {getText('Quantity', 'Jumlah')} *
-                                    </label>
-                                    <input 
-                                        type="number" 
-                                        {...form.register('quantity', {valueAsNumber: true})} 
-                                        className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors" 
-                                        min="0"
+                            {/* Cabinet Selection */}
+                            {selectedRoomForClaim && (
+                                <div>
+                                    <label className="block text-sm font-bold mb-2">Pilih Lemari (Opsional)</label>
+                                    <DropdownSearch
+                                        items={tables.filter(t => t.room_id === selectedRoomForClaim.id)}
+                                        selectedItem={selectedTableForClaim}
+                                        onSelect={(table) => {
+                                            setSelectedTableForClaim(table);
+                                            setSelectedRackForClaim(null);
+                                            setSelectedBoxForClaim(null);
+                                            claimForm.setValue('table_id', table.id);
+                                            claimForm.setValue('rack_id', '');
+                                            claimForm.setValue('box_id', '');
+                                        }}
+                                        placeholder="Select cabinet..."
+                                        renderItem={(table) => (
+                                            <div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors">
+                                                <div className="font-bold text-gray-900">{table.description}</div>
+                                                <div className="text-xs text-gray-500">Rak: {table.rack}</div>
+                                            </div>
+                                        )}
                                     />
-                                    {form.formState.errors.quantity && (
-                                        <p className="text-red-500 text-sm flex items-center gap-1">
-                                            <AlertTriangle className="h-4 w-4" />
-                                            {form.formState.errors.quantity.message}
-                                        </p>
+                                </div>
+                            )}
+
+                            {/* Rack Selection */}
+                            {selectedTableForClaim && (
+                                <div>
+                                    <label className="block text-sm font-bold mb-2">Pilih Rak (Opsional)</label>
+                                    <DropdownSearch
+                                        items={racks.filter(r => r.table_id === selectedTableForClaim.id)}
+                                        selectedItem={selectedRackForClaim}
+                                        onSelect={(rack) => {
+                                            setSelectedRackForClaim(rack);
+                                            setSelectedBoxForClaim(null);
+                                            claimForm.setValue('rack_id', rack.id);
+                                            claimForm.setValue('box_id', '');
+                                        }}
+                                        placeholder="Select rack..."
+                                        renderItem={(rack) => (
+                                            <div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors">
+                                                <div className="font-bold text-gray-900">{rack.name}</div>
+                                            </div>
+                                        )}
+                                    />
+                                </div>
+                            )}
+
+                            {/* Box Selection */}
+                            {selectedRackForClaim && (
+                                <div>
+                                    <label className="block text-sm font-bold mb-2">Pilih Box (Opsional)</label>
+                                    <DropdownSearch
+                                        items={boxes.filter(b => b.rack_id === selectedRackForClaim.id)}
+                                        selectedItem={selectedBoxForClaim}
+                                        onSelect={(box) => {
+                                            setSelectedBoxForClaim(box);
+                                            claimForm.setValue('box_id', box.id);
+                                        }}
+                                        placeholder="Select box..."
+                                        renderItem={(box) => (
+                                            <div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors">
+                                                <div className="font-bold text-gray-900">{box.name}</div>
+                                                <div className="text-xs text-gray-500">{box.description}</div>
+                                            </div>
+                                        )}
+                                    />
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-bold mb-2">Equipment Name *</label>
+                                    <input
+                                        {...claimForm.register('name')}
+                                        className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                                    />
+                                    {claimForm.formState.errors.name && (
+                                        <p className="text-red-500 text-sm mt-1">{claimForm.formState.errors.name.message}</p>
                                     )}
                                 </div>
-                                
-                                <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-700">
-                                        {getText('Unit', 'Satuan')} *
-                                    </label>
-                                    <input 
-                                        {...form.register('unit')} 
-                                        placeholder={getText('e.g. pcs, set, unit', 'mis. pcs, set, unit')} 
-                                        className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors" 
+                                <div>
+                                    <label className="block text-sm font-bold mb-2">Code *</label>
+                                    <input
+                                        {...claimForm.register('code')}
+                                        className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none font-mono transition-colors"
                                     />
-                                    {form.formState.errors.unit && (
-                                        <p className="text-red-500 text-sm flex items-center gap-1">
-                                            <AlertTriangle className="h-4 w-4" />
-                                            {form.formState.errors.unit.message}
-                                        </p>
+                                    {claimForm.formState.errors.code && (
+                                        <p className="text-red-500 text-sm mt-1">{claimForm.formState.errors.code.message}</p>
                                     )}
                                 </div>
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="block text-sm font-semibold text-gray-700">
-                                    {getText('Condition', 'Kondisi')} *
-                                </label>
-                                <select 
-                                    {...form.register('condition')} 
-                                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
-                                >
-                                    <option value="GOOD">{getText('Good Condition', 'Kondisi Baik')}</option>
-                                    <option value="BROKEN">{getText('Broken', 'Rusak')}</option>
-                                    <option value="MAINTENANCE">{getText('Under Maintenance', 'Dalam Pemeliharaan')}</option>
-                                </select>
-                                {form.formState.errors.condition && (
-                                    <p className="text-red-500 text-sm flex items-center gap-1">
-                                        <AlertTriangle className="h-4 w-4" />
-                                        {form.formState.errors.condition.message}
-                                    </p>
-                                )}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-bold mb-2">Quantity (Max: {maxClaimQuantity}) *</label>
+                                    <input
+                                        type="number"
+                                        {...claimForm.register('quantity', { valueAsNumber: true })}
+                                        className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                                        min="1"
+                                        max={maxClaimQuantity}
+                                    />
+                                    {claimForm.formState.errors.quantity && (
+                                        <p className="text-red-500 text-sm mt-1">{claimForm.formState.errors.quantity.message}</p>
+                                    )}
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold mb-2">Condition *</label>
+                                    <select
+                                        {...claimForm.register('condition')}
+                                        className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                                    >
+                                        <option value="GOOD">Good</option>
+                                        <option value="BROKEN">Broken</option>
+                                        <option value="MAINTENANCE">Maintenance</option>
+                                    </select>
+                                </div>
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="block text-sm font-semibold text-gray-700">
-                                    {getText('Specification', 'Spesifikasi')}
-                                </label>
-                                <textarea 
-                                    {...form.register('Spesification')} 
-                                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors" 
-                                    rows={4}
-                                    placeholder={getText('Enter detailed specifications...', 'Masukkan spesifikasi detail...')}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">Specifications (Optional)</label>
+                                <textarea
+                                    {...claimForm.register('Spesification')}
+                                    rows={3}
+                                    className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                                    placeholder="Add specific details..."
                                 />
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="flex items-center p-4 bg-amber-50 rounded-lg border border-amber-200">
-                                    <input 
-                                        {...form.register('is_mandatory')} 
-                                        type="checkbox" 
-                                        className="h-5 w-5 text-amber-600 border-2 border-amber-300 rounded focus:ring-amber-500" 
-                                    />
-                                    <div className="ml-3">
-                                        <label className="text-sm font-semibold text-amber-800">
-                                            {getText('Mandatory Equipment', 'Peralatan Wajib')}
-                                        </label>
-                                        <p className="text-xs text-amber-600">
-                                            {getText('Required for room bookings', 'Diperlukan untuk pemesanan ruangan')}
-                                        </p>
-                                    </div>
-                                </div>
-                                
-                                <div className="flex items-center p-4 bg-green-50 rounded-lg border border-green-200">
-                                    <input 
-                                        {...form.register('is_available')} 
-                                        type="checkbox" 
-                                        className="h-5 w-5 text-green-600 border-2 border-green-300 rounded focus:ring-green-500" 
-                                    />
-                                    <div className="ml-3">
-                                        <label className="text-sm font-semibold text-green-800">
-                                            {getText('Available for Lending', 'Tersedia untuk Dipinjam')}
-                                        </label>
-                                        <p className="text-xs text-green-600">
-                                            {getText('Can be borrowed by users', 'Dapat dipinjam oleh pengguna')}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
-                                <button 
-                                    type="button" 
-                                    onClick={() => setShowModal(false)} 
-                                    className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
-                                >
-                                    {getText('Cancel', 'Batal')}
-                                </button>
-                                <button 
-                                    type="submit" 
-                                    disabled={loading || (profile?.role === 'department_admin' && rooms.length === 0)} 
-                                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-semibold transition-all shadow-lg"
-                                >
-                                    {loading ? (
-                                        <div className="flex items-center gap-2">
-                                            <RefreshCw className="h-4 w-4 animate-spin" />
-                                            {getText('Saving...', 'Menyimpan...')}
+                            {/* Equipment Photo - Defaults to Stock Photo */}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">Equipment Photo</label>
+                                <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 hover:border-purple-400 transition-colors">
+                                    {equipmentImagePreview ? (
+                                        <div className="relative group">
+                                            <div className="w-full h-48 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center">
+                                                <img
+                                                    src={equipmentImagePreview}
+                                                    alt="Preview"
+                                                    className="w-full h-full object-contain"
+                                                />
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={clearEquipmentImage}
+                                                className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </button>
+                                            {equipmentImagePreview === selectedStockForClaim?.attachments && (
+                                                <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                                                    Using Stock Photo
+                                                </div>
+                                            )}
                                         </div>
                                     ) : (
-                                        editingEquipment ? 
-                                        getText('Update Equipment', 'Perbarui Peralatan') : 
-                                        getText('Create Equipment', 'Buat Peralatan')
+                                        <label className="flex flex-col items-center justify-center h-32 cursor-pointer">
+                                            <Upload className="h-8 w-8 text-gray-400 mb-2" />
+                                            <span className="text-sm text-gray-500 font-medium">Click to upload photo</span>
+                                            <span className="text-xs text-gray-400 mt-1">Max 5MB (JPG, PNG)</span>
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={handleEquipmentImageChange}
+                                                className="hidden"
+                                            />
+                                        </label>
                                     )}
-                                </button>
+                                </div>
                             </div>
-                        </form>
+
+                            <div className="flex items-center gap-4">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        {...claimForm.register('is_mandatory')}
+                                        className="w-5 h-5 text-purple-600 rounded focus:ring-2 focus:ring-purple-300"
+                                    />
+                                    <span className="text-sm font-medium">Mandatory Equipment</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        {...claimForm.register('is_available')}
+                                        className="w-5 h-5 text-purple-600 rounded focus:ring-2 focus:ring-purple-300"
+                                    />
+                                    <span className="text-sm font-medium">Available for Lending</span>
+                                </label>
+                            </div>
+                        </>
+                    )}
+
+                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-4">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowClaimModal(false);
+                                setSelectedStockForClaim(null);
+                                setShowClaimModal(false);
+                                setSelectedStockForClaim(null);
+                                setSelectedRoomForClaim(null);
+                                setEquipmentImagePreview('');
+                            }}
+                            className="px-6 py-2 border-2 border-gray-300 rounded-xl font-medium hover:bg-gray-50 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={loadingEquipment || !selectedStockForClaim || !selectedRoomForClaim}
+                            className="px-6 py-2 bg-purple-500 text-white rounded-xl font-medium hover:bg-purple-600 disabled:opacity-50 transition-colors"
+                        >
+                            {loadingEquipment ? 'Claiming...' : 'Claim Equipment'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+
+    // 5. Edit Equipment Modal
+    const EditModal = () => (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                <div className="bg-gradient-to-r from-amber-500 to-amber-600 p-6 text-white flex-shrink-0">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-2xl font-bold">Edit Equipment</h3>
+                        <button
+                            onClick={() => {
+                                setShowEditModal(false);
+                                setEditingEquipment(null);
+                                setSelectedRoomForEdit(null);
+                            }}
+                            className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                        >
+                            <X className="h-6 w-6" />
+                        </button>
                     </div>
                 </div>
-            )}
-          {/* Equipment Detail Modal with Enhanced Quantity Gap Tracking */}
-            {selectedEquipment && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-                        <div className="bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-600 p-6 text-white">
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <h2 className="text-3xl font-bold mb-2">{selectedEquipment.name}</h2>
-                                    <div className="flex items-center gap-2">
-                                        <Hash className="h-4 w-4 opacity-80" />
-                                        <span className="font-mono text-lg opacity-90">{selectedEquipment.code}</span>
-                                        {selectedEquipment.rooms?.department && (
-                                            <span className="ml-4 px-2 py-1 bg-white bg-opacity-20 rounded text-sm">
-                                                {selectedEquipment.rooms.department.name}
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-                                <button 
-                                    onClick={() => setSelectedEquipment(null)} 
-                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
-                                >
-                                    <X className="h-6 w-6" />
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div className="p-8 overflow-y-auto flex-1">
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                {/* Equipment Details */}
-                                <div className="space-y-6">
-                                    <div>
-                                        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                                            <Package className="h-5 w-5 text-blue-600" />
-                                            {getText('Equipment Details', 'Detail Peralatan')}
-                                        </h3>
-                                        <div className="bg-gray-50 rounded-lg p-6 space-y-4">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-sm font-semibold text-gray-600">
-                                                    {getText('Category', 'Kategori')}
-                                                </span>
-                                                <div className="flex items-center gap-2">
-                                                    {(() => {
-                                                        const config = getCategoryConfig(selectedEquipment.category);
-                                                        const CategoryIcon = config.icon;
-                                                        return (
-                                                            <>
-                                                                <CategoryIcon className="h-4 w-4 text-gray-600" />
-                                                                <span className="font-semibold text-gray-900">{selectedEquipment.category}</span>
-                                                            </>
-                                                        );
-                                                    })()}
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-sm font-semibold text-gray-600">
-                                                    {getText('Condition', 'Kondisi')}
-                                                </span>
-                                                <div className="flex items-center gap-2">
-                                                    {(() => {
-                                                        const config = getConditionConfig(selectedEquipment.condition);
-                                                        const ConditionIcon = config.icon;
-                                                        return (
-                                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${config.className}`}>
-                                                                <ConditionIcon className="h-3 w-3" />
-                                                                {config.label}
-                                                            </span>
-                                                        );
-                                                    })()}
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-sm font-semibold text-gray-600">
-                                                    {getText('Status', 'Status')}
-                                                </span>
-                                                <div className="flex items-center gap-2">
-                                                    {(() => {
-                                                        const config = getStatusConfig(selectedEquipment.is_available);
-                                                        const StatusIcon = config.icon;
-                                                        return (
-                                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${config.className}`}>
-                                                                <StatusIcon className="h-3 w-3" />
-                                                                {config.label}
-                                                            </span>
-                                                        );
-                                                    })()}
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-sm font-semibold text-gray-600">
-                                                    {getText('Location', 'Lokasi')}
-                                                </span>
-                                                <div className="flex items-center gap-2">
-                                                    <MapPin className="h-4 w-4 text-gray-600" />
-                                                    <span className="font-semibold text-gray-900">
-                                                        {selectedEquipment.rooms?.name || getText('Unassigned', 'Belum Ditentukan')}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-sm font-semibold text-gray-600">
-                                                    {getText('Department', 'Departemen')}
-                                                  </span>
-                                                <div className="flex items-center gap-2">
-                                                    <Building className="h-4 w-4 text-gray-600" />
-                                                    <span className="font-semibold text-blue-600">
-                                                        {selectedEquipment.rooms?.department?.name || 'N/A'}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-sm font-semibold text-gray-600">
-                                                    {getText('Quantity', 'Jumlah')}
-                                                </span>
-                                                <div className="flex items-center gap-2">
-                                                  <Package className="h-4 w-4 text-gray-600" />
-                                                    <span className="font-bold text-lg text-gray-900">
-                                                        {selectedEquipment.quantity} {selectedEquipment.unit}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-sm font-semibold text-gray-600">
-                                                    {getText('Created', 'Dibuat')}
-                                                </span>
-                                                <span className="text-sm text-gray-700">
-                                                    {format(new Date(selectedEquipment.created_at), 'MMM d, yyyy')}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
 
-                                    {/* Quick Actions */}
-                                    <div>
-                                        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                                            <Wrench className="h-5 w-5 text-blue-600" />
-                                            {getText('Quick Actions', 'Aksi Cepat')}
-                                        </h3>
-                                        <div className="grid grid-cols-1 gap-3">
-                                            <button 
-                                                onClick={() => {
-                                                    setSelectedEquipment(null);
-                                                    handleEdit(selectedEquipment);
-                                                }}
-                                                className="flex items-center justify-center gap-2 p-4 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg transition-colors"
-                                            >
-                                                <Edit className="h-5 w-5" />
-                                                <span className="font-semibold">
-                                                    {getText('Edit Equipment', 'Edit Peralatan')}
-                                                </span>
-                                            </button>
-                                            
-                                            <button 
-                                                onClick={() => {
-                                                    setSelectedEquipment(null);
-                                                    setShowDeleteConfirm(selectedEquipment.id);
-                                                }}
-                                                className="flex items-center justify-center gap-2 p-4 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg transition-colors"
-                                            >
-                                                <Trash2 className="h-5 w-5" />
-                                                <span className="font-semibold">
-                                                    {getText('Delete Equipment', 'Hapus Peralatan')}
-                                                </span>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Enhanced Quantity Gap Tracking */}
-                                <div className="lg:col-span-2 space-y-6">
-                                    <div>
-                                        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                                            <AlertTriangle className="h-5 w-5 text-red-600" />
-                                            {getText('Quantity Gap Analysis', 'Analisis Kesenjangan Jumlah')}
-                                            {loadingLending && <RefreshCw className="h-4 w-4 animate-spin text-gray-400" />}
-                                        </h3>
-                                        
-                                        {renderQuantityGapDisplay()}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                <form onSubmit={editForm.handleSubmit(handleEditSubmit)} className="p-6 space-y-4 flex-1 overflow-y-auto">
+                    {/* Location Selection Block */}
+                    <div>
+                        <label className="block text-sm font-bold mb-2">
+                            Pilih Ruangan *
+                        </label>
+                        <DropdownSearch
+                            items={availableRooms}
+                            selectedItem={selectedRoomForEdit}
+                            onSelect={(room) => {
+                                setSelectedRoomForEdit(room);
+                                setSelectedTableForEdit(null);
+                                setSelectedRackForEdit(null);
+                                setSelectedBoxForEdit(null);
+                                editForm.setValue('rooms_id', room.id);
+                                editForm.setValue('table_id', '');
+                                editForm.setValue('rack_id', '');
+                                editForm.setValue('box_id', '');
+                            }}
+                            placeholder="Search rooms..."
+                            showCode
+                        />
                     </div>
-                </div>
-            )}
-            
-            {/* Delete Confirmation Modal */}
-            {showDeleteConfirm && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
-                        <div className="flex items-center mb-6">
-                            <div className="flex-shrink-0 p-3 bg-red-100 rounded-full">
-                                <AlertCircle className="h-8 w-8 text-red-600" />
-                            </div>
-                            <div className="ml-4">
-                                <h3 className="text-xl font-bold text-gray-900">
-                                    {getText('Delete Equipment', 'Hapus Peralatan')}
-                                </h3>
-                                <p className="text-sm text-gray-600 mt-1">
-                                    {getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')}
-                                </p>
-                            </div>
-                        </div>
-                        
-                        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-                            <p className="text-sm text-red-800">
-                                {getText(
-                                    'Are you sure you want to delete this equipment? This action will permanently remove the equipment from the system and may affect related booking records.',
-                                    'Apakah Anda yakin ingin menghapus peralatan ini? Tindakan ini akan menghapus peralatan secara permanen dari sistem dan mungkin mempengaruhi catatan pemesanan terkait.'
+
+                    {/* Cabinet Selection */}
+                    {selectedRoomForEdit && (
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Pilih Lemari (Opsional)</label>
+                            <DropdownSearch
+                                items={tables.filter(t => t.room_id === selectedRoomForEdit.id)}
+                                selectedItem={selectedTableForEdit}
+                                onSelect={(table) => {
+                                    setSelectedTableForEdit(table);
+                                    setSelectedRackForEdit(null);
+                                    setSelectedBoxForEdit(null);
+                                    editForm.setValue('table_id', table.id);
+                                    editForm.setValue('rack_id', '');
+                                    editForm.setValue('box_id', '');
+                                }}
+                                placeholder="Select cabinet..."
+                                renderItem={(table) => (
+                                    <div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors">
+                                        <div className="font-bold text-gray-900">{table.description}</div>
+                                        <div className="text-xs text-gray-500">Rak: {table.rack}</div>
+                                    </div>
                                 )}
-                            </p>
+                            />
                         </div>
-                        
-                        <div className="flex space-x-3">
-                            <button 
-                                onClick={() => setShowDeleteConfirm(null)} 
-                                className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
-                            >
-                                {getText('Cancel', 'Batal')}
-                            </button>
-                            <button 
-                                onClick={() => handleDelete(showDeleteConfirm)} 
-                                disabled={loading} 
-                                className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-semibold transition-colors shadow-lg"
-                            >
-                                {loading ? (
-                                    <div className="flex items-center justify-center gap-2">
-                                        <RefreshCw className="h-4 w-4 animate-spin" />
-                                        {getText('Deleting...', 'Menghapus...')}
+                    )}
+
+                    {/* Rack Selection */}
+                    {selectedTableForEdit && (
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Pilih Rak (Opsional)</label>
+                            <DropdownSearch
+                                items={racks.filter(r => r.table_id === selectedTableForEdit.id)}
+                                selectedItem={selectedRackForEdit}
+                                onSelect={(rack) => {
+                                    setSelectedRackForEdit(rack);
+                                    setSelectedBoxForEdit(null);
+                                    editForm.setValue('rack_id', rack.id);
+                                    editForm.setValue('box_id', '');
+                                }}
+                                placeholder="Select rack..."
+                                renderItem={(rack) => (
+                                    <div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors">
+                                        <div className="font-bold text-gray-900">{rack.name}</div>
                                     </div>
-                                ) : (
-                                    <div className="flex items-center justify-center gap-2">
+                                )}
+                            />
+                        </div>
+                    )}
+
+                    {/* Box Selection */}
+                    {selectedRackForEdit && (
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Pilih Box (Opsional)</label>
+                            <DropdownSearch
+                                items={boxes.filter(b => b.rack_id === selectedRackForEdit.id)}
+                                selectedItem={selectedBoxForEdit}
+                                onSelect={(box) => {
+                                    setSelectedBoxForEdit(box);
+                                    editForm.setValue('box_id', box.id);
+                                }}
+                                placeholder="Select box..."
+                                renderItem={(box) => (
+                                    <div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors">
+                                        <div className="font-bold text-gray-900">{box.name}</div>
+                                        <div className="text-xs text-gray-500">{box.description}</div>
+                                    </div>
+                                )}
+                            />
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Name *</label>
+                            <input
+                                {...editForm.register('name')}
+                                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
+                            />
+                            {editForm.formState.errors.name && (
+                                <p className="text-red-500 text-sm mt-1">{editForm.formState.errors.name.message}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Code *</label>
+                            <input
+                                {...editForm.register('code')}
+                                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none font-mono transition-colors"
+                            />
+                            {editForm.formState.errors.code && (
+                                <p className="text-red-500 text-sm mt-1">{editForm.formState.errors.code.message}</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-bold mb-2">Category *</label>
+                        <select
+                            {...editForm.register('category')}
+                            className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
+                        >
+                            <option value="">Select Category</option>
+                            {categories.map(cat => (
+                                <option key={cat.name} value={cat.name}>{cat.name}</option>
+                            ))}
+                        </select>
+                        {editForm.formState.errors.category && (
+                            <p className="text-red-500 text-sm mt-1">{editForm.formState.errors.category.message}</p>
+                        )}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4">
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Quantity *</label>
+                            <input
+                                type="number"
+                                {...editForm.register('quantity', { valueAsNumber: true })}
+                                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Unit *</label>
+                            <input
+                                {...editForm.register('unit')}
+                                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Condition *</label>
+                            <select
+                                {...editForm.register('condition')}
+                                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
+                            >
+                                <option value="GOOD">Good</option>
+                                <option value="BROKEN">Broken</option>
+                                <option value="MAINTENANCE">Maintenance</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-bold mb-2">Specifications</label>
+                        <textarea
+                            {...editForm.register('Spesification')}
+                            rows={3}
+                            className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
+                        />
+                    </div>
+
+                    {/* Equipment Photo Upload */}
+                    <div>
+                        <label className="block text-sm font-bold mb-2">Equipment Photo</label>
+                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 hover:border-amber-400 transition-colors">
+                            {equipmentImagePreview ? (
+                                <div className="relative group">
+                                    <div className="w-full h-48 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center">
+                                        <img
+                                            src={equipmentImagePreview}
+                                            alt="Preview"
+                                            className="w-full h-full object-contain"
+                                        />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={clearEquipmentImage}
+                                        className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
                                         <Trash2 className="h-4 w-4" />
-                                        {getText('Delete Equipment', 'Hapus Peralatan')}
-                                    </div>
-                                )}
-                            </button>
+                                    </button>
+                                </div>
+                            ) : (
+                                <label className="flex flex-col items-center justify-center h-32 cursor-pointer">
+                                    <Upload className="h-8 w-8 text-gray-400 mb-2" />
+                                    <span className="text-sm text-gray-500 font-medium">Click to upload photo</span>
+                                    <span className="text-xs text-gray-400 mt-1">Max 5MB (JPG, PNG)</span>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={handleEquipmentImageChange}
+                                        className="hidden"
+                                    />
+                                </label>
+                            )}
                         </div>
                     </div>
+
+                    <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                {...editForm.register('is_mandatory')}
+                                className="w-5 h-5 text-amber-600 rounded focus:ring-2 focus:ring-amber-300"
+                            />
+                            <span className="text-sm font-medium">Mandatory</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                {...editForm.register('is_available')}
+                                className="w-5 h-5 text-amber-600 rounded focus:ring-2 focus:ring-amber-300"
+                            />
+                            <span className="text-sm font-medium">Available</span>
+                        </label>
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-4">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowEditModal(false);
+                                setEditingEquipment(null);
+                                setSelectedRoomForEdit(null);
+                            }}
+                            className="px-6 py-2 border-2 border-gray-300 rounded-xl font-medium hover:bg-gray-50 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={loadingEquipment || !selectedRoomForEdit}
+                            className="px-6 py-2 bg-amber-500 text-white rounded-xl font-medium hover:bg-amber-600 disabled:opacity-50 transition-colors"
+                        >
+                            {loadingEquipment ? 'Updating...' : 'Update'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+
+    // 6. Equipment Detail Modal
+    const EquipmentDetailModal = () => (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 p-6 text-white flex-shrink-0">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h3 className="text-2xl font-bold">{selectedEquipment?.name}</h3>
+                            <p className="text-sm opacity-90 mt-1">Complete Equipment Information</p>
+                        </div>
+                        <button
+                            onClick={() => setShowDetailModal(false)}
+                            className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                        >
+                            <X className="h-6 w-6" />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="p-6 overflow-y-auto flex-1 space-y-6">
+                    {/* Equipment Photo Banner */}
+                    {selectedEquipment?.attachments ? (
+                        <div className="relative rounded-xl overflow-hidden shadow-lg h-64 group">
+                            <img
+                                src={selectedEquipment.attachments}
+                                alt={selectedEquipment.name}
+                                className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                            <div className="absolute bottom-0 left-0 right-0 p-6 flex items-end justify-between">
+                                <div>
+                                    <h4 className="text-white font-bold text-2xl drop-shadow-md">{selectedEquipment.name}</h4>
+                                    <p className="text-white/80 text-sm font-mono mt-1">{selectedEquipment.code}</p>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setEquipmentImagePreview(selectedEquipment.attachments || '');
+                                        setShowEquipmentImageFullscreen(true);
+                                    }}
+                                    className="p-3 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-xl text-white transition-all shadow-lg border border-white/10"
+                                    title="View Fullscreen"
+                                >
+                                    <Maximize2 className="h-5 w-5" />
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-8 text-center border-2 border-dashed border-purple-100">
+                            <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center mb-4 shadow-sm">
+                                <Image className="h-10 w-10 text-purple-400 opacity-60" />
+                            </div>
+                            <h4 className="font-bold text-xl text-gray-800">{selectedEquipment?.name}</h4>
+                            <p className="text-purple-400 text-sm mt-2 font-medium italic">No photo available</p>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Left Column */}
+                        <div className="space-y-4">
+                            <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-xl border border-blue-200">
+                                <h4 className="font-bold text-blue-900 mb-3 flex items-center gap-2">
+                                    <Package className="h-5 w-5" />
+                                    Basic Information
+                                </h4>
+                                <div className="space-y-3">
+                                    <div>
+                                        <p className="text-xs text-blue-700 mb-1">Equipment Name</p>
+                                        <p className="font-bold text-gray-900">{selectedEquipment?.name}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-blue-700 mb-1">Equipment Code</p>
+                                        <p className="font-mono font-bold text-gray-900">{selectedEquipment?.code}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-blue-700 mb-1">Category</p>
+                                        <p className="font-bold text-gray-900">{selectedEquipment?.category}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-gradient-to-r from-purple-50 to-purple-100 p-4 rounded-xl border border-purple-200">
+                                <h4 className="font-bold text-purple-900 mb-3 flex items-center gap-2">
+                                    <Database className="h-5 w-5" />
+                                    Quantity & Unit
+                                </h4>
+                                <div className="space-y-3">
+                                    <div>
+                                        <p className="text-xs text-purple-700 mb-1">Quantity</p>
+                                        <p className="text-2xl font-bold text-purple-900">{selectedEquipment?.quantity}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-purple-700 mb-1">Unit</p>
+                                        <p className="font-bold text-gray-900">{selectedEquipment?.unit}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-gradient-to-r from-green-50 to-green-100 p-4 rounded-xl border border-green-200">
+                                <h4 className="font-bold text-green-900 mb-3 flex items-center gap-2">
+                                    <MapPin className="h-5 w-5" />
+                                    Location
+                                </h4>
+                                <div className="space-y-3">
+                                    {/* Campus */}
+                                    {(selectedEquipment?.rooms as any)?.building?.campus?.name && (
+                                        <div>
+                                            <p className="text-xs text-green-700 mb-1">Campus</p>
+                                            <p className="font-bold text-gray-900">{(selectedEquipment?.rooms as any).building.campus.name}</p>
+                                        </div>
+                                    )}
+                                    {/* Building */}
+                                    {(selectedEquipment?.rooms as any)?.building?.name && (
+                                        <div>
+                                            <p className="text-xs text-green-700 mb-1">Building</p>
+                                            <p className="font-bold text-gray-900">{(selectedEquipment?.rooms as any).building.name}</p>
+                                        </div>
+                                    )}
+                                    {/* Floor */}
+                                    {(selectedEquipment?.rooms as any)?.floor && (
+                                        <div>
+                                            <p className="text-xs text-green-700 mb-1">Floor</p>
+                                            <p className="font-bold text-gray-900">Lantai {(selectedEquipment?.rooms as any).floor}</p>
+                                        </div>
+                                    )}
+                                    {/* Room */}
+                                    <div>
+                                        <p className="text-xs text-green-700 mb-1">Room</p>
+                                        <p className="font-bold text-gray-900">{selectedEquipment?.rooms?.name || 'No room assigned'}</p>
+                                    </div>
+                                    {selectedEquipment?.rooms?.code && (
+                                        <div>
+                                            <p className="text-xs text-green-700 mb-1">Room Code</p>
+                                            <p className="font-mono font-bold text-gray-900">{selectedEquipment.rooms.code}</p>
+                                        </div>
+                                    )}
+                                    {selectedEquipment?.rooms?.department && (
+                                        <div>
+                                            <p className="text-xs text-green-700 mb-1">Department</p>
+                                            <p className="font-bold text-blue-900">{selectedEquipment.rooms.department.name}</p>
+                                        </div>
+                                    )}
+                                    {(() => {
+                                        // Infer hierarchy for cabinet/rack/box
+                                        const box = boxes.find(b => b.id === selectedEquipment?.box_id);
+                                        const rackId = selectedEquipment?.rack_id || box?.rack_id;
+                                        const rack = racks.find(r => r.id === rackId);
+                                        const tableId = selectedEquipment?.table_id || rack?.table_id;
+                                        const table = tables.find(t => t.id === tableId);
+
+                                        return (
+                                            <>
+                                                {table && (
+                                                    <div>
+                                                        <p className="text-xs text-green-700 mb-1">Lemari/Meja</p>
+                                                        <p className="font-bold text-gray-900">{table.description}</p>
+                                                    </div>
+                                                )}
+                                                {rack && (
+                                                    <div>
+                                                        <p className="text-xs text-green-700 mb-1">Rak</p>
+                                                        <p className="font-bold text-gray-900">{rack.name}</p>
+                                                    </div>
+                                                )}
+                                                {box && (
+                                                    <div>
+                                                        <p className="text-xs text-green-700 mb-1">Box</p>
+                                                        <p className="font-bold text-gray-900">{box.name}</p>
+                                                    </div>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Right Column */}
+                        <div className="space-y-4">
+                            <div className="bg-gradient-to-r from-amber-50 to-amber-100 p-4 rounded-xl border border-amber-200">
+                                <h4 className="font-bold text-amber-900 mb-3 flex items-center gap-2">
+                                    <AlertTriangle className="h-5 w-5" />
+                                    Status & Condition
+                                </h4>
+                                <div className="space-y-3">
+                                    <div>
+                                        <p className="text-xs text-amber-700 mb-1">Condition</p>
+                                        <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-bold ${selectedEquipment && getConditionBadge(selectedEquipment.condition).bg} ${selectedEquipment && getConditionBadge(selectedEquipment.condition).text}`}>
+                                            {selectedEquipment && (() => {
+                                                const Badge = getConditionBadge(selectedEquipment.condition);
+                                                const Icon = Badge.icon;
+                                                return <><Icon className="h-4 w-4" /> {Badge.label}</>;
+                                            })()}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-amber-700 mb-1">Availability</p>
+                                        <p className="font-bold text-gray-900">
+                                            {selectedEquipment?.is_available ? '✅ Available for Lending' : '❌ Not Available'}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-amber-700 mb-1">Mandatory</p>
+                                        <p className="font-bold text-gray-900">
+                                            {selectedEquipment?.is_mandatory ? '⭐ Yes - Required Equipment' : 'No - Optional'}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {selectedEquipment?.Spesification && (
+                                <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-4 rounded-xl border border-gray-200">
+                                    <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                                        <FileText className="h-5 w-5" />
+                                        Specifications
+                                    </h4>
+                                    <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
+                                        {selectedEquipment.Spesification}
+                                    </p>
+                                </div>
+                            )}
+
+                            {selectedEquipment?.stock && (
+                                <div className="bg-gradient-to-r from-cyan-50 to-cyan-100 p-4 rounded-xl border border-cyan-200">
+                                    <h4 className="font-bold text-cyan-900 mb-3 flex items-center gap-2">
+                                        <Warehouse className="h-5 w-5" />
+                                        Source Stock
+                                    </h4>
+                                    <div className="space-y-2">
+                                        <div>
+                                            <p className="text-xs text-cyan-700 mb-1">Stock Name</p>
+                                            <p className="font-bold text-gray-900">{selectedEquipment.stock.nama}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-cyan-700 mb-1">Stock Code</p>
+                                            <p className="font-mono font-bold text-gray-900">{selectedEquipment.stock.code}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-cyan-700 mb-1">Remaining in Stock</p>
+                                            <p className="font-bold text-gray-900">{selectedEquipment.stock.quantity} {selectedEquipment.stock.unit}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="bg-gradient-to-r from-slate-50 to-slate-100 p-4 rounded-xl border border-slate-200">
+                                <h4 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
+                                    <Clock className="h-5 w-5" />
+                                    Timestamps
+                                </h4>
+                                <div className="space-y-2">
+                                    {selectedEquipment?.created_at && (
+                                        <div>
+                                            <p className="text-xs text-slate-700 mb-1">Created At</p>
+                                            <p className="font-bold text-gray-900">{format(new Date(selectedEquipment.created_at), 'MMM dd, yyyy HH:mm')}</p>
+                                        </div>
+                                    )}
+                                    {selectedEquipment?.updated_at && (
+                                        <div>
+                                            <p className="text-xs text-slate-700 mb-1">Last Updated</p>
+                                            <p className="font-bold text-gray-900">{format(new Date(selectedEquipment.updated_at), 'MMM dd, yyyy HH:mm')}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="p-6 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+                    <div className="flex flex-wrap gap-3 justify-end">
+                        <button
+                            onClick={() => setShowDetailModal(false)}
+                            className="px-5 py-2 border-2 border-gray-300 rounded-xl font-medium hover:bg-white transition-colors"
+                        >
+                            Close
+                        </button>
+                        <button
+                            onClick={() => {
+                                setShowDetailModal(false);
+                                handleOpenEditModal(selectedEquipment!);
+                            }}
+                            className="px-5 py-2 bg-amber-500 text-white rounded-xl font-medium hover:bg-amber-600 transition-colors"
+                        >
+                            Edit Equipment
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
+    // 7. Equipment Track Record Modal (Gap Analysis)
+    const TrackRecordModal = () => (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                <div className="bg-gradient-to-r from-blue-500 to-purple-500 p-6 text-white flex-shrink-0">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h3 className="text-2xl font-bold">{selectedEquipment?.name}</h3>
+                            <p className="text-sm opacity-90 mt-1">Gap Analysis - Missing Items Tracker</p>
+                        </div>
+                        <button
+                            onClick={() => setShowTrackRecordModal(false)}
+                            className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                        >
+                            <X className="h-6 w-6" />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="p-6 overflow-y-auto flex-1">
+                    {renderSimpleGapAnalysis()}
+                </div>
+
+                <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+                    <div className="flex justify-end">
+                        <button
+                            onClick={() => setShowTrackRecordModal(false)}
+                            className="px-5 py-2 bg-gray-600 text-white rounded-xl font-medium hover:bg-gray-700 transition-colors"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
+    // 8. Direct Add Equipment Modal
+    const handleDirectAddSubmit = async (data: EquipmentEditForm) => {
+        try {
+            setLoadingEquipment(true);
+
+            // Generate UUID for new equipment
+            const newId = crypto.randomUUID();
+
+            const { error } = await supabase
+                .from('equipment')
+                .insert({
+                    id: newId,
+                    name: data.name,
+                    code: data.code,
+                    category: data.category,
+                    quantity: data.quantity,
+                    unit: data.unit,
+                    condition: data.condition,
+                    rooms_id: data.rooms_id,
+                    table_id: data.table_id || null,
+                    rack_id: data.rack_id || null,
+                    box_id: data.box_id || null,
+                    is_mandatory: data.is_mandatory,
+                    is_available: data.is_available,
+                    Spesification: data.Spesification,
+                    attachments: equipmentImagePreview || null,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                });
+
+            if (error) throw error;
+
+            toast.success('Equipment added successfully');
+            setShowDirectAddModal(false);
+            editForm.reset();
+
+            // Reload data
+            const loadData = async () => {
+                // Re-using the logic from useEffect roughly, or just reloading window/component? 
+                // Better to refactor loadInitialData outside useEffect but for now let's just trigger a reload or manually fetch.
+                // We will trigger a manual fetch here similar to initial load
+                window.location.reload(); // Simplest way to ensure everything stays in sync for now
+            };
+            loadData();
+
+        } catch (error: any) {
+            console.error('Error adding equipment:', error);
+            toast.error(error.message || 'Failed to add equipment');
+        } finally {
+            setLoadingEquipment(false);
+        }
+    };
+
+    const DirectAddModal = () => (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                <div className="bg-gradient-to-r from-green-500 to-emerald-600 p-6 text-white flex-shrink-0">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-2xl font-bold">Add New Equipment</h3>
+                        <button
+                            onClick={() => {
+                                setShowDirectAddModal(false);
+                                editForm.reset();
+                            }}
+                            className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                        >
+                            <X className="h-6 w-6" />
+                        </button>
+                    </div>
+                </div>
+
+                <form onSubmit={editForm.handleSubmit(handleDirectAddSubmit)} className="p-6 space-y-4 flex-1 overflow-y-auto">
+                    {/* Reusing Edit Form Fields logic since schema is same */}
+                    {/* Location Selection Block */}
+                    <div>
+                        <label className="block text-sm font-bold mb-2">
+                            Select Room *
+                        </label>
+                        <DropdownSearch
+                            items={isLaboratory && profile?.department_id
+                                ? rooms.filter(r => r.department_id === profile.department_id)
+                                : rooms
+                            }
+                            selectedItem={selectedRoomForEdit}
+                            onSelect={(room) => {
+                                setSelectedRoomForEdit(room);
+                                setSelectedTableForEdit(null);
+                                setSelectedRackForEdit(null);
+                                setSelectedBoxForEdit(null);
+                                editForm.setValue('rooms_id', room.id);
+                                editForm.setValue('table_id', '');
+                                editForm.setValue('rack_id', '');
+                                editForm.setValue('box_id', '');
+                            }}
+                            placeholder="Search rooms..."
+                            showCode
+                        />
+                    </div>
+
+                    {/* Cabinet Selection */}
+                    {selectedRoomForEdit && (
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Select Cabinet (Optional)</label>
+                            <DropdownSearch
+                                items={tables.filter(t => t.room_id === selectedRoomForEdit.id)}
+                                selectedItem={selectedTableForEdit}
+                                onSelect={(table) => {
+                                    setSelectedTableForEdit(table);
+                                    setSelectedRackForEdit(null);
+                                    setSelectedBoxForEdit(null);
+                                    editForm.setValue('table_id', table.id);
+                                    editForm.setValue('rack_id', '');
+                                    editForm.setValue('box_id', '');
+                                }}
+                                placeholder="Select cabinet..."
+                                renderItem={(table) => (
+                                    <div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors">
+                                        <div className="font-bold text-gray-900">{table.description}</div>
+                                        <div className="text-xs text-gray-500">Rack: {table.rack}</div>
+                                    </div>
+                                )}
+                            />
+                        </div>
+                    )}
+
+                    {/* Rack Selection */}
+                    {selectedTableForEdit && (
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Select Rack (Optional)</label>
+                            <DropdownSearch
+                                items={racks.filter(r => r.table_id === selectedTableForEdit.id)}
+                                selectedItem={selectedRackForEdit}
+                                onSelect={(rack) => {
+                                    setSelectedRackForEdit(rack);
+                                    setSelectedBoxForEdit(null);
+                                    editForm.setValue('rack_id', rack.id);
+                                    editForm.setValue('box_id', '');
+                                }}
+                                placeholder="Select rack..."
+                                renderItem={(rack) => (
+                                    <div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors">
+                                        <div className="font-bold text-gray-900">{rack.name}</div>
+                                    </div>
+                                )}
+                            />
+                        </div>
+                    )}
+
+                    {/* Box Selection */}
+                    {selectedRackForEdit && (
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Select Box (Optional)</label>
+                            <DropdownSearch
+                                items={boxes.filter(b => b.rack_id === selectedRackForEdit.id)}
+                                selectedItem={selectedBoxForEdit}
+                                onSelect={(box) => {
+                                    setSelectedBoxForEdit(box);
+                                    editForm.setValue('box_id', box.id);
+                                }}
+                                placeholder="Select box..."
+                                renderItem={(box) => (
+                                    <div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors">
+                                        <div className="font-bold text-gray-900">{box.name}</div>
+                                        <div className="text-xs text-gray-500">{box.description}</div>
+                                    </div>
+                                )}
+                            />
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Name *</label>
+                            <input
+                                {...editForm.register('name')}
+                                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors"
+                            />
+                            {editForm.formState.errors.name && (
+                                <p className="text-red-500 text-sm mt-1">{editForm.formState.errors.name.message}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Code *</label>
+                            <input
+                                {...editForm.register('code')}
+                                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none font-mono transition-colors"
+                            />
+                            {editForm.formState.errors.code && (
+                                <p className="text-red-500 text-sm mt-1">{editForm.formState.errors.code.message}</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-bold mb-2">Category *</label>
+                        <select
+                            {...editForm.register('category')}
+                            className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors"
+                        >
+                            <option value="">Select Category</option>
+                            {categories.map(cat => (
+                                <option key={cat.name} value={cat.name}>{cat.name}</option>
+                            ))}
+                        </select>
+                        {editForm.formState.errors.category && (
+                            <p className="text-red-500 text-sm mt-1">{editForm.formState.errors.category.message}</p>
+                        )}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4">
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Quantity *</label>
+                            <input
+                                type="number"
+                                {...editForm.register('quantity', { valueAsNumber: true })}
+                                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Unit *</label>
+                            <input
+                                {...editForm.register('unit')}
+                                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold mb-2">Condition *</label>
+                            <select
+                                {...editForm.register('condition')}
+                                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors"
+                            >
+                                <option value="GOOD">Good</option>
+                                <option value="BROKEN">Broken</option>
+                                <option value="MAINTENANCE">Maintenance</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-bold mb-2">Specifications</label>
+                        <textarea
+                            {...editForm.register('Spesification')}
+                            rows={3}
+                            className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors"
+                        />
+                    </div>
+
+                    {/* Equipment Photo Upload */}
+                    <div>
+                        <label className="block text-sm font-bold mb-2">Equipment Photo</label>
+                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 hover:border-green-400 transition-colors">
+                            {equipmentImagePreview ? (
+                                <div className="relative group">
+                                    <div className="w-full h-48 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center">
+                                        <img
+                                            src={equipmentImagePreview}
+                                            alt="Preview"
+                                            className="w-full h-full object-contain"
+                                        />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={clearEquipmentImage}
+                                        className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                    </button>
+                                </div>
+                            ) : (
+                                <label className="flex flex-col items-center justify-center h-32 cursor-pointer">
+                                    <Upload className="h-8 w-8 text-gray-400 mb-2" />
+                                    <span className="text-sm text-gray-500 font-medium">Click to upload photo</span>
+                                    <span className="text-xs text-gray-400 mt-1">Max 5MB (JPG, PNG)</span>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={handleEquipmentImageChange}
+                                        className="hidden"
+                                    />
+                                </label>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                {...editForm.register('is_mandatory')}
+                                className="w-5 h-5 text-green-600 rounded focus:ring-2 focus:ring-green-300"
+                            />
+                            <span className="text-sm font-medium">Mandatory</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                {...editForm.register('is_available')}
+                                className="w-5 h-5 text-green-600 rounded focus:ring-2 focus:ring-green-300"
+                            />
+                            <span className="text-sm font-medium">Available</span>
+                        </label>
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-4">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowDirectAddModal(false);
+                                editForm.reset();
+                            }}
+                            className="px-6 py-2 border-2 border-gray-300 rounded-xl font-medium hover:bg-gray-50 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={loadingEquipment || !selectedRoomForEdit}
+                            className="px-6 py-2 bg-green-500 text-white rounded-xl font-medium hover:bg-green-600 disabled:opacity-50 transition-colors"
+                        >
+                            {loadingEquipment ? 'Adding...' : 'Add Equipment'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+
+    // ==================== RENDER ====================
+    if (!hasAccess) {
+        return (
+            <div className="flex items-center justify-center min-h-screen">
+                <div className="text-center">
+                    <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h3>
+                    <p className="text-gray-600">You don't have permission</p>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-6">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-600 rounded-2xl p-6 text-white shadow-xl mb-6">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-3xl font-bold mb-2">Inventory Management</h1>
+                        <p className="opacity-90">Manage warehouse stock and equipment</p>
+                    </div>
+                    <div className="flex gap-4">
+                        {/* Stock count - hidden for laboratory */}
+                        {!isLaboratory && (
+                            <div className="text-center bg-white bg-opacity-20 rounded-xl p-3">
+                                <div className="text-2xl font-bold">{stocks.length}</div>
+                                <div className="text-sm">Stocks</div>
+                            </div>
+                        )}
+                        <div className="text-center bg-white bg-opacity-20 rounded-xl p-3">
+                            <div className="text-2xl font-bold">{equipment.length}</div>
+                            <div className="text-sm">Equipment</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="bg-white rounded-2xl shadow-lg mb-6">
+                <div className="border-b border-gray-200">
+                    <nav className="flex">
+                        {/* Stock Tab - hidden for laboratory */}
+                        {!isLaboratory && (
+                            <button
+                                onClick={() => setActiveTab('stock')}
+                                className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 border-b-2 transition-all ${activeTab === 'stock'
+                                    ? 'border-blue-500 text-blue-600 bg-blue-50'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                                    }`}
+                            >
+                                <Warehouse className="h-5 w-5" />
+                                Stock ({stocks.length})
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setActiveTab('equipment')}
+                            className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 border-b-2 transition-all ${activeTab === 'equipment'
+                                ? 'border-purple-500 text-purple-600 bg-purple-50'
+                                : 'border-transparent text-gray-500 hover:text-gray-700'
+                                }`}
+                        >
+                            <Package className="h-5 w-5" />
+                            Equipment ({equipment.length})
+                        </button>
+                    </nav>
+                </div>
+
+                <div className="p-6">
+                    {/* ==================== STOCK TAB ==================== */}
+                    {/* Laboratory users cannot access stock tab */}
+                    {activeTab === 'stock' && !isLaboratory && (
+                        <div className="space-y-4">
+                            <div className="flex gap-4">
+                                <div className="relative flex-1">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Search stock by name or code..."
+                                        value={stockSearchTerm}
+                                        onChange={(e) => setStockSearchTerm(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                                    />
+                                </div>
+                                <button
+                                    onClick={() => handleOpenStockModal()}
+                                    className="flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 font-medium transition-colors"
+                                >
+                                    <Plus className="h-5 w-5" />
+                                    Add Stock
+                                </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                {filteredStocks.map(stock => {
+                                    const categoryConfig = getCategoryConfig(stock.category);
+                                    const Icon = categoryConfig.icon;
+
+                                    return (
+                                        <div key={stock.id} className="bg-white border-2 border-gray-200 rounded-xl p-4 hover:shadow-lg transition-all">
+                                            <div className="flex items-start justify-between mb-3">
+                                                <div className={`p-2 rounded-lg ${categoryConfig.color === 'violet' ? 'bg-violet-100 text-violet-600' :
+                                                    categoryConfig.color === 'blue' ? 'bg-blue-100 text-blue-600' :
+                                                        categoryConfig.color === 'emerald' ? 'bg-emerald-100 text-emerald-600' :
+                                                            categoryConfig.color === 'amber' ? 'bg-amber-100 text-amber-600' :
+                                                                categoryConfig.color === 'rose' ? 'bg-rose-100 text-rose-600' :
+                                                                    categoryConfig.color === 'slate' ? 'bg-slate-100 text-slate-600' :
+                                                                        'bg-orange-100 text-orange-600'
+                                                    }`}>
+                                                    <Icon className="h-6 w-6" />
+                                                </div>
+                                                <div className={`px-3 py-1 rounded-full text-sm font-bold ${stock.quantity > 20 ? 'bg-green-100 text-green-700'
+                                                    : stock.quantity > 0 ? 'bg-yellow-100 text-yellow-700'
+                                                        : 'bg-red-100 text-red-700'
+                                                    }`}>
+                                                    {stock.quantity} {stock.unit}
+                                                </div>
+                                            </div>
+
+                                            <h3 className="font-bold text-lg mb-1">{stock.nama}</h3>
+                                            <p className="text-sm text-gray-600 font-mono mb-3">{stock.code}</p>
+
+                                            <div className="flex items-center justify-between pt-3 border-t border-gray-200">
+                                                <div className="flex gap-2">
+                                                    {/* Detail Button */}
+                                                    <button
+                                                        onClick={() => handleOpenStockDetailModal(stock)}
+                                                        className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                                        title="View Details"
+                                                    >
+                                                        <Eye className="h-4 w-4" />
+                                                    </button>
+                                                    {/* Track Button */}
+                                                    <button
+                                                        onClick={() => handleOpenStockTrackModal(stock)}
+                                                        className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                                                        title="Track Record"
+                                                    >
+                                                        <History className="h-4 w-4" />
+                                                    </button>
+                                                </div>
+                                                <div className="flex gap-1">
+                                                    <button
+                                                        onClick={() => handleOpenStockModal(stock)}
+                                                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                    >
+                                                        <Edit className="h-4 w-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            if (confirm('Delete this stock?')) {
+                                                                handleDeleteStock(stock.id);
+                                                            }
+                                                        }}
+                                                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ==================== EQUIPMENT TAB ==================== */}
+                    {activeTab === 'equipment' && (
+                        <div className="space-y-4">
+                            <div className="flex gap-4">
+                                <div className="relative flex-1">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Search equipment by name or code..."
+                                        value={equipmentSearchTerm}
+                                        onChange={(e) => setEquipmentSearchTerm(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                                    />
+                                </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => {
+                                            editForm.reset();
+                                            editForm.setValue('quantity', 1);
+                                            setEquipmentImagePreview('');
+                                            setShowDirectAddModal(true);
+                                        }}
+                                        className="flex items-center gap-2 px-6 py-3 bg-green-500 text-white rounded-xl hover:bg-green-600 font-medium transition-colors"
+                                    >
+                                        <Plus className="h-5 w-5" />
+                                        Add Equipment
+                                    </button>
+                                    <button
+                                        onClick={handleOpenClaimModal}
+                                        disabled={!canClaimEquipment}
+                                        className="flex items-center gap-2 px-6 py-3 bg-purple-500 text-white rounded-xl hover:bg-purple-600 font-medium disabled:opacity-50 transition-colors"
+                                    >
+                                        <PackagePlus className="h-5 w-5" />
+                                        {isLaboratory ? 'Claim Stock' : 'Claim Equipment'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                {filteredEquipment.map(eq => {
+                                    const categoryConfig = getCategoryConfig(eq.category);
+                                    const Icon = categoryConfig.icon;
+                                    const conditionBadge = getConditionBadge(eq.condition);
+                                    const ConditionIcon = conditionBadge.icon;
+
+                                    return (
+                                        <div key={eq.id} className="bg-white border-2 border-gray-200 rounded-xl p-4 hover:shadow-lg transition-all">
+                                            <div className="flex items-start justify-between mb-3">
+                                                <div className={`p-2 rounded-lg ${categoryConfig.color === 'violet' ? 'bg-violet-100 text-violet-600' :
+                                                    categoryConfig.color === 'blue' ? 'bg-blue-100 text-blue-600' :
+                                                        categoryConfig.color === 'emerald' ? 'bg-emerald-100 text-emerald-600' :
+                                                            categoryConfig.color === 'amber' ? 'bg-amber-100 text-amber-600' :
+                                                                categoryConfig.color === 'rose' ? 'bg-rose-100 text-rose-600' :
+                                                                    categoryConfig.color === 'slate' ? 'bg-slate-100 text-slate-600' :
+                                                                        'bg-orange-100 text-orange-600'
+                                                    }`}>
+                                                    <Icon className="h-6 w-6" />
+                                                </div>
+                                                <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold ${conditionBadge.bg} ${conditionBadge.text}`}>
+                                                    <ConditionIcon className="h-3 w-3" />
+                                                    {conditionBadge.label}
+                                                </div>
+                                            </div>
+
+                                            <h3 className="font-bold text-lg mb-1">{eq.name}</h3>
+                                            <p className="text-sm text-gray-600 font-mono mb-2">{eq.code}</p>
+                                            <p className="text-sm text-gray-500 mb-3">{eq.rooms?.name || 'No room'}</p>
+
+                                            <div className="flex items-center justify-between pt-3 border-t border-gray-200">
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => handleOpenDetailModal(eq)}
+                                                        className="flex items-center gap-1 text-indigo-600 hover:bg-indigo-50 rounded-lg px-2 py-1 transition-colors"
+                                                        title="View Details"
+                                                    >
+                                                        <Eye className="h-4 w-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleOpenTrackRecordModal(eq)}
+                                                        className="flex items-center gap-1 text-blue-600 hover:bg-blue-50 rounded-lg px-2 py-1 transition-colors"
+                                                        title="Track Record"
+                                                    >
+                                                        <History className="h-4 w-4" />
+                                                    </button>
+                                                </div>
+                                                <div className="flex gap-1">
+                                                    <button
+                                                        onClick={() => handleOpenEditModal(eq)}
+                                                        className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                                    >
+                                                        <Edit className="h-4 w-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            if (confirm('Delete this equipment?')) {
+                                                                handleDeleteEquipment(eq.id);
+                                                            }
+                                                        }}
+                                                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Render Modals */}
+            {showStockModal && <StockModal />}
+            {showStockDetailModal && selectedStock && <StockDetailModal />}
+            {showStockTrackModal && selectedStock && <StockTrackModal />}
+            {showClaimModal && <ClaimModal />}
+            {showEditModal && editingEquipment && <EditModal />}
+            {showDetailModal && selectedEquipment && <EquipmentDetailModal />}
+            {showTrackRecordModal && selectedEquipment && <TrackRecordModal />}
+            {showDirectAddModal && <DirectAddModal />}
+
+            {/* Fullscreen Image Modals */}
+            {showStockImageFullscreen && stockImagePreview && (
+                <div
+                    className="fixed inset-0 z-[60] bg-black bg-opacity-90 flex items-center justify-center p-4 cursor-pointer"
+                    onClick={() => setShowStockImageFullscreen(false)}
+                >
+                    <button
+                        className="absolute top-4 right-4 p-2 bg-white/10 text-white rounded-full hover:bg-white/20 transition-colors"
+                        onClick={() => setShowStockImageFullscreen(false)}
+                    >
+                        <X className="h-6 w-6" />
+                    </button>
+                    <img
+                        src={stockImagePreview}
+                        alt="Fullscreen Preview"
+                        className="max-w-full max-h-screen object-contain"
+                    />
+                </div>
+            )}
+
+            {showEquipmentImageFullscreen && equipmentImagePreview && (
+                <div
+                    className="fixed inset-0 z-[60] bg-black bg-opacity-90 flex items-center justify-center p-4 cursor-pointer"
+                    onClick={() => setShowEquipmentImageFullscreen(false)}
+                >
+                    <button
+                        className="absolute top-4 right-4 p-2 bg-white/10 text-white rounded-full hover:bg-white/20 transition-colors"
+                        onClick={() => setShowEquipmentImageFullscreen(false)}
+                    >
+                        <X className="h-6 w-6" />
+                    </button>
+                    <img
+                        src={equipmentImagePreview}
+                        alt="Fullscreen Preview"
+                        className="max-w-full max-h-screen object-contain"
+                    />
                 </div>
             )}
         </div>

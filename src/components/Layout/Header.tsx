@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Menu, 
-  Bell, 
-  LogOut, 
-  LogIn, 
-  Settings, 
-  User as UserIcon, 
+import {
+  Menu,
+  Bell,
+  LogOut,
+  LogIn,
+  Settings,
+  User as UserIcon,
   CheckSquare,
   Calendar,
   Clock,
@@ -20,6 +20,7 @@ import { supabase } from '../../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { useSystemBranding } from '../../contexts/SystemSettingsContext';
 
 interface HeaderProps {
   user: UserType | null;
@@ -37,17 +38,20 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const navigate = useNavigate();
-  
+
   // Use language context
-  const { 
-    currentLanguage, 
-    setLanguage, 
-    getText, 
-    formatTime, 
-    formatDate, 
-    getLanguageLabel, 
-    getLanguageFlag 
+  const {
+    currentLanguage,
+    setLanguage,
+    getText,
+    formatTime,
+    formatDate,
+    getLanguageLabel,
+    getLanguageFlag
   } = useLanguage();
+
+  // Use system branding from global context
+  const { system_name, system_logo, system_description } = useSystemBranding();
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 60000);
@@ -60,6 +64,8 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
     if (user?.role !== 'super_admin') {
       return;
     }
+
+    if (!supabase) return;
 
     try {
       // Fetch for bookings
@@ -98,20 +104,20 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
     let checkoutSubscription: any;
     let reportsSubscription: any;
 
-    if (user?.role === 'super_admin') {
+    if (user?.role === 'super_admin' && supabase) {
       // Set up interval for periodic refresh
       intervalId = setInterval(fetchNotificationCounts, 60000);
 
       // Set up real-time subscriptions for immediate updates
       bookingSubscription = supabase
         .channel('pending-bookings')
-        .on('postgres_changes', 
-          { 
-            event: '*', 
-            schema: 'public', 
+        .on('postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
             table: 'bookings',
             filter: 'status=eq.pending'
-          }, 
+          },
           () => {
             fetchNotificationCounts();
           }
@@ -120,13 +126,13 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
 
       checkoutSubscription = supabase
         .channel('pending-checkouts')
-        .on('postgres_changes', 
-          { 
-            event: '*', 
-            schema: 'public', 
+        .on('postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
             table: 'checkouts',
             filter: 'status=eq.returned'
-          }, 
+          },
           () => {
             fetchNotificationCounts();
           }
@@ -135,13 +141,13 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
 
       reportsSubscription = supabase
         .channel('new-reports')
-        .on('postgres_changes', 
-          { 
-            event: '*', 
-            schema: 'public', 
+        .on('postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
             table: 'reports',
             filter: 'status=eq.new'
-          }, 
+          },
           () => {
             fetchNotificationCounts();
           }
@@ -183,10 +189,10 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Element;
-      
+
       // Check if click is outside any dropdown
       const isOutsideDropdowns = !target.closest('[data-dropdown]');
-      
+
       if (isOutsideDropdowns) {
         closeAllDropdowns();
       }
@@ -204,7 +210,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
   return (
     <header className="bg-white border-b border-gray-200 shadow-sm">
       <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
-        
+
         {/* Left Section */}
         <div className="flex items-center space-x-4">
           <button
@@ -214,17 +220,23 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
           >
             <Menu className="h-5 w-5" />
           </button>
-          
+
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-blue-600 rounded-lg">
-              <Sparkles className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+            <div className="flex items-center justify-center overflow-hidden">
+              {system_logo ? (
+                <img src={system_logo} alt="Logo" className="h-9 w-9 sm:h-10 sm:w-10 object-contain" />
+              ) : (
+                <div className="p-2 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center overflow-hidden">
+                  <Sparkles className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+                </div>
+              )}
             </div>
             <div className="hidden sm:block">
               <h1 className="text-lg sm:text-xl font-bold text-blue-600">
-                SIMPEL Kuliah
+                {system_name}
               </h1>
               <p className="text-xs sm:text-sm text-gray-600">
-                {getText('Smart Campus Management', 'Sistem Manajemen Kampus Cerdas')}
+                {system_description || getText('Smart Campus Management', 'Sistem Manajemen Kampus Cerdas')}
               </p>
             </div>
           </div>
@@ -253,14 +265,12 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                     <button
                       key={lang}
                       onClick={() => changeLanguage(lang)}
-                      className={`w-full flex items-center space-x-2 px-3 py-2 text-left hover:bg-gray-50 rounded ${
-                        currentLanguage === lang ? 'bg-blue-50 border border-blue-200' : ''
-                      }`}
+                      className={`w-full flex items-center space-x-2 px-3 py-2 text-left hover:bg-gray-50 rounded ${currentLanguage === lang ? 'bg-blue-50 border border-blue-200' : ''
+                        }`}
                     >
                       <span className="text-base">{getLanguageFlag(lang)}</span>
-                      <span className={`text-sm font-medium ${
-                        currentLanguage === lang ? 'text-blue-700' : 'text-gray-700'
-                      }`}>
+                      <span className={`text-sm font-medium ${currentLanguage === lang ? 'text-blue-700' : 'text-gray-700'
+                        }`}>
                         {getLanguageLabel(lang)}
                       </span>
                     </button>
@@ -293,14 +303,12 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                     <button
                       key={lang}
                       onClick={() => changeLanguage(lang)}
-                      className={`w-full flex items-center space-x-3 px-3 py-2 text-left hover:bg-gray-50 rounded ${
-                        currentLanguage === lang ? 'bg-blue-50 border border-blue-200' : ''
-                      }`}
+                      className={`w-full flex items-center space-x-3 px-3 py-2 text-left hover:bg-gray-50 rounded ${currentLanguage === lang ? 'bg-blue-50 border border-blue-200' : ''
+                        }`}
                     >
                       <span className="text-base">{getLanguageFlag(lang)}</span>
-                      <span className={`text-sm font-medium ${
-                        currentLanguage === lang ? 'text-blue-700' : 'text-gray-700'
-                      }`}>
+                      <span className={`text-sm font-medium ${currentLanguage === lang ? 'text-blue-700' : 'text-gray-700'
+                        }`}>
                         {getLanguageLabel(lang)}
                       </span>
                     </button>
@@ -327,7 +335,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
               {/* Notifications - Only visible for super_admin */}
               {user.role === 'super_admin' && (
                 <div className="relative" data-dropdown>
-                  <button 
+                  <button
                     className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
                     onClick={() => {
                       setShowNotificationsDropdown(!showNotificationsDropdown);
@@ -360,7 +368,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                           </button>
                         </div>
                       </div>
-                      
+
                       <div className="max-h-80 overflow-y-auto">
                         {totalNotifications === 0 ? (
                           <div className="p-8 text-center">
@@ -372,7 +380,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                         ) : (
                           <div className="p-2 space-y-2">
                             {pendingBookingsCount > 0 && (
-                              <div 
+                              <div
                                 className="p-4 hover:bg-blue-50 cursor-pointer rounded"
                                 onClick={() => {
                                   navigate('/bookings');
@@ -392,9 +400,9 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                                 </div>
                               </div>
                             )}
-                            
+
                             {pendingCheckoutsCount > 0 && (
-                              <div 
+                              <div
                                 className="p-4 hover:bg-green-50 cursor-pointer rounded"
                                 onClick={() => {
                                   navigate('/validation');
@@ -416,7 +424,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                             )}
 
                             {newReportsCount > 0 && (
-                              <div 
+                              <div
                                 className="p-4 hover:bg-orange-50 cursor-pointer rounded"
                                 onClick={() => {
                                   navigate('/reports');
@@ -446,14 +454,14 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
 
               {/* Settings */}
               <button className="hidden sm:block p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg">
-                <Settings className="h-5 w-5" 
+                <Settings className="h-5 w-5"
                   onClick={() => {
                     Swal.fire({
-  title: getText('Success', 'Berhasil'),
-  text: getText('Success To Add User', 'Berhasil Menambah User'),
-  icon: "success"
-});
-                  }}/>
+                      title: getText('Success', 'Berhasil'),
+                      text: getText('Success To Add User', 'Berhasil Menambah User'),
+                      icon: "success"
+                    });
+                  }} />
               </button>
 
               {/* User Menu */}
@@ -472,11 +480,19 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                       {user.role?.replace('_', ' ') || 'user'}
                     </p>
                   </div>
-                  
-                  <div className="h-8 w-8 sm:h-10 sm:w-10 bg-blue-500 rounded-lg flex items-center justify-center">
-                    <UserIcon className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
+
+                  <div className="h-8 w-8 sm:h-10 sm:w-10 bg-blue-500 rounded-lg flex items-center justify-center overflow-hidden">
+                    {user.attachments ? (
+                      <img
+                        src={user.attachments}
+                        alt={user.full_name}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <UserIcon className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
+                    )}
                   </div>
-                  
+
                   <ChevronDown className="h-4 w-4 text-gray-400" />
                 </button>
 
@@ -484,8 +500,16 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                   <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
                     <div className="p-4 border-b border-gray-200">
                       <div className="flex items-center space-x-3">
-                        <div className="h-12 w-12 bg-blue-500 rounded-lg flex items-center justify-center">
-                          <UserIcon className="h-6 w-6 text-white" />
+                        <div className="h-12 w-12 bg-blue-500 rounded-lg flex items-center justify-center overflow-hidden">
+                          {user.attachments ? (
+                            <img
+                              src={user.attachments}
+                              alt={user.full_name}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <UserIcon className="h-6 w-6 text-white" />
+                          )}
                         </div>
                         <div>
                           <p className="font-semibold text-gray-900">{user.full_name || 'User'}</p>
@@ -495,7 +519,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="p-2">
                       <button
                         onClick={() => {
@@ -509,7 +533,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                           {getText('View Profile', 'Lihat Profil')}
                         </span>
                       </button>
-                      
+
                       <button
                         onClick={() => {
                           navigate('/settings');
@@ -523,7 +547,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                         </span>
                       </button>
                     </div>
-                    
+
                     <div className="p-2 border-t border-gray-200">
                       <button
                         onClick={() => {

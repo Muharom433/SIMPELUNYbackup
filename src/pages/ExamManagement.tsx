@@ -6,26 +6,26 @@ import Select from 'react-select';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
-  Calendar,
-  Search,
-  Edit,
-  Trash2,
-  RefreshCw,
-  X,
-  AlertCircle,
-  Plus,
-  User,
-  Users,
-  Printer,
-  Shield,
-  Power,
-  PowerOff,
-  Building,
-  BookOpen,
-  Clock,
-  MapPin,
-  GraduationCap,
-  Eye
+    Calendar,
+    Search,
+    Edit,
+    Trash2,
+    RefreshCw,
+    X,
+    AlertCircle,
+    Plus,
+    User,
+    Users,
+    Printer,
+    Shield,
+    Power,
+    PowerOff,
+    Building,
+    BookOpen,
+    Clock,
+    MapPin,
+    GraduationCap,
+    Eye
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -36,19 +36,19 @@ import logoUNY from '../assets/logouny.png';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const examSchema = z.object({
-  course_name: z.string().min(1, 'Course name is required'),
-  course_code: z.string().min(1, 'Course code is required'),
-  date: z.string().min(1, 'Date is required'),
-  start_time: z.string().optional(),
-  end_time: z.string().optional(),
-  is_take_home: z.boolean().default(false),
-  semester: z.number().min(1, 'Semester must be at least 1').max(8, 'Semester cannot exceed 8'),
-  class: z.string().min(1, 'Class is required'),
-  student_amount: z.number().min(0, 'Student amount cannot be negative'),
-  room_id: z.string().optional(),
-  lecturer_id: z.string().min(1, 'Lecturer is required'),
-  inspector: z.string().min(1, 'Inspector is required'),
-  study_program_id: z.string().min(1, 'Study program is required'),
+    course_name: z.string().min(1, 'Course name is required'),
+    course_code: z.string().min(1, 'Course code is required'),
+    date: z.string().min(1, 'Date is required'),
+    start_time: z.string().optional(),
+    end_time: z.string().optional(),
+    is_take_home: z.boolean().default(false),
+    semester: z.number().min(1, 'Semester must be at least 1').max(8, 'Semester cannot exceed 8'),
+    class: z.string().min(1, 'Class is required'),
+    student_amount: z.number().min(0, 'Student amount cannot be negative'),
+    room_id: z.string().optional(),
+    lecturer_id: z.string().min(1, 'Lecturer is required'),
+    inspector: z.string().min(1, 'Inspector is required'),
+    study_program_id: z.string().min(1, 'Study program is required'),
 }).superRefine((data, ctx) => {
     // If not take home, start_time and end_time are required
     if (!data.is_take_home) {
@@ -156,23 +156,23 @@ const ExamManagement = () => {
         });
     }, [profile?.role, getText]);
 
-    const form = useForm<ExamFormData>({ 
-        resolver: zodResolver(examSchema), 
-        defaultValues: { 
-            course_name: '', 
-            course_code: '', 
-            date: format(new Date(), 'yyyy-MM-dd'), 
-            start_time: '', 
-            end_time: '', 
+    const form = useForm<ExamFormData>({
+        resolver: zodResolver(examSchema),
+        defaultValues: {
+            course_name: '',
+            course_code: '',
+            date: format(new Date(), 'yyyy-MM-dd'),
+            start_time: '',
+            end_time: '',
             is_take_home: false,
-            semester: 1, 
-            class: '', 
-            student_amount: 0, 
-            room_id: '', 
+            semester: 1,
+            class: '',
+            student_amount: 0,
+            room_id: '',
             lecturer_id: '',
             inspector: '',
-            study_program_id: '', 
-        }, 
+            study_program_id: '',
+        },
     });
 
     const printForm = useForm<PrintFormData>({ resolver: zodResolver(printSchema) });
@@ -194,173 +194,175 @@ const ExamManagement = () => {
         }
     }, [profile]);
 
-    useEffect(() => { 
-        if (watchDate && watchStartTime && watchEndTime && !watchIsTakeHome) { 
-            fetchBookedRooms(watchDate, watchStartTime, watchEndTime); 
+    useEffect(() => {
+        if (watchDate && watchStartTime && watchEndTime && !watchIsTakeHome) {
+            fetchBookedRooms(watchDate, watchStartTime, watchEndTime);
         } else {
             // Clear booked rooms if take home or incomplete data
             setBookedRooms({});
         }
     }, [watchDate, watchStartTime, watchEndTime, watchIsTakeHome]);
 
-    useEffect(() => { 
-        if (watchStudyProgramId) { 
-            filterLecturersByStudyProgram(watchStudyProgramId); 
+    useEffect(() => {
+        if (watchStudyProgramId) {
+            filterLecturersByStudyProgram(watchStudyProgramId);
             form.setValue('lecturer_id', '');
             form.setValue('inspector', '');
-        } else { 
-            setFilteredLecturers(lecturers); 
-        } 
+        } else {
+            setFilteredLecturers(lecturers);
+        }
     }, [watchStudyProgramId, lecturers]);
-    
+
     useEffect(() => {
         if (profile?.role === 'super_admin') {
             printForm.setValue('study_program_id', '');
         }
     }, [printSelectedDepartment, profile?.role, printForm]);
 
-    const fetchExamModeStatus = async () => { 
-        try { 
-            setLoading(true); 
+    const fetchExamModeStatus = async () => {
+        try {
+            setLoading(true);
             const { data, error } = await supabase
                 .from('system_settings')
                 .select('setting_value')
                 .eq('id', 'b78e1661-7cdd-4ee0-b495-bf260a8a274c')
-                .single(); 
-            if (error) throw error; 
-            if (data) { 
-                setExamModeEnabled(data.setting_value === 'true'); 
-            } 
-        } catch (error) { 
-            console.error('Error fetching exam mode status:', error); 
-            setExamModeEnabled(false); 
-        } finally { 
-            setLoading(false); 
-        } 
+                .single();
+            if (error) throw error;
+            if (data) {
+                setExamModeEnabled(data.setting_value === 'true');
+            }
+        } catch (error) {
+            console.error('Error fetching exam mode status:', error);
+            setExamModeEnabled(false);
+        } finally {
+            setLoading(false);
+        }
     };
 
-    const handleModeChange = () => { 
-        if (profile?.role !== 'super_admin') return; 
-        setShowClearConfirm(true); 
+    const handleModeChange = () => {
+        if (profile?.role !== 'super_admin') return;
+        setShowClearConfirm(true);
     };
 
-    const confirmClearAndToggleMode = async () => { 
-        setLoading(true); 
-        try { 
+    const confirmClearAndToggleMode = async () => {
+        setLoading(true);
+        try {
             const { error: deleteError } = await supabase
                 .from('exams')
                 .delete()
-                .neq('id', '00000000-0000-0000-0000-000000000000'); 
-            if (deleteError) throw deleteError; 
-            const newMode = !examModeEnabled; 
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+            if (deleteError) throw deleteError;
+            const newMode = !examModeEnabled;
             const { error: updateError } = await supabase
                 .from('system_settings')
                 .update({ setting_value: newMode.toString() })
-                .eq('id', 'b78e1661-7cdd-4ee0-b495-bf260a8a274c'); 
-            if (updateError) throw updateError; 
-            setExamModeEnabled(newMode); 
-            setExams([]); 
+                .eq('id', 'b78e1661-7cdd-4ee0-b495-bf260a8a274c');
+            if (updateError) throw updateError;
+            setExamModeEnabled(newMode);
+            setExams([]);
             alert.success(getText(
                 `Exam Mode has been ${newMode ? 'enabled' : 'disabled'} and all previous schedules have been cleared.`,
                 `Mode Ujian telah ${newMode ? 'diaktifkan' : 'dinonaktifkan'} dan semua jadwal sebelumnya telah dihapus.`
-            )); 
-        } catch (error: any) { 
-            console.error('Error updating exam mode:', error); 
-            alert.error(getText('Failed to update exam mode.', 'Gagal memperbarui mode ujian.')); 
-        } finally { 
-            setLoading(false); 
-            setShowClearConfirm(false); 
-        } 
+            ));
+        } catch (error: any) {
+            console.error('Error updating exam mode:', error);
+            alert.error(getText('Failed to update exam mode.', 'Gagal memperbarui mode ujian.'));
+        } finally {
+            setLoading(false);
+            setShowClearConfirm(false);
+        }
     };
 
-    const fetchExams = async () => { 
-        try { 
+    const fetchExams = async () => {
+        try {
             let query = supabase
                 .from('exams')
-                .select('*, room:rooms(*), lecturer:users!lecturer_id(*), department:departments(*), study_program:study_programs(*)'); 
-            if (profile?.role === 'department_admin' && profile?.department_id) { 
-                query = query.eq('department_id', profile.department_id); 
-            } 
-            query = query.order('date', { ascending: true }); 
-            const { data, error } = await query; 
-            if (error) throw error; 
-            setExams(data || []); 
-        } catch (error: any) { 
-            console.error('Error fetching exams:', error); 
-            alert.error(getText('Failed to load exams.', 'Gagal memuat ujian.')); 
-        } 
+                .select('*, room:rooms(*), lecturer:users!lecturer_id(*), department:departments(*), study_program:study_programs(*)');
+            if (profile?.role === 'department_admin' && profile?.department_id) {
+                query = query.eq('department_id', profile.department_id);
+            }
+            query = query.order('date', { ascending: true });
+            const { data, error } = await query;
+            if (error) throw error;
+            setExams(data || []);
+        } catch (error: any) {
+            console.error('Error fetching exams:', error);
+            alert.error(getText('Failed to load exams.', 'Gagal memuat ujian.'));
+        }
     };
 
-    const fetchStudyPrograms = async () => { 
-        try { 
-            let query = supabase.from('study_programs').select('*'); 
-            if (profile?.role === 'department_admin' && profile?.department_id) { 
-                query = query.eq('department_id', profile.department_id); 
-            } 
-            const { data, error } = await query; 
-            if (error) throw error; 
-            setStudyPrograms(data || []); 
-        } catch (error: any) { 
-            console.error('Error fetching study programs:', error); 
-            alert.error(getText('Failed to load study programs.', 'Gagal memuat program studi.')); 
-        } 
+    const fetchStudyPrograms = async () => {
+        try {
+            let query = supabase.from('study_programs').select('*');
+            if (profile?.role === 'department_admin' && profile?.department_id) {
+                query = query.eq('department_id', profile.department_id);
+            }
+            const { data, error } = await query;
+            if (error) throw error;
+            setStudyPrograms(data || []);
+        } catch (error: any) {
+            console.error('Error fetching study programs:', error);
+            alert.error(getText('Failed to load study programs.', 'Gagal memuat program studi.'));
+        }
     };
 
-    const fetchRooms = async () => { 
-        try { 
-            let query = supabase.from('rooms').select('*'); 
-            if (profile?.role === 'department_admin' && profile?.department_id) { 
-                query = query.or(`department_id.eq.${profile.department_id},department_id.is.null`); 
-            } 
-            const { data, error } = await query; 
-            if (error) throw error; 
-            setRooms(data || []); 
-        } catch (error: any) { 
-            console.error('Error fetching rooms:', error); 
-            alert.error(getText('Failed to load rooms.', 'Gagal memuat ruangan.')); 
-        } 
+    const fetchRooms = async () => {
+        try {
+            // Only select needed columns to optimize query performance
+            let query = supabase.from('rooms').select('id, name, code, capacity, department_id, is_available');
+            if (profile?.role === 'department_admin' && profile?.department_id) {
+                query = query.or(`department_id.eq.${profile.department_id},department_id.is.null`);
+            }
+            query = query.eq('is_available', true).order('name');
+            const { data, error } = await query;
+            if (error) throw error;
+            setRooms(data || []);
+        } catch (error: any) {
+            console.error('Error fetching rooms:', error);
+            alert.error(getText('Failed to load rooms.', 'Gagal memuat ruangan.'));
+        }
     };
 
-    const fetchLecturers = async () => { 
-        try { 
+    const fetchLecturers = async () => {
+        try {
             let query = supabase
                 .from('users')
                 .select('*')
-                .eq('role', 'lecturer'); 
-            if (profile?.role === 'department_admin' && profile?.department_id) { 
-                query = query.eq('department_id', profile.department_id); 
-            } 
-            const { data, error } = await query; 
-            if (error) throw error; 
-            setLecturers(data || []); 
-            setFilteredLecturers(data || []); 
-        } catch (error: any) { 
-            console.error('Error fetching lecturers:', error); 
-            alert.error(getText('Failed to load lecturers.', 'Gagal memuat dosen.')); 
-        } 
+                .eq('role', 'lecturer');
+            if (profile?.role === 'department_admin' && profile?.department_id) {
+                query = query.eq('department_id', profile.department_id);
+            }
+            const { data, error } = await query;
+            if (error) throw error;
+            setLecturers(data || []);
+            setFilteredLecturers(data || []);
+        } catch (error: any) {
+            console.error('Error fetching lecturers:', error);
+            alert.error(getText('Failed to load lecturers.', 'Gagal memuat dosen.'));
+        }
     };
 
-    const fetchDepartments = async () => { 
-        try { 
-            let query = supabase.from('departments').select('id, name'); 
-            if (profile?.role === 'department_admin' && profile.department_id) { 
-                query = query.eq('id', profile.department_id); 
-            } 
-            const { data, error } = await query; 
-            if (error) throw error; 
-            setDepartments(data || []); 
-        } catch (error: any) { 
-            console.error('Error fetching departments:', error); 
-            alert.error(getText('Failed to load departments.', 'Gagal memuat departemen.')); 
-        } 
+    const fetchDepartments = async () => {
+        try {
+            let query = supabase.from('departments').select('id, name');
+            if (profile?.role === 'department_admin' && profile.department_id) {
+                query = query.eq('id', profile.department_id);
+            }
+            const { data, error } = await query;
+            if (error) throw error;
+            setDepartments(data || []);
+        } catch (error: any) {
+            console.error('Error fetching departments:', error);
+            alert.error(getText('Failed to load departments.', 'Gagal memuat departemen.'));
+        }
     };
 
-    const fetchDepartmentHeads = async () => { 
-        try {  
+    const fetchDepartmentHeads = async () => {
+        try {
             let query = supabase
                 .from('users')
                 .select('id, full_name, identity_number, department_id')
-                .eq('role', 'lecturer'); 
+                .eq('role', 'lecturer');
 
             if (profile?.role === 'department_admin' && profile.department_id) {
                 query = query.eq('department_id', profile.department_id);
@@ -368,29 +370,29 @@ const ExamManagement = () => {
 
             const { data, error } = await query;
             if (error) throw error;
-            setDepartmentHeads(data || []); 
-        } catch (error: any) { 
-            console.error('Error fetching department heads:', error); 
-            alert.error(getText('Failed to load department heads.', 'Gagal memuat kepala departemen.')); 
-        } 
+            setDepartmentHeads(data || []);
+        } catch (error: any) {
+            console.error('Error fetching department heads:', error);
+            alert.error(getText('Failed to load department heads.', 'Gagal memuat kepala departemen.'));
+        }
     };
 
-    const fetchBookedRooms = async (date: string, startTime: string, endTime: string) => { 
-        try { 
+    const fetchBookedRooms = async (date: string, startTime: string, endTime: string) => {
+        try {
             console.log('🔍 Checking room availability for:', { date, startTime, endTime });
-            
+
             // Fetch all exams on the same date that are not take home
-            const { data, error } = await supabase 
-                .from('exams') 
-                .select('room_id, start_time, end_time, id, course_name') 
-                .eq('date', date) 
+            const { data, error } = await supabase
+                .from('exams')
+                .select('room_id, start_time, end_time, id, course_name')
+                .eq('date', date)
                 .eq('is_take_home', false)
                 .not('room_id', 'is', null);
-                
-            if (error) throw error; 
-            
+
+            if (error) throw error;
+
             console.log('📅 Found exams on same date:', data);
-            
+
             // Filter rooms that have time conflicts
             const conflictingRoomIds = data
                 .filter(exam => {
@@ -399,20 +401,20 @@ const ExamManagement = () => {
                         console.log('⏭️ Skipping current editing exam:', exam.course_name);
                         return false;
                     }
-                    
+
                     // Check for time overlap
                     const examStart = exam.start_time;
                     const examEnd = exam.end_time;
-                    
+
                     if (!examStart || !examEnd) {
                         console.log('⚠️ Exam missing time data:', exam.course_name);
                         return false;
                     }
-                    
+
                     // Time overlap logic: 
                     // Overlap occurs if: start_time < exam_end_time AND end_time > exam_start_time
                     const hasOverlap = startTime < examEnd && endTime > examStart;
-                    
+
                     if (hasOverlap) {
                         console.log('❌ Time conflict found:', {
                             exam: exam.course_name,
@@ -421,44 +423,44 @@ const ExamManagement = () => {
                             roomId: exam.room_id
                         });
                     }
-                    
+
                     return hasOverlap;
                 })
                 .map(exam => exam.room_id)
                 .filter(Boolean);
-            
+
             console.log('🚫 Conflicting room IDs:', conflictingRoomIds);
-            
+
             const key = `${date}-${startTime}-${endTime}`;
-            setBookedRooms(prev => ({ ...prev, [key]: conflictingRoomIds })); 
-        } catch (error: any) { 
-            console.error('Error fetching booked rooms:', error); 
-        } 
+            setBookedRooms(prev => ({ ...prev, [key]: conflictingRoomIds }));
+        } catch (error: any) {
+            console.error('Error fetching booked rooms:', error);
+        }
     };
 
-    const filterLecturersByStudyProgram = (studyProgramId: string) => { 
-        if (!studyProgramId) { 
-            setFilteredLecturers(lecturers); 
-            return; 
-        } 
-        const filtered = lecturers.filter(lecturer => lecturer.study_program_id === studyProgramId); 
-        setFilteredLecturers(filtered); 
+    const filterLecturersByStudyProgram = (studyProgramId: string) => {
+        if (!studyProgramId) {
+            setFilteredLecturers(lecturers);
+            return;
+        }
+        const filtered = lecturers.filter(lecturer => lecturer.study_program_id === studyProgramId);
+        setFilteredLecturers(filtered);
     };
 
-    const getDayFromDate = (dateString: string) => { 
-        const date = new Date(dateString); 
-        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']; 
-        return days[date.getDay()]; 
+    const getDayFromDate = (dateString: string) => {
+        const date = new Date(dateString);
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        return days[date.getDay()];
     };
 
     const handleSubmit = async (data: ExamFormData) => {
         try {
             setLoading(true);
             const day = getDayFromDate(data.date);
-            
+
             // Get inspector name from ID
             const inspectorInfo = lecturers.find(l => l.id === data.inspector);
-            
+
             const examData = {
                 day,
                 date: data.date,
@@ -476,39 +478,41 @@ const ExamManagement = () => {
                 department_id: profile.department_id,
                 study_program_id: data.study_program_id,
             };
-            
-            if (editingExam) { 
-                const { error } = await supabase 
-                    .from('exams') 
-                    .update(examData) 
-                    .eq('id', editingExam.id); 
-                if (error) { throw error } else { 
-                alert.success(getText('Exam updated successfully', 'Ujian berhasil diperbarui')); }
+
+            if (editingExam) {
+                const { error } = await supabase
+                    .from('exams')
+                    .update(examData)
+                    .eq('id', editingExam.id);
+                if (error) { throw error } else {
+                    alert.success(getText('Exam updated successfully', 'Ujian berhasil diperbarui'));
+                }
                 setShowModal(false);
-                setEditingExam(null); 
-            } else { 
-                const { error } = await supabase 
-                    .from('exams') 
-                    .insert([examData]); 
-                if (error) { throw error } else{ 
-                alert.success(getText('Exam created successfully', 'Ujian berhasil dibuat')); }
-            } 
-            
-            fetchExams(); 
-        } catch (error: any) { 
-            console.error('Error saving exam:', error); 
-            alert.error(error.message || getText('Failed to save exam', 'Gagal menyimpan ujian')); 
-        } finally { 
-            setLoading(false); 
-        } 
+                setEditingExam(null);
+            } else {
+                const { error } = await supabase
+                    .from('exams')
+                    .insert([examData]);
+                if (error) { throw error } else {
+                    alert.success(getText('Exam created successfully', 'Ujian berhasil dibuat'));
+                }
+            }
+
+            fetchExams();
+        } catch (error: any) {
+            console.error('Error saving exam:', error);
+            alert.error(error.message || getText('Failed to save exam', 'Gagal menyimpan ujian'));
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleEdit = (exam: any) => {
         setEditingExam(exam);
-        
+
         // Find inspector by name to get ID for the form
         const inspectorUser = lecturers.find(l => l.full_name === exam.inspector);
-        
+
         form.reset({
             course_name: exam.course_name || '',
             course_code: exam.course_code,
@@ -527,60 +531,60 @@ const ExamManagement = () => {
         setShowModal(true);
     };
 
-    const handleDelete = async (id: string) => { 
-        try { 
-            setLoading(true); 
-            const { error } = await supabase 
-                .from('exams') 
-                .delete() 
-                .eq('id', id); 
-            if (error) throw error; 
-            alert.success(getText('Exam deleted successfully', 'Ujian berhasil dihapus')); 
-            setShowDeleteConfirm(null); 
-            fetchExams(); 
-        } catch (error: any) { 
-            console.error('Error deleting exam:', error); 
-            alert.error(error.message || getText('Failed to delete exam', 'Gagal menghapus ujian')); 
-        } finally { 
-            setLoading(false); 
-        } 
+    const handleDelete = async (id: string) => {
+        try {
+            setLoading(true);
+            const { error } = await supabase
+                .from('exams')
+                .delete()
+                .eq('id', id);
+            if (error) throw error;
+            alert.success(getText('Exam deleted successfully', 'Ujian berhasil dihapus'));
+            setShowDeleteConfirm(null);
+            fetchExams();
+        } catch (error: any) {
+            console.error('Error deleting exam:', error);
+            alert.error(error.message || getText('Failed to delete exam', 'Gagal menghapus ujian'));
+        } finally {
+            setLoading(false);
+        }
     };
 
-    const filteredExams = exams.filter(exam => { 
-        const matchesSearch = (exam.course_name && exam.course_name.toLowerCase().includes(searchTerm.toLowerCase())) || 
-            exam.course_code.toLowerCase().includes(searchTerm.toLowerCase()) || 
-            exam.class.toLowerCase().includes(searchTerm.toLowerCase()) || 
-            (exam.department?.name && exam.department.name.toLowerCase().includes(searchTerm.toLowerCase())); 
-        const matchesDate = !dateFilter || exam.date === dateFilter; 
+    const filteredExams = exams.filter(exam => {
+        const matchesSearch = (exam.course_name && exam.course_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            exam.course_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            exam.class.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (exam.department?.name && exam.department.name.toLowerCase().includes(searchTerm.toLowerCase()));
+        const matchesDate = !dateFilter || exam.date === dateFilter;
         const matchesTime = !timeFilter || (exam.start_time && exam.start_time.includes(timeFilter));
-        const matchesSemester = semesterFilter === 'all' || exam.semester.toString() === semesterFilter; 
-        return matchesSearch && matchesDate && matchesTime && matchesSemester; 
+        const matchesSemester = semesterFilter === 'all' || exam.semester.toString() === semesterFilter;
+        return matchesSearch && matchesDate && matchesTime && matchesSemester;
     });
 
-    const getAvailableRooms = () => { 
+    const getAvailableRooms = () => {
         if (watchIsTakeHome) {
             console.log('🏠 Take home exam - showing all rooms');
             return rooms;
         }
-        
+
         if (!watchStartTime || !watchEndTime || !watchDate) {
             console.log('⏰ Incomplete time/date data - showing all rooms');
             return rooms;
         }
-        
+
         const timeSlotKey = `${watchDate}-${watchStartTime}-${watchEndTime}`;
         const conflictingRoomIds = bookedRooms[timeSlotKey] || [];
-        
+
         console.log('🔑 Checking availability with key:', timeSlotKey);
         console.log('🚫 Conflicting rooms:', conflictingRoomIds);
-        
+
         const availableRooms = rooms.filter(room => {
             // Don't filter out the current room if editing
             if (editingExam && editingExam.room_id === room.id) {
                 console.log('✅ Keeping current room for editing:', room.name);
                 return true;
             }
-            
+
             // Filter out rooms that have conflicts
             const isAvailable = !conflictingRoomIds.includes(room.id);
             if (!isAvailable) {
@@ -588,133 +592,133 @@ const ExamManagement = () => {
             }
             return isAvailable;
         });
-        
+
         console.log(`📊 Available rooms: ${availableRooms.length}/${rooms.length}`);
         return availableRooms;
     };
 
-    const handlePrint = async (formData: PrintFormData) => { 
-        try { 
-            const isSuperAdmin = profile?.role === 'super_admin'; 
-            const departmentIdForQuery = isSuperAdmin ? formData.department_id : profile.department_id; 
-            const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id); 
-            const currentDepartment = departments.find(d => d.id === departmentIdForQuery); 
-            let departmentHead; 
-            if (isSuperAdmin) { 
-                departmentHead = { full_name: getText('DEPARTMENT HEAD', 'KEPALA DEPARTEMEN'), identity_number: '123' }; 
-            } else { 
-                departmentHead = departmentHeads.find(h => h.id === formData.department_head_id); 
-            } 
-            if (!selectedProgram || !departmentHead || !currentDepartment) { 
-                alert.error(getText("Please ensure all fields are selected and data is loaded.", "Pastikan semua field telah dipilih dan data telah dimuat.")); 
-                return; 
-            } 
-            const examsToPrint = exams.filter(exam => exam.study_program_id === formData.study_program_id && exam.department_id === departmentIdForQuery); 
-            if (examsToPrint.length === 0) { 
-                alert.error(getText("No exams found for the selected criteria.", "Tidak ditemukan ujian untuk kriteria yang dipilih.")); 
-                return; 
-            } 
-            const doc = new jsPDF(); 
-            let pageWidth = doc.internal.pageSize.getWidth(); 
-            const departmentName = currentDepartment.name.toUpperCase(); 
-            const logoDataUrl = await getImageDataUrl(logoUNY); 
-            doc.addImage(logoDataUrl, 'PNG', 12, 15, 30, 30); 
-            let currentY = 22; 
-            doc.setFont('helvetica', 'normal'); 
-            doc.setFontSize(12); 
-            pageWidth += 30; 
-            doc.setFontSize(12); 
-            doc.setFont('helvetica', 'normal'); 
-            doc.text("KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI", pageWidth / 2, currentY, { align: 'center' }); 
-            currentY += 5; 
-            doc.text("UNIVERSITAS NEGERI YOGYAKARTA", pageWidth / 2, currentY, { align: 'center' }); 
-            currentY += 5; 
-            doc.text("FAKULTAS VOKASI", pageWidth / 2, currentY, { align: 'center' }); 
-            doc.setFontSize(14); 
-            doc.setFont('helvetica', 'bold'); 
-            currentY += 5; 
-            doc.text(`DEPARTEMEN ${departmentName}`, pageWidth / 2, currentY, { align: 'center' }); 
-            currentY += 5; 
-            doc.setFontSize(9); 
-            doc.setFont('helvetica', 'normal'); 
-            doc.text("Kampus I: Jalan Mandung No. 1 Pengasih, Kulon Progo Telp.(0274)774625", pageWidth / 2, currentY, { align: 'center' }); 
-            currentY += 3; 
-            doc.text("Kampus II: Pacarejo, Semanu, Gunungkidul Telp. (0274)5042222/(0274)5042255", pageWidth / 2, currentY, { align: 'center' }); 
-            currentY += 3; 
-            doc.text("Laman: https://fv.uny.ac.id E-mail: fv@uny.ac.id", pageWidth / 2, currentY, { align: 'center' }); 
-            currentY += 3; 
-            pageWidth -= 30; 
-            doc.setLineWidth(1); 
-            doc.line(14, currentY, pageWidth - 14, currentY); 
-            currentY += 10; 
-            const subtitle = `JADWAL UAS ${selectedProgram.name.toUpperCase()} SEMESTER ${formData.semester.toUpperCase()} TAHUN AKADEMIK ${formData.academic_year}`; 
-            doc.setFontSize(12); 
-            doc.setFont('helvetica', 'bold'); 
-            const titleMaxWidth = pageWidth - 30; 
+    const handlePrint = async (formData: PrintFormData) => {
+        try {
+            const isSuperAdmin = profile?.role === 'super_admin';
+            const departmentIdForQuery = isSuperAdmin ? formData.department_id : profile.department_id;
+            const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id);
+            const currentDepartment = departments.find(d => d.id === departmentIdForQuery);
+            let departmentHead;
+            if (isSuperAdmin) {
+                departmentHead = { full_name: getText('DEPARTMENT HEAD', 'KEPALA DEPARTEMEN'), identity_number: '123' };
+            } else {
+                departmentHead = departmentHeads.find(h => h.id === formData.department_head_id);
+            }
+            if (!selectedProgram || !departmentHead || !currentDepartment) {
+                alert.error(getText("Please ensure all fields are selected and data is loaded.", "Pastikan semua field telah dipilih dan data telah dimuat."));
+                return;
+            }
+            const examsToPrint = exams.filter(exam => exam.study_program_id === formData.study_program_id && exam.department_id === departmentIdForQuery);
+            if (examsToPrint.length === 0) {
+                alert.error(getText("No exams found for the selected criteria.", "Tidak ditemukan ujian untuk kriteria yang dipilih."));
+                return;
+            }
+            const doc = new jsPDF();
+            let pageWidth = doc.internal.pageSize.getWidth();
+            const departmentName = currentDepartment.name.toUpperCase();
+            const logoDataUrl = await getImageDataUrl(logoUNY);
+            doc.addImage(logoDataUrl, 'PNG', 12, 15, 30, 30);
+            let currentY = 22;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(12);
+            pageWidth += 30;
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'normal');
+            doc.text("KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI", pageWidth / 2, currentY, { align: 'center' });
+            currentY += 5;
+            doc.text("UNIVERSITAS NEGERI YOGYAKARTA", pageWidth / 2, currentY, { align: 'center' });
+            currentY += 5;
+            doc.text("FAKULTAS VOKASI", pageWidth / 2, currentY, { align: 'center' });
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            currentY += 5;
+            doc.text(`DEPARTEMEN ${departmentName}`, pageWidth / 2, currentY, { align: 'center' });
+            currentY += 5;
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.text("Kampus I: Jalan Mandung No. 1 Pengasih, Kulon Progo Telp.(0274)774625", pageWidth / 2, currentY, { align: 'center' });
+            currentY += 3;
+            doc.text("Kampus II: Pacarejo, Semanu, Gunungkidul Telp. (0274)5042222/(0274)5042255", pageWidth / 2, currentY, { align: 'center' });
+            currentY += 3;
+            doc.text("Laman: https://fv.uny.ac.id E-mail: fv@uny.ac.id", pageWidth / 2, currentY, { align: 'center' });
+            currentY += 3;
+            pageWidth -= 30;
+            doc.setLineWidth(1);
+            doc.line(14, currentY, pageWidth - 14, currentY);
+            currentY += 10;
+            const subtitle = `JADWAL UAS ${selectedProgram.name.toUpperCase()} SEMESTER ${formData.semester.toUpperCase()} TAHUN AKADEMIK ${formData.academic_year}`;
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
+            const titleMaxWidth = pageWidth - 30;
             const titleLines = doc.splitTextToSize(subtitle, titleMaxWidth);
             doc.text(titleLines, pageWidth / 2, currentY, { align: 'center' });
-            currentY += (titleLines.length * 5); 
-            currentY += 5; 
+            currentY += (titleLines.length * 5);
+            currentY += 5;
             const tableColumn = [
-                getText("No.", "No."), 
-                getText("DAY", "HARI"), 
-                getText("DATE", "TANGGAL"), 
-                getText("TIME", "WAKTU"), 
-                getText("COURSE CODE", "KODE MK"), 
-                getText("COURSE", "MATA KULIAH"), 
-                getText("SMT", "SMT"), 
-                getText("CLASS", "KLS"), 
-                getText("STUDENTS", "MHS"), 
-                getText("ROOM", "RUANG"), 
+                getText("No.", "No."),
+                getText("DAY", "HARI"),
+                getText("DATE", "TANGGAL"),
+                getText("TIME", "WAKTU"),
+                getText("COURSE CODE", "KODE MK"),
+                getText("COURSE", "MATA KULIAH"),
+                getText("SMT", "SMT"),
+                getText("CLASS", "KLS"),
+                getText("STUDENTS", "MHS"),
+                getText("ROOM", "RUANG"),
                 getText("SUPERVISOR", "PENGAWAS")
-            ]; 
-            const tableRows: any[] = []; 
-            examsToPrint.forEach((exam, index) => { 
+            ];
+            const tableRows: any[] = [];
+            examsToPrint.forEach((exam, index) => {
                 const inspectorName = exam.inspector || '-';
                 const timeDisplay = exam.is_take_home ? getText('Take Home', 'Take Home') : (exam.start_time && exam.end_time ? `${exam.start_time}-${exam.end_time}` : '-');
-                tableRows.push([ 
-                    index + 1, 
-                    exam.day, 
-                    format(parseISO(exam.date), 'dd-MM-yyyy'), 
+                tableRows.push([
+                    index + 1,
+                    exam.day,
+                    format(parseISO(exam.date), 'dd-MM-yyyy'),
                     timeDisplay,
-                    exam.course_code, 
-                    exam.course_name, 
-                    exam.semester, 
-                    exam.class, 
-                    exam.student_amount, 
+                    exam.course_code,
+                    exam.course_name,
+                    exam.semester,
+                    exam.class,
+                    exam.student_amount,
                     exam.is_take_home ? getText('Take Home', 'Take Home') : (exam.room?.name || '-'),
                     inspectorName,
-                ]); 
-            }); 
-            autoTable(doc, { 
-                head: [tableColumn], 
-                body: tableRows, 
-                startY: currentY, 
-                theme: 'grid', 
-                styles: { fontSize: 8, cellPadding: 1.5, valign: 'middle' }, 
-                headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' }, 
-                columnStyles: { 
-                    0: { halign: 'center', cellWidth: 8 }, 
+                ]);
+            });
+            autoTable(doc, {
+                head: [tableColumn],
+                body: tableRows,
+                startY: currentY,
+                theme: 'grid',
+                styles: { fontSize: 8, cellPadding: 1.5, valign: 'middle' },
+                headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' },
+                columnStyles: {
+                    0: { halign: 'center', cellWidth: 8 },
                     3: { halign: 'center' },
-                    4: { halign: 'center' }, 
-                    6: { halign: 'center' }, 
-                    7: { halign: 'center' }, 
-                    8: { halign: 'center' } 
-                } 
-            }); 
-            
+                    4: { halign: 'center' },
+                    6: { halign: 'center' },
+                    7: { halign: 'center' },
+                    8: { halign: 'center' }
+                }
+            });
+
             const additionalInfoColumn = [
-                getText("COURSE CODE", "KODE MK"), 
+                getText("COURSE CODE", "KODE MK"),
                 getText("Lecturer", "Dosen Pengampu MK")
             ];
             const additionalInfoRows: any[] = [];
-            
+
             const uniqueCourses = new Set<string>();
-            
+
             examsToPrint.forEach((exam) => {
                 // Create a unique key for each course and class combination
                 const uniqueKey = `${exam.course_code}-${exam.class}`;
-            
+
                 // Only add the row if this combination has not been seen before
                 if (!uniqueCourses.has(uniqueKey)) {
                     additionalInfoRows.push([
@@ -725,16 +729,16 @@ const ExamManagement = () => {
                     uniqueCourses.add(uniqueKey);
                 }
             });
-            
+
             const finalY = (doc as any).lastAutoTable.finalY || 100;
             let newFinalY = finalY;
-            
+
             if (additionalInfoRows.length > 0) {
                 let subheadingY = finalY + 10;
                 doc.setFontSize(12);
                 doc.setFont('helvetica', 'bold');
                 doc.text(getText("In Charge Lecture List", "Daftar Dosen Pengampu Mata Kuliah"), 14, subheadingY);
-            
+
                 autoTable(doc, {
                     head: [additionalInfoColumn],
                     body: additionalInfoRows,
@@ -750,21 +754,21 @@ const ExamManagement = () => {
                 });
                 newFinalY = (doc as any).lastAutoTable.finalY;
             }
-            
+
             const signatureX = 140;
             const signatureY = newFinalY + 10;
             const signatureMaxWidth = 60;
-            
+
             doc.setFontSize(10);
             doc.setFont('helvetica', 'normal');
             doc.text(`Yogyakarta, ${format(new Date(), 'd MMMM yyyy', { locale: (await import('date-fns/locale/id')).default })}`, signatureX, signatureY);
-            doc.text(getText("Department Head,", "Kepala Departemen,"), signatureX, signatureY + 5); 
-            
+            doc.text(getText("Department Head,", "Kepala Departemen,"), signatureX, signatureY + 5);
+
             const nameY = signatureY + 30;
             const nameLines = doc.splitTextToSize(departmentHead.full_name, signatureMaxWidth);
             doc.setFont('helvetica', 'bold');
             doc.text(nameLines, signatureX, nameY);
-            
+
             const nameBlockHeight = (nameLines.length * doc.getLineHeight()) / doc.internal.scaleFactor;
             const nipY = nameY + nameBlockHeight + 1;
             doc.setFont('helvetica', 'normal');
@@ -797,22 +801,22 @@ const ExamManagement = () => {
                     <div className="flex flex-col sm:flex-row gap-4 flex-1">
                         <div className="relative flex-1 max-w-md">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                            <input 
-                                type="text" 
-                                placeholder={getText("Search courses, departments...", "Cari mata kuliah, departemen...")} 
-                                value={searchTerm} 
-                                onChange={(e) => setSearchTerm(e.target.value)} 
-                                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200" 
+                            <input
+                                type="text"
+                                placeholder={getText("Search courses, departments...", "Cari mata kuliah, departemen...")}
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
                             />
                         </div>
                         <div className="flex gap-2">
                             <div className="relative">
                                 <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                <input 
-                                    type="date" 
-                                    value={dateFilter} 
-                                    onChange={(e) => setDateFilter(e.target.value)} 
-                                    className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200" 
+                                <input
+                                    type="date"
+                                    value={dateFilter}
+                                    onChange={(e) => setDateFilter(e.target.value)}
+                                    className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
                                 />
                             </div>
                             <div className="relative">
@@ -827,12 +831,12 @@ const ExamManagement = () => {
                             </div>
                             <div className="relative">
                                 <GraduationCap className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                <select 
-                                    value={semesterFilter} 
-                                    onChange={(e) => setSemesterFilter(e.target.value)} 
-                                    className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 appearance-none bg-white min-w-[140px]" 
+                                <select
+                                    value={semesterFilter}
+                                    onChange={(e) => setSemesterFilter(e.target.value)}
+                                    className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 appearance-none bg-white min-w-[140px]"
                                 >
-                                    <option value="all">{getText("All Semesters", "Semua Semester")}</option> 
+                                    <option value="all">{getText("All Semesters", "Semua Semester")}</option>
                                     {[1, 2, 3, 4, 5, 6, 7, 8].map(sem => (
                                         <option key={sem} value={sem.toString()}>{getText("Semester", "Semester")} {sem}</option>
                                     ))}
@@ -841,49 +845,49 @@ const ExamManagement = () => {
                         </div>
                     </div>
                     <div className="flex items-center space-x-2">
-                        <button 
-                            onClick={() => fetchExams()} 
-                            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all duration-200" 
+                        <button
+                            onClick={() => fetchExams()}
+                            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all duration-200"
                             title={getText("Refresh", "Muat Ulang")}
-                        > 
-                            <RefreshCw className="h-5 w-5" /> 
+                        >
+                            <RefreshCw className="h-5 w-5" />
                         </button>
-                        <button 
-                            onClick={() => { 
-                                setShowPrintModal(true); 
-                                setPrintSelectedDepartment(''); 
-                                printForm.reset(); 
-                            }} 
-                            className="flex items-center space-x-2 px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200" 
-                        > 
-                            <Printer className="h-4 w-4" /> 
-                            <span>{getText("Print", "Cetak")}</span> 
+                        <button
+                            onClick={() => {
+                                setShowPrintModal(true);
+                                setPrintSelectedDepartment('');
+                                printForm.reset();
+                            }}
+                            className="flex items-center space-x-2 px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
+                        >
+                            <Printer className="h-4 w-4" />
+                            <span>{getText("Print", "Cetak")}</span>
                         </button>
                         {isDepartmentAdmin && (
-                            <button 
-                                onClick={() => { 
-                                    setEditingExam(null); 
-                                    form.reset({ 
-                                        course_name: '', 
-                                        course_code: '', 
-                                        date: format(new Date(), 'yyyy-MM-dd'), 
-                                        start_time: '', 
-                                        end_time: '', 
+                            <button
+                                onClick={() => {
+                                    setEditingExam(null);
+                                    form.reset({
+                                        course_name: '',
+                                        course_code: '',
+                                        date: format(new Date(), 'yyyy-MM-dd'),
+                                        start_time: '',
+                                        end_time: '',
                                         is_take_home: false,
-                                        semester: 1, 
-                                        class: '', 
-                                        student_amount: 0, 
-                                        room_id: '', 
+                                        semester: 1,
+                                        class: '',
+                                        student_amount: 0,
+                                        room_id: '',
                                         lecturer_id: '',
                                         inspector: '',
-                                        study_program_id: '', 
-                                    }); 
-                                    setShowModal(true); 
-                                }} 
-                                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 shadow-sm hover:shadow-md" 
-                            > 
-                                <Plus className="h-4 w-4" /> 
-                                <span>{getText("Add Exam", "Tambah Ujian")}</span> 
+                                        study_program_id: '',
+                                    });
+                                    setShowModal(true);
+                                }}
+                                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 shadow-sm hover:shadow-md"
+                            >
+                                <Plus className="h-4 w-4" />
+                                <span>{getText("Add Exam", "Tambah Ujian")}</span>
                             </button>
                         )}
                     </div>
@@ -909,25 +913,25 @@ const ExamManagement = () => {
                                         <BookOpen className="h-4 w-4" />
                                         <span>{getText("Course", "Mata Kuliah")}</span>
                                     </div>
-                                </th> 
+                                </th>
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                     <div className="flex items-center space-x-1">
                                         <Calendar className="h-4 w-4" />
                                         <span>{getText("Date & Time", "Tanggal & Waktu")}</span>
                                     </div>
-                                </th> 
+                                </th>
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                     <div className="flex items-center space-x-1">
                                         <GraduationCap className="h-4 w-4" />
                                         <span>{getText("Class & Semester", "Kelas & Semester")}</span>
                                     </div>
-                                </th> 
+                                </th>
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                     <div className="flex items-center space-x-1">
                                         <MapPin className="h-4 w-4" />
                                         <span>{getText("Room", "Ruangan")}</span>
                                     </div>
-                                </th> 
+                                </th>
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                     <div className="flex items-center space-x-1">
                                         <User className="h-4 w-4" />
@@ -976,7 +980,7 @@ const ExamManagement = () => {
                             ) : (
                                 filteredExams.map((exam) => {
                                     const inspectorName = exam.inspector || getText('Not assigned', 'Belum ditugaskan');
-                                    
+
                                     return (
                                         <tr key={exam.id} className="hover:bg-gray-50 transition-colors duration-200">
                                             {isSuperAdmin && (
@@ -1074,15 +1078,15 @@ const ExamManagement = () => {
                                             {isDepartmentAdmin && (
                                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                     <div className="flex items-center justify-end space-x-2">
-                                                        <button 
-                                                            onClick={() => handleEdit(exam)} 
+                                                        <button
+                                                            onClick={() => handleEdit(exam)}
                                                             className="text-blue-600 hover:text-blue-900 p-2 rounded-lg hover:bg-blue-50 transition-all duration-200"
                                                             title={getText("Edit exam", "Edit ujian")}
                                                         >
                                                             <Edit className="h-4 w-4" />
                                                         </button>
-                                                        <button 
-                                                            onClick={() => setShowDeleteConfirm(exam.id)} 
+                                                        <button
+                                                            onClick={() => setShowDeleteConfirm(exam.id)}
                                                             className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
                                                             title={getText("Delete exam", "Hapus ujian")}
                                                         >
@@ -1101,7 +1105,7 @@ const ExamManagement = () => {
             </div>
         </div>
     );
-    
+
     if (isSuperAdmin) {
         pageContent = (
             <div className="space-y-6">
@@ -1109,14 +1113,14 @@ const ExamManagement = () => {
                     <div className="flex justify-between items-center">
                         <div>
                             <h1 className="text-3xl font-bold flex items-center space-x-3">
-                                <Shield className="h-8 w-8" /> 
+                                <Shield className="h-8 w-8" />
                                 <span>{getText("Super Admin Dashboard", "Dashboard Super Admin")}</span>
                             </h1>
                             <p className="mt-2 opacity-90">{getText("Manage system-wide exam settings and view all schedules.", "Kelola pengaturan ujian sistem dan lihat semua jadwal.")}</p>
                         </div>
                         <div className="text-center">
-                            <button 
-                                onClick={handleModeChange} 
+                            <button
+                                onClick={handleModeChange}
                                 className={`p-3 rounded-full transition-all duration-300 ${examModeEnabled ? 'bg-emerald-500 hover:bg-emerald-600 shadow-lg' : 'bg-red-500 hover:bg-red-600 shadow-lg'}`}
                             >
                                 {examModeEnabled ? <Power className="h-7 w-7 text-white" /> : <PowerOff className="h-7 w-7 text-white" />}
@@ -1189,11 +1193,11 @@ const ExamManagement = () => {
                                     <Calendar className="h-6 w-6 text-blue-600" />
                                     <span>{editingExam ? getText('Edit Exam Schedule', 'Edit Jadwal Ujian') : getText('Add New Exam Schedule', 'Tambah Jadwal Ujian Baru')}</span>
                                 </h3>
-                                <button 
-                                    onClick={() => setShowModal(false)} 
-                                    className="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg" 
-                                > 
-                                    <X className="h-6 w-6" /> 
+                                <button
+                                    onClick={() => setShowModal(false)}
+                                    className="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg"
+                                >
+                                    <X className="h-6 w-6" />
                                 </button>
                             </div>
                             <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
@@ -1201,11 +1205,11 @@ const ExamManagement = () => {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Course Name", "Nama Mata Kuliah")} *</label>
-                                        <input 
-                                            {...form.register('course_name')} 
-                                            type="text" 
-                                            placeholder={getText("e.g., Database Systems", "contoh: Sistem Basis Data")} 
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                        <input
+                                            {...form.register('course_name')}
+                                            type="text"
+                                            placeholder={getText("e.g., Database Systems", "contoh: Sistem Basis Data")}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                         {form.formState.errors.course_name && (
                                             <p className="mt-1 text-sm text-red-600">{form.formState.errors.course_name.message}</p>
@@ -1213,11 +1217,11 @@ const ExamManagement = () => {
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Course Code", "Kode Mata Kuliah")} *</label>
-                                        <input 
-                                            {...form.register('course_code')} 
-                                            type="text" 
-                                            placeholder={getText("e.g., CS301", "contoh: CS301")} 
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                        <input
+                                            {...form.register('course_code')}
+                                            type="text"
+                                            placeholder={getText("e.g., CS301", "contoh: CS301")}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                         {form.formState.errors.course_code && (
                                             <p className="mt-1 text-sm text-red-600">{form.formState.errors.course_code.message}</p>
@@ -1229,40 +1233,40 @@ const ExamManagement = () => {
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Date", "Tanggal")} *</label>
-                                        <input 
-                                            {...form.register('date')} 
-                                            type="date" 
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                        <input
+                                            {...form.register('date')}
+                                            type="date"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                         {form.formState.errors.date && (
                                             <p className="mt-1 text-sm text-red-600">{form.formState.errors.date.message}</p>
                                         )}
                                     </div>
-                                    
+
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
                                             {getText("Start Time", "Waktu Mulai")} {!watchIsTakeHome && '*'}
                                         </label>
-                                        <input 
-                                            {...form.register('start_time')} 
-                                            type="time" 
+                                        <input
+                                            {...form.register('start_time')}
+                                            type="time"
                                             disabled={watchIsTakeHome}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" 
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                                         />
                                         {form.formState.errors.start_time && (
                                             <p className="mt-1 text-sm text-red-600">{form.formState.errors.start_time.message}</p>
                                         )}
                                     </div>
-                                    
+
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
                                             {getText("End Time", "Waktu Selesai")} {!watchIsTakeHome && '*'}
                                         </label>
-                                        <input 
-                                            {...form.register('end_time')} 
-                                            type="time" 
+                                        <input
+                                            {...form.register('end_time')}
+                                            type="time"
                                             disabled={watchIsTakeHome}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" 
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                                         />
                                         {form.formState.errors.end_time && (
                                             <p className="mt-1 text-sm text-red-600">{form.formState.errors.end_time.message}</p>
@@ -1272,11 +1276,11 @@ const ExamManagement = () => {
 
                                 {/* Take Home Checkbox */}
                                 <div className="flex items-center space-x-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                    <input 
-                                        {...form.register('is_take_home')} 
-                                        type="checkbox" 
+                                    <input
+                                        {...form.register('is_take_home')}
+                                        type="checkbox"
                                         id="is_take_home"
-                                        className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" 
+                                        className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                                     />
                                     <label htmlFor="is_take_home" className="text-sm font-medium text-blue-900 flex items-center space-x-2">
                                         <BookOpen className="h-4 w-4" />
@@ -1293,19 +1297,19 @@ const ExamManagement = () => {
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Semester (1-8)", "Semester (1-8)")} *</label>
-                                        <input 
-                                            {...form.register('semester', { 
-                                                valueAsNumber: true, 
-                                                onChange: (e) => { 
-                                                    const value = parseInt(e.target.value); 
-                                                    if (value < 1) e.target.value = '1'; 
-                                                    if (value > 8) e.target.value = '8'; 
-                                                } 
-                                            })} 
-                                            type="number" 
-                                            min="1" 
-                                            max="8" 
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                        <input
+                                            {...form.register('semester', {
+                                                valueAsNumber: true,
+                                                onChange: (e) => {
+                                                    const value = parseInt(e.target.value);
+                                                    if (value < 1) e.target.value = '1';
+                                                    if (value > 8) e.target.value = '8';
+                                                }
+                                            })}
+                                            type="number"
+                                            min="1"
+                                            max="8"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                         {form.formState.errors.semester && (
                                             <p className="mt-1 text-sm text-red-600">{form.formState.errors.semester.message}</p>
@@ -1313,11 +1317,11 @@ const ExamManagement = () => {
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Class", "Kelas")} *</label>
-                                        <input 
-                                            {...form.register('class')} 
-                                            type="text" 
-                                            placeholder={getText("e.g., A, B, C", "contoh: A, B, C")} 
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                        <input
+                                            {...form.register('class')}
+                                            type="text"
+                                            placeholder={getText("e.g., A, B, C", "contoh: A, B, C")}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                         {form.formState.errors.class && (
                                             <p className="mt-1 text-sm text-red-600">{form.formState.errors.class.message}</p>
@@ -1325,11 +1329,11 @@ const ExamManagement = () => {
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Student Amount", "Jumlah Mahasiswa")} *</label>
-                                        <input 
-                                            {...form.register('student_amount', { valueAsNumber: true })} 
-                                            type="number" 
-                                            min="0" 
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                        <input
+                                            {...form.register('student_amount', { valueAsNumber: true })}
+                                            type="number"
+                                            min="0"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                         />
                                         {form.formState.errors.student_amount && (
                                             <p className="mt-1 text-sm text-red-600">{form.formState.errors.student_amount.message}</p>
@@ -1340,23 +1344,23 @@ const ExamManagement = () => {
                                 {/* Study Program */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Study Program", "Program Studi")} *</label>
-                                    <Controller 
-                                        name="study_program_id" 
-                                        control={form.control} 
-                                        render={({ field }) => { 
-                                            const options = studyPrograms.map(p => ({ 
-                                                value: p.id, 
-                                                label: `${p.name} (${p.code})`, 
-                                            })); 
-                                            const currentValue = options.find(o => o.value === field.value); 
-                                            return ( 
-                                                <Select 
-                                                    {...field} 
-                                                    options={options} 
-                                                    value={currentValue} 
-                                                    onChange={option => field.onChange(option ? option.value : '')} 
-                                                    placeholder={getText("Search or select study program...", "Cari atau pilih program studi...")} 
-                                                    isClearable 
+                                    <Controller
+                                        name="study_program_id"
+                                        control={form.control}
+                                        render={({ field }) => {
+                                            const options = studyPrograms.map(p => ({
+                                                value: p.id,
+                                                label: `${p.name} (${p.code})`,
+                                            }));
+                                            const currentValue = options.find(o => o.value === field.value);
+                                            return (
+                                                <Select
+                                                    {...field}
+                                                    options={options}
+                                                    value={currentValue}
+                                                    onChange={option => field.onChange(option ? option.value : '')}
+                                                    placeholder={getText("Search or select study program...", "Cari atau pilih program studi...")}
+                                                    isClearable
                                                     styles={{
                                                         control: (provided) => ({
                                                             ...provided,
@@ -1364,37 +1368,37 @@ const ExamManagement = () => {
                                                             borderColor: '#d1d5db',
                                                         }),
                                                     }}
-                                                /> 
-                                            ); 
-                                        }} 
+                                                />
+                                            );
+                                        }}
                                     />
                                     {form.formState.errors.study_program_id && (
                                         <p className="mt-1 text-sm text-red-600">{form.formState.errors.study_program_id.message}</p>
                                     )}
                                 </div>
-                                        
+
                                 {/* Lecturer and Inspector */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Lecturer in Charge", "Dosen Pengampu")} *</label>
-                                        <Controller 
-                                            name="lecturer_id" 
-                                            control={form.control} 
-                                            render={({ field }) => { 
-                                                const options = filteredLecturers.map(l => ({ 
-                                                    value: l.id, 
-                                                    label: l.full_name 
-                                                })); 
-                                                const currentValue = options.find(o => o.value === field.value); 
-                                                return ( 
-                                                    <Select 
-                                                        {...field} 
-                                                        options={options} 
-                                                        value={currentValue} 
-                                                        onChange={val => field.onChange(val?.value)} 
-                                                        placeholder={getText("Search or select lecturer...", "Cari atau pilih dosen...")} 
-                                                        isClearable 
-                                                        noOptionsMessage={() => watchStudyProgramId ? getText('No lecturers found', 'Tidak ada dosen ditemukan') : getText('Select a study program first', 'Pilih program studi terlebih dahulu')} 
+                                        <Controller
+                                            name="lecturer_id"
+                                            control={form.control}
+                                            render={({ field }) => {
+                                                const options = filteredLecturers.map(l => ({
+                                                    value: l.id,
+                                                    label: l.full_name
+                                                }));
+                                                const currentValue = options.find(o => o.value === field.value);
+                                                return (
+                                                    <Select
+                                                        {...field}
+                                                        options={options}
+                                                        value={currentValue}
+                                                        onChange={val => field.onChange(val?.value)}
+                                                        placeholder={getText("Search or select lecturer...", "Cari atau pilih dosen...")}
+                                                        isClearable
+                                                        noOptionsMessage={() => watchStudyProgramId ? getText('No lecturers found', 'Tidak ada dosen ditemukan') : getText('Select a study program first', 'Pilih program studi terlebih dahulu')}
                                                         styles={{
                                                             control: (provided) => ({
                                                                 ...provided,
@@ -1402,35 +1406,35 @@ const ExamManagement = () => {
                                                                 borderColor: '#d1d5db',
                                                             }),
                                                         }}
-                                                    /> 
-                                                ) 
-                                            }} 
+                                                    />
+                                                )
+                                            }}
                                         />
                                         {form.formState.errors.lecturer_id && (
                                             <p className="mt-1 text-sm text-red-600">{form.formState.errors.lecturer_id.message}</p>
                                         )}
                                     </div>
-                                    
+
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Inspector", "Pengawas")} *</label>
-                                        <Controller 
-                                            name="inspector" 
-                                            control={form.control} 
-                                            render={({ field }) => { 
-                                                const options = filteredLecturers.map(l => ({ 
+                                        <Controller
+                                            name="inspector"
+                                            control={form.control}
+                                            render={({ field }) => {
+                                                const options = filteredLecturers.map(l => ({
                                                     value: l.id,
                                                     label: l.full_name
-                                                })); 
-                                                const currentValue = options.find(o => o.value === field.value); 
-                                                return ( 
-                                                    <Select 
-                                                        {...field} 
-                                                        options={options} 
-                                                        value={currentValue} 
-                                                        onChange={val => field.onChange(val?.value)} 
-                                                        placeholder={getText("Search or select inspector...", "Cari atau pilih pengawas...")} 
-                                                        isClearable 
-                                                        noOptionsMessage={() => watchStudyProgramId ? getText('No lecturers found', 'Tidak ada dosen ditemukan') : getText('Select a study program first', 'Pilih program studi terlebih dahulu')} 
+                                                }));
+                                                const currentValue = options.find(o => o.value === field.value);
+                                                return (
+                                                    <Select
+                                                        {...field}
+                                                        options={options}
+                                                        value={currentValue}
+                                                        onChange={val => field.onChange(val?.value)}
+                                                        placeholder={getText("Search or select inspector...", "Cari atau pilih pengawas...")}
+                                                        isClearable
+                                                        noOptionsMessage={() => watchStudyProgramId ? getText('No lecturers found', 'Tidak ada dosen ditemukan') : getText('Select a study program first', 'Pilih program studi terlebih dahulu')}
                                                         styles={{
                                                             control: (provided) => ({
                                                                 ...provided,
@@ -1438,9 +1442,9 @@ const ExamManagement = () => {
                                                                 borderColor: '#d1d5db',
                                                             }),
                                                         }}
-                                                    /> 
-                                                ) 
-                                            }} 
+                                                    />
+                                                )
+                                            }}
                                         />
                                         {form.formState.errors.inspector && (
                                             <p className="mt-1 text-sm text-red-600">{form.formState.errors.inspector.message}</p>
@@ -1456,24 +1460,24 @@ const ExamManagement = () => {
                                             <span className="text-gray-500 text-sm ml-2">{getText("(Not required for Take Home exams)", "(Tidak diperlukan untuk ujian Take Home)")}</span>
                                         )}
                                     </label>
-                                    <Controller 
-                                        name="room_id" 
-                                        control={form.control} 
-                                        render={({ field }) => { 
-                                            const roomOptions = getAvailableRooms().map(r => ({ 
-                                                value: r.id, 
-                                                label: `${r.name} (${r.code}) - ${getText("Cap:", "Kapasitas:")} ${r.capacity}` 
-                                            })); 
-                                            const selectedValue = roomOptions.find(o => o.value === field.value); 
-                                            return ( 
-                                                <Select 
-                                                    {...field} 
-                                                    options={roomOptions} 
-                                                    value={selectedValue} 
-                                                    onChange={option => field.onChange(option ? option.value : '')} 
-                                                    isDisabled={watchIsTakeHome} 
-                                                    placeholder={watchIsTakeHome ? getText('No room needed for Take Home exam', 'Tidak perlu ruangan untuk ujian Take Home') : getText('Search or select room...', 'Cari atau pilih ruangan...')} 
-                                                    isClearable 
+                                    <Controller
+                                        name="room_id"
+                                        control={form.control}
+                                        render={({ field }) => {
+                                            const roomOptions = getAvailableRooms().map(r => ({
+                                                value: r.id,
+                                                label: `${r.name} (${r.code}) - ${getText("Cap:", "Kapasitas:")} ${r.capacity}`
+                                            }));
+                                            const selectedValue = roomOptions.find(o => o.value === field.value);
+                                            return (
+                                                <Select
+                                                    {...field}
+                                                    options={roomOptions}
+                                                    value={selectedValue}
+                                                    onChange={option => field.onChange(option ? option.value : '')}
+                                                    isDisabled={watchIsTakeHome}
+                                                    placeholder={watchIsTakeHome ? getText('No room needed for Take Home exam', 'Tidak perlu ruangan untuk ujian Take Home') : getText('Search or select room...', 'Cari atau pilih ruangan...')}
+                                                    isClearable
                                                     styles={{
                                                         control: (provided) => ({
                                                             ...provided,
@@ -1482,8 +1486,8 @@ const ExamManagement = () => {
                                                             backgroundColor: watchIsTakeHome ? '#f9fafb' : 'white',
                                                         }),
                                                     }}
-                                                /> 
-                                            ); 
+                                                />
+                                            );
                                         }}
                                     />
                                     {form.formState.errors.room_id && (
@@ -1498,16 +1502,16 @@ const ExamManagement = () => {
 
                                 {/* Action Buttons */}
                                 <div className="flex space-x-3 pt-4 border-t border-gray-200">
-                                    <button 
-                                        type="button" 
-                                        onClick={() => setShowModal(false)} 
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowModal(false)}
                                         className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 font-medium"
                                     >
                                         {getText("Cancel", "Batal")}
                                     </button>
-                                    <button 
-                                        type="submit" 
-                                        disabled={loading} 
+                                    <button
+                                        type="submit"
+                                        disabled={loading}
                                         className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-medium shadow-sm hover:shadow-md"
                                     >
                                         {loading ? (
@@ -1528,7 +1532,7 @@ const ExamManagement = () => {
                     </div>
                 </div>
             )}
-            
+
             {/* Enhanced Delete Confirmation Modal */}
             {showDeleteConfirm && isDepartmentAdmin && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1547,15 +1551,15 @@ const ExamManagement = () => {
                                 {getText("Are you sure you want to delete this exam schedule? All associated data will be permanently removed.", "Apakah Anda yakin ingin menghapus jadwal ujian ini? Semua data terkait akan dihapus secara permanen.")}
                             </p>
                             <div className="flex space-x-3">
-                                <button 
-                                    onClick={() => setShowDeleteConfirm(null)} 
+                                <button
+                                    onClick={() => setShowDeleteConfirm(null)}
                                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium"
                                 >
                                     {getText("Cancel", "Batal")}
                                 </button>
-                                <button 
-                                    onClick={() => handleDelete(showDeleteConfirm as string)} 
-                                    disabled={loading} 
+                                <button
+                                    onClick={() => handleDelete(showDeleteConfirm as string)}
+                                    disabled={loading}
                                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-all duration-200 font-medium"
                                 >
                                     {loading ? getText('Deleting...', 'Menghapus...') : getText('Delete', 'Hapus')}
@@ -1565,7 +1569,7 @@ const ExamManagement = () => {
                     </div>
                 </div>
             )}
-            
+
             {/* Enhanced Print Modal */}
             {showPrintModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1576,31 +1580,31 @@ const ExamManagement = () => {
                                     <Printer className="h-6 w-6 text-blue-600" />
                                     <span>{getText("Print Exam Schedule", "Cetak Jadwal Ujian")}</span>
                                 </h3>
-                                <button 
-                                    onClick={() => setShowPrintModal(false)} 
-                                    className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-lg transition-colors" 
-                                > 
-                                    <X className="h-6 w-6" /> 
+                                <button
+                                    onClick={() => setShowPrintModal(false)}
+                                    className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                >
+                                    <X className="h-6 w-6" />
                                 </button>
                             </div>
                             <form onSubmit={printForm.handleSubmit(handlePrint)} className="space-y-4">
                                 {isSuperAdmin && (
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Department", "Departemen")} *</label>
-                                        <Controller 
-                                            name="department_id" 
-                                            control={printForm.control} 
+                                        <Controller
+                                            name="department_id"
+                                            control={printForm.control}
                                             render={({ field }) => (
-                                                <Select 
-                                                    options={departments.map(d => ({ value: d.id, label: d.name }))} 
-                                                    onChange={(option) => { 
-                                                        field.onChange(option ? option.value : ''); 
-                                                        setPrintSelectedDepartment(option ? option.value : ''); 
-                                                    }} 
-                                                    placeholder={getText("Select department...", "Pilih departemen...")} 
-                                                    isClearable 
+                                                <Select
+                                                    options={departments.map(d => ({ value: d.id, label: d.name }))}
+                                                    onChange={(option) => {
+                                                        field.onChange(option ? option.value : '');
+                                                        setPrintSelectedDepartment(option ? option.value : '');
+                                                    }}
+                                                    placeholder={getText("Select department...", "Pilih departemen...")}
+                                                    isClearable
                                                 />
-                                            )} 
+                                            )}
                                         />
                                         {printForm.formState.errors.department_id && (
                                             <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.department_id.message}</p>
@@ -1609,25 +1613,25 @@ const ExamManagement = () => {
                                 )}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Study Program", "Program Studi")} *</label>
-                                    <Controller 
-                                        name="study_program_id" 
-                                        control={printForm.control} 
-                                        render={({ field }) => { 
-                                            const filteredPrograms = isSuperAdmin ? studyPrograms.filter(p => p.department_id === printSelectedDepartment) : studyPrograms; 
-                                            const options = filteredPrograms.map(p => ({ value: p.id, label: p.name })); 
-                                            const currentValue = options.find(o => o.value === field.value); 
-                                            return ( 
-                                                <Select 
-                                                    {...field} 
-                                                    options={options} 
-                                                    value={currentValue} 
-                                                    onChange={option => field.onChange(option ? option.value : '')} 
-                                                    placeholder={getText("Select study program...", "Pilih program studi...")} 
-                                                    isDisabled={isSuperAdmin && !printSelectedDepartment} 
-                                                    isClearable 
-                                                /> 
+                                    <Controller
+                                        name="study_program_id"
+                                        control={printForm.control}
+                                        render={({ field }) => {
+                                            const filteredPrograms = isSuperAdmin ? studyPrograms.filter(p => p.department_id === printSelectedDepartment) : studyPrograms;
+                                            const options = filteredPrograms.map(p => ({ value: p.id, label: p.name }));
+                                            const currentValue = options.find(o => o.value === field.value);
+                                            return (
+                                                <Select
+                                                    {...field}
+                                                    options={options}
+                                                    value={currentValue}
+                                                    onChange={option => field.onChange(option ? option.value : '')}
+                                                    placeholder={getText("Select study program...", "Pilih program studi...")}
+                                                    isDisabled={isSuperAdmin && !printSelectedDepartment}
+                                                    isClearable
+                                                />
                                             )
-                                        }} 
+                                        }}
                                     />
                                     {printForm.formState.errors.study_program_id && (
                                         <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.study_program_id.message}</p>
@@ -1635,21 +1639,21 @@ const ExamManagement = () => {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Semester Type", "Tipe Semester")} *</label>
-                                    <Controller 
-                                        name="semester" 
-                                        control={printForm.control} 
-                                        render={({ field }) => ( 
-                                            <Select 
-                                                {...field} 
+                                    <Controller
+                                        name="semester"
+                                        control={printForm.control}
+                                        render={({ field }) => (
+                                            <Select
+                                                {...field}
                                                 options={[
-                                                    {value: 'GASAL', label: getText('GASAL (Odd)', 'GASAL (Ganjil)')}, 
-                                                    {value: 'GENAP', label: getText('GENAP (Even)', 'GENAP (Genap)')}
-                                                ]} 
-                                                value={field.value ? {value: field.value, label: `${field.value} (${field.value === 'GASAL' ? getText('Odd', 'Ganjil') : getText('Even', 'Genap')})`} : null} 
-                                                onChange={option => field.onChange(option?.value)} 
-                                                placeholder={getText("Select semester type...", "Pilih tipe semester...")} 
-                                            /> 
-                                        )} 
+                                                    { value: 'GASAL', label: getText('GASAL (Odd)', 'GASAL (Ganjil)') },
+                                                    { value: 'GENAP', label: getText('GENAP (Even)', 'GENAP (Genap)') }
+                                                ]}
+                                                value={field.value ? { value: field.value, label: `${field.value} (${field.value === 'GASAL' ? getText('Odd', 'Ganjil') : getText('Even', 'Genap')})` } : null}
+                                                onChange={option => field.onChange(option?.value)}
+                                                placeholder={getText("Select semester type...", "Pilih tipe semester...")}
+                                            />
+                                        )}
                                     />
                                     {printForm.formState.errors.semester && (
                                         <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.semester.message}</p>
@@ -1657,11 +1661,11 @@ const ExamManagement = () => {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Academic Year", "Tahun Akademik")} *</label>
-                                    <input 
-                                        {...printForm.register('academic_year')} 
-                                        type="text" 
-                                        placeholder={getText("e.g. 2024/2025", "contoh: 2024/2025")} 
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                    <input
+                                        {...printForm.register('academic_year')}
+                                        type="text"
+                                        placeholder={getText("e.g. 2024/2025", "contoh: 2024/2025")}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                     />
                                     {printForm.formState.errors.academic_year && (
                                         <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.academic_year.message}</p>
@@ -1670,22 +1674,22 @@ const ExamManagement = () => {
                                 {isDepartmentAdmin && (
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Department Head", "Kepala Departemen")} *</label>
-                                        <Controller 
-                                            name="department_head_id" 
-                                            control={printForm.control} 
-                                            render={({ field }) => ( 
-                                                <Select 
-                                                    options={departmentHeads.map(h => ({ value: h.id, label: h.full_name }))} 
-                                                    value={field.value ? departmentHeads.map(h => ({ value: h.id, label: h.full_name })).find(o => o.value === field.value) : null} 
-                                                    onChange={(option) => { 
-                                                        field.onChange(option ? option.value : ''); 
-                                                        const selectedHead = departmentHeads.find(h => h.id === option?.value); 
-                                                        printForm.setValue('department_head_name', selectedHead?.full_name); 
-                                                    }} 
-                                                    placeholder={getText("Search and select head...", "Cari dan pilih kepala...")} 
-                                                    isClearable 
-                                                /> 
-                                            )} 
+                                        <Controller
+                                            name="department_head_id"
+                                            control={printForm.control}
+                                            render={({ field }) => (
+                                                <Select
+                                                    options={departmentHeads.map(h => ({ value: h.id, label: h.full_name }))}
+                                                    value={field.value ? departmentHeads.map(h => ({ value: h.id, label: h.full_name })).find(o => o.value === field.value) : null}
+                                                    onChange={(option) => {
+                                                        field.onChange(option ? option.value : '');
+                                                        const selectedHead = departmentHeads.find(h => h.id === option?.value);
+                                                        printForm.setValue('department_head_name', selectedHead?.full_name);
+                                                    }}
+                                                    placeholder={getText("Search and select head...", "Cari dan pilih kepala...")}
+                                                    isClearable
+                                                />
+                                            )}
                                         />
                                         {printForm.formState.errors.department_head_id && (
                                             <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.department_head_id.message}</p>
@@ -1693,15 +1697,15 @@ const ExamManagement = () => {
                                     </div>
                                 )}
                                 <div className="flex space-x-3 pt-4">
-                                    <button 
-                                        type="button" 
-                                        onClick={() => setShowPrintModal(false)} 
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPrintModal(false)}
                                         className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium"
                                     >
                                         {getText("Cancel", "Batal")}
                                     </button>
-                                    <button 
-                                        type="submit" 
+                                    <button
+                                        type="submit"
                                         className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium flex items-center justify-center space-x-2"
                                     >
                                         <Printer className="h-4 w-4" />
@@ -1734,14 +1738,14 @@ const ExamManagement = () => {
                                 </p>
                             </div>
                             <div className="flex space-x-3">
-                                <button 
-                                    onClick={() => setShowClearConfirm(false)} 
+                                <button
+                                    onClick={() => setShowClearConfirm(false)}
                                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium"
                                 >
                                     {getText("Cancel", "Batal")}
                                 </button>
-                                <button 
-                                    onClick={confirmClearAndToggleMode} 
+                                <button
+                                    onClick={confirmClearAndToggleMode}
                                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all duration-200 font-medium"
                                 >
                                     {getText("Yes, Change & Delete", "Ya, Ubah & Hapus")}

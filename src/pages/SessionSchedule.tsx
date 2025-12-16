@@ -62,10 +62,10 @@ const getLocalDateString = (date = new Date()) => {
 const getDateRangeForBookings = (localDate) => {
   const startOfDay = new Date(`${localDate}T00:00:00`);
   const startUTC = startOfDay.toISOString();
-  
+
   const endOfDay = new Date(`${localDate}T23:59:59`);
   const endUTC = endOfDay.toISOString();
-  
+
   return { startUTC, endUTC };
 };
 
@@ -92,19 +92,19 @@ const sessionSchema = z.object({
 type SessionFormData = z.infer<typeof sessionSchema>;
 
 type PrintFormData = {
-    study_program_id: string;
-    month: string;
+  study_program_id: string;
+  month: string;
 };
 
 const getImageDataUrl = async (url: string): Promise<string> => {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-    });
+  const response = await fetch(url);
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 };
 
 const SessionScheduleProgressive = () => {
@@ -120,10 +120,10 @@ const SessionScheduleProgressive = () => {
   const [studyPrograms, setStudyPrograms] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [departmentHeads, setDepartmentHeads] = useState([]);
-  
+
   // ✅ ADDED: Available rooms state for filtering
   const [availableRooms, setAvailableRooms] = useState([]);
-  
+
   // Search states
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredSessions, setFilteredSessions] = useState([]);
@@ -144,7 +144,7 @@ const SessionScheduleProgressive = () => {
   const [selectedRoomForCalendar, setSelectedRoomForCalendar] = useState('');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDateSessions, setSelectedDateSessions] = useState([]);
-  
+
   // Mobile details toggle state
   const [showMobileDetails, setShowMobileDetails] = useState(false);
 
@@ -184,8 +184,8 @@ const SessionScheduleProgressive = () => {
 
   const printSchema = useMemo(() => {
     return z.object({
-        study_program_id: z.string().min(1, getText('Study Program is required', 'Program Studi wajib diisi')),
-        month: z.string().min(1, getText('Month is required', 'Bulan wajib diisi')),
+      study_program_id: z.string().min(1, getText('Study Program is required', 'Program Studi wajib diisi')),
+      month: z.string().min(1, getText('Month is required', 'Bulan wajib diisi')),
     });
   }, [getText]);
 
@@ -228,7 +228,7 @@ const SessionScheduleProgressive = () => {
         const studentName = session.student?.full_name?.toLowerCase() || '';
         const studentNim = session.student?.identity_number?.toLowerCase() || '';
         const searchLower = searchTerm.toLowerCase();
-        
+
         return studentName.includes(searchLower) || studentNim.includes(searchLower);
       });
       setFilteredSessions(filtered);
@@ -239,13 +239,13 @@ const SessionScheduleProgressive = () => {
   const checkDuplicateStudent = async (studentId, studentNim) => {
     try {
       if (editingSession) {
-        const existingSession = allSessions.find(session => 
+        const existingSession = allSessions.find(session =>
           (session.student_id === studentId || session.student?.identity_number === studentNim) &&
           session.id !== editingSession.id
         );
         return existingSession;
       } else {
-        const existingSession = allSessions.find(session => 
+        const existingSession = allSessions.find(session =>
           session.student_id === studentId || session.student?.identity_number === studentNim
         );
         return existingSession;
@@ -264,8 +264,8 @@ const SessionScheduleProgressive = () => {
 
   const getSessionsForRoom = (date, roomId) => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    return allSessions.filter(session => 
-      session.date === dateStr && 
+    return allSessions.filter(session =>
+      session.date === dateStr &&
       session.room_id === roomId
     );
   };
@@ -273,7 +273,7 @@ const SessionScheduleProgressive = () => {
   const hasSessionsOnDate = (date, roomId = null) => {
     const dateStr = format(date, 'yyyy-MM-dd');
     if (roomId) {
-      return allSessions.some(session => 
+      return allSessions.some(session =>
         session.date === dateStr && session.room_id === roomId
       );
     }
@@ -294,7 +294,7 @@ const SessionScheduleProgressive = () => {
       const allSessions = getSessionsForDate(date);
       setSelectedDateSessions(allSessions);
     }
-    
+
     if (window.innerWidth < 1024) {
       setShowMobileDetails(true);
     }
@@ -309,12 +309,12 @@ const SessionScheduleProgressive = () => {
 
     try {
       console.log(`🔍 Checking room availability for ${date} ${startTime}-${endTime}`);
-      
+
       // Get day name for lecture schedule check
       const dateObj = new Date(date);
       const dayNamesIndonesian = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
       const dayName = dayNamesIndonesian[dateObj.getDay()];
-      
+
       // 1. Check conflicts with existing final sessions
       const finalSessionConflicts = allSessions
         .filter(session => session.date === date && session.room_id)
@@ -330,13 +330,13 @@ const SessionScheduleProgressive = () => {
       const { startUTC, endUTC } = getDateRangeForBookings(date);
       const startTimeUTC = convertLocalToUTC(`${date}T${startTime}:00`);
       const endTimeUTC = convertLocalToUTC(`${date}T${endTime}:00`);
-      
+
       const { data: bookingConflicts, error: bookingError } = await supabase
         .from('bookings')
         .select('room_id, start_time, end_time')
         .gte('start_time', startUTC)
         .lt('start_time', endUTC)
-        .in('status', ['approved','borrowed']);
+        .in('status', ['approved', 'borrowed']);
 
       if (bookingError) {
         console.error('Error checking booking conflicts:', bookingError);
@@ -348,7 +348,7 @@ const SessionScheduleProgressive = () => {
           const bookingEnd = new Date(booking.end_time);
           const sessionStart = new Date(startTimeUTC);
           const sessionEnd = new Date(endTimeUTC);
-          
+
           return sessionStart < bookingEnd && sessionEnd > bookingStart;
         })
         .map(booking => booking.room_id);
@@ -362,13 +362,13 @@ const SessionScheduleProgressive = () => {
       if (lectureError) {
         console.error('Error checking lecture conflicts:', lectureError);
       }
-      
+
       const lectureConflictRoomIds = [];
       if (lectureSchedules) {
         for (const schedule of lectureSchedules) {
           const hasOverlap = startTime < schedule.end_time && endTime > schedule.start_time;
           if (hasOverlap) {
-            const matchingRoom = rooms.find(room => 
+            const matchingRoom = rooms.find(room =>
               room.name.toLowerCase() === schedule.room.toLowerCase()
             );
             if (matchingRoom) {
@@ -394,7 +394,7 @@ const SessionScheduleProgressive = () => {
           return hasOverlap;
         })
         .map(exam => exam.room_id);
-      
+
       // Combine all conflicts
       const allConflictingRoomIds = [
         ...finalSessionConflicts,
@@ -404,7 +404,7 @@ const SessionScheduleProgressive = () => {
       ];
 
       // Filter available rooms
-      const available = rooms.filter(room => 
+      const available = rooms.filter(room =>
         room.is_available && !allConflictingRoomIds.includes(room.id)
       );
 
@@ -444,7 +444,7 @@ const SessionScheduleProgressive = () => {
     }
 
     const isAvailable = availableRooms.some(availableRoom => availableRoom.id === room.id);
-    
+
     if (!isAvailable && watchDate && watchStartTime && watchEndTime) {
       return {
         status: 'Conflict',
@@ -465,7 +465,7 @@ const SessionScheduleProgressive = () => {
   // Calendar Modal dengan mobile toggle untuk details
   const CalendarModal = () => {
     const calendarDays = generateCalendarDays();
-    
+
     const monthNames = getText('en') === 'en' ? [
       'January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December'
@@ -474,7 +474,7 @@ const SessionScheduleProgressive = () => {
       'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
     ];
 
-    const dayNames = getText('en') === 'en' ? 
+    const dayNames = getText('en') === 'en' ?
       ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] :
       ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 
@@ -483,11 +483,11 @@ const SessionScheduleProgressive = () => {
 
     const groupSessionsByRoom = (sessions) => {
       const grouped = {};
-      
+
       sessions.forEach(session => {
         const roomKey = session.room?.id || 'unknown';
         const roomName = session.room?.name || 'Unknown Room';
-        
+
         if (!grouped[roomKey]) {
           grouped[roomKey] = {
             room: {
@@ -498,28 +498,28 @@ const SessionScheduleProgressive = () => {
             sessions: []
           };
         }
-        
+
         grouped[roomKey].sessions.push(session);
       });
-      
+
       Object.keys(grouped).forEach(roomKey => {
         grouped[roomKey].sessions.sort((a, b) => {
           return a.start_time.localeCompare(b.start_time);
         });
       });
-      
+
       return grouped;
     };
 
     const getRoomTimeRange = (sessions) => {
       if (sessions.length === 0) return '';
-      
+
       const startTimes = sessions.map(s => s.start_time.substring(0, 5));
       const endTimes = sessions.map(s => s.end_time.substring(0, 5));
-      
+
       const earliestStart = startTimes.sort()[0];
       const latestEnd = endTimes.sort().reverse()[0];
-      
+
       return `${earliestStart} - ${latestEnd}`;
     };
 
@@ -559,15 +559,15 @@ const SessionScheduleProgressive = () => {
       if (roomDropdownRef.current) {
         roomDropdownRef.current.innerHTML = dropdownHTML;
         roomDropdownRef.current.style.display = 'block';
-        
+
         const searchInput = roomDropdownRef.current.querySelector('#calendar-room-search-input');
         const roomList = roomDropdownRef.current.querySelector('#calendar-room-list');
-        
+
         if (searchInput) {
           searchInput.focus();
           searchInput.addEventListener('input', (e) => {
             const searchTerm = e.target.value.toLowerCase();
-            
+
             const allRoomsOption = `
               <div 
                 class="calendar-room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 transition-colors duration-150"
@@ -576,12 +576,12 @@ const SessionScheduleProgressive = () => {
                 <div class="font-semibold text-gray-800">${getText('All Rooms', 'Semua Ruangan')}</div>
               </div>
             `;
-            
+
             const filteredRooms = rooms.filter(room =>
               room.name.toLowerCase().includes(searchTerm) ||
               room.code.toLowerCase().includes(searchTerm)
             );
-            
+
             roomList.innerHTML = allRoomsOption + filteredRooms.map(room => `
               <div 
                 class="calendar-room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
@@ -592,11 +592,11 @@ const SessionScheduleProgressive = () => {
                 <div class="font-semibold text-gray-800">${room.name}</div>
               </div>
             `).join('');
-            
+
             addCalendarRoomListeners();
           });
         }
-        
+
         addCalendarRoomListeners();
       }
     };
@@ -606,7 +606,7 @@ const SessionScheduleProgressive = () => {
         item.addEventListener('click', (e) => {
           const roomId = e.currentTarget.dataset.roomId;
           const roomName = e.currentTarget.dataset.roomName;
-          
+
           if (roomId) {
             if (roomDisplayRef.current) {
               roomDisplayRef.current.value = roomName;
@@ -618,7 +618,7 @@ const SessionScheduleProgressive = () => {
             }
             setSelectedRoomForCalendar('');
           }
-          
+
           setSelectedDateSessions([]);
           setShowMobileDetails(false);
           hideRoomDropdown();
@@ -635,7 +635,7 @@ const SessionScheduleProgressive = () => {
     const getSessionCountForDate = (date) => {
       const dateStr = format(date, 'yyyy-MM-dd');
       if (selectedRoomForCalendar) {
-        return allSessions.filter(session => 
+        return allSessions.filter(session =>
           session.date === dateStr && session.room_id === selectedRoomForCalendar
         ).length;
       }
@@ -643,7 +643,7 @@ const SessionScheduleProgressive = () => {
     };
 
     return (
-      <div 
+      <div
         className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4"
         onClick={(e) => {
           if (e.target === e.currentTarget) {
@@ -713,7 +713,7 @@ const SessionScheduleProgressive = () => {
                 >
                   <ChevronLeft className="h-5 w-5 text-gray-600 group-hover:text-gray-800" />
                 </button>
-                
+
                 <div className="text-center">
                   <h2 className="text-xl font-bold text-gray-900">
                     {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
@@ -722,7 +722,7 @@ const SessionScheduleProgressive = () => {
                     {getText('Click dates with sessions', 'Klik tanggal dengan sidang')}
                   </p>
                 </div>
-                
+
                 <button
                   onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
                   className="flex items-center justify-center w-10 h-10 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors duration-200 group"
@@ -746,7 +746,7 @@ const SessionScheduleProgressive = () => {
                     const isToday = isSameDay(day, new Date());
                     const sessionCount = getSessionCountForDate(day);
                     const hasSessions = sessionCount > 0;
-                    
+
                     return (
                       <button
                         key={day.toString()}
@@ -754,12 +754,12 @@ const SessionScheduleProgressive = () => {
                         disabled={!isCurrentMonth}
                         className={`
                           h-16 p-2 text-sm border-r border-b border-gray-200 last:border-r-0 transition-all duration-200 relative group
-                          ${!isCurrentMonth 
-                            ? 'bg-gray-50 text-gray-300 cursor-not-allowed' 
+                          ${!isCurrentMonth
+                            ? 'bg-gray-50 text-gray-300 cursor-not-allowed'
                             : isToday
                               ? 'bg-blue-50 text-blue-900 font-bold ring-2 ring-blue-200'
-                              : hasSessions 
-                                ? 'bg-red-50 hover:bg-red-100 text-red-900 font-semibold cursor-pointer' 
+                              : hasSessions
+                                ? 'bg-red-50 hover:bg-red-100 text-red-900 font-semibold cursor-pointer'
                                 : 'bg-white hover:bg-gray-50 text-gray-700 cursor-pointer'
                           }
                         `}
@@ -770,7 +770,7 @@ const SessionScheduleProgressive = () => {
                           `}>
                             {format(day, 'd')}
                           </span>
-                          
+
                           {hasSessions && isCurrentMonth && (
                             <div className="mt-1 flex items-center space-x-1">
                               <div className="w-2 h-2 bg-red-500 rounded-full"></div>
@@ -835,7 +835,7 @@ const SessionScheduleProgressive = () => {
                       {format(new Date(selectedDateSessions[0].date), 'EEEE, MMMM d, yyyy')}
                     </p>
                   )}
-                  
+
                   <button
                     onClick={() => setShowMobileDetails(false)}
                     className="lg:hidden p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
@@ -884,13 +884,13 @@ const SessionScheduleProgressive = () => {
                                   </span>
                                 </div>
                               </div>
-                              
+
                               <div className="mb-2">
                                 <span className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm font-medium">
                                   {session.student?.study_program?.name}
                                 </span>
                               </div>
-                              
+
                               <div className="text-sm text-gray-700">
                                 <div className="flex items-center space-x-2">
                                   <User className="h-4 w-4 text-gray-500" />
@@ -969,7 +969,7 @@ const SessionScheduleProgressive = () => {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center space-x-3">
                   <Calendar className="h-5 w-5 text-gray-500" />
                   <div>
@@ -981,7 +981,7 @@ const SessionScheduleProgressive = () => {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center space-x-3">
                   <MapPin className="h-5 w-5 text-gray-500" />
                   <div className="text-sm text-gray-900">
@@ -1069,11 +1069,11 @@ const SessionScheduleProgressive = () => {
         .order('start_time', { ascending: true });
 
       const { data } = await query;
-      
+
       setAllSessions(data || []);
-      
+
       if (profile?.role === 'department_admin' && profile?.department_id) {
-        const filtered = data?.filter(session => 
+        const filtered = data?.filter(session =>
           session.student?.study_program?.department_id === profile.department_id
         );
         setSessions(filtered || []);
@@ -1100,7 +1100,7 @@ const SessionScheduleProgressive = () => {
       let filtered = data || [];
 
       if (profile?.role === 'department_admin' && profile?.department_id) {
-        filtered = (data || []).filter(student => 
+        filtered = (data || []).filter(student =>
           student.study_program?.department_id === profile.department_id
         );
       }
@@ -1123,7 +1123,7 @@ const SessionScheduleProgressive = () => {
       let filtered = data || [];
 
       if (profile?.role === 'department_admin' && profile?.department_id) {
-        filtered = (data || []).filter(lecturer => 
+        filtered = (data || []).filter(lecturer =>
           lecturer.study_program?.department_id === profile.department_id
         );
       }
@@ -1136,12 +1136,19 @@ const SessionScheduleProgressive = () => {
 
   const fetchRooms = async () => {
     try {
-      const { data, error } = await supabase.from('rooms').select('*').order('name');
+      // Optimized to prevent timeout: select specific columns and client-side sort
+      const { data, error } = await supabase
+        .from('rooms')
+        .select('id, name, code, is_available, capacity, department:departments(name)');
+
       if (error) throw error;
-      setRooms(data || []);
-      setAvailableRooms(data || []);
+
+      const sortedData = (data || []).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+      setRooms(sortedData);
+      setAvailableRooms(sortedData);
     } catch (error) {
-      console.error('Error fetching rooms:', error);
+      console.error('Error fetching rooms (timeout fix):', error);
       alert.error(getText('Failed to load rooms.', 'Gagal memuat ruangan.'));
     }
   };
@@ -1209,29 +1216,26 @@ const SessionScheduleProgressive = () => {
       {steps.map((step, index) => {
         const isCompleted = completedSteps.has(step.id);
         const isCurrent = currentStep === step.id;
-        
+
         return (
           <React.Fragment key={step.id}>
             <div className="flex flex-col items-center">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
-                isCompleted
-                  ? 'bg-blue-500 text-white'
-                  : isCurrent
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${isCompleted
+                ? 'bg-blue-500 text-white'
+                : isCurrent
                   ? 'bg-blue-500 text-white'
                   : 'bg-gray-200 text-gray-400'
-              }`}>
+                }`}>
                 {isCompleted ? <Check className="h-4 w-4" /> : step.id}
               </div>
-              <div className={`text-xs mt-1 text-center max-w-16 ${
-                isCurrent || isCompleted ? 'text-blue-600 font-medium' : 'text-gray-400'
-              }`}>
+              <div className={`text-xs mt-1 text-center max-w-16 ${isCurrent || isCompleted ? 'text-blue-600 font-medium' : 'text-gray-400'
+                }`}>
                 {step.title.split(' ')[0]}
               </div>
             </div>
             {index < steps.length - 1 && (
-              <div className={`flex-1 h-0.5 mx-2 ${
-                isCompleted ? 'bg-blue-500' : 'bg-gray-200'
-              }`} />
+              <div className={`flex-1 h-0.5 mx-2 ${isCompleted ? 'bg-blue-500' : 'bg-gray-200'
+                }`} />
             )}
           </React.Fragment>
         );
@@ -1242,52 +1246,52 @@ const SessionScheduleProgressive = () => {
   const validateStep = useCallback((step) => {
     switch (step) {
       case 1:
-        let studentNim = formData.student_nim || 
-                        (studentInputRef.current?.value) || '';
-        let studentName = formData.student_name || 
-                         (studentNameRef.current?.value) || '';
+        let studentNim = formData.student_nim ||
+          (studentInputRef.current?.value) || '';
+        let studentName = formData.student_name ||
+          (studentNameRef.current?.value) || '';
         let studyProgramId = formData.study_program_id || '';
-        
+
         return !!(studentNim.trim() && studentName.trim() && studyProgramId);
-        
+
       case 2:
         return !!(form.getValues('date') && form.getValues('start_time') && form.getValues('end_time'));
-        
+
       case 3:
         const roomId = form.getValues('room_id');
-        
-        let title = form.getValues('title') || 
-                   (titleInputRef.current?.value) || '';
-        let supervisor = form.getValues('supervisor') || 
-                        (supervisorInputRef.current?.value) || '';
-        let examiner = form.getValues('examiner') || 
-                      (examinerInputRef.current?.value) || '';
-        let secretary = form.getValues('secretary') || 
-                       (secretaryInputRef.current?.value) || '';
-        
+
+        let title = form.getValues('title') ||
+          (titleInputRef.current?.value) || '';
+        let supervisor = form.getValues('supervisor') ||
+          (supervisorInputRef.current?.value) || '';
+        let examiner = form.getValues('examiner') ||
+          (examinerInputRef.current?.value) || '';
+        let secretary = form.getValues('secretary') ||
+          (secretaryInputRef.current?.value) || '';
+
         return !!(roomId && title.trim() && supervisor.trim() && examiner.trim() && secretary.trim());
-        
+
       default:
         return false;
     }
   }, [form, formData]);
-  
+
   const handleStepComplete = useCallback(async (step) => {
     if (step === 1) {
       const nimValue = studentInputRef.current?.value || '';
       const nameValue = studentNameRef.current?.value || '';
       const programValue = formData.study_program_id || '';
-      
+
       if (!nimValue.trim() || !nameValue.trim() || !programValue) {
         alert.error(getText('Please fill all required fields', 'Silakan isi semua field yang diperlukan'));
         return;
       }
-      
+
       const existingSession = await checkDuplicateStudent(form.getValues('student_id'), nimValue);
       if (existingSession) {
         const existingDate = format(parseISO(existingSession.date), 'EEEE, dd MMMM yyyy');
         const existingTime = `${existingSession.start_time} - ${existingSession.end_time}`;
-        
+
         alert.error(
           getText(
             `The Student already has a scheduled in Room: ${existingSession.room?.name || 'Unknown'} Please go edit the data if it required`,
@@ -1296,31 +1300,31 @@ const SessionScheduleProgressive = () => {
         );
         return;
       }
-      
+
       setFormData(prev => ({
         ...prev,
         student_nim: nimValue,
         student_name: nameValue,
         study_program_id: programValue
       }));
-      
+
     } else if (step === 3) {
       const supervisorValue = supervisorInputRef.current?.value || '';
       const examinerValue = examinerInputRef.current?.value || '';
       const secretaryValue = secretaryInputRef.current?.value || '';
       const titleValue = titleInputRef.current?.value || '';
-      
+
       if (supervisorValue) form.setValue('supervisor', supervisorValue);
       if (examinerValue) form.setValue('examiner', examinerValue);
       if (secretaryValue) form.setValue('secretary', secretaryValue);
       if (titleValue) form.setValue('title', titleValue);
     }
-    
+
     if (!validateStep(step)) {
       alert.error(getText('Please fill all required fields', 'Silakan isi semua field yang diperlukan'));
       return;
     }
-    
+
     setCompletedSteps(prev => new Set([...prev, step]));
     if (step < 3) {
       setCurrentStep(step + 1);
@@ -1335,11 +1339,11 @@ const SessionScheduleProgressive = () => {
 
   const validateAllFields = () => {
     const errors = [];
-    
+
     const studentNim = formData.student_nim || (studentInputRef.current?.value) || '';
     const studentName = formData.student_name || (studentNameRef.current?.value) || '';
     const studyProgramId = formData.study_program_id || '';
-    
+
     if (!studentNim.trim()) {
       errors.push(getText('Student NIM is required', 'NIM Mahasiswa wajib diisi'));
     }
@@ -1349,11 +1353,11 @@ const SessionScheduleProgressive = () => {
     if (!studyProgramId) {
       errors.push(getText('Study Program is required', 'Program Studi wajib dipilih'));
     }
-    
+
     const date = form.getValues('date');
     const startTime = form.getValues('start_time');
     const endTime = form.getValues('end_time');
-    
+
     if (!date) {
       errors.push(getText('Date is required', 'Tanggal wajib diisi'));
     }
@@ -1366,13 +1370,13 @@ const SessionScheduleProgressive = () => {
     if (startTime && endTime && startTime >= endTime) {
       errors.push(getText('End time must be after start time', 'Waktu selesai harus setelah waktu mulai'));
     }
-    
+
     const roomId = form.getValues('room_id');
     const title = form.getValues('title') || (titleInputRef.current?.value) || '';
     const supervisor = form.getValues('supervisor') || (supervisorInputRef.current?.value) || '';
     const examiner = form.getValues('examiner') || (examinerInputRef.current?.value) || '';
     const secretary = form.getValues('secretary') || (secretaryInputRef.current?.value) || '';
-    
+
     if (!roomId) {
       errors.push(getText('Room is required', 'Ruangan wajib dipilih'));
     }
@@ -1388,255 +1392,255 @@ const SessionScheduleProgressive = () => {
     if (!secretary.trim()) {
       errors.push(getText('Secretary is required', 'Sekretaris wajib diisi'));
     }
-    
+
     return errors;
   };
 
   // Modifikasi handleSubmitWithValidation untuk menambahkan cross-check menggunakan fungsi yang sudah ada
-const handleSubmitWithValidation = async () => {
-  const supervisorValue = supervisorInputRef.current?.value || '';
-  const examinerValue = examinerInputRef.current?.value || '';
-  const secretaryValue = secretaryInputRef.current?.value || '';
-  const titleValue = titleInputRef.current?.value || '';
-  if (supervisorValue) form.setValue('supervisor', supervisorValue);
-  if (examinerValue) form.setValue('examiner', examinerValue);
-  if (secretaryValue) form.setValue('secretary', secretaryValue);
-  if (titleValue) form.setValue('title', titleValue);
-  
-  const nimValue = studentInputRef.current?.value || '';
-  const nameValue = studentNameRef.current?.value || '';
-  
-  if (nimValue && nimValue !== formData.student_nim) {
-    setFormData(prev => ({ ...prev, student_nim: nimValue }));
-  }
-  if (nameValue && nameValue !== formData.student_name) {
-    setFormData(prev => ({ ...prev, student_name: nameValue }));
-  }
-  
-  await new Promise(resolve => setTimeout(resolve, 100));
-  
-  const validationErrors = validateAllFields();
-  
-  if (validationErrors.length > 0) {
-    const errorMessage = getText(
-      `Please complete the following fields:\n• ${validationErrors.join('\n• ')}`,
-      `Silakan lengkapi field berikut:\n• ${validationErrors.join('\n• ')}`
-    );
-    
-    alert.error(errorMessage);
-    
-    if (!formData.student_nim || !formData.student_name || !formData.study_program_id) {
-      setCurrentStep(1);
-    } else if (!form.getValues('date') || !form.getValues('start_time') || !form.getValues('end_time')) {
-      setCurrentStep(2);
-    } else {
-      setCurrentStep(3);
-    }
-    
-    return;
-  }
-  
-  const existingSession = await checkDuplicateStudent(form.getValues('student_id'), nimValue);
-  if (existingSession) {
-    const existingDate = format(parseISO(existingSession.date), 'EEEE, dd MMMM yyyy');
-    const existingTime = `${existingSession.start_time} - ${existingSession.end_time}`;
-    
-    alert.error(
-      getText(
-        `⚠️ Duplicate Student Found!\n\nStudent ${nameValue} (${nimValue}) already has a scheduled session:\n📅 Date: ${existingDate}\n⏰ Time: ${existingTime}\n🏢 Room: ${existingSession.room?.name || 'Unknown'}\n\nPlease select a different student or edit the existing session.`,
-        `⚠️ Mahasiswa Duplikat Ditemukan!\n\nMahasiswa ${nameValue} (${nimValue}) sudah memiliki jadwal sidang:\n📅 Tanggal: ${existingDate}\n⏰ Waktu: ${existingTime}\n🏢 Ruangan: ${existingSession.room?.name || 'Tidak diketahui'}\n\nSilakan pilih mahasiswa lain atau edit jadwal yang sudah ada.`
-      )
-    );
-    setCurrentStep(1);
-    return;
-  }
+  const handleSubmitWithValidation = async () => {
+    const supervisorValue = supervisorInputRef.current?.value || '';
+    const examinerValue = examinerInputRef.current?.value || '';
+    const secretaryValue = secretaryInputRef.current?.value || '';
+    const titleValue = titleInputRef.current?.value || '';
+    if (supervisorValue) form.setValue('supervisor', supervisorValue);
+    if (examinerValue) form.setValue('examiner', examinerValue);
+    if (secretaryValue) form.setValue('secretary', secretaryValue);
+    if (titleValue) form.setValue('title', titleValue);
 
-  // ✅ CROSS-CHECK: Validasi final menggunakan fungsi checkRoomAvailability yang sudah ada
-  const roomId = form.getValues('room_id');
-  const date = form.getValues('date');
-  const startTime = form.getValues('start_time');
-  const endTime = form.getValues('end_time');
-  
-  console.log(`🔍 Final cross-check for Room ID: ${roomId}, Date: ${date}, Time: ${startTime}-${endTime}`);
-  
-  // Panggil fungsi checkRoomAvailability untuk mendapatkan ruangan yang tersedia
-  await checkRoomAvailability(date, startTime, endTime);
-  
-  // Cek apakah ruangan yang dipilih masih tersedia setelah pengecekan terbaru
-  const selectedRoom = rooms.find(room => room.id === roomId);
-  const isRoomStillAvailable = availableRooms.some(room => room.id === roomId);
-  
-  if (!selectedRoom) {
-    alert.error(getText(
-      '❌ Room Not Found!\n\nThe selected room could not be found. Please refresh the page and try again.',
-      '❌ Ruangan Tidak Ditemukan!\n\nRuangan yang dipilih tidak dapat ditemukan. Silakan refresh halaman dan coba lagi.'
-    ));
-    setCurrentStep(3);
-    return;
-  }
-  
-  if (!selectedRoom.is_available) {
-    alert.error(getText(
-      `❌ Room Disabled!\n\nRoom: ${selectedRoom.name} - ${selectedRoom.code}\n\nThis room is currently disabled for booking. Please select a different room.`,
-      `❌ Ruangan Dinonaktifkan!\n\nRuangan: ${selectedRoom.name} - ${selectedRoom.code}\n\nRuangan ini saat ini dinonaktifkan untuk pemesanan. Silakan pilih ruangan lain.`
-    ));
-    setCurrentStep(3);
-    return;
-  }
-  
-  if (!isRoomStillAvailable) {
-    // Buat detail konflik berdasarkan pengecekan yang dilakukan di checkRoomAvailability
-    let conflictDetails = [];
-    
-    // 1. Cek bentrok dengan sesi sidang final lain
-    const finalSessionConflicts = allSessions.filter(session => {
-      if (editingSession && session.id === editingSession.id) return false;
-      if (session.room_id !== roomId || session.date !== date) return false;
-      
-      // Cek irisan waktu: 07:30-09:09 beririsan dengan 08:00-10:00
-      const hasTimeOverlap = startTime < session.end_time && endTime > session.start_time;
-      return hasTimeOverlap;
-    });
-    
-    finalSessionConflicts.forEach(session => {
-      conflictDetails.push(getText(
-        `• Final Session: ${session.student?.full_name || 'Unknown'} (${session.start_time}-${session.end_time})`,
-        `• Sidang Akhir: ${session.student?.full_name || 'Tidak Dikenal'} (${session.start_time}-${session.end_time})`
-      ));
-    });
-    
-    // 2. Cek bentrok dengan jadwal kuliah (berdasarkan hari)
-    const dateObj = new Date(date);
-    const dayNamesIndonesian = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-    const dayName = dayNamesIndonesian[dateObj.getDay()];
-    
-    // Simulasi pengecekan jadwal kuliah (karena ini async, kita perlu menunggu hasil)
-    try {
-      const { data: lectureSchedules } = await supabase
-        .from('lecture_schedules')
-        .select('room, start_time, end_time, course_name, lecturer_name')
-        .eq('day', dayName);
-      
-      if (lectureSchedules) {
-        lectureSchedules.forEach(schedule => {
-          if (schedule.room.toLowerCase() === selectedRoom.name.toLowerCase()) {
-            const hasTimeOverlap = startTime < schedule.end_time && endTime > schedule.start_time;
-            if (hasTimeOverlap) {
-              conflictDetails.push(getText(
-                `• Lecture: ${schedule.course_name || 'Unknown Course'} (${schedule.start_time}-${schedule.end_time})`,
-                `• Kuliah: ${schedule.course_name || 'Mata Kuliah Tidak Dikenal'} (${schedule.start_time}-${schedule.end_time})`
-              ));
-            }
-          }
-        });
-      }
-    } catch (error) {
-      console.error('Error checking lecture schedules:', error);
+    const nimValue = studentInputRef.current?.value || '';
+    const nameValue = studentNameRef.current?.value || '';
+
+    if (nimValue && nimValue !== formData.student_nim) {
+      setFormData(prev => ({ ...prev, student_nim: nimValue }));
     }
-    
-    // 3. Cek bentrok dengan booking yang disetujui
-    try {
-      const { startUTC, endUTC } = getDateRangeForBookings(date);
-      const startTimeUTC = convertLocalToUTC(`${date}T${startTime}:00`);
-      const endTimeUTC = convertLocalToUTC(`${date}T${endTime}:00`);
-      
-      const { data: bookingConflicts } = await supabase
-        .from('bookings')
-        .select(`
+    if (nameValue && nameValue !== formData.student_name) {
+      setFormData(prev => ({ ...prev, student_name: nameValue }));
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    const validationErrors = validateAllFields();
+
+    if (validationErrors.length > 0) {
+      const errorMessage = getText(
+        `Please complete the following fields:\n• ${validationErrors.join('\n• ')}`,
+        `Silakan lengkapi field berikut:\n• ${validationErrors.join('\n• ')}`
+      );
+
+      alert.error(errorMessage);
+
+      if (!formData.student_nim || !formData.student_name || !formData.study_program_id) {
+        setCurrentStep(1);
+      } else if (!form.getValues('date') || !form.getValues('start_time') || !form.getValues('end_time')) {
+        setCurrentStep(2);
+      } else {
+        setCurrentStep(3);
+      }
+
+      return;
+    }
+
+    const existingSession = await checkDuplicateStudent(form.getValues('student_id'), nimValue);
+    if (existingSession) {
+      const existingDate = format(parseISO(existingSession.date), 'EEEE, dd MMMM yyyy');
+      const existingTime = `${existingSession.start_time} - ${existingSession.end_time}`;
+
+      alert.error(
+        getText(
+          `⚠️ Duplicate Student Found!\n\nStudent ${nameValue} (${nimValue}) already has a scheduled session:\n📅 Date: ${existingDate}\n⏰ Time: ${existingTime}\n🏢 Room: ${existingSession.room?.name || 'Unknown'}\n\nPlease select a different student or edit the existing session.`,
+          `⚠️ Mahasiswa Duplikat Ditemukan!\n\nMahasiswa ${nameValue} (${nimValue}) sudah memiliki jadwal sidang:\n📅 Tanggal: ${existingDate}\n⏰ Waktu: ${existingTime}\n🏢 Ruangan: ${existingSession.room?.name || 'Tidak diketahui'}\n\nSilakan pilih mahasiswa lain atau edit jadwal yang sudah ada.`
+        )
+      );
+      setCurrentStep(1);
+      return;
+    }
+
+    // ✅ CROSS-CHECK: Validasi final menggunakan fungsi checkRoomAvailability yang sudah ada
+    const roomId = form.getValues('room_id');
+    const date = form.getValues('date');
+    const startTime = form.getValues('start_time');
+    const endTime = form.getValues('end_time');
+
+    console.log(`🔍 Final cross-check for Room ID: ${roomId}, Date: ${date}, Time: ${startTime}-${endTime}`);
+
+    // Panggil fungsi checkRoomAvailability untuk mendapatkan ruangan yang tersedia
+    await checkRoomAvailability(date, startTime, endTime);
+
+    // Cek apakah ruangan yang dipilih masih tersedia setelah pengecekan terbaru
+    const selectedRoom = rooms.find(room => room.id === roomId);
+    const isRoomStillAvailable = availableRooms.some(room => room.id === roomId);
+
+    if (!selectedRoom) {
+      alert.error(getText(
+        '❌ Room Not Found!\n\nThe selected room could not be found. Please refresh the page and try again.',
+        '❌ Ruangan Tidak Ditemukan!\n\nRuangan yang dipilih tidak dapat ditemukan. Silakan refresh halaman dan coba lagi.'
+      ));
+      setCurrentStep(3);
+      return;
+    }
+
+    if (!selectedRoom.is_available) {
+      alert.error(getText(
+        `❌ Room Disabled!\n\nRoom: ${selectedRoom.name} - ${selectedRoom.code}\n\nThis room is currently disabled for booking. Please select a different room.`,
+        `❌ Ruangan Dinonaktifkan!\n\nRuangan: ${selectedRoom.name} - ${selectedRoom.code}\n\nRuangan ini saat ini dinonaktifkan untuk pemesanan. Silakan pilih ruangan lain.`
+      ));
+      setCurrentStep(3);
+      return;
+    }
+
+    if (!isRoomStillAvailable) {
+      // Buat detail konflik berdasarkan pengecekan yang dilakukan di checkRoomAvailability
+      let conflictDetails = [];
+
+      // 1. Cek bentrok dengan sesi sidang final lain
+      const finalSessionConflicts = allSessions.filter(session => {
+        if (editingSession && session.id === editingSession.id) return false;
+        if (session.room_id !== roomId || session.date !== date) return false;
+
+        // Cek irisan waktu: 07:30-09:09 beririsan dengan 08:00-10:00
+        const hasTimeOverlap = startTime < session.end_time && endTime > session.start_time;
+        return hasTimeOverlap;
+      });
+
+      finalSessionConflicts.forEach(session => {
+        conflictDetails.push(getText(
+          `• Final Session: ${session.student?.full_name || 'Unknown'} (${session.start_time}-${session.end_time})`,
+          `• Sidang Akhir: ${session.student?.full_name || 'Tidak Dikenal'} (${session.start_time}-${session.end_time})`
+        ));
+      });
+
+      // 2. Cek bentrok dengan jadwal kuliah (berdasarkan hari)
+      const dateObj = new Date(date);
+      const dayNamesIndonesian = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+      const dayName = dayNamesIndonesian[dateObj.getDay()];
+
+      // Simulasi pengecekan jadwal kuliah (karena ini async, kita perlu menunggu hasil)
+      try {
+        const { data: lectureSchedules } = await supabase
+          .from('lecture_schedules')
+          .select('room, start_time, end_time, course_name, lecturer_name')
+          .eq('day', dayName);
+
+        if (lectureSchedules) {
+          lectureSchedules.forEach(schedule => {
+            if (schedule.room.toLowerCase() === selectedRoom.name.toLowerCase()) {
+              const hasTimeOverlap = startTime < schedule.end_time && endTime > schedule.start_time;
+              if (hasTimeOverlap) {
+                conflictDetails.push(getText(
+                  `• Lecture: ${schedule.course_name || 'Unknown Course'} (${schedule.start_time}-${schedule.end_time})`,
+                  `• Kuliah: ${schedule.course_name || 'Mata Kuliah Tidak Dikenal'} (${schedule.start_time}-${schedule.end_time})`
+                ));
+              }
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Error checking lecture schedules:', error);
+      }
+
+      // 3. Cek bentrok dengan booking yang disetujui
+      try {
+        const { startUTC, endUTC } = getDateRangeForBookings(date);
+        const startTimeUTC = convertLocalToUTC(`${date}T${startTime}:00`);
+        const endTimeUTC = convertLocalToUTC(`${date}T${endTime}:00`);
+
+        const { data: bookingConflicts } = await supabase
+          .from('bookings')
+          .select(`
           room_id, start_time, end_time, purpose,
           user:users(full_name)
         `)
-        .eq('room_id', roomId)
-        .gte('start_time', startUTC)
-        .lt('start_time', endUTC)
-        .in('status', ['approved', 'borrowed']);
-      
-      if (bookingConflicts) {
-        bookingConflicts.forEach(booking => {
-          const bookingStart = new Date(booking.start_time);
-          const bookingEnd = new Date(booking.end_time);
-          const sessionStart = new Date(startTimeUTC);
-          const sessionEnd = new Date(endTimeUTC);
-          
-          if (sessionStart < bookingEnd && sessionEnd > bookingStart) {
-            const bookingStartLocal = convertUTCToLocal(booking.start_time);
-            const bookingEndLocal = convertUTCToLocal(booking.end_time);
-            
-            conflictDetails.push(getText(
-              `• Booking: ${booking.user?.full_name || 'Unknown User'} (${format(bookingStartLocal, 'HH:mm')}-${format(bookingEndLocal, 'HH:mm')})`,
-              `• Pemesanan: ${booking.user?.full_name || 'Pengguna Tidak Dikenal'} (${format(bookingStartLocal, 'HH:mm')}-${format(bookingEndLocal, 'HH:mm')})`
-            ));
-          }
-        });
-      }
-    } catch (error) {
-      console.error('Error checking booking conflicts:', error);
-    }
-    
-    // 4. Cek bentrok dengan jadwal ujian
-    try {
-      const { data: examSchedules } = await supabase
-        .from('exams')
-        .select('room_id, start_time, end_time, course_name, exam_type')
-        .eq('room_id', roomId)
-        .eq('date', date);
-      
-      if (examSchedules) {
-        examSchedules.forEach(exam => {
-          const hasTimeOverlap = startTime < exam.end_time && endTime > exam.start_time;
-          if (hasTimeOverlap) {
-            conflictDetails.push(getText(
-              `• Exam: ${exam.course_name || 'Unknown Course'} - ${exam.exam_type || 'Exam'} (${exam.start_time}-${exam.end_time})`,
-              `• Ujian: ${exam.course_name || 'Mata Kuliah Tidak Dikenal'} - ${exam.exam_type || 'Ujian'} (${exam.start_time}-${exam.end_time})`
-            ));
-          }
-        });
-      }
-    } catch (error) {
-      console.error('Error checking exam schedules:', error);
-    }
-    
-    // Tampilkan pesan error dengan detail konflik
-    const conflictMessage = getText(
-      `❌ Room Time Conflict!\n\nRoom: ${selectedRoom.name} - ${selectedRoom.code}\nDate: ${format(new Date(date), 'EEEE, dd MMMM yyyy')}\nRequested Time: ${startTime} - ${endTime}\n\n⚠️ Time conflicts detected with:\n${conflictDetails.join('\n')}\n\nPlease choose a different room or time slot.`,
-      `❌ Bentrok Waktu Ruangan!\n\nRuangan: ${selectedRoom.name} - ${selectedRoom.code}\nTanggal: ${format(new Date(date), 'EEEE, dd MMMM yyyy')}\nWaktu yang Diminta: ${startTime} - ${endTime}\n\n⚠️ Terdeteksi bentrok waktu dengan:\n${conflictDetails.join('\n')}\n\nSilakan pilih ruangan atau waktu yang berbeda.`
-    );
-    
-    alert.error(conflictMessage);
-    setCurrentStep(3); // Kembali ke step pemilihan ruangan
-    return;
-  }
-  
-  console.log('✅ Room is available, proceeding with submission...');
-  
-  // Jika tidak ada konflik, lanjutkan dengan submit normal
-  form.handleSubmit(handleSubmit)();
-};
+          .eq('room_id', roomId)
+          .gte('start_time', startUTC)
+          .lt('start_time', endUTC)
+          .in('status', ['approved', 'borrowed']);
 
-// Tambahkan juga helper function untuk mengecek irisan waktu (time overlap)
-const hasTimeOverlap = (start1, end1, start2, end2) => {
-  // Contoh: 07:30-09:09 beririsan dengan 08:00-10:00
-  // start1 < end2 && end1 > start2
-  return start1 < end2 && end1 > start2;
-};
+        if (bookingConflicts) {
+          bookingConflicts.forEach(booking => {
+            const bookingStart = new Date(booking.start_time);
+            const bookingEnd = new Date(booking.end_time);
+            const sessionStart = new Date(startTimeUTC);
+            const sessionEnd = new Date(endTimeUTC);
 
-// Contoh penggunaan helper function di dalam pengecekan:
-const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd) => {
-  const overlap = hasTimeOverlap(sessionStart, sessionEnd, existingStart, existingEnd);
-  
-  if (overlap) {
-    console.log(`⚠️ Time overlap detected: ${sessionStart}-${sessionEnd} conflicts with ${existingStart}-${existingEnd}`);
-  }
-  
-  return overlap;
-};
+            if (sessionStart < bookingEnd && sessionEnd > bookingStart) {
+              const bookingStartLocal = convertUTCToLocal(booking.start_time);
+              const bookingEndLocal = convertUTCToLocal(booking.end_time);
+
+              conflictDetails.push(getText(
+                `• Booking: ${booking.user?.full_name || 'Unknown User'} (${format(bookingStartLocal, 'HH:mm')}-${format(bookingEndLocal, 'HH:mm')})`,
+                `• Pemesanan: ${booking.user?.full_name || 'Pengguna Tidak Dikenal'} (${format(bookingStartLocal, 'HH:mm')}-${format(bookingEndLocal, 'HH:mm')})`
+              ));
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Error checking booking conflicts:', error);
+      }
+
+      // 4. Cek bentrok dengan jadwal ujian
+      try {
+        const { data: examSchedules } = await supabase
+          .from('exams')
+          .select('room_id, start_time, end_time, course_name, exam_type')
+          .eq('room_id', roomId)
+          .eq('date', date);
+
+        if (examSchedules) {
+          examSchedules.forEach(exam => {
+            const hasTimeOverlap = startTime < exam.end_time && endTime > exam.start_time;
+            if (hasTimeOverlap) {
+              conflictDetails.push(getText(
+                `• Exam: ${exam.course_name || 'Unknown Course'} - ${exam.exam_type || 'Exam'} (${exam.start_time}-${exam.end_time})`,
+                `• Ujian: ${exam.course_name || 'Mata Kuliah Tidak Dikenal'} - ${exam.exam_type || 'Ujian'} (${exam.start_time}-${exam.end_time})`
+              ));
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Error checking exam schedules:', error);
+      }
+
+      // Tampilkan pesan error dengan detail konflik
+      const conflictMessage = getText(
+        `❌ Room Time Conflict!\n\nRoom: ${selectedRoom.name} - ${selectedRoom.code}\nDate: ${format(new Date(date), 'EEEE, dd MMMM yyyy')}\nRequested Time: ${startTime} - ${endTime}\n\n⚠️ Time conflicts detected with:\n${conflictDetails.join('\n')}\n\nPlease choose a different room or time slot.`,
+        `❌ Bentrok Waktu Ruangan!\n\nRuangan: ${selectedRoom.name} - ${selectedRoom.code}\nTanggal: ${format(new Date(date), 'EEEE, dd MMMM yyyy')}\nWaktu yang Diminta: ${startTime} - ${endTime}\n\n⚠️ Terdeteksi bentrok waktu dengan:\n${conflictDetails.join('\n')}\n\nSilakan pilih ruangan atau waktu yang berbeda.`
+      );
+
+      alert.error(conflictMessage);
+      setCurrentStep(3); // Kembali ke step pemilihan ruangan
+      return;
+    }
+
+    console.log('✅ Room is available, proceeding with submission...');
+
+    // Jika tidak ada konflik, lanjutkan dengan submit normal
+    form.handleSubmit(handleSubmit)();
+  };
+
+  // Tambahkan juga helper function untuk mengecek irisan waktu (time overlap)
+  const hasTimeOverlap = (start1, end1, start2, end2) => {
+    // Contoh: 07:30-09:09 beririsan dengan 08:00-10:00
+    // start1 < end2 && end1 > start2
+    return start1 < end2 && end1 > start2;
+  };
+
+  // Contoh penggunaan helper function di dalam pengecekan:
+  const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd) => {
+    const overlap = hasTimeOverlap(sessionStart, sessionEnd, existingStart, existingEnd);
+
+    if (overlap) {
+      console.log(`⚠️ Time overlap detected: ${sessionStart}-${sessionEnd} conflicts with ${existingStart}-${existingEnd}`);
+    }
+
+    return overlap;
+  };
 
   // StudentInformationStep
   const StudentInformationStep = () => {
     const dropdownRef = useRef(null);
     const programDisplayRef = useRef(null);
     const programDropdownRef = useRef(null);
-    
+
     const localData = useRef({
       studentSearch: '',
       studentName: '',
@@ -1664,9 +1668,9 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
         return;
       }
 
-      const filteredStudents = students.filter(student => 
-        student && 
-        student.identity_number && 
+      const filteredStudents = students.filter(student =>
+        student &&
+        student.identity_number &&
         student.full_name &&
         (
           student.identity_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1700,7 +1704,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
       if (dropdownRef.current) {
         dropdownRef.current.innerHTML = dropdownHTML;
         dropdownRef.current.style.display = 'block';
-        
+
         dropdownRef.current.querySelectorAll('.dropdown-item').forEach(item => {
           item.addEventListener('mousedown', (e) => e.preventDefault());
           item.addEventListener('click', (e) => {
@@ -1708,17 +1712,17 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
             const studentNim = e.currentTarget.dataset.studentNim;
             const studentName = e.currentTarget.dataset.studentName;
             const programId = e.currentTarget.dataset.programId;
-            
+
             studentInputRef.current.value = studentNim;
             studentNameRef.current.value = studentName;
-            
+
             localData.current.studentNim = studentNim;
             localData.current.studentName = studentName;
             localData.current.studyProgramId = programId;
-            
+
             form.setValue('student_id', studentId);
             syncToParentForm();
-            
+
             if (programId) {
               const program = studyPrograms.find(p => p.id === programId);
               if (program) {
@@ -1729,7 +1733,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
                 }
               }
             }
-            
+
             hideStudentDropdown();
             studentInputRef.current.focus();
           });
@@ -1773,10 +1777,10 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
       if (programDropdownRef.current) {
         programDropdownRef.current.innerHTML = dropdownHTML;
         programDropdownRef.current.style.display = 'block';
-        
+
         const searchInput = programDropdownRef.current.querySelector('#program-search-input');
         const programList = programDropdownRef.current.querySelector('#program-list');
-        
+
         if (searchInput) {
           searchInput.focus();
           searchInput.addEventListener('input', (e) => {
@@ -1785,7 +1789,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
               program.name.toLowerCase().includes(searchTerm) ||
               (program.code && program.code.toLowerCase().includes(searchTerm))
             );
-            
+
             programList.innerHTML = filteredPrograms.map(program => `
               <div 
                 class="program-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150"
@@ -1796,11 +1800,11 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
                 <div class="font-semibold text-gray-800">${program.name} (${program.code || ''})</div>
               </div>
             `).join('');
-            
+
             addProgramListeners();
           });
         }
-        
+
         addProgramListeners();
       }
     };
@@ -1811,15 +1815,15 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
           const programId = e.currentTarget.dataset.programId;
           const programName = e.currentTarget.dataset.programName;
           const programCode = e.currentTarget.dataset.programCode;
-          
+
           const display = `${programName} (${programCode})`;
           localData.current.selectedProgramDisplay = display;
           localData.current.studyProgramId = programId;
-          
+
           if (programDisplayRef.current) {
             programDisplayRef.current.value = display;
           }
-          
+
           syncToParentForm();
           hideProgramDropdown();
         });
@@ -1837,12 +1841,12 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
         studentInputRef.current.value = formData.student_nim;
         localData.current.studentNim = formData.student_nim;
       }
-      
+
       if (formData.student_name && studentNameRef.current && !localData.current.studentName) {
         studentNameRef.current.value = formData.student_name;
         localData.current.studentName = formData.student_name;
       }
-      
+
       if (formData.study_program_id && !localData.current.studyProgramId) {
         const selectedProgram = studyPrograms.find(sp => sp.id === formData.study_program_id);
         if (selectedProgram && programDisplayRef.current) {
@@ -1864,9 +1868,9 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
             {getText('Please select or enter student details for the examination', 'Silakan pilih atau masukkan detail mahasiswa untuk sidang')}
           </p>
         </div>
-        
+
         <div className="space-y-4 md:grid md:grid-cols-1 lg:grid-cols-3 md:gap-6 md:space-y-0">
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               {getText("Student NIM", "NIM Mahasiswa")} *
@@ -1927,12 +1931,12 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
                 onClick={showProgramDropdown}
                 className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer bg-white"
               />
-             <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
               <div ref={programDropdownRef} style={{ display: 'none' }}></div>
             </div>
           </div>
         </div>
-        
+
         {formData.student_nim && !form.getValues('student_id') && (
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg md:rounded-xl p-3 md:p-4">
             <div className="flex items-start space-x-2 md:space-x-3">
@@ -1963,13 +1967,13 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
           {getText('Please set the date and time for the examination', 'Silakan tentukan tanggal dan waktu sidang')}
         </p>
       </div>
-      
+
       <div className="space-y-4 md:grid md:grid-cols-3 md:gap-6 md:space-y-0 max-w-2xl mx-auto">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {getText("Date", "Tanggal")} *
           </label>
-         <input
+          <input
             {...form.register('date')}
             type="date"
             className="w-full px-3 md:px-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm md:text-base"
@@ -2006,7 +2010,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
         </div>
       </div>
 
-     {watchDate && (
+      {watchDate && (
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg md:rounded-xl p-3 md:p-4 max-w-md mx-auto">
           <div className="flex items-center space-x-2 md:space-x-3">
             <Calendar className="h-4 w-4 md:h-5 md:w-5 text-green-600" />
@@ -2047,7 +2051,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
       }
 
       const filteredLecturers = lecturers.filter(lecturer =>
-        lecturer && 
+        lecturer &&
         lecturer.full_name &&
         lecturer.full_name.toLowerCase().includes(searchTerm.toLowerCase())
       );
@@ -2074,22 +2078,22 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
       if (dropdownContainer) {
         dropdownContainer.innerHTML = dropdownHTML;
         dropdownContainer.style.display = 'block';
-        
+
         dropdownContainer.querySelectorAll('.lecturer-item').forEach(item => {
           item.addEventListener('mousedown', (e) => e.preventDefault());
           item.addEventListener('click', (e) => {
             const lecturerName = e.currentTarget.dataset.lecturerName;
-            
-            const inputRef = type === 'supervisor' ? supervisorInputRef : 
-                            type === 'examiner' ? examinerInputRef : secretaryInputRef;
-            
+
+            const inputRef = type === 'supervisor' ? supervisorInputRef :
+              type === 'examiner' ? examinerInputRef : secretaryInputRef;
+
             if (inputRef.current) {
               inputRef.current.value = lecturerName;
             }
-            
+
             form.setValue(type, lecturerName);
             dosenData.current[`${type}Search`] = lecturerName;
-            
+
             hideLecturerDropdown(type);
             inputRef.current?.focus();
           });
@@ -2123,8 +2127,8 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
           </div>
           <div class="max-h-60 overflow-y-auto" id="room-list">
             ${availableRooms.map(room => {
-              const roomStatus = getRoomStatusForSelection(room);
-              return `
+        const roomStatus = getRoomStatusForSelection(room);
+        return `
                 <div 
                   class="room-item px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors duration-150 ${!roomStatus.canSelect ? 'opacity-60 cursor-not-allowed' : ''}"
                   data-room-id="${room.id}"
@@ -2149,7 +2153,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
                   </div>
                 </div>
               `;
-            }).join('')}
+      }).join('')}
             ${availableRooms.length === 0 ? `
               <div class="p-6 text-center">
                 <div class="text-gray-500">
@@ -2168,10 +2172,10 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
       if (roomDropdownContainer) {
         roomDropdownContainer.innerHTML = dropdownHTML;
         roomDropdownContainer.style.display = 'block';
-        
+
         const searchInput = roomDropdownContainer.querySelector('#room-search-input');
         const roomList = roomDropdownContainer.querySelector('#room-list');
-        
+
         if (searchInput) {
           searchInput.focus();
           searchInput.addEventListener('input', (e) => {
@@ -2181,7 +2185,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
               room.code.toLowerCase().includes(searchTerm) ||
               room.department?.name?.toLowerCase().includes(searchTerm)
             );
-            
+
             roomList.innerHTML = filteredRooms.map(room => {
               const roomStatus = getRoomStatusForSelection(room);
               return `
@@ -2210,11 +2214,11 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
                 </div>
               `;
             }).join('');
-            
+
             addRoomListeners();
           });
         }
-        
+
         addRoomListeners();
       }
     };
@@ -2224,18 +2228,18 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
         item.addEventListener('click', (e) => {
           const canSelect = e.currentTarget.dataset.canSelect === 'true';
           if (!canSelect) return;
-          
+
           const roomId = e.currentTarget.dataset.roomId;
           const roomName = e.currentTarget.dataset.roomName;
           const roomCode = e.currentTarget.dataset.roomCode;
-          
+
           const display = `${roomName} - ${roomCode}`;
           dosenData.current.selectedRoomDisplay = display;
-          
+
           if (roomDisplayRef.current) {
             roomDisplayRef.current.value = display;
           }
-          
+
           form.setValue('room_id', roomId);
           hideRoomDropdown();
         });
@@ -2255,19 +2259,19 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
         supervisorInputRef.current.value = supervisorValue;
         dosenData.current.supervisorSearch = supervisorValue;
       }
-      
+
       const examinerValue = form.getValues('examiner');
       if (examinerValue && examinerInputRef.current) {
         examinerInputRef.current.value = examinerValue;
         dosenData.current.examinerSearch = examinerValue;
       }
-      
+
       const secretaryValue = form.getValues('secretary');
       if (secretaryValue && secretaryInputRef.current) {
         secretaryInputRef.current.value = secretaryValue;
         dosenData.current.secretarySearch = secretaryValue;
       }
-      
+
       const roomId = form.getValues('room_id');
       if (roomId && roomDisplayRef.current) {
         const room = availableRooms.find(r => r.id === roomId);
@@ -2277,7 +2281,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
           dosenData.current.selectedRoomDisplay = display;
         }
       }
-      
+
       const titleValue = form.getValues('title');
       if (titleValue && titleInputRef.current) {
         titleInputRef.current.value = titleValue;
@@ -2344,7 +2348,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
             <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             <div id="room-dropdown" style={{ display: 'none' }}></div>
           </div>
-          
+
           {form.formState.errors.room_id && (
             <p className="mt-1 text-xs text-red-600">{form.formState.errors.room_id.message}</p>
           )}
@@ -2378,7 +2382,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
             <span>{getText('Examination Committee', 'Panitia Sidang')}</span>
           </h4>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 {getText("Supervisor", "Pembimbing")} *
@@ -2409,7 +2413,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
                 <p className="mt-1 text-xs text-red-600">{form.formState.errors.supervisor.message}</p>
               )}
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 {getText("Secretary", "Sekretaris")} *
@@ -2488,25 +2492,23 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
         {steps.map((step, index) => {
           const isCompleted = completedSteps.has(step.id);
           const isCurrent = currentStep === step.id;
-          
+
           return (
             <div key={step.id} className="relative flex items-start">
               {index < steps.length - 1 && (
-                <div className={`absolute left-6 top-12 w-0.5 h-16 ${
-                  isCompleted ? 'bg-blue-500' : 'bg-gray-200'
-                }`} />
+                <div className={`absolute left-6 top-12 w-0.5 h-16 ${isCompleted ? 'bg-blue-500' : 'bg-gray-200'
+                  }`} />
               )}
-              
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 relative z-10 ${
-                isCompleted
-                  ? 'bg-blue-500 border-blue-500 text-white'
-                  : isCurrent
+
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 relative z-10 ${isCompleted
+                ? 'bg-blue-500 border-blue-500 text-white'
+                : isCurrent
                   ? 'bg-white border-blue-500 text-blue-500 ring-4 ring-blue-100'
                   : 'bg-white border-gray-300 text-gray-400'
-              }`}>
+                }`}>
                 {isCompleted ? <Check className="h-5 w-5" /> : <step.icon className="h-5 w-5" />}
               </div>
-              
+
               <div className="ml-4">
                 <div className={`text-sm font-medium ${isCurrent || isCompleted ? 'text-blue-600' : 'text-gray-400'}`}>
                   Step {step.id}
@@ -2541,14 +2543,14 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
       setSubmitting(true);
 
       let finalStudentId = data.student_id;
-      
+
       if (!finalStudentId && formData.student_nim && formData.student_name) {
         const { data: existingUser, error: findError } = await supabase
           .from('users')
           .select('id')
           .eq('identity_number', formData.student_nim)
           .maybeSingle();
-        
+
         if (findError) {
           console.error('Error finding user:', findError);
           throw new Error(`Failed to check existing user: ${findError.message}`);
@@ -2558,11 +2560,11 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
           finalStudentId = existingUser.id;
         } else {
           const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id);
-          
+
           if (!selectedProgram) {
             throw new Error(getText('Study program not found. Please select a valid study program.', 'Program studi tidak ditemukan. Silakan pilih program studi yang valid.'));
           }
-          
+
           const newUserData = {
             identity_number: formData.student_nim,
             full_name: formData.student_name,
@@ -2612,7 +2614,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
           .from('final_sessions')
           .update(sessionData)
           .eq('id', editingSession.id);
-        
+
         if (error) {
           console.error('Error updating session:', error);
           throw new Error(`Failed to update session: ${error.message}`);
@@ -2624,7 +2626,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
           .insert([sessionData])
           .select('*, student:users(full_name, identity_number), room:rooms(name)')
           .single();
-        
+
         if (error) {
           console.error('Error creating session:', error);
           throw new Error(`Failed to create session: ${error.message}`);
@@ -2633,7 +2635,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
         const studentName = newSession.student?.full_name || formData.student_name;
         const studentNim = newSession.student?.identity_number || formData.student_nim;
         const roomName = newSession.room?.name || 'Selected Room';
-        
+
         alert.success(
           getText(
             `✅ Session created successfully!\n👨‍🎓 Student: ${studentName} (${studentNim})\n🏢 Room: ${roomName}\n📅 Date: ${format(new Date(data.date), 'MMM d, yyyy')}\n⏰ Time: ${data.start_time} - ${data.end_time}`,
@@ -2648,9 +2650,9 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
       fetchSessions();
     } catch (error) {
       console.error('Error saving session:', error);
-      
+
       let errorMessage = getText('Failed to save session', 'Gagal menyimpan jadwal sidang');
-      
+
       if (error.message) {
         errorMessage = error.message;
       } else if (error.code === '23505') {
@@ -2658,7 +2660,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
       } else if (error.code === '23503') {
         errorMessage = getText('Related data not found. Please refresh and try again.', 'Data terkait tidak ditemukan. Silakan refresh dan coba lagi.');
       }
-      
+
       alert.error(errorMessage);
     } finally {
       setSubmitting(false);
@@ -2684,7 +2686,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
 
   const handleEdit = (session: any) => {
     setEditingSession(session);
-    
+
     form.reset({
       student_id: session.student_id,
       date: session.date,
@@ -2696,13 +2698,13 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
       examiner: session.examiner,
       secretary: session.secretary,
     });
-    
+
     setFormData({
       student_name: session.student?.full_name || '',
       student_nim: session.student?.identity_number || '',
       study_program_id: session.student?.study_program?.id || ''
     });
-    
+
     setShowModal(true);
   };
 
@@ -2713,12 +2715,12 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
 
   const handleConfirmDelete = async () => {
     if (!sessionToDelete) return;
-    
+
     try {
       setSubmitting(true);
       const { error } = await supabase.from('final_sessions').delete().eq('id', sessionToDelete.id);
       if (error) throw error;
-      
+
       alert.success(getText('Session deleted successfully', 'Jadwal sidang berhasil dihapus'));
       setShowDeleteModal(false);
       setSessionToDelete(null);
@@ -2739,7 +2741,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
   const handlePrint = async (formData: PrintFormData) => {
     try {
       const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id);
-      
+
       if (!selectedProgram) {
         alert.error(getText("Please ensure study program is selected.", "Pastikan program studi telah dipilih."));
         return;
@@ -2752,10 +2754,10 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
         const sessionDate = new Date(session.date);
         const sessionMonth = sessionDate.getMonth() + 1;
         const sessionYear = sessionDate.getFullYear();
-        
+
         return session.student?.study_program?.id === formData.study_program_id &&
-               sessionMonth === selectedMonth &&
-               sessionYear === currentYear;
+          sessionMonth === selectedMonth &&
+          sessionYear === currentYear;
       });
 
       if (sessionsToPrint.length === 0) {
@@ -2766,7 +2768,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
           'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
           'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
         ];
-        
+
         alert.error(
           getText(
             `No sessions found for ${monthNames[selectedMonth - 1]} ${currentYear} in the selected study program.`,
@@ -2779,11 +2781,11 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
       const doc = new jsPDF('landscape', 'mm', 'a4');
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
-      
+
       const logoDataUrl = await getImageDataUrl(logoUNY);
 
       doc.addImage(logoDataUrl, 'PNG', 15, 15, 30, 30);
-      
+
       let currentY = 20;
       const headerTextX = pageWidth / 2;
 
@@ -2796,7 +2798,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
       doc.setFont('helvetica', 'bold');
       currentY += 5;
       doc.text("FAKULTAS VOKASI", headerTextX, currentY, { align: 'center' });
-      
+
       currentY += 5;
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
@@ -2843,7 +2845,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
       const tableRows: any[] = [];
       sessionsToPrint.forEach((session, index) => {
         const timeDisplay = `${session.start_time.substring(0, 5)}-${session.end_time.substring(0, 5)}`;
-        
+
         tableRows.push([
           index + 1,
           format(parseISO(session.date), 'dd-MM-yyyy'),
@@ -2862,7 +2864,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
         body: tableRows,
         startY: currentY,
         theme: 'grid',
-        styles: { 
+        styles: {
           fontSize: 8,
           cellPadding: 2,
           valign: 'middle',
@@ -2871,10 +2873,10 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
           overflow: 'linebreak',
           cellWidth: 'wrap'
         },
-        headStyles: { 
-          fillColor: [220, 220, 220], 
-          textColor: [0, 0, 0], 
-          fontStyle: 'bold', 
+        headStyles: {
+          fillColor: [220, 220, 220],
+          textColor: [0, 0, 0],
+          fontStyle: 'bold',
           halign: 'center',
           fontSize: 9,
           cellPadding: 2
@@ -2950,7 +2952,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
               />
             </div>
           </div>
-          
+
           <div className="flex items-center space-x-3 w-full sm:w-auto">
             <button
               onClick={() => {
@@ -2973,7 +2975,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
               <Printer className="h-5 w-5" />
               <span className="hidden sm:inline">{getText("Print", "Cetak")}</span>
             </button>
-            
+
             {profile?.role === 'department_admin' && (
               <button
                 onClick={() => {
@@ -3035,7 +3037,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
                         <>
                           <p className="text-lg font-medium mb-2">{getText("No matching sessions found", "Tidak ada jadwal sidang yang cocok")}</p>
                           <p>{getText(`No sessions found for "${searchTerm}"`, `Tidak ada sidang ditemukan untuk "${searchTerm}"`)}</p>
-                          <button 
+                          <button
                             onClick={() => setSearchTerm('')}
                             className="mt-2 text-blue-600 hover:text-blue-800 underline"
                           >
@@ -3061,7 +3063,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
                         </div>
                         <div className="ml-4">
                           <div className="text-sm font-semibold text-gray-900">{session.student?.full_name}</div>
-                         <div className="text-sm text-gray-600 font-mono">{session.student?.identity_number}</div>
+                          <div className="text-sm text-gray-600 font-mono">{session.student?.identity_number}</div>
                         </div>
                       </div>
                     </td>
@@ -3119,7 +3121,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
 
       {/* Progressive Form Modal */}
       {showModal && profile?.role === 'department_admin' && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 md:p-4"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
@@ -3128,23 +3130,23 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
             }
           }}
         >
-          <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl flex flex-col overflow-hidden" 
-            style={{ 
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl flex flex-col overflow-hidden"
+            style={{
               height: 'calc(100vh - 16px)',
               maxHeight: '95vh'
             }}
           >
-            
+
             <div className="md:hidden bg-white border-b border-gray-200 p-3 flex-shrink-0">
               <MobileProgressIndicator />
             </div>
-            
+
             <div className="flex flex-1 min-h-0">
               <div className="hidden md:block flex-shrink-0">
                 <ProgressSidebar />
               </div>
-              
+
               <div className="flex-1 flex flex-col min-w-0">
                 <div className="flex items-center justify-between p-3 md:p-6 border-b border-gray-200 bg-white flex-shrink-0">
                   <h3 className="text-base md:text-xl font-bold text-gray-900 flex items-center space-x-2">
@@ -3166,13 +3168,13 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
                     <X className="h-4 w-4 md:h-5 md:w-5" />
                   </button>
                 </div>
-                
+
                 <div className="flex-1 overflow-y-auto p-3 md:p-8 bg-gray-50 min-h-0">
                   <div className="max-w-4xl mx-auto">
                     {renderCurrentStep()}
                   </div>
                 </div>
-                
+
                 <div className="border-t border-gray-200 p-3 md:p-6 bg-white flex-shrink-0">
                   <div className="flex flex-col sm:flex-row justify-between items-center space-y-3 sm:space-y-0 sm:space-x-4 max-w-4xl mx-auto">
                     <div className="flex w-full sm:w-auto space-x-3 sm:space-x-0">
@@ -3248,36 +3250,36 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
                   <Printer className="h-6 w-6 text-blue-600" />
                   <span>{getText("Print Session Schedule", "Cetak Jadwal Sidang")}</span>
                 </h3>
-                <button 
-                  onClick={() => setShowPrintModal(false)} 
-                  className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-lg transition-colors" 
-                > 
-                  <X className="h-6 w-6" /> 
+                <button
+                  onClick={() => setShowPrintModal(false)}
+                  className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X className="h-6 w-6" />
                 </button>
               </div>
               <form onSubmit={printForm.handleSubmit(handlePrint)} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Study Program", "Program Studi")} *</label>
-                  <Controller 
-                    name="study_program_id" 
-                    control={printForm.control} 
-                    render={({ field }) => { 
-                      const options = studyPrograms.map(p => ({ 
-                        value: p.id, 
-                        label: `${p.name} - ${p.department?.name || 'Unknown Dept'}` 
-                      })); 
-                      const currentValue = options.find(o => o.value === field.value); 
-                      return ( 
-                        <Select 
-                          {...field} 
-                          options={options} 
-                          value={currentValue} 
-                          onChange={option => field.onChange(option ? option.value : '')} 
-                          placeholder={getText("Select study program...", "Pilih program studi...")} 
-                          isClearable 
-                        /> 
+                  <Controller
+                    name="study_program_id"
+                    control={printForm.control}
+                    render={({ field }) => {
+                      const options = studyPrograms.map(p => ({
+                        value: p.id,
+                        label: `${p.name} - ${p.department?.name || 'Unknown Dept'}`
+                      }));
+                      const currentValue = options.find(o => o.value === field.value);
+                      return (
+                        <Select
+                          {...field}
+                          options={options}
+                          value={currentValue}
+                          onChange={option => field.onChange(option ? option.value : '')}
+                          placeholder={getText("Select study program...", "Pilih program studi...")}
+                          isClearable
+                        />
                       )
-                    }} 
+                    }}
                   />
                   {printForm.formState.errors.study_program_id && (
                     <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.study_program_id.message}</p>
@@ -3285,10 +3287,10 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{getText("Month", "Bulan")} *</label>
-                  <Controller 
-                    name="month" 
-                    control={printForm.control} 
-                    render={({ field }) => { 
+                  <Controller
+                    name="month"
+                    control={printForm.control}
+                    render={({ field }) => {
                       const monthOptions = [
                         { value: '1', label: getText('January', 'Januari') },
                         { value: '2', label: getText('February', 'Februari') },
@@ -3303,18 +3305,18 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
                         { value: '11', label: getText('November', 'November') },
                         { value: '12', label: getText('December', 'Desember') }
                       ];
-                      const currentValue = monthOptions.find(o => o.value === field.value); 
-                      return ( 
-                        <Select 
-                          {...field} 
-                          options={monthOptions} 
-                          value={currentValue} 
-                          onChange={option => field.onChange(option ? option.value : '')} 
-                          placeholder={getText("Select month...", "Pilih bulan...")} 
-                          isClearable 
-                        /> 
+                      const currentValue = monthOptions.find(o => o.value === field.value);
+                      return (
+                        <Select
+                          {...field}
+                          options={monthOptions}
+                          value={currentValue}
+                          onChange={option => field.onChange(option ? option.value : '')}
+                          placeholder={getText("Select month...", "Pilih bulan...")}
+                          isClearable
+                        />
                       )
-                    }} 
+                    }}
                   />
                   {printForm.formState.errors.month && (
                     <p className="text-red-600 text-sm mt-1">{printForm.formState.errors.month.message}</p>
@@ -3330,15 +3332,15 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
                   </div>
                 </div>
                 <div className="flex space-x-3 pt-4">
-                  <button 
-                    type="button" 
-                    onClick={() => setShowPrintModal(false)} 
+                  <button
+                    type="button"
+                    onClick={() => setShowPrintModal(false)}
                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium"
                   >
                     {getText("Cancel", "Batal")}
                   </button>
-                  <button 
-                    type="submit" 
+                  <button
+                    type="submit"
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium flex items-center justify-center space-x-2"
                   >
                     <Printer className="h-4 w-4" />
@@ -3350,7 +3352,7 @@ const checkTimeConflict = (sessionStart, sessionEnd, existingStart, existingEnd)
           </div>
         </div>
       )}
-      
+
       {/* Delete Confirmation Modal */}
       {showDeleteModal && <DeleteConfirmationModal />}
     </div>

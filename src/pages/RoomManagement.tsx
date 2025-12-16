@@ -3,11 +3,11 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-    Building, Plus, Search, Edit, Trash2, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench, ChevronDown, BookOpen, GraduationCap, UserCheck, UserPlus, UserMinus, AlertTriangle, Filter, ChevronUp
+    Building, Plus, Search, Edit, Trash2, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench, ChevronDown, BookOpen, GraduationCap, UserCheck, UserPlus, UserMinus, AlertTriangle, Filter, ChevronUp, Maximize2
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { Room, Department, Equipment } from '../types';
+import { Room, Department, Equipment, StudyProgram } from '../types';
 import { format, parse, addDays } from 'date-fns';
 import { id as localeID } from 'date-fns/locale';
 import { useRoomData } from '../hooks/useRoomData';
@@ -38,6 +38,7 @@ const roomSchema = z.object({
     code: z.string().min(2, 'Room code must be at least 2 characters'),
     capacity: z.number().min(1, 'Capacity must be at least 1'),
     department_id: z.string().optional().nullable(),
+    study_program_id: z.string().optional().nullable(),
 });
 type RoomForm = z.infer<typeof roomSchema>;
 
@@ -73,29 +74,30 @@ interface CombinedSchedule {
 const RoomManagement: React.FC = () => {
     const { profile } = useAuth();
     const { getText } = useLanguage();
-    
+
     const [targetDate, setTargetDate] = useState(getLocalDateString());
     const [searchStartTime, setSearchStartTime] = useState('07:30');
     const [searchEndTime, setSearchEndTime] = useState('17:00');
     const [isSearchMode, setIsSearchMode] = useState(false);
-    
+
     const { rooms: optimizedRooms, loading: roomsLoading, error: roomsError, fetchRoomData, cacheStats } = useRoomData(targetDate);
-    
+
     useRealTimeRoomUpdates(targetDate);
     usePerformanceMonitor();
-    
+
     const [allRooms, setAllRooms] = useState<EnhancedRoomStatus[]>([]);
     const [displayedRooms, setDisplayedRooms] = useState<EnhancedRoomStatus[]>([]);
     const [departments, setDepartments] = useState<Department[]>([]);
+    const [studyPrograms, setStudyPrograms] = useState<StudyProgram[]>([]);
     const [loading, setLoading] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [showForm, setShowForm] = useState(false);
     const [editingRoom, setEditingRoom] = useState<EnhancedRoomStatus | null>(null);
     const [showRoomDetail, setShowRoomDetail] = useState<EnhancedRoomStatus | null>(null);
-    
+
     const [combinedSchedules, setCombinedSchedules] = useState<CombinedSchedule[]>([]);
     const [loadingSchedules, setLoadingSchedules] = useState(false);
-    
+
     const [selectedRoomEquipment, setSelectedRoomEquipment] = useState<Equipment[]>([]);
     const [loadingEquipment, setLoadingEquipment] = useState(false);
     const [roomUsers, setRoomUsers] = useState<RoomUser[]>([]);
@@ -103,18 +105,22 @@ const RoomManagement: React.FC = () => {
     const [allUsers, setAllUsers] = useState<any[]>([]);
     const [showAssignUserModal, setShowAssignUserModal] = useState(false);
     const [selectedUser, setSelectedUser] = useState<any>(null);
-    
+
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState('all');
     const [showInUse, setShowInUse] = useState(true);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [showAvailabilitySearch, setShowAvailabilitySearch] = useState(false);
-    
+
     const [roomNameSuggestions, setRoomNameSuggestions] = useState<string[]>([]);
     const [roomNameInput, setRoomNameInput] = useState('');
     const [showRoomSuggestions, setShowRoomSuggestions] = useState(false);
     const [filteredRoomSuggestions, setFilteredRoomSuggestions] = useState<string[]>([]);
-    
+
+    // Room Photo State
+    const [roomPhoto, setRoomPhoto] = useState<string | null>(null);
+    const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
+
     // NEW: State for custom confirmation modal
     const [showCustomConfirmModal, setShowCustomConfirmModal] = useState(false);
     const [customConfirmModalContent, setCustomConfirmModalContent] = useState<{
@@ -148,7 +154,7 @@ const RoomManagement: React.FC = () => {
             const now = new Date();
             const bookingStart = convertUTCToLocal(room.currentBooking.start_time);
             const bookingEnd = convertUTCToLocal(room.currentBooking.end_time);
-            
+
             if (now >= bookingStart && now <= bookingEnd) {
                 return {
                     status: 'In Use' as const,
@@ -171,7 +177,7 @@ const RoomManagement: React.FC = () => {
                 for (const booking of room.targetDateBookings) {
                     const existingStart = convertUTCToLocal(booking.start_time);
                     const existingEnd = convertUTCToLocal(booking.end_time);
-                    
+
                     // Overlap condition with correct timezone
                     if (searchStart < existingEnd && searchEnd > existingStart) {
                         return {
@@ -186,7 +192,7 @@ const RoomManagement: React.FC = () => {
                 }
             }
         }
-        
+
         // 4. Check if has other scheduled content for the day
         const hasScheduledContent =
             (Array.isArray(room.scheduleDetails?.lectures) && room.scheduleDetails.lectures.length > 0) ||
@@ -199,10 +205,10 @@ const RoomManagement: React.FC = () => {
                 status: 'Scheduled' as const,
                 reason: getText('Room has scheduled activities', 'Ruangan memiliki aktivitas terjadwal'),
                 color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-                scheduleCount: (room.scheduleDetails?.lectures?.length || 0) + 
-                                (room.scheduleDetails?.exams?.length || 0) + 
-                                (room.scheduleDetails?.sessions?.length || 0) + 
-                                (room.targetDateBookings?.length || 0)
+                scheduleCount: (room.scheduleDetails?.lectures?.length || 0) +
+                    (room.scheduleDetails?.exams?.length || 0) +
+                    (room.scheduleDetails?.sessions?.length || 0) +
+                    (room.targetDateBookings?.length || 0)
             };
         }
 
@@ -215,27 +221,27 @@ const RoomManagement: React.FC = () => {
     }, [targetDate, searchStartTime, searchEndTime, isSearchMode, getText]);
 
     const findAvailableRooms = async () => {
-        if (!searchStartTime || !searchEndTime) { 
-            alert.error(getText('Please complete all search filters.', 'Mohon lengkapi semua filter pencarian.')); 
-            return; 
+        if (!searchStartTime || !searchEndTime) {
+            alert.error(getText('Please complete all search filters.', 'Mohon lengkapi semua filter pencarian.'));
+            return;
         }
-        
+
         setIsRefreshing(true);
         setIsSearchMode(true);
-        
+
         try {
             console.log(`🗓️ Search for ${targetDate} from ${searchStartTime} to ${searchEndTime}`);
-            
+
             // Force refresh data for the target date
             await fetchRoomData(targetDate, true);
-            
+
             alert.success(
                 getText(
                     `Found ${optimizedRooms.length} rooms for ${format(new Date(targetDate), 'MMM dd, yyyy')} ${searchStartTime}-${searchEndTime}`,
                     `Ditemukan ${optimizedRooms.length} ruangan untuk ${format(new Date(targetDate), 'dd MMM yyyy')} ${searchStartTime}-${searchEndTime}`
                 )
             );
-            
+
         } catch (error) {
             console.error('Error searching for available rooms:', error);
             alert.error(getText('Failed to perform search.', 'Gagal melakukan pencarian.'));
@@ -254,15 +260,42 @@ const RoomManagement: React.FC = () => {
 
     useEffect(() => {
         if (optimizedRooms && optimizedRooms.length > 0) {
-            setAllRooms(optimizedRooms);
-            setDisplayedRooms(optimizedRooms);
+            let roomsToDisplay = optimizedRooms;
+
+            // Laboratory filtering logic:
+            // - Department MUST be same as laboran's department
+            // - Study program can be NULL (show) OR same as laboran's study program (show)
+            // - If study program is DIFFERENT from laboran's → don't show
+            if (profile?.role === 'laboratory' && profile?.department_id) {
+                const laborDeptId = profile.department_id;
+                const laborStudyProgramId = profile.study_program_id;
+
+                roomsToDisplay = optimizedRooms.filter((room: any) => {
+                    // Department must match
+                    if (room.department?.id !== laborDeptId) return false;
+
+                    // Study program check: null OR same as laboran
+                    if (room.study_program_id === null || room.study_program_id === undefined || room.study_program_id === laborStudyProgramId) {
+                        return true;
+                    }
+
+                    // Study program is different from laboran → don't show
+                    return false;
+                });
+
+                console.log(`🔬 Laboran rooms filter: ${roomsToDisplay.length} rooms from ${optimizedRooms.length}`);
+            }
+
+            setAllRooms(roomsToDisplay);
+            setDisplayedRooms(roomsToDisplay);
         }
-    }, [optimizedRooms]);
+    }, [optimizedRooms, profile]);
 
     useEffect(() => {
         if (profile) {
             fetchRoomData(targetDate, true);
             fetchDepartments();
+            fetchStudyPrograms();
             fetchRoomSuggestions();
             fetchAllUsers();
         }
@@ -270,7 +303,7 @@ const RoomManagement: React.FC = () => {
 
     const filteredAndSortedRooms = useMemo(() => {
         if (!Array.isArray(displayedRooms)) return [];
-        
+
         return displayedRooms.filter(room => {
             const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 room.code.toLowerCase().includes(searchTerm.toLowerCase());
@@ -285,26 +318,26 @@ const RoomManagement: React.FC = () => {
             const statusOrder = { 'Available': 0, 'Scheduled': 1, 'In Use': 2, 'Conflict': 3, 'Unavailable': 4 };
             const aStatus = getOptimizedRoomStatus(a).status;
             const bStatus = getOptimizedRoomStatus(b).status;
-            
+
             const statusComparison = statusOrder[aStatus] - statusOrder[bStatus];
             if (statusComparison !== 0) return statusComparison;
-            
+
             // Secondary sort by name
             return a.name.localeCompare(b.name);
         });
     }, [displayedRooms, searchTerm, filterStatus, showInUse, getOptimizedRoomStatus]);
 
-    const fetchSchedulesForRoom = async (roomName: string, roomId: string) => { 
-        setLoadingSchedules(true); 
-        try { 
+    const fetchSchedulesForRoom = async (roomName: string, roomId: string) => {
+        setLoadingSchedules(true);
+        try {
             const combined: CombinedSchedule[] = [];
             const targetDateObj = new Date(targetDate);
-            
+
             // Get day name in Indonesian
             const dayNamesEnglish = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
             const dayNamesIndonesian = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
             const dayNameIndonesian = dayNamesIndonesian[targetDateObj.getDay()];
-            
+
             console.log(`📅 Fetching schedule for ${roomName} on ${targetDate} (${dayNameIndonesian})`);
 
             // 1. Fetch lecture schedules
@@ -313,15 +346,15 @@ const RoomManagement: React.FC = () => {
                 .select('*')
                 .eq('day', dayNameIndonesian)
                 .ilike('room', `%${roomName}%`)
-                .order('start_time'); 
-                
+                .order('start_time');
+
             if (!lectureError && lectureData) {
                 lectureData.forEach(lecture => {
                     combined.push({
                         id: lecture.id,
                         type: 'lecture',
-                        start_time: lecture.start_time?.substring(0,5) || '',
-                        end_time: lecture.end_time?.substring(0,5) || '',
+                        start_time: lecture.start_time?.substring(0, 5) || '',
+                        end_time: lecture.end_time?.substring(0, 5) || '',
                         title: lecture.course_name || getText('Lecture', 'Kuliah'),
                         subtitle: `${getText('Class', 'Kelas')} ${lecture.class} • ${lecture.subject_study}`,
                         description: `${getText('Lecturer', 'Dosen')}: ${lecture.lecturer || 'TBA'} • ${getText('Semester', 'Semester')} ${lecture.semester}`,
@@ -340,14 +373,14 @@ const RoomManagement: React.FC = () => {
                 .eq('room_id', roomId)
                 .eq('date', targetDate)
                 .order('start_time');
-                
+
             if (!examError && examData) {
                 examData.forEach(exam => {
                     combined.push({
                         id: exam.id,
                         type: 'exam',
-                        start_time: exam.is_take_home ? getText('Take Home', 'Take Home') : exam.start_time?.substring(0,5) || '',
-                        end_time: exam.is_take_home ? '' : exam.end_time?.substring(0,5) || '',
+                        start_time: exam.is_take_home ? getText('Take Home', 'Take Home') : exam.start_time?.substring(0, 5) || '',
+                        end_time: exam.is_take_home ? '' : exam.end_time?.substring(0, 5) || '',
                         title: `${exam.course_name || getText('UAS Exam', 'Ujian UAS')}`,
                         subtitle: `${exam.student_amount} ${getText('students', 'mahasiswa')} • ${getText('Semester', 'Semester')} ${exam.semester}`,
                         description: `${getText('Class', 'Kelas')} ${exam.class} • ${getText('Inspector', 'Pengawas')}: ${exam.inspector}`,
@@ -369,14 +402,14 @@ const RoomManagement: React.FC = () => {
                 .eq('room_id', roomId)
                 .eq('date', targetDate)
                 .order('start_time');
-            
+
             if (!sessionError && sessionData) {
                 sessionData.forEach(session => {
                     combined.push({
                         id: session.id,
                         type: 'session',
-                        start_time: session.start_time?.substring(0,5) || '',
-                        end_time: session.end_time?.substring(0,5) || '',
+                        start_time: session.start_time?.substring(0, 5) || '',
+                        end_time: session.end_time?.substring(0, 5) || '',
                         title: `${session.student?.full_name || getText('Final Session', 'Sidang Akhir')}`,
                         subtitle: `ID: ${session.student?.identity_number}`,
                         description: `${getText('Supervisor', 'Pembimbing')}: ${session.supervisor} • ${getText('Examiner', 'Penguji')}: ${session.examiner}`,
@@ -391,7 +424,7 @@ const RoomManagement: React.FC = () => {
             // 4. Fetch bookings with timezone handling
             const startOfDay = `${targetDate}T00:00:00Z`;
             const endOfDay = `${targetDate}T23:59:59Z`;
-            
+
             const { data: bookingData, error: bookingError } = await supabase
                 .from('bookings')
                 .select(`
@@ -399,16 +432,16 @@ const RoomManagement: React.FC = () => {
                     user:users!user_id(full_name, identity_number)
                 `)
                 .eq('room_id', roomId)
-                .in('status', ['approved','borrowed'])
+                .in('status', ['approved', 'borrowed'])
                 .gte('start_time', startOfDay)
                 .lte('start_time', endOfDay)
                 .order('start_time');
-            
+
             if (!bookingError && bookingData) {
                 bookingData.forEach(booking => {
                     const startDate = new Date(booking.start_time);
                     const endDate = new Date(booking.end_time);
-                    
+
                     combined.push({
                         id: booking.id,
                         type: 'booking',
@@ -431,15 +464,15 @@ const RoomManagement: React.FC = () => {
                 const bTime = b.start_time === getText('Take Home', 'Take Home') ? '00:00' : b.start_time;
                 return aTime.localeCompare(bTime);
             });
-            
+
             setCombinedSchedules(combined);
 
-        } catch (error: any) { 
+        } catch (error: any) {
             console.error('Error fetching schedules:', error);
-            alert.error(getText("Failed to load schedule for this room.", "Gagal memuat jadwal untuk ruangan ini.")); 
-        } finally { 
-            setLoadingSchedules(false); 
-        } 
+            alert.error(getText("Failed to load schedule for this room.", "Gagal memuat jadwal untuk ruangan ini."));
+        } finally {
+            setLoadingSchedules(false);
+        }
     };
 
     const fetchRoomSuggestions = async () => {
@@ -448,9 +481,9 @@ const RoomManagement: React.FC = () => {
                 .from('lecture_schedules')
                 .select('room')
                 .not('room', 'is', null);
-            
+
             if (error) throw error;
-            
+
             const uniqueRooms = [...new Set(data.map(item => item.room).filter(Boolean))].sort();
             setRoomNameSuggestions(uniqueRooms);
         } catch (error) {
@@ -460,7 +493,7 @@ const RoomManagement: React.FC = () => {
 
     useEffect(() => {
         if (roomNameInput.length >= 1) {
-            const filtered = roomNameSuggestions.filter(room => 
+            const filtered = roomNameSuggestions.filter(room =>
                 room.toLowerCase().includes(roomNameInput.toLowerCase())
             );
             setFilteredRoomSuggestions(filtered);
@@ -494,14 +527,27 @@ const RoomManagement: React.FC = () => {
         }
     };
 
-    const fetchDepartments = async () => { 
-        try { 
-            const { data, error } = await supabase.from('departments').select('id, name').order('name'); 
-            if (error) throw error; 
-            setDepartments(data || []); 
-        } catch (error: any) { 
-            alert.error(getText('Failed to load departments', 'Gagal memuat departemen')); 
-        } 
+    const fetchDepartments = async () => {
+        try {
+            const { data, error } = await supabase.from('departments').select('id, name').order('name');
+            if (error) throw error;
+            setDepartments(data || []);
+        } catch (error: any) {
+            alert.error(getText('Failed to load departments', 'Gagal memuat departemen'));
+        }
+    };
+
+    const fetchStudyPrograms = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('study_programs')
+                .select('id, name, code, department_id')
+                .order('name');
+            if (error) throw error;
+            setStudyPrograms(data as any || []);
+        } catch (error: any) {
+            console.error('Error fetching study programs:', error);
+        }
     };
 
     const fetchAllUsers = async () => {
@@ -516,7 +562,7 @@ const RoomManagement: React.FC = () => {
                     department:departments(name)
                 `)
                 .order('full_name');
-            
+
             if (error) throw error;
             setAllUsers(data || []);
         } catch (error) {
@@ -572,22 +618,22 @@ const RoomManagement: React.FC = () => {
         if (userDropdownRef.current) {
             userDropdownRef.current.innerHTML = dropdownHTML;
             userDropdownRef.current.style.display = 'block';
-            
+
             const searchInput = userDropdownRef.current.querySelector('#user-search-input');
             const userList = userDropdownRef.current.querySelector('#user-list');
-            
+
             if (searchInput) {
                 (searchInput as HTMLInputElement).focus();
-                
+
                 searchInput.addEventListener('input', (e) => {
                     const searchTerm = (e.target as HTMLInputElement).value.toLowerCase();
-                    
+
                     const filteredUsers = allUsers.filter(user =>
                         user.full_name.toLowerCase().includes(searchTerm) ||
                         user.identity_number.toLowerCase().includes(searchTerm) ||
                         user.role.toLowerCase().includes(searchTerm)
                     );
-                    
+
                     if (userList) {
                         userList.innerHTML = filteredUsers.map(user => `
                             <div 
@@ -612,12 +658,12 @@ const RoomManagement: React.FC = () => {
                                 </div>
                             </div>
                         `).join('');
-                        
+
                         addUserListeners();
                     }
                 });
             }
-            
+
             addUserListeners();
         }
     };
@@ -630,7 +676,7 @@ const RoomManagement: React.FC = () => {
                 const userNim = (e.currentTarget as HTMLElement).dataset.userNim;
                 const userRole = (e.currentTarget as HTMLElement).dataset.userRole;
                 const userDept = (e.currentTarget as HTMLElement).dataset.userDept;
-                
+
                 const user = {
                     id: userId,
                     full_name: userName,
@@ -638,13 +684,13 @@ const RoomManagement: React.FC = () => {
                     role: userRole,
                     department: userDept ? { name: userDept } : null
                 };
-                
+
                 setSelectedUser(user);
-                
+
                 if (userDisplayRef.current) {
                     userDisplayRef.current.value = userName || '';
                 }
-                
+
                 hideUserDropdown();
             });
         });
@@ -665,7 +711,7 @@ const RoomManagement: React.FC = () => {
             default: return 'from-gray-500 to-gray-600';
         }
     };
-    
+
     const fetchEquipmentForRoom = async (roomId: string) => {
         setLoadingEquipment(true);
         try {
@@ -697,7 +743,7 @@ const RoomManagement: React.FC = () => {
                 `)
                 .eq('room_id', roomId)
                 .order('assigned_at', { ascending: false });
-            
+
             if (error) throw error;
             setRoomUsers(data || []);
         } catch (error) {
@@ -710,7 +756,7 @@ const RoomManagement: React.FC = () => {
 
     const handleAssignUser = async () => {
         if (!selectedUser || !showRoomDetail) return;
-        
+
         try {
             const { data: existing, error: checkError } = await supabase
                 .from('room_users')
@@ -718,11 +764,11 @@ const RoomManagement: React.FC = () => {
                 .eq('user_id', selectedUser.id)
                 .eq('room_id', showRoomDetail.id)
                 .maybeSingle();
-            
+
             if (checkError && checkError.code !== 'PGRST116') {
                 throw checkError;
             }
-            
+
             if (existing) {
                 alert.error(getText('User is already assigned to this room', 'Pengguna sudah ditugaskan ke ruangan ini'));
                 return;
@@ -735,9 +781,9 @@ const RoomManagement: React.FC = () => {
                     room_id: showRoomDetail.id,
                     assigned_at: new Date().toISOString()
                 });
-            
+
             if (error) throw error;
-            
+
             alert.success(getText(
                 `${selectedUser.full_name} assigned to room successfully`,
                 `${selectedUser.full_name} berhasil ditugaskan ke ruangan`
@@ -760,18 +806,18 @@ const RoomManagement: React.FC = () => {
                 .from('rooms')
                 .update({ is_available: newStatus })
                 .eq('id', roomId);
-            
+
             if (error) throw error;
-            
+
             if (showRoomDetail) {
                 setShowRoomDetail({
                     ...showRoomDetail,
                     is_available: newStatus
                 });
             }
-            
+
             await fetchRoomData(targetDate, true);
-            
+
             alert.success(getText(
                 `Room ${newStatus ? 'enabled' : 'disabled'} successfully!`,
                 `Ruangan berhasil ${newStatus ? 'diaktifkan' : 'dinonaktifkan'}!`
@@ -804,24 +850,24 @@ const RoomManagement: React.FC = () => {
     }, []);
 
 
-    const handleDelete = async (roomId: string) => { 
+    const handleDelete = async (roomId: string) => {
         // Use custom confirmation modal
         const confirmed = await showConfirmationModal(
             getText('Are you sure you want to delete this room?', 'Apakah Anda yakin ingin menghapus ruangan ini?'),
             getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')
         );
-        
+
         if (!confirmed) return;
-        
-        try { 
-            const { error } = await supabase.from('rooms').delete().eq('id', roomId); 
-            if (error) throw error; 
-            alert.success(getText('Room deleted successfully!', 'Ruangan berhasil dihapus!')); 
+
+        try {
+            const { error } = await supabase.from('rooms').delete().eq('id', roomId);
+            if (error) throw error;
+            alert.success(getText('Room deleted successfully!', 'Ruangan berhasil dihapus!'));
             await fetchRoomData(targetDate, true);
-        } catch (error: any) { 
-            console.error('Error deleting room:', error); 
-            alert.error(error.message || getText('Failed to delete room', 'Gagal menghapus ruangan')); 
-        } 
+        } catch (error: any) {
+            console.error('Error deleting room:', error);
+            alert.error(error.message || getText('Failed to delete room', 'Gagal menghapus ruangan'));
+        }
     };
 
     // Unassign user from room (updated to use custom confirm)
@@ -841,9 +887,9 @@ const RoomManagement: React.FC = () => {
                 .from('room_users')
                 .delete()
                 .eq('id', roomUserId);
-            
+
             if (error) throw error;
-            
+
             alert.success(getText(
                 `${userName} removed from room successfully`,
                 `${userName} berhasil dihapus dari ruangan`
@@ -856,84 +902,119 @@ const RoomManagement: React.FC = () => {
             alert.error(getText('Failed to remove user from room', 'Gagal menghapus pengguna dari ruangan'));
         }
     };
-    
+
     useEffect(() => {
         if (showRoomDetail) {
             fetchSchedulesForRoom(showRoomDetail.name, showRoomDetail.id);
             fetchEquipmentForRoom(showRoomDetail.id);
             fetchRoomUsers(showRoomDetail.id);
+
+            // Fetch room photo (attachments) by matching room name or code
+            const fetchRoomPhoto = async () => {
+                try {
+                    const { data, error } = await supabase
+                        .from('rooms')
+                        .select('attachments')
+                        .or(`name.eq.${showRoomDetail.name},code.eq.${showRoomDetail.code}`)
+                        .single();
+
+                    if (!error && data?.attachments) {
+                        setRoomPhoto(data.attachments);
+                    } else {
+                        setRoomPhoto(null);
+                    }
+                } catch (err) {
+                    console.error('Error fetching room photo:', err);
+                    setRoomPhoto(null);
+                }
+            };
+            fetchRoomPhoto();
+        } else {
+            setRoomPhoto(null);
         }
     }, [showRoomDetail, targetDate]);
 
-    const onSubmit = async (data: RoomForm) => { 
-        try { 
-            setLoading(true); 
-            const roomData = { 
-                name: data.name, 
-                code: data.code, 
-                capacity: data.capacity, 
-                department_id: data.department_id || null, 
-            }; 
-            if (editingRoom) { 
-                const { error } = await supabase.from('rooms').update(roomData).eq('id', editingRoom.id); 
-                if (error) throw error; 
-                alert.success(getText('Room updated successfully!', 'Ruangan berhasil diperbarui!')); 
-            } else { 
-                const { error } = await supabase.from('rooms').insert(roomData); 
-                if (error) throw error; 
-                alert.success(getText('Room created successfully!', 'Ruangan berhasil dibuat!')); 
-            } 
-            setShowForm(false); 
-            setEditingRoom(null); 
-            form.reset(); 
+    const onSubmit = async (data: RoomForm) => {
+        try {
+            setLoading(true);
+            const roomData = {
+                name: data.name,
+                code: data.code,
+                capacity: data.capacity,
+                department_id: data.department_id || null,
+                study_program_id: data.study_program_id || null,
+            };
+            if (editingRoom) {
+                const { error } = await supabase.from('rooms').update(roomData).eq('id', editingRoom.id);
+                if (error) throw error;
+                alert.success(getText('Room updated successfully!', 'Ruangan berhasil diperbarui!'));
+            } else {
+                const { error } = await supabase.from('rooms').insert(roomData);
+                if (error) throw error;
+                alert.success(getText('Room created successfully!', 'Ruangan berhasil dibuat!'));
+            }
+            setShowForm(false);
+            setEditingRoom(null);
+            form.reset();
             setRoomNameInput('');
             await fetchRoomData(targetDate, true);
-        } catch (error: any) { 
-            console.error('Error saving room:', error); 
-            alert.error(error.message || getText('Failed to save room', 'Gagal menyimpan ruangan')); 
-        } finally { 
-            setLoading(false); 
-        } 
+        } catch (error: any) {
+            console.error('Error saving room:', error);
+            alert.error(error.message || getText('Failed to save room', 'Gagal menyimpan ruangan'));
+        } finally {
+            setLoading(false);
+        }
     };
 
-    const handleEdit = (room: EnhancedRoomStatus) => { 
-        setEditingRoom(room); 
+    const handleEdit = (room: EnhancedRoomStatus) => {
+        setEditingRoom(room);
         setRoomNameInput(room.name);
-        form.reset({ 
-            name: room.name, 
-            code: room.code, 
-            capacity: room.capacity, 
-            department_id: room.department?.id, 
-        }); 
-        setShowForm(true); 
+        form.reset({
+            name: room.name,
+            code: room.code,
+            capacity: room.capacity,
+            department_id: room.department?.id,
+            study_program_id: room.study_program_id || null,
+        });
+        setShowForm(true);
     };
 
     const handleAddNewRoom = () => {
         setEditingRoom(null);
         setRoomNameInput('');
         form.reset();
+
+        // Auto-set study_program_id for laboratory role
+        if (profile?.role === 'laboratory' && profile?.study_program_id) {
+            form.setValue('study_program_id', profile.study_program_id);
+        }
+        // Auto-set department for department_admin role
+        if (profile?.role === 'department_admin' && profile?.department_id) {
+            form.setValue('department_id', profile.department_id);
+        }
+
         setShowForm(true);
     };
 
-    const getStatusColor = (status: string) => { 
-        switch (status) { 
-            case 'In Use': return 'bg-red-100 text-red-800 border-red-200'; 
-            case 'Scheduled': return 'bg-yellow-100 text-yellow-800 border-yellow-200'; 
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'In Use': return 'bg-red-100 text-red-800 border-red-200';
+            case 'Scheduled': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
             case 'Available': return 'bg-green-100 text-green-800 border-green-200';
             case 'Conflict': return 'bg-orange-100 text-orange-800 border-orange-200';
             case 'Unavailable': return 'bg-gray-100 text-gray-800 border-gray-200';
-            default: return 'bg-gray-100 text-gray-800 border-gray-200'; 
-        } 
+            default: return 'bg-gray-100 text-gray-800 border-gray-200';
+        }
     };
 
     const CombinedScheduleSection = () => {
-        const titleText = isSearchMode ? 
+        const titleText = isSearchMode ?
             getText(`Schedule for ${format(new Date(targetDate), 'EEEE, MMMM d, yyyy')}`, `Jadwal untuk ${format(new Date(targetDate), 'EEEE, d MMMM yyyy')}`) :
             getText('Room Schedule', 'Jadwal Ruangan');
         const subtitleText = isSearchMode ?
             getText(`Showing all activities for the selected date`, `Menampilkan semua aktivitas untuk tanggal yang dipilih`) :
             getText(`Today's schedule and activities`, `Jadwal dan aktivitas hari ini`);
-        
+
         return (
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 overflow-hidden mb-4">
                 <div className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white p-4">
@@ -958,15 +1039,15 @@ const RoomManagement: React.FC = () => {
                 <div className="p-4">
                     {loadingSchedules ? (
                         <div className="flex justify-center items-center h-32">
-                            <RefreshCw className="animate-spin h-6 w-6 text-gray-500"/>
+                            <RefreshCw className="animate-spin h-6 w-6 text-gray-500" />
                         </div>
                     ) : combinedSchedules.length > 0 ? (
                         <div className="space-y-3">
                             {combinedSchedules.map((schedule, index) => {
                                 const IconComponent = schedule.icon;
                                 return (
-                                    <div 
-                                        key={`${schedule.type}-${schedule.id}-${index}`} 
+                                    <div
+                                        key={`${schedule.type}-${schedule.id}-${index}`}
                                         className={`${schedule.bgColor} rounded-lg p-4 border ${schedule.borderColor} hover:shadow-sm transition-shadow`}
                                     >
                                         <div className="flex items-center justify-between mb-3">
@@ -976,21 +1057,21 @@ const RoomManagement: React.FC = () => {
                                                 </div>
                                                 <div className="flex items-center space-x-2">
                                                     <span className={`text-xs font-medium ${schedule.color} bg-white px-2 py-1 rounded-full uppercase tracking-wide`}>
-                                                        {schedule.type === 'lecture' ? getText('Lecture', 'Kuliah') : 
-                                                           schedule.type === 'exam' ? getText('Exam', 'UAS') :
-                                                           schedule.type === 'session' ? getText('Session', 'Sidang') :
-                                                           getText('Booking', 'Booking')}
+                                                        {schedule.type === 'lecture' ? getText('Lecture', 'Kuliah') :
+                                                            schedule.type === 'exam' ? getText('Exam', 'UAS') :
+                                                                schedule.type === 'session' ? getText('Session', 'Sidang') :
+                                                                    getText('Booking', 'Booking')}
                                                     </span>
                                                     <span className="font-semibold text-gray-900 text-lg">
-                                                        {schedule.end_time ? 
-                                                            `${schedule.start_time} - ${schedule.end_time}` : 
+                                                        {schedule.end_time ?
+                                                            `${schedule.start_time} - ${schedule.end_time}` :
                                                             schedule.start_time
                                                         }
                                                     </span>
                                                 </div>
                                             </div>
                                         </div>
-                                        
+
                                         <div className="space-y-2">
                                             <div className="font-semibold text-gray-900 text-lg">
                                                 {schedule.title}
@@ -1012,10 +1093,10 @@ const RoomManagement: React.FC = () => {
                         </div>
                     ) : (
                         <div className="text-center py-12 text-gray-500">
-                            <CalendarIcon className="h-16 w-16 mx-auto mb-4 opacity-50"/>
+                            <CalendarIcon className="h-16 w-16 mx-auto mb-4 opacity-50" />
                             <p className="text-lg font-medium mb-2">{getText('No schedule', 'Tidak ada jadwal')}</p>
                             <p className="text-sm">
-                                {isSearchMode 
+                                {isSearchMode
                                     ? getText(
                                         `This room is empty for ${format(new Date(targetDate), 'MMM dd, yyyy')}`,
                                         `Ruangan ini kosong untuk ${format(new Date(targetDate), 'dd MMM yyyy')}`
@@ -1048,7 +1129,7 @@ const RoomManagement: React.FC = () => {
                 <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
                 <div ref={userDropdownRef} style={{ display: 'none' }}></div>
             </div>
-            
+
             {selectedUser && (
                 <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                     <div className="flex items-center justify-between">
@@ -1080,23 +1161,23 @@ const RoomManagement: React.FC = () => {
             )}
         </div>
     );
-    
-    if (roomsLoading && displayedRooms.length === 0) { 
+
+    if (roomsLoading && displayedRooms.length === 0) {
         return (
             <div className="flex justify-center items-center h-screen">
                 <RefreshCw className="h-12 w-12 animate-spin text-blue-600" />
             </div>
-        ); 
+        );
     }
 
     return (
         <div className="space-y-6">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white"> 
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white">
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-3xl font-bold">{getText('Enhanced Room Management', 'Manajemen Ruangan Lanjutan')}</h1> 
+                        <h1 className="text-3xl font-bold">{getText('Enhanced Room Management', 'Manajemen Ruangan Lanjutan')}</h1>
                         <p className="mt-2 opacity-90">
-                            {isSearchMode 
+                            {isSearchMode
                                 ? getText(
                                     `Availability search results for ${format(new Date(targetDate), 'MMM dd, yyyy')}`,
                                     `Hasil pencarian ketersediaan untuk ${format(new Date(targetDate), 'dd MMM yyyy')}`
@@ -1119,7 +1200,7 @@ const RoomManagement: React.FC = () => {
                     </div>
                 </div>
             </div>
-            
+
             <div className="bg-white rounded-xl shadow-sm border p-6">
                 <div className="space-y-4">
                     <div className="flex items-center justify-between">
@@ -1142,9 +1223,9 @@ const RoomManagement: React.FC = () => {
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">{getText('Target Date', 'Tanggal Target')}</label>
-                                    <input 
-                                        type="date" 
-                                        value={targetDate} 
+                                    <input
+                                        type="date"
+                                        value={targetDate}
                                         onChange={(e) => setTargetDate(e.target.value)}
                                         min={getLocalDateString()}
                                         max={format(addDays(new Date(), 30), 'yyyy-MM-dd')}
@@ -1153,34 +1234,34 @@ const RoomManagement: React.FC = () => {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">{getText('Start Time', 'Waktu Mulai')}</label>
-                                    <input 
-                                        type="time" 
-                                        value={searchStartTime} 
-                                        onChange={(e) => setSearchStartTime(e.target.value)} 
+                                    <input
+                                        type="time"
+                                        value={searchStartTime}
+                                        onChange={(e) => setSearchStartTime(e.target.value)}
                                         className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">{getText('End Time', 'Waktu Selesai')}</label>
-                                    <input 
-                                        type="time" 
-                                        value={searchEndTime} 
-                                        onChange={(e) => setSearchEndTime(e.target.value)} 
+                                    <input
+                                        type="time"
+                                        value={searchEndTime}
+                                        onChange={(e) => setSearchEndTime(e.target.value)}
                                         className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
                                 <div className="flex space-x-2">
-                                    <button 
-                                        onClick={findAvailableRooms} 
-                                        disabled={isRefreshing} 
+                                    <button
+                                        onClick={findAvailableRooms}
+                                        disabled={isRefreshing}
                                         className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 h-10 transition-colors"
                                     >
-                                        {isRefreshing ? <Loader2 className="h-5 w-5 animate-spin"/> : <Search className="h-5 w-5" />} 
+                                        {isRefreshing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}
                                         <span>{getText('Search', 'Cari')}</span>
                                     </button>
                                     {isSearchMode && (
-                                        <button 
-                                            onClick={handleBackToToday} 
+                                        <button
+                                            onClick={handleBackToToday}
                                             className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 h-10 transition-colors"
                                         >
                                             <RefreshCw className="h-4 w-4" />
@@ -1197,28 +1278,28 @@ const RoomManagement: React.FC = () => {
                             </div>
                         </div>
                     )}
-                    
+
                     <div className="border-t pt-4 flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-                        <div className="flex flex-wrap gap-3"> 
-                            <button onClick={handleAddNewRoom} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"> 
-                                <Plus className="h-5 w-5" /> 
-                                <span>{getText('Add Room', 'Tambah Ruangan')}</span> 
-                            </button> 
+                        <div className="flex flex-wrap gap-3">
+                            <button onClick={handleAddNewRoom} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                                <Plus className="h-5 w-5" />
+                                <span>{getText('Add Room', 'Tambah Ruangan')}</span>
+                            </button>
                         </div>
                         <div className="flex items-center space-x-3">
-                            <div className="relative"> 
-                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" /> 
-                                <input 
-                                    type="text" 
-                                    placeholder={getText("Filter results by name/code...", "Filter hasil berdasarkan nama/kode...")} 
-                                    value={searchTerm} 
-                                    onChange={(e) => setSearchTerm(e.target.value)} 
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                <input
+                                    type="text"
+                                    placeholder={getText("Filter results by name/code...", "Filter hasil berdasarkan nama/kode...")}
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
                                     className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                             </div>
-                            <select 
-                                value={filterStatus} 
-                                onChange={(e) => setFilterStatus(e.target.value)} 
+                            <select
+                                value={filterStatus}
+                                onChange={(e) => setFilterStatus(e.target.value)}
                                 className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             >
                                 <option value="all">{getText('All Statuses', 'Semua Status')}</option>
@@ -1237,99 +1318,99 @@ const RoomManagement: React.FC = () => {
                                 />
                                 <span className="text-sm text-gray-700">{getText('Show In Use', 'Tampilkan Sedang Digunakan')}</span>
                             </label>
-                            <div className="flex border border-gray-300 rounded-lg overflow-hidden"> 
-                                <button 
-                                    onClick={() => setViewMode('grid')} 
+                            <div className="flex border border-gray-300 rounded-lg overflow-hidden">
+                                <button
+                                    onClick={() => setViewMode('grid')}
                                     className={`p-2 transition-colors ${viewMode === 'grid' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                                 >
                                     <Grid className="h-5 w-5" />
-                                </button> 
-                                <button 
-                                    onClick={() => setViewMode('list')} 
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('list')}
                                     className={`p-2 transition-colors ${viewMode === 'list' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                                 >
                                     <List className="h-5 w-5" />
-                                </button> 
+                                </button>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"> 
-                {viewMode === 'grid' ? ( 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"> 
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                {viewMode === 'grid' ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         {filteredAndSortedRooms.map((room) => {
                             const roomStatus = getOptimizedRoomStatus(room);
                             return (
-                                <div key={room.id} className="border border-gray-200 rounded-xl p-4 hover:shadow-lg transition-all duration-200 group relative"> 
+                                <div key={room.id} className="border border-gray-200 rounded-xl p-4 hover:shadow-lg transition-all duration-200 group relative">
                                     <div className={`absolute top-2 right-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${roomStatus.color}`}>
                                         {getText(roomStatus.status, roomStatus.status)}
-                                    </div> 
-                                    <div className="flex flex-col h-full"> 
-                                        <div className="flex-grow"> 
-                                            <h3 className="font-semibold text-gray-900 text-lg mt-8">{room.name}</h3> 
-                                            <p className="text-sm text-gray-600">{room.code}</p> 
+                                    </div>
+                                    <div className="flex flex-col h-full">
+                                        <div className="flex-grow">
+                                            <h3 className="font-semibold text-gray-900 text-lg mt-8">{room.name}</h3>
+                                            <p className="text-sm text-gray-600">{room.code}</p>
                                             <div className="flex items-center text-sm text-gray-600 mt-2">
-                                                <Users className="h-4 w-4 mr-1"/>
+                                                <Users className="h-4 w-4 mr-1" />
                                                 <span>{room.capacity} {getText('seats', 'kursi')}</span>
-                                            </div> 
+                                            </div>
                                             <div className="flex items-center text-sm text-gray-600">
-                                                <MapPin className="h-4 w-4 mr-1"/>
+                                                <MapPin className="h-4 w-4 mr-1" />
                                                 <span>{room.department?.name || getText('General', 'Umum')}</span>
                                             </div>
-                                            
+
                                             {roomStatus.status === 'Conflict' && (
                                                 <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded text-xs text-orange-700">
                                                     <AlertTriangle className="h-3 w-3 inline mr-1" />
                                                     {getText('Time conflict detected', 'Konflik waktu terdeteksi')}
                                                 </div>
                                             )}
-                                            
+
                                             {roomStatus.status === 'In Use' && room.currentBooking && (
                                                 <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
                                                     <Users className="h-3 w-3 inline mr-1" />
                                                     {room.currentBooking.user?.full_name || getText('In Use', 'Sedang Digunakan')}
                                                 </div>
                                             )}
-                                            
+
                                             {roomStatus.scheduleCount && roomStatus.scheduleCount > 0 && (
                                                 <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-700">
                                                     <CalendarIcon className="h-3 w-3 inline mr-1" />
                                                     {roomStatus.scheduleCount} {getText('activities scheduled', 'aktivitas terjadwal')}
                                                 </div>
                                             )}
-                                        </div> 
-                                        <div className="flex items-center justify-end pt-4 mt-4 border-t border-gray-100 space-x-1"> 
-                                            <button 
-                                                onClick={() => setShowRoomDetail(room)} 
+                                        </div>
+                                        <div className="flex items-center justify-end pt-4 mt-4 border-t border-gray-100 space-x-1">
+                                            <button
+                                                onClick={() => setShowRoomDetail(room)}
                                                 className="p-1 text-gray-500 hover:text-indigo-600 transition-colors"
                                                 title={getText("View Details", "Lihat Detail")}
                                             >
                                                 <Eye className="h-4 w-4" />
-                                            </button> 
-                                            <button 
-                                                onClick={() => handleEdit(room)} 
+                                            </button>
+                                            <button
+                                                onClick={() => handleEdit(room)}
                                                 className="p-1 text-gray-500 hover:text-blue-600 transition-colors"
                                                 title={getText("Edit Room", "Edit Ruangan")}
                                             >
                                                 <Edit className="h-4 w-4" />
-                                            </button> 
-                                            <button 
-                                                onClick={() => handleDelete(room.id)} 
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(room.id)}
                                                 className="p-1 text-gray-500 hover:text-red-600 transition-colors"
                                                 title={getText("Delete Room", "Hapus Ruangan")}
                                             >
                                                 <Trash2 className="h-4 w-4" />
-                                            </button> 
-                                        </div> 
-                                    </div> 
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             );
-                        })} 
-                    </div> 
-                ) : ( 
-                    <div className="space-y-3"> 
+                        })}
+                    </div>
+                ) : (
+                    <div className="space-y-3">
                         {filteredAndSortedRooms.map((room) => {
                             const roomStatus = getOptimizedRoomStatus(room);
                             return (
@@ -1353,22 +1434,22 @@ const RoomManagement: React.FC = () => {
                                             {getText(roomStatus.status, roomStatus.status)}
                                         </span>
                                         <div className="flex items-center space-x-2">
-                                            <button 
-                                                onClick={() => setShowRoomDetail(room)} 
+                                            <button
+                                                onClick={() => setShowRoomDetail(room)}
                                                 className="p-2 text-gray-600 hover:text-indigo-600 transition-colors"
                                                 title={getText("View Details", "Lihat Detail")}
                                             >
                                                 <Eye className="h-4 w-4" />
                                             </button>
-                                            <button 
-                                                onClick={() => handleEdit(room)} 
+                                            <button
+                                                onClick={() => handleEdit(room)}
                                                 className="p-2 text-gray-600 hover:text-blue-600 transition-colors"
                                                 title={getText("Edit Room", "Edit Ruangan")}
                                             >
                                                 <Edit className="h-4 w-4" />
                                             </button>
-                                            <button 
-                                                onClick={() => handleDelete(room.id)} 
+                                            <button
+                                                onClick={() => handleDelete(room.id)}
                                                 className="p-2 text-gray-600 hover:text-red-600 transition-colors"
                                                 title={getText("Delete Room", "Hapus Ruangan")}
                                             >
@@ -1378,15 +1459,15 @@ const RoomManagement: React.FC = () => {
                                     </div>
                                 </div>
                             );
-                        })} 
-                    </div> 
-                )} 
+                        })}
+                    </div>
+                )}
                 {filteredAndSortedRooms.length === 0 && !roomsLoading && (
                     <div className="text-center py-12">
                         <Building className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                         <h3 className="text-lg font-medium text-gray-900">{getText('No Rooms Found', 'Tidak Ada Ruangan Ditemukan')}</h3>
                         <p className="text-gray-600">
-                            {isSearchMode 
+                            {isSearchMode
                                 ? getText('No rooms are available for the selected time period.', 'Tidak ada ruangan yang tersedia untuk periode waktu yang dipilih.')
                                 : getText('Try adjusting your filter criteria.', 'Coba sesuaikan kriteria filter Anda.')
                             }
@@ -1404,7 +1485,7 @@ const RoomManagement: React.FC = () => {
             </div>
 
             {/* Enhanced Add/Edit Room Form Modal with Autocomplete */}
-            {showForm && ( 
+            {showForm && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9998] p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-lg w-full">
                         <div className="p-6">
@@ -1412,12 +1493,12 @@ const RoomManagement: React.FC = () => {
                                 <h3 className="text-lg font-semibold text-gray-900">
                                     {editingRoom ? getText('Edit Room', 'Edit Ruangan') : getText('Add New Room', 'Tambah Ruangan Baru')}
                                 </h3>
-                                <button onClick={() => { 
-                                    setShowForm(false); 
-                                    setEditingRoom(null); 
+                                <button onClick={() => {
+                                    setShowForm(false);
+                                    setEditingRoom(null);
                                     setRoomNameInput('');
                                     setShowRoomSuggestions(false);
-                                    form.reset(); 
+                                    form.reset();
                                 }} className="text-gray-400 hover:text-gray-600 transition-colors">
                                     <X className="h-6 w-6" />
                                 </button>
@@ -1437,7 +1518,7 @@ const RoomManagement: React.FC = () => {
                                             placeholder={getText("Type room name or select from list...", "Ketik nama ruangan atau pilih dari daftar...")}
                                         />
                                         <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                        
+
                                         {/* Dropdown Suggestions */}
                                         {showRoomSuggestions && (
                                             <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
@@ -1458,7 +1539,7 @@ const RoomManagement: React.FC = () => {
                                                             </button>
                                                         ))}
                                                         <div className="border-t border-gray-200 px-3 py-2 text-xs text-gray-500 bg-gray-50">
-                                                            � {getText('Select from existing rooms or type a new name', 'Pilih dari ruangan yang ada atau ketik nama baru')}
+                                                            {getText('Select from existing rooms or type a new name', 'Pilih dari ruangan yang ada atau ketik nama baru')}
                                                         </div>
                                                     </>
                                                 ) : roomNameInput.length >= 1 ? (
@@ -1483,9 +1564,9 @@ const RoomManagement: React.FC = () => {
 
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">{getText('Code', 'Kode')} *</label>
-                                    <input 
-                                        {...form.register('code')} 
-                                        type="text" 
+                                    <input
+                                        {...form.register('code')}
+                                        type="text"
                                         className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                                         placeholder="e.g. R101, LAB01"
                                     />
@@ -1496,9 +1577,9 @@ const RoomManagement: React.FC = () => {
 
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">{getText('Capacity', 'Kapasitas')} *</label>
-                                    <input 
-                                        {...form.register('capacity', {valueAsNumber: true})} 
-                                        type="number" 
+                                    <input
+                                        {...form.register('capacity', { valueAsNumber: true })}
+                                        type="number"
                                         min="1"
                                         className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                                         placeholder="e.g. 30"
@@ -1510,9 +1591,10 @@ const RoomManagement: React.FC = () => {
 
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">{getText('Department', 'Departemen')}</label>
-                                    <select 
-                                        {...form.register('department_id')} 
-                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                                    <select
+                                        {...form.register('department_id')}
+                                        disabled={profile?.role === 'laboratory' || profile?.role === 'department_admin'}
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:text-gray-500"
                                     >
                                         <option value="">{getText('No Department / General', 'Tidak Ada Departemen / Umum')}</option>
                                         {departments.map(d => (
@@ -1521,21 +1603,38 @@ const RoomManagement: React.FC = () => {
                                     </select>
                                 </div>
 
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">{getText('Study Program', 'Program Studi')}</label>
+                                    <select
+                                        {...form.register('study_program_id')}
+                                        disabled={profile?.role === 'laboratory'}
+                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:text-gray-500"
+                                    >
+                                        <option value="">{getText('No Study Program / General', 'Tidak Ada Program Studi / Umum')}</option>
+                                        {studyPrograms.map(sp => (
+                                            <option key={sp.id} value={sp.id}>{sp.name} ({sp.code})</option>
+                                        ))}
+                                    </select>
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        {getText('Study program is used for filtering equipment access by lab assistants', 'Program studi digunakan untuk filter akses peralatan oleh laboran')}
+                                    </p>
+                                </div>
+
                                 <div className="flex justify-end space-x-3 pt-4">
-                                    <button 
-                                        type="button" 
+                                    <button
+                                        type="button"
                                         onClick={() => {
                                             setShowForm(false);
                                             setRoomNameInput('');
                                             setShowRoomSuggestions(false);
-                                        }} 
+                                        }}
                                         className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
                                     >
                                         {getText('Cancel', 'Batal')}
                                     </button>
-                                    <button 
-                                        type="submit" 
-                                        disabled={loading} 
+                                    <button
+                                        type="submit"
+                                        disabled={loading}
                                         className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors"
                                     >
                                         {loading ? getText('Saving...', 'Menyimpan...') : getText('Save Room', 'Simpan Ruangan')}
@@ -1544,7 +1643,7 @@ const RoomManagement: React.FC = () => {
                             </form>
                         </div>
                     </div>
-                </div> 
+                </div>
             )}
 
             {/* Enhanced Room Detail Modal */}
@@ -1554,7 +1653,7 @@ const RoomManagement: React.FC = () => {
                         <div className="p-6 border-b flex justify-between items-center bg-white rounded-t-2xl">
                             <div className='flex items-center space-x-3'>
                                 <div className='bg-blue-100 p-2 rounded-lg'>
-                                    <DoorClosed className="h-6 w-6 text-blue-600"/>
+                                    <DoorClosed className="h-6 w-6 text-blue-600" />
                                 </div>
                                 <div>
                                     <h2 className="text-2xl font-bold text-gray-900">{showRoomDetail.name}</h2>
@@ -1566,14 +1665,14 @@ const RoomManagement: React.FC = () => {
                                     </div>
                                 </div>
                             </div>
-                            <button 
-                                onClick={() => setShowRoomDetail(null)} 
+                            <button
+                                onClick={() => setShowRoomDetail(null)}
                                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
                             >
-                                <X className="h-6 w-6"/>
+                                <X className="h-6 w-6" />
                             </button>
                         </div>
-                        
+
                         <div className="flex-1 overflow-y-auto">
                             <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
                                 {/* Left Column - Room Info, Equipment, Assigned Users */}
@@ -1581,16 +1680,42 @@ const RoomManagement: React.FC = () => {
                                     {/* Room Information */}
                                     <div>
                                         <h3 className="text-lg font-semibold text-gray-800 mb-3">{getText('Room Information', 'Informasi Ruangan')}</h3>
+
+                                        {/* Room Photo */}
+                                        {roomPhoto && (
+                                            <div className="relative rounded-xl overflow-hidden shadow-md mb-4">
+                                                <img
+                                                    src={roomPhoto}
+                                                    alt={showRoomDetail.name}
+                                                    className="w-full h-36 object-cover"
+                                                />
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+                                                <div className="absolute bottom-2 left-3 right-3 flex items-end justify-between">
+                                                    <div>
+                                                        <h4 className="text-white font-semibold text-sm drop-shadow-lg">{showRoomDetail.name}</h4>
+                                                        {showRoomDetail.code && <p className="text-white/80 text-xs drop-shadow-md">{showRoomDetail.code}</p>}
+                                                    </div>
+                                                    <button
+                                                        onClick={() => setFullscreenPhoto(roomPhoto)}
+                                                        className="p-1.5 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-lg text-white transition-all shadow-lg"
+                                                        title={getText('View Full Image', 'Lihat Gambar Penuh')}
+                                                    >
+                                                        <Maximize2 className="h-3.5 w-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         <div className="grid grid-cols-1 gap-4 text-sm">
                                             <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
-                                                <Hash className="h-5 w-5 text-gray-400"/>
+                                                <Hash className="h-5 w-5 text-gray-400" />
                                                 <div>
                                                     <p className="text-gray-500">{getText('Code', 'Kode')}</p>
                                                     <p className="font-semibold text-gray-800">{showRoomDetail.code}</p>
                                                 </div>
                                             </div>
                                             <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
-                                                <Users className="h-5 w-5 text-gray-400"/>
+                                                <Users className="h-5 w-5 text-gray-400" />
                                                 <div>
                                                     <p className="text-gray-500">{getText('Capacity', 'Kapasitas')}</p>
                                                     <p className="font-semibold text-gray-800">{showRoomDetail.capacity} {getText('seats', 'kursi')}</p>
@@ -1601,11 +1726,10 @@ const RoomManagement: React.FC = () => {
                                                     <p className="text-gray-500">{getText('Official Booking Status', 'Status Pemesanan Resmi')}</p>
                                                     <button
                                                         onClick={() => handleToggleAvailability(showRoomDetail.id, !showRoomDetail.is_available)}
-                                                        className={`p-1 rounded transition-colors ${
-                                                            showRoomDetail.is_available 
-                                                                ? 'text-green-600 hover:bg-green-50' 
-                                                                : 'text-red-600 hover:bg-red-50'
-                                                        }`}
+                                                        className={`p-1 rounded transition-colors ${showRoomDetail.is_available
+                                                            ? 'text-green-600 hover:bg-green-50'
+                                                            : 'text-red-600 hover:bg-red-50'
+                                                            }`}
                                                         title={getText(
                                                             `Click to ${showRoomDetail.is_available ? 'disable' : 'enable'} room`,
                                                             `Klik untuk ${showRoomDetail.is_available ? 'menonaktifkan' : 'mengaktifkan'} ruangan`
@@ -1614,19 +1738,19 @@ const RoomManagement: React.FC = () => {
                                                         <Edit className="h-4 w-4" />
                                                     </button>
                                                 </div>
-                                                
+
                                                 <div className="flex items-center space-x-3">
                                                     {showRoomDetail.is_available ? (
-                                                        <CheckCircle className="h-5 w-5 text-green-500"/>
+                                                        <CheckCircle className="h-5 w-5 text-green-500" />
                                                     ) : (
-                                                        <AlertCircle className="h-5 w-5 text-red-500"/>
+                                                        <AlertCircle className="h-5 w-5 text-red-500" />
                                                     )}
                                                     <div className="flex-1">
                                                         <p className={`font-semibold ${showRoomDetail.is_available ? 'text-green-600' : 'text-red-600'}`}>
                                                             {showRoomDetail.is_available ? getText('AVAILABLE', 'TERSEDIA') : getText('UNAVAILABLE', 'TIDAK TERSEDIA')}
                                                         </p>
                                                         <p className="text-xs text-gray-500 mt-1">
-                                                            {showRoomDetail.is_available 
+                                                            {showRoomDetail.is_available
                                                                 ? getText('Room can be booked officially', 'Ruangan dapat dipesan secara resmi')
                                                                 : getText('Room is disabled for booking', 'Ruangan dinonaktifkan untuk pemesanan')
                                                             }
@@ -1643,7 +1767,7 @@ const RoomManagement: React.FC = () => {
                                         <div className="space-y-2 max-h-40 overflow-y-auto">
                                             {loadingEquipment ? (
                                                 <div className="flex justify-center p-4">
-                                                    <RefreshCw className="h-5 w-5 animate-spin"/>
+                                                    <RefreshCw className="h-5 w-5 animate-spin" />
                                                 </div>
                                             ) : selectedRoomEquipment.length > 0 ? (
                                                 selectedRoomEquipment.map((eq) => (
@@ -1676,7 +1800,7 @@ const RoomManagement: React.FC = () => {
                                         <div className="space-y-2 max-h-48 overflow-y-auto">
                                             {loadingRoomUsers ? (
                                                 <div className="flex justify-center p-4">
-                                                    <RefreshCw className="h-5 w-5 animate-spin"/>
+                                                    <RefreshCw className="h-5 w-5 animate-spin" />
                                                 </div>
                                             ) : roomUsers.length > 0 ? (
                                                 roomUsers.map((roomUser) => (
@@ -1710,7 +1834,7 @@ const RoomManagement: React.FC = () => {
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 {/* Right Column - Enhanced Schedule Display */}
                                 <div className="lg:col-span-2">
                                     <h3 className="text-lg font-semibold text-gray-800 mb-4">
@@ -1719,7 +1843,7 @@ const RoomManagement: React.FC = () => {
                                             `Jadwal Lengkap untuk ${format(new Date(targetDate), 'EEEE, d MMMM yyyy')}`
                                         )}
                                     </h3>
-                                    
+
                                     <div className="space-y-4 max-h-[600px] overflow-y-auto">
                                         <CombinedScheduleSection />
                                     </div>
@@ -1800,7 +1924,7 @@ const RoomManagement: React.FC = () => {
                                     <X className="h-6 w-6" />
                                 </button>
                             </div>
-                            
+
                             <div className="mb-6">
                                 <div className="flex items-start space-x-3 p-4 bg-red-50 rounded-lg border border-red-200">
                                     <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -1833,6 +1957,28 @@ const RoomManagement: React.FC = () => {
                             </div>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Fullscreen Photo Preview Modal */}
+            {fullscreenPhoto && (
+                <div
+                    className="fixed inset-0 bg-black/95 z-[10000] flex items-center justify-center p-4 animate-in fade-in duration-200 cursor-zoom-out"
+                    onClick={() => setFullscreenPhoto(null)}
+                >
+                    <button
+                        onClick={() => setFullscreenPhoto(null)}
+                        className="absolute top-4 right-4 p-3 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-full text-white transition-all"
+                        title={getText('Close', 'Tutup')}
+                    >
+                        <X className="h-6 w-6" />
+                    </button>
+                    <img
+                        src={fullscreenPhoto}
+                        alt="Fullscreen preview"
+                        className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                    />
                 </div>
             )}
         </div>
