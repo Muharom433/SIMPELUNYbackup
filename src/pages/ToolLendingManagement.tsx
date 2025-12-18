@@ -32,6 +32,34 @@ interface LendingRecord {
     equipment_details?: Equipment[];
 }
 
+// ==================== HELPER COMPONENTS ====================
+const PhotoPlaceholder = ({ title, subtitle, isSmall = false }: { title?: string, subtitle?: string, isSmall?: boolean }) => (
+    <div className={`absolute inset-0 flex flex-col items-center justify-center bg-cyan-50 text-center p-4 z-10 ${isSmall ? 'p-1' : 'p-4'}`}>
+        <div className={`${isSmall ? 'w-4 h-4' : 'w-16 h-16 mb-3'} bg-cyan-100 rounded-full flex items-center justify-center animate-pulse`}>
+            <Loader2 className={`${isSmall ? 'w-3 h-3' : 'w-8 h-8'} text-cyan-600 animate-spin`} />
+        </div>
+        {!isSmall && title && <h3 className="font-bold text-lg text-gray-800 animate-pulse">{title}</h3>}
+        {!isSmall && subtitle && <p className="text-sm text-gray-500 mb-2 animate-pulse">{subtitle}</p>}
+        {!isSmall && <p className="text-xs text-cyan-600 font-medium animate-pulse">Memuat foto...</p>}
+    </div>
+);
+
+const ImageWithLoader = ({ src, alt, className, title, subtitle, isSmall = false }: { src: string, alt: string, className?: string, title?: string, subtitle?: string, isSmall?: boolean }) => {
+    const [isLoading, setIsLoading] = useState(true);
+
+    return (
+        <>
+            {isLoading && <PhotoPlaceholder title={title} subtitle={subtitle} isSmall={isSmall} />}
+            <img
+                src={src}
+                alt={alt}
+                className={`${className} ${isLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
+                onLoad={() => setIsLoading(false)}
+            />
+        </>
+    );
+};
+
 const ToolLendingManagement: React.FC = () => {
     const { profile } = useAuth();
     const { getText } = useLanguage();
@@ -46,9 +74,10 @@ const ToolLendingManagement: React.FC = () => {
     const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
 
 
+
     useEffect(() => {
         fetchLendingRecords();
-        fetchAllEquipment();
+
 
         // Real-time subscription
         const subscription = supabase
@@ -64,19 +93,7 @@ const ToolLendingManagement: React.FC = () => {
         };
     }, []);
 
-    const fetchAllEquipment = async () => {
-        try {
-            const { data, error } = await supabase
-                .from('equipment')
-                .select('id, name, code, quantity, unit, is_available')
-                .order('name');
 
-            if (error) throw error;
-            setAllEquipment(data || []);
-        } catch (error) {
-            console.error('Error fetching equipment:', error);
-        }
-    };
 
     const fetchLendingRecords = async () => {
         try {
@@ -349,7 +366,7 @@ const ToolLendingManagement: React.FC = () => {
 
             // Refresh data
             await fetchLendingRecords();
-            await fetchAllEquipment();
+
 
             // Close modal if open
             if (selectedRecord?.id === recordId) {
@@ -438,7 +455,7 @@ const ToolLendingManagement: React.FC = () => {
             toast.success(getText('Lending record deleted successfully', 'Data peminjaman berhasil dihapus'));
             setShowDeleteConfirm(null);
             await fetchLendingRecords();
-            await fetchAllEquipment(); // Refresh equipment data
+
 
         } catch (error: any) {
             console.error('❌ Error deleting lending record:', error);
@@ -740,11 +757,14 @@ const ToolLendingManagement: React.FC = () => {
                                                         <div key={equipment.id} className="text-sm">
                                                             <div className="flex items-center space-x-3">
                                                                 {equipment.attachments && equipment.attachments[0] ? (
-                                                                    <img
-                                                                        src={equipment.attachments[0]}
-                                                                        alt={equipment.name}
-                                                                        className="h-10 w-10 rounded object-cover border border-gray-200"
-                                                                    />
+                                                                    <div className="relative h-10 w-10">
+                                                                        <ImageWithLoader
+                                                                            src={equipment.attachments[0]}
+                                                                            alt={equipment.name}
+                                                                            className="h-10 w-10 rounded object-cover border border-gray-200"
+                                                                            isSmall={true}
+                                                                        />
+                                                                    </div>
                                                                 ) : (
                                                                     <div className="h-10 w-10 bg-gray-100 rounded border border-gray-200 flex items-center justify-center">
                                                                         <Package className="h-5 w-5 text-gray-400" />
@@ -1047,11 +1067,14 @@ const ToolLendingManagement: React.FC = () => {
                                                                     </div>
                                                                 ) : (
                                                                     <div className="relative">
-                                                                        <img
-                                                                            src={attachment}
-                                                                            alt={`Permit Document ${index + 1}`}
-                                                                            className="w-full h-16 object-cover rounded-lg mb-2"
-                                                                        />
+                                                                        <div className="relative w-full h-16 mb-2">
+                                                                            <ImageWithLoader
+                                                                                src={attachment}
+                                                                                alt={`Permit Document ${index + 1}`}
+                                                                                className="w-full h-16 object-cover rounded-lg"
+                                                                                isSmall={true}
+                                                                            />
+                                                                        </div>
                                                                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg transition-all duration-200 flex items-center justify-center">
                                                                             <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
                                                                         </div>

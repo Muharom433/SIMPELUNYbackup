@@ -79,16 +79,23 @@ interface StockTrackRecord {
 }
 
 // ==================== HELPER COMPONENTS ====================
-const ImageWithLoader = ({ src, alt, className }: { src: string, alt: string, className?: string }) => {
+const PhotoPlaceholder = ({ title, subtitle }: { title?: string, subtitle?: string }) => (
+    <div className="absolute inset-0 flex flex-col items-center justify-center bg-cyan-50 text-center p-4 z-10">
+        <div className="w-16 h-16 bg-cyan-100 rounded-full flex items-center justify-center mb-3 animate-pulse">
+            <Loader2 className="w-8 h-8 text-cyan-600 animate-spin" />
+        </div>
+        {title && <h3 className="font-bold text-lg text-gray-800 animate-pulse">{title}</h3>}
+        {subtitle && <p className="text-sm text-gray-500 mb-2 animate-pulse">{subtitle}</p>}
+        <p className="text-xs text-cyan-600 font-medium animate-pulse">Memuat foto...</p>
+    </div>
+);
+
+const ImageWithLoader = ({ src, alt, className, title, subtitle }: { src: string, alt: string, className?: string, title?: string, subtitle?: string }) => {
     const [isLoading, setIsLoading] = useState(true);
 
     return (
         <>
-            {isLoading && (
-                <div className={`absolute inset-0 flex items-center justify-center bg-gray-100 animate-pulse`}>
-                    <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
-                </div>
-            )}
+            {isLoading && <PhotoPlaceholder title={title} subtitle={subtitle} />}
             <img
                 src={src}
                 alt={alt}
@@ -1088,6 +1095,8 @@ const ToolAdministration: React.FC = () => {
             };
             reader.readAsDataURL(file);
         }
+        // Allow re-selecting the same file
+        e.target.value = '';
     };
 
     // Clear stock image
@@ -1117,6 +1126,8 @@ const ToolAdministration: React.FC = () => {
             };
             reader.readAsDataURL(file);
         }
+        // Allow re-selecting the same file
+        e.target.value = '';
     };
 
     // Clear equipment image
@@ -1204,7 +1215,7 @@ const ToolAdministration: React.FC = () => {
             category: equipmentItem.category,
             is_mandatory: equipmentItem.is_mandatory ?? false,
             is_available: equipmentItem.is_available ?? true,
-            condition: equipmentItem.condition,
+            condition: (equipmentItem.condition as any) || 'GOOD',
             Spesification: equipmentItem.Spesification || '',
             quantity: equipmentItem.quantity,
             unit: equipmentItem.unit,
@@ -1290,7 +1301,7 @@ const ToolAdministration: React.FC = () => {
                 quantity: data.quantity,
                 unit: selectedStockForClaim.unit,
                 stock_id: selectedStockForClaim.id,
-                attachments: equipmentImagePreview || null,
+                attachments: equipmentImagePreview ? [equipmentImagePreview] : null,
             };
 
             const { error: equipmentError } = await supabase.from('equipment').insert([equipmentData]);
@@ -1350,7 +1361,7 @@ const ToolAdministration: React.FC = () => {
                 Spesification: data.Spesification,
                 quantity: data.quantity,
                 unit: data.unit,
-                attachments: equipmentImagePreview || null,
+                attachments: equipmentImagePreview ? [equipmentImagePreview] : null,
             };
 
             const { error } = await supabase.from('equipment').update(equipmentData).eq('id', editingEquipment.id);
@@ -2005,6 +2016,8 @@ const ToolAdministration: React.FC = () => {
                                 src={selectedStock.attachments}
                                 alt={selectedStock.nama}
                                 className="w-full h-full object-cover"
+                                title={selectedStock.nama}
+                                subtitle={selectedStock.code}
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                             <div className="absolute bottom-0 left-0 right-0 p-6 flex items-end justify-between">
@@ -2817,6 +2830,8 @@ const ToolAdministration: React.FC = () => {
                                 src={selectedEquipment.attachments}
                                 alt={selectedEquipment.name}
                                 className="w-full h-full object-cover"
+                                title={selectedEquipment.name}
+                                subtitle={selectedEquipment.code}
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                             <div className="absolute bottom-0 left-0 right-0 p-6 flex items-end justify-between">

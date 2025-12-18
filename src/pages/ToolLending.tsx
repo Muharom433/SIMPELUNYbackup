@@ -361,7 +361,7 @@ const ToolLending: React.FC = () => {
     const [fullName, setFullName] = useState('');
     const [phoneNumber, setPhoneNumber] = useState('');
     const [email, setEmail] = useState('');
-    const [userDepartmentId, setUserDepartmentId] = useState<string | null>(null);
+
     const [userDepartmentName, setUserDepartmentName] = useState<string>('');
     const [userId, setUserId] = useState<string | null>(null);
 
@@ -383,7 +383,7 @@ const ToolLending: React.FC = () => {
     const [selectedEquipments, setSelectedEquipments] = useState<Map<string, SelectedEquipment>>(new Map());
     const [searchTerm, setSearchTerm] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('all');
-    const [loading, setLoading] = useState(false);
+
     const [loadingEquipment, setLoadingEquipment] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
@@ -506,7 +506,6 @@ const ToolLending: React.FC = () => {
         setFullName(user.full_name);
         setPhoneNumber(user.phone_number);
         setEmail(user.email || '');
-        setUserDepartmentId(user.department_id || null);
         setUserDepartmentName(user.department_name || '');
         setUserId(user.id);
 
@@ -540,7 +539,6 @@ const ToolLending: React.FC = () => {
             setFullName('');
             setPhoneNumber('');
             setEmail('');
-            setUserDepartmentId(null);
             setUserDepartmentName('');
 
             setUserId(null);
@@ -873,7 +871,6 @@ const ToolLending: React.FC = () => {
             setSelectedStudyProgramId('');
             setStudyProgramSearchTerm('');
             setIdentityVerified(false);
-            setUserDepartmentId(null);
             setUserDepartmentName('');
             setUserId(null);
             if (identityInputRef.current) identityInputRef.current.value = '';

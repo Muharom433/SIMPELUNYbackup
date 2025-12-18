@@ -163,16 +163,23 @@ interface RoomStatusResult {
 }
 
 // ==================== HELPER COMPONENTS ====================
-const ImageWithLoader = ({ src, alt, className }: { src: string, alt: string, className?: string }) => {
+const PhotoPlaceholder = ({ title, subtitle }: { title?: string, subtitle?: string }) => (
+  <div className="absolute inset-0 flex flex-col items-center justify-center bg-cyan-50 text-center p-4 z-10">
+    <div className="w-16 h-16 bg-cyan-100 rounded-full flex items-center justify-center mb-3 animate-pulse">
+      <Loader2 className="w-8 h-8 text-cyan-600 animate-spin" />
+    </div>
+    {title && <h3 className="font-bold text-lg text-gray-800 animate-pulse">{title}</h3>}
+    {subtitle && <p className="text-sm text-gray-500 mb-2 animate-pulse">{subtitle}</p>}
+    <p className="text-xs text-cyan-600 font-medium animate-pulse">Memuat foto...</p>
+  </div>
+);
+
+const ImageWithLoader = ({ src, alt, className, title, subtitle }: { src: string, alt: string, className?: string, title?: string, subtitle?: string }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   return (
     <>
-      {isLoading && (
-        <div className={`absolute inset-0 flex items-center justify-center bg-gray-100 animate-pulse`}>
-          <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
-        </div>
-      )}
+      {isLoading && <PhotoPlaceholder title={title} subtitle={subtitle} />}
       <img
         src={src}
         alt={alt}
@@ -841,13 +848,14 @@ const BookRoom: React.FC = () => {
   const [mandatoryEquipment, setMandatoryEquipment] = useState<EquipmentSelection[]>([]);
   const [optionalEquipment, setOptionalEquipment] = useState<Equipment[]>([]);
   const [selectedOptionalEquipment, setSelectedOptionalEquipment] = useState<Map<string, number>>(new Map());
+  const [loadingEquipment, setLoadingEquipment] = useState(false);
 
   // Room Detail Modal State
   const [showRoomDetailModal, setShowRoomDetailModal] = useState(false);
   const [selectedRoomDetail, setSelectedRoomDetail] = useState<Room | null>(null);
   const [selectedRoomBuilding, setSelectedRoomBuilding] = useState<any>(null);
   const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
-  const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
+
 
   // Refs
   const identityInputRef = useRef<HTMLInputElement | null>(null);
@@ -3253,6 +3261,8 @@ const BookRoom: React.FC = () => {
                       src={selectedRoomDetail.attachments}
                       alt={selectedRoomDetail.name}
                       className="w-full h-48 object-cover"
+                      title={selectedRoomDetail.name}
+                      subtitle={selectedRoomDetail.code}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
                     <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between">
