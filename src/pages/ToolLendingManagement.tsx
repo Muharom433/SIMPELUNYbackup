@@ -69,7 +69,7 @@ const ToolLendingManagement: React.FC = () => {
         try {
             const { data, error } = await supabase
                 .from('equipment')
-                .select('*')
+                .select('id, name, code, quantity, unit, is_available')
                 .order('name');
 
             if (error) throw error;
@@ -86,7 +86,8 @@ const ToolLendingManagement: React.FC = () => {
             const { data: lendingData, error: lendingError } = await supabase
                 .from('lending_tool')
                 .select('*')
-                .order('created_at', { ascending: false });
+                .order('created_at', { ascending: false })
+                .limit(50);
 
             if (lendingError) throw lendingError;
             if (!lendingData) { setLendingRecords([]); setLoading(false); return; }
@@ -116,7 +117,7 @@ const ToolLendingManagement: React.FC = () => {
                     if (record.id_equipment && record.id_equipment.length > 0) {
                         const { data: equipmentData } = await supabase
                             .from('equipment')
-                            .select('*, rooms:rooms_id(id, name, study_program_id, department_id)')
+                            .select('id, name, code, quantity, unit, attachments, rooms:rooms_id(id, name, study_program_id, department_id)')
                             .in('id', record.id_equipment);
 
                         if (equipmentData) {
@@ -738,10 +739,21 @@ const ToolLendingManagement: React.FC = () => {
                                                 <div className="space-y-1">
                                                     {record.equipment_details?.slice(0, 2).map((equipment, index) => (
                                                         <div key={equipment.id} className="text-sm">
-                                                            <span className="font-medium text-gray-900">{equipment.name}</span>
-                                                            <span className="text-gray-500 ml-2">
-                                                                ({record.qty[index]} {equipment.unit || 'pcs'})
-                                                            </span>
+                                                            <div className="flex items-center space-x-3">
+                                                                {equipment.attachments && equipment.attachments[0] && (
+                                                                    <img
+                                                                        src={equipment.attachments[0]}
+                                                                        alt={equipment.name}
+                                                                        className="h-10 w-10 rounded object-cover border border-gray-200"
+                                                                    />
+                                                                )}
+                                                                <div>
+                                                                    <span className="font-medium text-gray-900 block">{equipment.name}</span>
+                                                                    <span className="text-gray-500 text-xs">
+                                                                        ({record.qty[index]} {equipment.unit || 'pcs'})
+                                                                    </span>
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     ))}
                                                     {record.equipment_details && record.equipment_details.length > 2 && (

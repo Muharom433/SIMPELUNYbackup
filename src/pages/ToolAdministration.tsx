@@ -481,8 +481,7 @@ const ToolAdministration: React.FC = () => {
                         *,
                         rooms:rooms_id(
                             id, name, code, department_id, study_program_id, floor,
-                            department:departments(id, name, code),
-                            building:building_id(name, campus:campus_id(name))
+                            department:departments(id, name, code)
                         ),
                         stock:stock_id(id, nama, code, category, quantity, unit)
                     `)
