@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Wrench, Search, Eye, Edit, Trash2, RefreshCw, Download, User, Package,
-    AlertCircle, Calendar, Clock, X, Phone, Mail, Hash, Building, Users,
-    CheckCircle, XCircle, Plus, Minus, Settings, Loader2,
+    Wrench, Search, Eye, Trash2, RefreshCw, Download, User, Package,
+    AlertCircle, Clock, X, CheckCircle, XCircle, Loader2,
     FileText, Check, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
-import EquipmentQuantityManager from '../lib/equipmentQuantityManager';
+
 import { Equipment, User as UserType } from '../types';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -45,7 +44,7 @@ const ToolLendingManagement: React.FC = () => {
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
     const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
-    const [allEquipment, setAllEquipment] = useState<Equipment[]>([]);
+
 
     useEffect(() => {
         fetchLendingRecords();
@@ -117,7 +116,7 @@ const ToolLendingManagement: React.FC = () => {
                     if (record.id_equipment && record.id_equipment.length > 0) {
                         const { data: equipmentData } = await supabase
                             .from('equipment')
-                            .select('id, name, code, quantity, unit, attachments, rooms:rooms_id(id, name, study_program_id, department_id)')
+                            .select('id, name, code, quantity, unit, rooms:rooms_id(id, name, study_program_id, department_id)')
                             .in('id', record.id_equipment);
 
                         if (equipmentData) {
@@ -264,11 +263,11 @@ const ToolLendingManagement: React.FC = () => {
                     // ✅ OPTION 1: Skip invalid equipment and continue with valid ones
                     if (validEquipmentList.length > 0) {
                         warningMessage += `Continuing with ${validEquipmentList.length} valid equipment.`;
-                        toast.warning(warningMessage);
+                        toast.error(warningMessage);
                     } else {
                         // ✅ OPTION 2: No valid equipment, cannot proceed with equipment updates
                         warningMessage += 'No valid equipment to process.';
-                        toast.warning(warningMessage);
+                        toast.error(warningMessage);
 
                         // Still update record status but skip equipment updates
                         console.log('ℹ️ Proceeding with status update only (no equipment changes)');
@@ -324,7 +323,7 @@ const ToolLendingManagement: React.FC = () => {
             }
 
             // ✅ UPDATE LENDING STATUS (always proceed with this)
-            let finalStatus = newStatus;
+            let finalStatus: string = newStatus;
             if (newStatus === 'approved') {
                 finalStatus = 'borrow'; // Change to 'borrow' when approved
             }
@@ -740,12 +739,16 @@ const ToolLendingManagement: React.FC = () => {
                                                     {record.equipment_details?.slice(0, 2).map((equipment, index) => (
                                                         <div key={equipment.id} className="text-sm">
                                                             <div className="flex items-center space-x-3">
-                                                                {equipment.attachments && equipment.attachments[0] && (
+                                                                {equipment.attachments && equipment.attachments[0] ? (
                                                                     <img
                                                                         src={equipment.attachments[0]}
                                                                         alt={equipment.name}
                                                                         className="h-10 w-10 rounded object-cover border border-gray-200"
                                                                     />
+                                                                ) : (
+                                                                    <div className="h-10 w-10 bg-gray-100 rounded border border-gray-200 flex items-center justify-center">
+                                                                        <Package className="h-5 w-5 text-gray-400" />
+                                                                    </div>
                                                                 )}
                                                                 <div>
                                                                     <span className="font-medium text-gray-900 block">{equipment.name}</span>
@@ -787,9 +790,34 @@ const ToolLendingManagement: React.FC = () => {
                                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                 <div className="flex items-center justify-end space-x-2">
                                                     <button
-                                                        onClick={() => {
+                                                        onClick={async () => {
                                                             setSelectedRecord(record);
                                                             setShowDetailModal(true);
+
+                                                            // Lazy load attachments
+                                                            if (record.equipment_details && record.equipment_details.length > 0) {
+                                                                const equipmentIds = record.equipment_details.map(eq => eq.id);
+                                                                try {
+                                                                    const { data } = await supabase
+                                                                        .from('equipment')
+                                                                        .select('id, attachments')
+                                                                        .in('id', equipmentIds);
+
+                                                                    if (data) {
+                                                                        const updatedDetails = record.equipment_details.map(eq => {
+                                                                            const match = data.find(d => d.id === eq.id);
+                                                                            return match ? { ...eq, attachments: match.attachments } : eq;
+                                                                        });
+
+                                                                        setSelectedRecord({
+                                                                            ...record,
+                                                                            equipment_details: updatedDetails
+                                                                        });
+                                                                    }
+                                                                } catch (err) {
+                                                                    console.error('Error loading attachments lazy:', err);
+                                                                }
+                                                            }
                                                         }}
                                                         className="text-gray-600 hover:text-gray-900 p-1 rounded transition-colors duration-200"
                                                         title={getText('View Details', 'Lihat Detail')}

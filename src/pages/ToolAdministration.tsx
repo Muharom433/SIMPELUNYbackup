@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-    Wrench, Plus, Search, Edit, Trash2, Eye, Package, AlertCircle, RefreshCw, X,
+    Wrench, Plus, Search, Edit, Trash2, Eye, Package, AlertCircle, RefreshCw, X, Loader2,
     Camera, Cpu, Wifi, Zap, FlaskConical, Armchair, Shield,
     MapPin, Hash, Layers, CheckCircle, XCircle, Star, AlertTriangle, Building,
     User, Phone, CreditCard, Clock, Calendar, Users, Activity, TrendingUp,
@@ -37,7 +37,6 @@ interface Stock {
     unit: string;
     attachments?: string; // Base64 photo string
     created_at?: string;
-    updated_at?: string;
 }
 
 interface EquipmentWithDetails extends Equipment {
@@ -79,7 +78,27 @@ interface StockTrackRecord {
     condition: string;
 }
 
-// ==================== REUSABLE COMPONENTS ====================
+// ==================== HELPER COMPONENTS ====================
+const ImageWithLoader = ({ src, alt, className }: { src: string, alt: string, className?: string }) => {
+    const [isLoading, setIsLoading] = useState(true);
+
+    return (
+        <>
+            {isLoading && (
+                <div className={`absolute inset-0 flex items-center justify-center bg-gray-100 animate-pulse`}>
+                    <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
+                </div>
+            )}
+            <img
+                src={src}
+                alt={alt}
+                className={`${className} ${isLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
+                onLoad={() => setIsLoading(false)}
+            />
+        </>
+    );
+};
+
 interface DropdownSearchProps {
     items: Array<{ id: string; name?: string; nama?: string; code?: string;[key: string]: any }>;
     selectedItem: { id: string; name?: string; nama?: string;[key: string]: any } | null;
@@ -433,7 +452,7 @@ const ToolAdministration: React.FC = () => {
                     { data: racksData, error: racksError },
                     { data: boxesData, error: boxesError }
                 ] = await Promise.all([
-                    supabase.from('stock').select('*').order('created_at', { ascending: false }),
+                    supabase.from('stock').select('id, nama, code, category, quantity, unit, spesification, created_at').order('created_at', { ascending: false }),
                     roomsQuery.order('name'),
                     supabase.from('table').select('id, room_id, description, rack'),
                     supabase.from('rack').select('id, name, table_id').order('name'),
@@ -474,11 +493,10 @@ const ToolAdministration: React.FC = () => {
                 }
                 setRooms(filteredRooms as any);
 
-                // Load equipment based on role (depends on accessible rooms)
                 let equipmentQuery = supabase
                     .from('equipment')
                     .select(`
-                        *,
+                        id, name, code, category, quantity, unit, condition, created_at,
                         rooms:rooms_id(
                             id, name, code, department_id, study_program_id, floor,
                             department:departments(id, name, code)
@@ -559,9 +577,9 @@ const ToolAdministration: React.FC = () => {
                 equipment_id: eq.id,
                 equipment_name: eq.name,
                 equipment_code: eq.code,
-                room_name: eq.rooms?.name,
-                room_code: eq.rooms?.code,
-                department_name: eq.rooms?.department?.name,
+                room_name: (eq.rooms as any)?.name,
+                room_code: (eq.rooms as any)?.code,
+                department_name: (eq.rooms as any)?.department?.name,
                 quantity_claimed: eq.quantity,
                 claimed_at: eq.created_at,
                 condition: eq.condition
@@ -885,8 +903,7 @@ const ToolAdministration: React.FC = () => {
                 .from('checkout_items')
                 .update({
                     quantities_back: quantitiesBack,
-                    status: 'completed',
-                    updated_at: new Date().toISOString()
+                    status: 'completed'
                 })
                 .eq('checkout_id', detail.checkout.id);
 
@@ -908,8 +925,7 @@ const ToolAdministration: React.FC = () => {
                     .from('checkouts')
                     .update({
                         status: 'Active',
-                        actual_return_date: new Date().toISOString(),
-                        updated_at: new Date().toISOString()
+                        actual_return_date: new Date().toISOString()
                     })
                     .eq('id', detail.checkout.id);
 
@@ -923,8 +939,7 @@ const ToolAdministration: React.FC = () => {
                 const { error: bookingError } = await supabase
                     .from('bookings')
                     .update({
-                        status: 'returned',
-                        updated_at: new Date().toISOString()
+                        status: 'returned'
                     })
                     .eq('id', detail.checkout.booking_id);
 
@@ -1006,15 +1021,43 @@ const ToolAdministration: React.FC = () => {
         await fetchGapAnalysis(eq.id);
     };
 
-    const handleOpenDetailModal = (eq: EquipmentWithDetails) => {
+    const handleOpenDetailModal = async (eq: EquipmentWithDetails) => {
         setSelectedEquipment(eq);
         setShowDetailModal(true);
+        try {
+            const { data } = await supabase
+                .from('equipment')
+                .select(`
+                    attachments,
+                    rooms:rooms_id(
+                        id, name, code, department_id, study_program_id, floor,
+                        department:departments(id, name, code),
+                        building:building_id(name, campus:campus_id(name))
+                    )
+                `)
+                .eq('id', eq.id)
+                .single();
+
+            if (data) {
+                setSelectedEquipment(prev => (prev?.id === eq.id ? { ...prev, ...data } : prev));
+            }
+        } catch (e) {
+            console.error('Error loading details:', e);
+        }
     };
 
     // ==================== NEW: STOCK MODAL HANDLERS ====================
-    const handleOpenStockDetailModal = (stock: Stock) => {
+    const handleOpenStockDetailModal = async (stock: Stock) => {
         setSelectedStock(stock);
         setShowStockDetailModal(true);
+        try {
+            const { data } = await supabase.from('stock').select('attachments').eq('id', stock.id).single();
+            if (data) {
+                setSelectedStock(prev => (prev?.id === stock.id ? { ...prev, attachments: data.attachments } : prev));
+            }
+        } catch (e) {
+            console.error('Error loading attachment:', e);
+        }
     };
 
     const handleOpenStockTrackModal = async (stock: Stock) => {
@@ -1082,7 +1125,7 @@ const ToolAdministration: React.FC = () => {
     };
 
     // ==================== MODAL HANDLERS ====================
-    const handleOpenStockModal = (stock?: Stock) => {
+    const handleOpenStockModal = async (stock?: Stock) => {
         setEditingStock(stock || null);
 
         if (stock) {
@@ -1094,7 +1137,13 @@ const ToolAdministration: React.FC = () => {
                 quantity: stock.quantity,
                 unit: stock.unit,
             });
-            setStockImagePreview(stock.attachments || '');
+            setStockImagePreview('');
+            try {
+                const { data } = await supabase.from('stock').select('attachments').eq('id', stock.id).single();
+                if (data?.attachments) setStockImagePreview(data.attachments);
+            } catch (e) {
+                console.error(e);
+            }
         } else {
             stockForm.reset({ quantity: 1 });
             setStockImagePreview('');
@@ -1118,10 +1167,17 @@ const ToolAdministration: React.FC = () => {
         setShowClaimModal(true);
     };
 
-    const handleOpenEditModal = (equipmentItem: EquipmentWithDetails) => {
+    const handleOpenEditModal = async (equipmentItem: EquipmentWithDetails) => {
         setEditingEquipment(equipmentItem);
         setSelectedRoomForEdit(equipmentItem.rooms || null);
-        setEquipmentImagePreview(equipmentItem.attachments || '');
+        setEquipmentImagePreview('');
+
+        try {
+            const { data } = await supabase.from('equipment').select('attachments').eq('id', equipmentItem.id).single();
+            if (data?.attachments) setEquipmentImagePreview(data.attachments);
+        } catch (e) {
+            console.error(e);
+        }
 
         // Resolve location objects with hierarchy inference
         const foundBox = boxes.find(b => b.id === equipmentItem.box_id);
@@ -1193,7 +1249,7 @@ const ToolAdministration: React.FC = () => {
 
             const { data: newStocks } = await supabase
                 .from('stock')
-                .select('*')
+                .select('id, nama, code, category, quantity, unit, spesification, created_at')
                 .order('created_at', { ascending: false });
             setStocks(newStocks || []);
 
@@ -1323,7 +1379,7 @@ const ToolAdministration: React.FC = () => {
         try {
             const { data, error } = await supabase
                 .from('stock')
-                .select('*')
+                .select('id, nama, code, category, quantity, unit, spesification, created_at')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -1339,11 +1395,10 @@ const ToolAdministration: React.FC = () => {
             let query = supabase
                 .from('equipment')
                 .select(`
-                    *,
+                    id, name, code, category, quantity, unit, condition, created_at,
                     rooms:rooms_id(
-                        id, name, code, department_id, floor,
-                        department:departments(id, name, code),
-                        building:building_id(name, campus:campus_id(name))
+                        id, name, code, department_id, study_program_id, floor,
+                        department:departments(id, name, code)
                     ),
                     stock:stock_id(id, nama, code, category, quantity, unit)
                 `)
@@ -1946,7 +2001,7 @@ const ToolAdministration: React.FC = () => {
                     {/* Stock Photo Banner */}
                     {selectedStock?.attachments ? (
                         <div className="relative rounded-xl overflow-hidden shadow-lg h-64 group">
-                            <img
+                            <ImageWithLoader
                                 src={selectedStock.attachments}
                                 alt={selectedStock.nama}
                                 className="w-full h-full object-cover"
@@ -2056,12 +2111,6 @@ const ToolAdministration: React.FC = () => {
                                         <div>
                                             <p className="text-xs text-slate-700 mb-1">Created At</p>
                                             <p className="font-bold text-gray-900">{format(new Date(selectedStock.created_at), 'MMM dd, yyyy HH:mm')}</p>
-                                        </div>
-                                    )}
-                                    {selectedStock?.updated_at && (
-                                        <div>
-                                            <p className="text-xs text-slate-700 mb-1">Last Updated</p>
-                                            <p className="font-bold text-gray-900">{format(new Date(selectedStock.updated_at), 'MMM dd, yyyy HH:mm')}</p>
                                         </div>
                                     )}
                                 </div>
@@ -2179,7 +2228,15 @@ const ToolAdministration: React.FC = () => {
                                 setSelectedStockForClaim(stock);
                                 claimForm.setValue('stock_id', stock.id);
                                 claimForm.setValue('quantity', 1);
-                                setEquipmentImagePreview(stock.attachments || '');
+                                setEquipmentImagePreview('');
+                                supabase.from('stock').select('attachments').eq('id', stock.id).single()
+                                    .then(({ data }) => {
+                                        if (data?.attachments) {
+                                            setEquipmentImagePreview(data.attachments);
+                                            // Also update selectedStockForClaim to include the attachment
+                                            setSelectedStockForClaim(prev => prev?.id === stock.id ? { ...prev, attachments: data.attachments } : prev);
+                                        }
+                                    });
                             }}
                             placeholder="Search by name or code..."
                             showCode
@@ -2375,8 +2432,8 @@ const ToolAdministration: React.FC = () => {
                                 <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 hover:border-purple-400 transition-colors">
                                     {equipmentImagePreview ? (
                                         <div className="relative group">
-                                            <div className="w-full h-48 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center">
-                                                <img
+                                            <div className="w-full h-48 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center relative">
+                                                <ImageWithLoader
                                                     src={equipmentImagePreview}
                                                     alt="Preview"
                                                     className="w-full h-full object-contain"
@@ -2658,8 +2715,8 @@ const ToolAdministration: React.FC = () => {
                         <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 hover:border-amber-400 transition-colors">
                             {equipmentImagePreview ? (
                                 <div className="relative group">
-                                    <div className="w-full h-48 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center">
-                                        <img
+                                    <div className="w-full h-48 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center relative">
+                                        <ImageWithLoader
                                             src={equipmentImagePreview}
                                             alt="Preview"
                                             className="w-full h-full object-contain"
@@ -2756,7 +2813,7 @@ const ToolAdministration: React.FC = () => {
                     {/* Equipment Photo Banner */}
                     {selectedEquipment?.attachments ? (
                         <div className="relative rounded-xl overflow-hidden shadow-lg h-64 group">
-                            <img
+                            <ImageWithLoader
                                 src={selectedEquipment.attachments}
                                 alt={selectedEquipment.name}
                                 className="w-full h-full object-cover"
@@ -2989,12 +3046,6 @@ const ToolAdministration: React.FC = () => {
                                             <p className="font-bold text-gray-900">{format(new Date(selectedEquipment.created_at), 'MMM dd, yyyy HH:mm')}</p>
                                         </div>
                                     )}
-                                    {selectedEquipment?.updated_at && (
-                                        <div>
-                                            <p className="text-xs text-slate-700 mb-1">Last Updated</p>
-                                            <p className="font-bold text-gray-900">{format(new Date(selectedEquipment.updated_at), 'MMM dd, yyyy HH:mm')}</p>
-                                        </div>
-                                    )}
                                 </div>
                             </div>
                         </div>
@@ -3087,8 +3138,7 @@ const ToolAdministration: React.FC = () => {
                     is_available: data.is_available,
                     Spesification: data.Spesification,
                     attachments: equipmentImagePreview || null,
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
+                    created_at: new Date().toISOString()
                 });
 
             if (error) throw error;

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useForm } from "react-hook-form";
-import { parseISO, format, differenceInMinutes, isAfter, isBefore, startOfDay, isSameDay } from "date-fns";
+import { parseISO, format, differenceInMinutes, isBefore, startOfDay, isSameDay } from "date-fns";
 import { id } from "date-fns/locale";
 import {
   Calendar,
@@ -20,7 +20,6 @@ import {
   RefreshCw,
   CalendarIcon,
   UserCheck,
-  Filter,
   ChevronUp,
   Loader2,
   ClipboardList,
@@ -163,6 +162,27 @@ interface RoomStatusResult {
   conflictDetails?: string[];
 }
 
+// ==================== HELPER COMPONENTS ====================
+const ImageWithLoader = ({ src, alt, className }: { src: string, alt: string, className?: string }) => {
+  const [isLoading, setIsLoading] = useState(true);
+
+  return (
+    <>
+      {isLoading && (
+        <div className={`absolute inset-0 flex items-center justify-center bg-gray-100 animate-pulse`}>
+          <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+        </div>
+      )}
+      <img
+        src={src}
+        alt={alt}
+        className={`${className} ${isLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
+        onLoad={() => setIsLoading(false)}
+      />
+    </>
+  );
+};
+
 // =====================================================
 // UTILITY FUNCTIONS
 // =====================================================
@@ -242,17 +262,7 @@ const formatDateTime = (iso?: string) => {
   }
 };
 
-/**
- * Format time for display (HH:mm)
- */
-const formatTime = (iso?: string) => {
-  if (!iso) return "-";
-  try {
-    return format(parseISO(iso), "HH:mm");
-  } catch {
-    return iso;
-  }
-};
+
 
 // =====================================================
 // DATETIME PICKER MODAL COMPONENT
@@ -561,7 +571,6 @@ const EquipmentSelectionSection: React.FC<{
   selectedOptionalEquipment,
   onOptionalEquipmentChange,
   getText,
-  selectedRoom
 }) => {
     const [showOptionalSection, setShowOptionalSection] = useState(false);
 
@@ -786,7 +795,7 @@ const EquipmentSelectionSection: React.FC<{
 // =====================================================
 const BookRoom: React.FC = () => {
   const { getText } = useLanguage();
-  const { register, handleSubmit, setValue, getValues, watch, formState: { errors }, reset } = useForm<FormValues>({
+  const { register, handleSubmit, setValue, getValues, watch } = useForm<FormValues>({
     defaultValues: {
       sks: 3,
       class_type: "theory",
@@ -838,7 +847,7 @@ const BookRoom: React.FC = () => {
   const [selectedRoomDetail, setSelectedRoomDetail] = useState<Room | null>(null);
   const [selectedRoomBuilding, setSelectedRoomBuilding] = useState<any>(null);
   const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
-  const [loadingEquipment, setLoadingEquipment] = useState(false);
+  const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
 
   // Refs
   const identityInputRef = useRef<HTMLInputElement | null>(null);
@@ -955,7 +964,7 @@ const BookRoom: React.FC = () => {
       const { data, error } = await supabase
         .from('equipment')
         .select(`
-          *,
+          id, name, code, category, quantity, unit, is_mandatory, is_available, condition, rooms_id,
           rooms (id, name, code)
         `)
         .eq('rooms_id', roomId)
@@ -968,7 +977,7 @@ const BookRoom: React.FC = () => {
       console.log('🔧 Mandatory equipment found:', data?.length || 0);
 
       // Convert to EquipmentSelection with quantity = 1 for each mandatory item
-      const mandatorySelections: EquipmentSelection[] = (data || []).map((eq: Equipment) => ({
+      const mandatorySelections: EquipmentSelection[] = (data || []).map((eq: any) => ({
         equipment: eq,
         quantity: 1, // Default 1 for mandatory
         isMandatory: true
@@ -994,7 +1003,7 @@ const BookRoom: React.FC = () => {
       const { data, error } = await supabase
         .from('equipment')
         .select(`
-          *,
+          id, name, code, category, quantity, unit, is_mandatory, is_available, condition, rooms_id,
           rooms (id, name, code)
         `)
         .eq('is_available', true)
@@ -1006,7 +1015,7 @@ const BookRoom: React.FC = () => {
       if (error) throw error;
 
       console.log('🔧 Optional equipment found:', data?.length || 0);
-      setOptionalEquipment(data || []);
+      setOptionalEquipment((data as any[]) || []);
 
     } catch (error) {
       console.error('❌ Error fetching optional equipment:', error);
@@ -1289,8 +1298,8 @@ const BookRoom: React.FC = () => {
             purpose: booking.purpose,
             status: booking.status,
             user: {
-              full_name: booking.users?.full_name || getText("Unknown", "Tidak diketahui"),
-              identity_number: booking.users?.identity_number || "",
+              full_name: (booking.users as any)?.full_name || getText("Unknown", "Tidak diketahui"),
+              identity_number: (booking.users as any)?.identity_number || "",
             },
           })),
           scheduleDetails: {
@@ -3240,7 +3249,7 @@ const BookRoom: React.FC = () => {
                 {/* Room Photo */}
                 {selectedRoomDetail.attachments ? (
                   <div className="relative rounded-xl overflow-hidden shadow-lg">
-                    <img
+                    <ImageWithLoader
                       src={selectedRoomDetail.attachments}
                       alt={selectedRoomDetail.name}
                       className="w-full h-48 object-cover"
