@@ -417,33 +417,41 @@ const ToolAdministration: React.FC = () => {
                 setLoadingStocks(true);
                 setLoadingEquipment(true);
 
-                // Load stocks
-                const { data: stocksData, error: stocksError } = await supabase
-                    .from('stock')
-                    .select('*')
-                    .order('created_at', { ascending: false });
-
-                if (stocksError) throw stocksError;
-                setStocks(stocksData || []);
-
-                // Load rooms based on role
-                // Super admin and purchasing see ALL rooms
-                // Laboratory: department MUST match AND (study_program NULL OR same)
-                // Department admin filters by department_id
+                // Prepare rooms query
                 let roomsQuery = supabase.from('rooms').select('id, name, code, department_id, study_program_id, department:departments(id, name, code)');
 
                 if (isDepartmentAdmin && profile?.department_id) {
                     // Department admin filters by department_id
                     roomsQuery = roomsQuery.eq('department_id', profile.department_id);
                 }
-                // For laboratory, we fetch all by department first then filter in client
-                // Super admin and purchasing: no filter, see all rooms
 
-                const { data: roomsData, error: roomsError } = await roomsQuery.order('name');
+                // Execute independent queries in parallel using Promise.all
+                const [
+                    { data: stocksData, error: stocksError },
+                    { data: roomsData, error: roomsError },
+                    { data: tablesData, error: tablesError },
+                    { data: racksData, error: racksError },
+                    { data: boxesData, error: boxesError }
+                ] = await Promise.all([
+                    supabase.from('stock').select('*').order('created_at', { ascending: false }),
+                    roomsQuery.order('name'),
+                    supabase.from('table').select('id, room_id, description, rack'),
+                    supabase.from('rack').select('id, name, table_id').order('name'),
+                    supabase.from('box').select('id, name, description, rack_id').order('name')
+                ]);
 
+                if (stocksError) throw stocksError;
                 if (roomsError) throw roomsError;
+                if (tablesError) throw tablesError;
+                if (racksError) throw racksError;
+                if (boxesError) throw boxesError;
 
-                // Apply laboratory filter in client side (complex logic)
+                setStocks(stocksData || []);
+                setTables(tablesData || []);
+                setRacks(racksData || []);
+                setBoxes(boxesData || []);
+
+                // Process rooms filter
                 let filteredRooms = roomsData || [];
                 if (isLaboratory && profile?.department_id) {
                     const laborDeptId = profile.department_id;
@@ -464,28 +472,9 @@ const ToolAdministration: React.FC = () => {
 
                     console.log(`🔬 Laboran rooms filter: ${filteredRooms.length} rooms from ${roomsData?.length || 0}`);
                 }
-
                 setRooms(filteredRooms as any);
 
-                // Load tables (cabinets) - OPTIMIZED
-                const { data: tablesData, error: tablesError } = await supabase.from('table').select('id, room_id, description, rack');
-                if (tablesError) throw tablesError;
-                setTables(tablesData || []);
-
-                // Load racks - OPTIMIZED
-                const { data: racksData, error: racksError } = await supabase.from('rack').select('id, name, table_id').order('name');
-                if (racksError) throw racksError;
-                setRacks(racksData || []);
-
-                // Load boxes - OPTIMIZED
-                const { data: boxesData, error: boxesError } = await supabase.from('box').select('id, name, description, rack_id').order('name');
-                if (boxesError) throw boxesError;
-                setBoxes(boxesData || []);
-
-                // Load equipment based on role
-                // Super admin and purchasing see ALL equipment
-                // Laboratory filters by accessible rooms (based on filter above)
-                // Department admin filters by department_id (through rooms)
+                // Load equipment based on role (depends on accessible rooms)
                 let equipmentQuery = supabase
                     .from('equipment')
                     .select(`
@@ -502,7 +491,6 @@ const ToolAdministration: React.FC = () => {
                 // Get room IDs from filtered rooms for laboran and department_admin
                 const accessibleRoomIds = filteredRooms.map(room => room.id);
 
-                // Filter equipment based on accessible room IDs (only for laboratory and department_admin)
                 if (isLaboratory && profile?.department_id) {
                     if (accessibleRoomIds.length > 0) {
                         equipmentQuery = equipmentQuery.in('rooms_id', accessibleRoomIds);
@@ -511,14 +499,11 @@ const ToolAdministration: React.FC = () => {
                         equipmentQuery = equipmentQuery.in('rooms_id', ['nomatch']);
                     }
                 } else if (isDepartmentAdmin && profile?.department_id) {
-                    const departmentRoomIds = (roomsData || [])
-                        .filter((r: any) => r.department_id === profile.department_id)
-                        .map(room => room.id);
-                    if (departmentRoomIds.length > 0) {
-                        equipmentQuery = equipmentQuery.in('rooms_id', departmentRoomIds);
+                    // Use accessibleRoomIds (which corresponds to department rooms)
+                    if (accessibleRoomIds.length > 0) {
+                        equipmentQuery = equipmentQuery.in('rooms_id', accessibleRoomIds);
                     }
                 }
-                // Super admin and purchasing: no filter, see all equipment
 
                 const { data: equipmentData, error: equipmentError } = await equipmentQuery;
 
