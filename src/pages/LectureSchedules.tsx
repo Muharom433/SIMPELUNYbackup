@@ -127,6 +127,7 @@ const LectureSchedules: React.FC = () => {
   const [showRescheduleRequestsModal, setShowRescheduleRequestsModal] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<LectureSchedule | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [rescheduleFilter, setRescheduleFilter] = useState<string>('pending');
@@ -377,6 +378,32 @@ const LectureSchedules: React.FC = () => {
     } catch (error: any) {
       console.error('Error deleting schedule:', error);
       alert.error(error.message || 'Failed to delete schedule');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    try {
+      setLoading(true);
+
+      // Delete all records from lecture_schedules table
+      const { error } = await supabase
+        .from('lecture_schedules')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000'); // This will match all rows
+
+      if (error) throw error;
+
+      alert.success(getText(
+        `All ${schedules.length} schedules deleted successfully!`,
+        `Semua ${schedules.length} jadwal berhasil dihapus!`
+      ));
+      setShowDeleteAllConfirm(false);
+      fetchSchedules();
+    } catch (error: any) {
+      console.error('Error deleting all schedules:', error);
+      alert.error(error.message || getText('Failed to delete all schedules', 'Gagal menghapus semua jadwal'));
     } finally {
       setLoading(false);
     }
@@ -794,6 +821,7 @@ const LectureSchedules: React.FC = () => {
               <input
                 type="text"
                 placeholder={getText('Search schedules...', 'Cari jadwal...')}
+                aria-label={getText('Search schedules', 'Cari jadwal')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
@@ -803,6 +831,7 @@ const LectureSchedules: React.FC = () => {
               <select
                 value={roomFilter}
                 onChange={(e) => setRoomFilter(e.target.value)}
+                aria-label={getText('Filter by room', 'Filter berdasarkan ruangan')}
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               >
                 <option value="all">{getText('All Rooms', 'Semua Ruangan')}</option>
@@ -813,6 +842,7 @@ const LectureSchedules: React.FC = () => {
               <select
                 value={dayFilter}
                 onChange={(e) => setDayFilter(e.target.value)}
+                aria-label={getText('Filter by day', 'Filter berdasarkan hari')}
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               >
                 <option value="all">{getText('All Days', 'Semua Hari')}</option>
@@ -859,18 +889,19 @@ const LectureSchedules: React.FC = () => {
                   )}
                 </button>
                 <button
-                  onClick={generatePDF}
-                  className="flex items-center gap-2 px-3 py-2 text-green-700 border border-green-300 rounded-lg hover:bg-green-50 transition-colors text-sm"
-                >
-                  <Download className="h-4 w-4" />
-                  <span className="hidden sm:inline">{getText('Export PDF', 'Ekspor PDF')}</span>
-                </button>
-                <button
                   onClick={() => setShowUploadModal(true)}
                   className="flex items-center gap-2 px-3 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
                 >
                   <Upload className="h-4 w-4" />
                   <span className="hidden sm:inline">{getText('Import Excel', 'Impor Excel')}</span>
+                </button>
+                <button
+                  onClick={() => setShowDeleteAllConfirm(true)}
+                  disabled={schedules.length === 0}
+                  className="flex items-center gap-2 px-3 py-2 text-red-700 border border-red-300 rounded-lg hover:bg-red-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span className="hidden sm:inline">{getText('Delete All', 'Hapus Semua')}</span>
                 </button>
               </>
             )}
@@ -1085,6 +1116,7 @@ const LectureSchedules: React.FC = () => {
                   <input
                     {...form.register('course_name')}
                     type="text"
+                    autoComplete="off"
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
                     placeholder={getText('Enter course name', 'Masukkan nama mata kuliah')}
                   />
@@ -1098,6 +1130,7 @@ const LectureSchedules: React.FC = () => {
                   <input
                     {...form.register('course_code')}
                     type="text"
+                    autoComplete="off"
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
                     placeholder="e.g. MKL6305"
                   />
@@ -1113,6 +1146,7 @@ const LectureSchedules: React.FC = () => {
                   <input
                     {...form.register('lecturer')}
                     type="text"
+                    autoComplete="name"
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
                     placeholder={getText('Enter lecturer name', 'Masukkan nama dosen')}
                   />
@@ -1150,6 +1184,8 @@ const LectureSchedules: React.FC = () => {
                             <input
                               type="text"
                               placeholder={getText('Search rooms...', 'Cari ruangan...')}
+                              aria-label={getText('Search rooms', 'Cari ruangan')}
+                              autoComplete="off"
                               value={roomSearchTerm}
                               onChange={(e) => setRoomSearchTerm(e.target.value)}
                               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
@@ -1200,6 +1236,7 @@ const LectureSchedules: React.FC = () => {
                 <input
                   {...form.register('subject_study')}
                   type="text"
+                  autoComplete="off"
                   className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
                   placeholder={getText('Enter study program', 'Masukkan program studi')}
                 />
@@ -1230,6 +1267,7 @@ const LectureSchedules: React.FC = () => {
                   <input
                     {...form.register('start_time')}
                     type="time"
+                    autoComplete="off"
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
                   />
                   {form.formState.errors.start_time && (
@@ -1242,6 +1280,7 @@ const LectureSchedules: React.FC = () => {
                   <input
                     {...form.register('end_time')}
                     type="time"
+                    autoComplete="off"
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
                   />
                   {form.formState.errors.end_time && (
@@ -1272,6 +1311,7 @@ const LectureSchedules: React.FC = () => {
                     {...form.register('academics_year', { valueAsNumber: true })}
                     type="number"
                     placeholder="2024"
+                    autoComplete="off"
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
                   />
                   {form.formState.errors.academics_year && (
@@ -1300,6 +1340,7 @@ const LectureSchedules: React.FC = () => {
                   <input
                     {...form.register('class')}
                     type="text"
+                    autoComplete="off"
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
                     placeholder="e.g. A, B, C"
                   />
@@ -1314,6 +1355,7 @@ const LectureSchedules: React.FC = () => {
                     {...form.register('amount', { valueAsNumber: true })}
                     type="number"
                     min="0"
+                    autoComplete="off"
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
                     placeholder="0"
                   />
@@ -1327,6 +1369,7 @@ const LectureSchedules: React.FC = () => {
                   <input
                     {...form.register('kurikulum')}
                     type="text"
+                    autoComplete="off"
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
                     placeholder={getText('Optional', 'Opsional')}
                   />
@@ -1580,8 +1623,8 @@ const LectureSchedules: React.FC = () => {
                           <div className="flex items-center gap-3 mb-2">
                             <h4 className="text-lg font-semibold text-gray-900">{request.course_code}</h4>
                             <span className={`px-3 py-1 rounded-full text-xs font-medium ${request.is_done === null ? 'bg-yellow-100 text-yellow-800' :
-                                request.is_done === true ? 'bg-green-100 text-green-800' :
-                                  'bg-red-100 text-red-800'
+                              request.is_done === true ? 'bg-green-100 text-green-800' :
+                                'bg-red-100 text-red-800'
                               }`}>
                               {getText(
                                 request.is_done === null ? 'Pending' : request.is_done === true ? 'Completed' : 'Unchecked',
@@ -1682,6 +1725,59 @@ const LectureSchedules: React.FC = () => {
                   <div className="flex items-center justify-center gap-2">
                     <Trash2 className="h-4 w-4" />
                     {getText('Delete Schedule', 'Hapus Jadwal')}
+                  </div>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete All Confirmation Modal */}
+      {showDeleteAllConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl transform transition-all">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                <AlertCircle className="h-8 w-8 text-red-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">
+                {getText('Delete All Schedules?', 'Hapus Semua Jadwal?')}
+              </h3>
+              <p className="text-gray-500 mb-2">
+                {getText(
+                  `You are about to delete ALL ${schedules.length} lecture schedules.`,
+                  `Anda akan menghapus SEMUA ${schedules.length} jadwal kuliah.`
+                )}
+              </p>
+              <p className="text-red-600 font-semibold mb-6">
+                {getText(
+                  'This action cannot be undone!',
+                  'Aksi ini tidak dapat dibatalkan!'
+                )}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteAllConfirm(false)}
+                className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
+              >
+                {getText('Cancel', 'Batal')}
+              </button>
+              <button
+                onClick={handleDeleteAll}
+                disabled={loading}
+                className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-semibold transition-colors shadow-lg"
+              >
+                {loading ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    {getText('Deleting...', 'Menghapus...')}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center gap-2">
+                    <Trash2 className="h-4 w-4" />
+                    {getText('Delete All', 'Hapus Semua')}
                   </div>
                 )}
               </button>

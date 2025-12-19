@@ -855,6 +855,7 @@ const BookRoom: React.FC = () => {
   const [selectedRoomDetail, setSelectedRoomDetail] = useState<Room | null>(null);
   const [selectedRoomBuilding, setSelectedRoomBuilding] = useState<any>(null);
   const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
+  const [loadingRoomDetail, setLoadingRoomDetail] = useState(false);
 
 
   // Refs
@@ -2238,10 +2239,10 @@ const BookRoom: React.FC = () => {
                 </div>
                 <div>
                   <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                    {getText('Smart Room Booking', 'Pemesanan Ruangan Cerdas')}
+                    {getText('Smart Room Booking', 'Pemesanan Ruangan')}
                   </h1>
                   <p className="text-gray-600 mt-1">
-                    {getText('Reserve your perfect study space', 'Pesan ruang belajar yang sempurna')}
+                    {getText('Book a room from here', 'Pesan ruangan di halaman ini')}
                   </p>
                 </div>
               </div>
@@ -2806,8 +2807,15 @@ const BookRoom: React.FC = () => {
                                           className="text-emerald-600 hover:text-emerald-800 flex items-center space-x-1"
                                           onClick={async (e) => {
                                             e.stopPropagation();
+
+                                            // Show modal immediately with basic data
+                                            setSelectedRoomDetail(room);
+                                            setSelectedRoomBuilding(null);
+                                            setShowRoomDetailModal(true);
+                                            setLoadingRoomDetail(true);
+
                                             try {
-                                              // Fetch room details
+                                              // Fetch room details in background
                                               const { data: roomData, error: roomError } = await supabase
                                                 .from('rooms')
                                                 .select('id, name, code, capacity, is_available, attachments, floor, building_id')
@@ -2816,37 +2824,37 @@ const BookRoom: React.FC = () => {
 
                                               if (roomError) {
                                                 console.error('Error fetching room:', roomError);
+                                                setLoadingRoomDetail(false);
                                                 return;
                                               }
 
-                                              // Count tables separately
-                                              const { count: tablesCount } = await supabase
-                                                .from('tables')
-                                                .select('id', { count: 'exact', head: true })
-                                                .eq('room_id', room.id);
-
-                                              // Fetch building name
-                                              let buildingData = null;
-                                              if (roomData?.building_id) {
-                                                const { data: bData } = await supabase
-                                                  .from('building')
-                                                  .select('name')
-                                                  .eq('id', roomData.building_id)
-                                                  .single();
-                                                buildingData = bData;
-                                              }
+                                              // Fetch tables count and building in parallel
+                                              const [tablesResult, buildingResult] = await Promise.all([
+                                                supabase
+                                                  .from('tables')
+                                                  .select('id', { count: 'exact', head: true })
+                                                  .eq('room_id', room.id),
+                                                roomData?.building_id
+                                                  ? supabase
+                                                    .from('building')
+                                                    .select('name')
+                                                    .eq('id', roomData.building_id)
+                                                    .single()
+                                                  : Promise.resolve({ data: null })
+                                              ]);
 
                                               setSelectedRoomDetail({
                                                 ...room,
                                                 attachments: roomData?.attachments || null,
                                                 floor: roomData?.floor || null,
                                                 building_id: roomData?.building_id || null,
-                                                tables: tablesCount ? Array(tablesCount).fill({}) : []
+                                                tables: tablesResult.count ? Array(tablesResult.count).fill({}) : []
                                               });
-                                              setSelectedRoomBuilding(buildingData);
-                                              setShowRoomDetailModal(true);
+                                              setSelectedRoomBuilding(buildingResult.data);
                                             } catch (err) {
                                               console.error('Error in room details:', err);
+                                            } finally {
+                                              setLoadingRoomDetail(false);
                                             }
                                           }}
                                           title={getText("Room Details", "Detail Ruangan")}
@@ -3023,7 +3031,7 @@ const BookRoom: React.FC = () => {
                         <div className="flex items-center space-x-2">
                           <ClipboardList className="h-5 w-5 text-yellow-600" />
                           <span className="text-sm font-medium text-yellow-800">
-                            {getText('View Pending Bookings', 'Lihat Booking Pending')}
+                            {getText('View your bookings', 'Lihat Status Booking Anda ')}
                           </span>
                         </div>
                         {showPendingBookings ? <ChevronUp className="h-4 w-4 text-yellow-600" /> : <ChevronDown className="h-4 w-4 text-yellow-600" />}
@@ -3037,7 +3045,7 @@ const BookRoom: React.FC = () => {
                             </div>
                           ) : pendingBookings.length === 0 ? (
                             <p className="text-sm text-gray-500 text-center py-4">
-                              {getText('No pending bookings', 'Tidak ada booking pending')}
+                              {getText('You have not made any bookings', 'Anda belum melakukan pemesanan')}
                             </p>
                           ) : (
                             pendingBookings.map((booking: any) => (
@@ -3255,7 +3263,18 @@ const BookRoom: React.FC = () => {
 
               <div className="p-6 space-y-6 overflow-y-auto">
                 {/* Room Photo */}
-                {selectedRoomDetail.attachments ? (
+                {loadingRoomDetail ? (
+                  <div className="relative rounded-xl overflow-hidden shadow-lg h-48 bg-gradient-to-br from-emerald-50 to-teal-50">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-4">
+                      <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-3 animate-pulse">
+                        <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
+                      </div>
+                      <h4 className="font-bold text-lg text-gray-800 animate-pulse">{selectedRoomDetail.name}</h4>
+                      {selectedRoomDetail.code && <p className="text-sm text-gray-500 mb-2 animate-pulse">{selectedRoomDetail.code}</p>}
+                      <p className="text-xs text-emerald-600 font-medium animate-pulse">{getText('Loading photo...', 'Memuat foto...')}</p>
+                    </div>
+                  </div>
+                ) : selectedRoomDetail.attachments ? (
                   <div className="relative rounded-xl overflow-hidden shadow-lg">
                     <ImageWithLoader
                       src={selectedRoomDetail.attachments}

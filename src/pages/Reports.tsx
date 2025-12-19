@@ -657,7 +657,7 @@ const Reports: React.FC = () => {
     return matchesSearch && matchesStatus && matchesPriority;
   });
 
-  if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
+  if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin' && profile?.role !== 'technician') {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">

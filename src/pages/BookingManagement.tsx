@@ -381,6 +381,7 @@ const BookingManagement: React.FC = () => {
     const [unavailableEquipment, setUnavailableEquipment] = useState<string[]>([]);
 
     // ===== FETCH BOOKINGS =====
+    // Optimized: Select only needed columns to avoid timeout from large data
     const fetchBookings = useCallback(async () => {
         try {
             setLoading(true);
@@ -388,7 +389,9 @@ const BookingManagement: React.FC = () => {
             let query = supabase
                 .from('bookings')
                 .select(`
-                    *,
+                    id, user_id, room_id, start_time, end_time, purpose, sks, class_type, 
+                    status, equipment_requested, equipment_quantities, notes, 
+                    created_at, updated_at, user_info, equipment_details,
                     user:users!bookings_user_id_fkey(
                         id, full_name, identity_number, phone_number, email, study_program_id
                     ),
@@ -453,11 +456,12 @@ const BookingManagement: React.FC = () => {
     }, [profile, statusFilter]);
 
     // ===== FETCH ALL EQUIPMENT =====
+    // Optimized: Select only needed columns to avoid timeout from large attachments data
     const fetchAllEquipment = async () => {
         try {
             const { data, error } = await supabase
                 .from('equipment')
-                .select('*')
+                .select('id, name, code, category, quantity, unit, is_mandatory, is_available, rooms_id, condition')
                 .order('name');
 
             if (error) throw error;
@@ -529,13 +533,17 @@ const BookingManagement: React.FC = () => {
     };
 
     // ===== FETCH EQUIPMENT BY ROOM =====
+    // Optimized: Select only needed columns to avoid timeout from large attachments data
     const fetchEquipmentByRoom = async (roomId: string) => {
         try {
             setLoadingEquipment(true);
 
+            // Select only required columns (exclude attachments which can be very large)
+            const equipmentColumns = 'id, name, code, category, quantity, unit, is_mandatory, is_available, rooms_id, condition';
+
             const { data: mandatoryData, error: mandatoryError } = await supabase
                 .from('equipment')
-                .select('*')
+                .select(equipmentColumns)
                 .eq('rooms_id', roomId)
                 .eq('is_mandatory', true)
                 .eq('is_available', true);
@@ -544,7 +552,7 @@ const BookingManagement: React.FC = () => {
 
             const { data: optionalData, error: optionalError } = await supabase
                 .from('equipment')
-                .select('*')
+                .select(equipmentColumns)
                 .eq('is_mandatory', false)
                 .eq('is_available', true)
                 .gt('quantity', 0)
@@ -570,37 +578,57 @@ const BookingManagement: React.FC = () => {
     };
 
     // ===== INITIALIZE EQUIPMENT SELECTIONS FROM BOOKING =====
+    // Konsep: equipment_requested = array ID equipment yang dipinjam
+    //         equipment_quantities = array jumlah yang dipinjam (index sama dengan equipment_requested)
     const initializeEquipmentSelections = async (booking: Booking, newRoomId?: string) => {
+        console.log('📦 Initialize Equipment Selections:');
+        console.log('  - equipment_requested:', booking.equipment_requested);
+        console.log('  - equipment_quantities:', booking.equipment_quantities);
+        console.log('  - booking status:', booking.status);
+
         const targetRoomId = newRoomId || booking.room_id;
         const { mandatory, optional } = await fetchEquipmentByRoom(targetRoomId);
 
         const selections: EquipmentSelection[] = [];
         const unavailable: string[] = [];
 
+        // Untuk equipment mandatory dari ruangan
         mandatory.forEach(eq => {
-            const originalIndex = booking.equipment_requested?.indexOf(eq.id);
-            const originalQty = originalIndex !== -1
-                ? booking.equipment_quantities?.[originalIndex] || 1
-                : eq.quantity;
+            // Cari index equipment ini di booking.equipment_requested
+            const originalIndex = booking.equipment_requested?.indexOf(eq.id) ?? -1;
+
+            // Jika equipment ada di booking, ambil jumlah dari equipment_quantities
+            // Jika tidak, gunakan stok yang tersedia
+            let borrowedQty = 1;
+            if (originalIndex !== -1 && originalIndex !== undefined) {
+                borrowedQty = booking.equipment_quantities?.[originalIndex] || 1;
+            }
 
             if (!eq.is_available) {
                 unavailable.push(eq.name);
                 return;
             }
 
+            // max_quantity = stok saat ini + jumlah yang sedang dipinjam (jika sudah borrowed)
+            // Karena stok sudah dikurangi saat status borrowed, kita tambahkan kembali untuk edit
+            const currentStock = eq.quantity || 0;
+            const maxQty = booking.status === 'borrowed' ? currentStock + borrowedQty : currentStock;
+
             selections.push({
                 equipment_id: eq.id,
                 equipment_name: eq.name,
                 equipment_code: eq.code,
                 equipment_unit: eq.unit || 'pcs',
-                quantity: Math.min(originalQty, eq.quantity),
+                quantity: borrowedQty,
                 is_mandatory: true,
-                max_quantity: eq.quantity
+                max_quantity: maxQty > 0 ? maxQty : borrowedQty // Minimal sama dengan yang dipinjam
             });
         });
 
+        // Untuk equipment optional yang ada di booking
         if (!newRoomId || newRoomId === booking.room_id) {
             booking.equipment_requested?.forEach((eqId, index) => {
+                // Skip jika sudah ada di selections (mandatory)
                 if (selections.some(s => s.equipment_id === eqId)) return;
 
                 const eq = [...mandatory, ...optional].find(e => e.id === eqId);
@@ -610,14 +638,19 @@ const BookingManagement: React.FC = () => {
                         return;
                     }
 
+                    // Ambil jumlah dari equipment_quantities menggunakan index yang sama
+                    const borrowedQty = booking.equipment_quantities?.[index] || 1;
+                    const currentStock = eq.quantity || 0;
+                    const maxQty = booking.status === 'borrowed' ? currentStock + borrowedQty : currentStock;
+
                     selections.push({
                         equipment_id: eq.id,
                         equipment_name: eq.name,
                         equipment_code: eq.code,
                         equipment_unit: eq.unit || 'pcs',
-                        quantity: booking.equipment_quantities?.[index] || 1,
+                        quantity: borrowedQty,
                         is_mandatory: false,
-                        max_quantity: eq.quantity
+                        max_quantity: maxQty > 0 ? maxQty : borrowedQty
                     });
                 }
             });
@@ -629,20 +662,29 @@ const BookingManagement: React.FC = () => {
         return selections;
     };
 
+    // Membangun daftar equipment selection dari booking yang ada
+    // Konsep: equipment_requested[i] = ID equipment, equipment_quantities[i] = jumlah yang dipinjam
     const buildOriginalEquipmentSelections = (booking: Booking): EquipmentSelection[] => {
         const selections: EquipmentSelection[] = [];
 
         booking.equipment_requested?.forEach((eqId, index) => {
             const eq = allEquipment.find(e => e.id === eqId);
             if (eq) {
+                // Ambil jumlah yang dipinjam dari equipment_quantities menggunakan index yang sama
+                const borrowedQty = booking.equipment_quantities?.[index] || 1;
+                const currentStock = eq.quantity || 0;
+
+                // Untuk status borrowed, stok sudah dikurangi, jadi max = stok + yang dipinjam
+                const maxQty = booking.status === 'borrowed' ? currentStock + borrowedQty : currentStock;
+
                 selections.push({
                     equipment_id: eq.id,
                     equipment_name: eq.name,
                     equipment_code: eq.code,
                     equipment_unit: eq.unit || 'pcs',
-                    quantity: booking.equipment_quantities?.[index] || 1,
+                    quantity: borrowedQty,
                     is_mandatory: eq.is_mandatory,
-                    max_quantity: eq.quantity
+                    max_quantity: maxQty > 0 ? maxQty : borrowedQty
                 });
             }
         });
@@ -849,9 +891,10 @@ const BookingManagement: React.FC = () => {
                 oldRoomId: originalRoomId,
                 newRoomId: editFormData.room_id
             });
-
-            const newEquipmentRequested = equipmentSelections.map(s => s.equipment_id);
-            const newEquipmentQuantities = equipmentSelections.map(s => s.quantity);
+            // Variabel untuk menyimpan equipment yang akan di-save ke booking
+            // Menggunakan let agar bisa di-reassign jika room changed
+            let finalEquipmentRequested = equipmentSelections.map(s => s.equipment_id);
+            let finalEquipmentQuantities = equipmentSelections.map(s => s.quantity);
 
             // ===== HANDLE STATUS BORROWED =====
             if (roomChanged && originalStatus === 'borrowed') {
@@ -913,6 +956,10 @@ const BookingManagement: React.FC = () => {
                                 .eq('id', eq.equipment_id)
                                 .single();
 
+                            if (!currentEq) {
+                                throw new Error(`Equipment tidak ditemukan: ${eq.equipment_name}`);
+                            }
+
                             if (currentEq.quantity < eq.quantity) {
                                 throw new Error(`Stock "${currentEq.name}" tidak cukup. Tersedia: ${currentEq.quantity}, Dibutuhkan: ${eq.quantity}`);
                             }
@@ -956,13 +1003,13 @@ const BookingManagement: React.FC = () => {
                     );
                 }
 
-                // STEP 5: Update booking (equipment_requested = mandatory baru + optional)
-                const newEquipmentRequested = [
+                // STEP 5: Update finalEquipmentRequested untuk mandatory baru + optional
+                finalEquipmentRequested = [
                     ...mandatoryEquipmentNew.map(e => e.equipment_id),
                     ...optionalEquipmentNew.map(e => e.equipment_id)
                 ];
 
-                const newEquipmentQuantities = [
+                finalEquipmentQuantities = [
                     ...mandatoryEquipmentNew.map(e => e.quantity),
                     ...optionalEquipmentNew.map(e => e.quantity)
                 ];
@@ -973,7 +1020,7 @@ const BookingManagement: React.FC = () => {
                 console.log('ℹ️ Room changed while approved - no checkout needed (equipment not deducted yet)');
             }
 
-            // ===== STEP 4: UPDATE BOOKING (ROOM_ID + EQUIPMENT) =====
+            // ===== FINAL STEP: UPDATE BOOKING (ROOM_ID + EQUIPMENT) =====
             // ⭐ PENTING: Status booking TIDAK berubah, tetap borrowed
             const updateData: any = {
                 room_id: editFormData.room_id, // ⭐ Update ke room_id BARU
@@ -981,8 +1028,8 @@ const BookingManagement: React.FC = () => {
                 start_time: parseInputToISO(editFormData.start_time),
                 end_time: parseInputToISO(editFormData.end_time),
                 notes: editFormData.notes,
-                equipment_requested: newEquipmentRequested, // ⭐ Update equipment
-                equipment_quantities: newEquipmentQuantities, // ⭐ Update quantities
+                equipment_requested: finalEquipmentRequested, // ⭐ Update equipment
+                equipment_quantities: finalEquipmentQuantities, // ⭐ Update quantities
                 updated_at: new Date().toISOString()
                 // ⭐ TIDAK UPDATE STATUS - tetap borrowed
             };
@@ -1631,7 +1678,14 @@ const BookingManagement: React.FC = () => {
                                                     <div key={eqId} className="flex items-center justify-between bg-white p-3 rounded-lg">
                                                         <div className="flex items-center space-x-3">
                                                             <Package className="h-4 w-4 text-gray-400" />
-                                                            <span>{equipment?.name || eqId}</span>
+                                                            <span>
+                                                                {equipment?.name || eqId}
+                                                                {equipment?.code && (
+                                                                    <span className="ml-2 px-2 py-0.5 bg-gray-200 text-gray-700 text-xs rounded font-mono">
+                                                                        {equipment.code}
+                                                                    </span>
+                                                                )}
+                                                            </span>
                                                             {equipment?.is_mandatory && (
                                                                 <span className="px-2 py-0.5 bg-red-100 text-red-800 text-xs rounded">
                                                                     Wajib
@@ -1806,6 +1860,11 @@ const BookingManagement: React.FC = () => {
                                                         <div>
                                                             <p className="font-medium text-gray-900">
                                                                 {selection.equipment_name}
+                                                                {selection.equipment_code && (
+                                                                    <span className="ml-2 px-2 py-0.5 bg-gray-200 text-gray-700 text-xs rounded font-mono">
+                                                                        {selection.equipment_code}
+                                                                    </span>
+                                                                )}
                                                                 {selection.is_mandatory && (
                                                                     <span className="ml-2 px-2 py-0.5 bg-red-100 text-red-800 text-xs rounded">
                                                                         Wajib
@@ -1870,7 +1929,12 @@ const BookingManagement: React.FC = () => {
                                                             className="flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-left"
                                                         >
                                                             <div>
-                                                                <p className="font-medium text-gray-900 text-sm">{eq.name}</p>
+                                                                <p className="font-medium text-gray-900 text-sm">
+                                                                    {eq.name}
+                                                                    {eq.code && (
+                                                                        <span className="ml-1 text-xs text-gray-500 font-mono">({eq.code})</span>
+                                                                    )}
+                                                                </p>
                                                                 <p className="text-xs text-gray-500">Stok: {eq.quantity}</p>
                                                             </div>
                                                             <Plus className="h-4 w-4 text-green-600" />

@@ -176,6 +176,13 @@ const LocationManagement: React.FC = () => {
   // Fullscreen Photo Preview state
   const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
 
+  // Operation Loading States
+  const [loadingRoom, setLoadingRoom] = useState(false);
+  const [loadingCabinet, setLoadingCabinet] = useState(false);
+  const [loadingRack, setLoadingRack] = useState(false);
+  const [loadingBox, setLoadingBox] = useState(false);
+  const [loadingBatchMove, setLoadingBatchMove] = useState(false);
+
   useEffect(() => { fetchData(); fetchRoomSuggestions(); fetchDepartments(); }, []);
 
   // Sync selectedCabinetForContents when data changes
@@ -193,9 +200,9 @@ const LocationManagement: React.FC = () => {
     }
   }, [buildings]);
 
-  const fetchData = async () => {
+  const fetchData = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
 
       // OPTIMIZATION: Fetch all data in parallel using Promise.all
       // This reduces load time significantly by running all queries simultaneously
@@ -294,7 +301,7 @@ const LocationManagement: React.FC = () => {
       console.error(error);
       Swal.fire('Error', getText('Failed to load data', 'Gagal memuat data'), 'error');
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
@@ -452,6 +459,7 @@ const LocationManagement: React.FC = () => {
     }
 
     try {
+      setLoadingRoom(true);
       const roomIds = selectedAssignRooms.map(r => r.id);
       const { error } = await supabase.from('rooms').update({
         building_id: selectedBuildingId,
@@ -460,7 +468,7 @@ const LocationManagement: React.FC = () => {
 
       if (error) throw error;
 
-      await fetchData();
+      await fetchData(true);
       setShowRoomModal(false);
       setSelectedAssignRooms([]);
       setAssignTargetFloor('');
@@ -474,6 +482,8 @@ const LocationManagement: React.FC = () => {
     } catch (error: any) {
       console.error('Error assigning rooms:', error);
       Swal.fire('Error', getText('Failed to reassign room', 'Gagal memindahkan ruangan') + ': ' + (error.message || ''), 'error');
+    } finally {
+      setLoadingRoom(false);
     }
   };
 
@@ -500,6 +510,7 @@ const LocationManagement: React.FC = () => {
     }
 
     try {
+      setLoadingRoom(true);
       if (editingRoom) {
         // Update existing room
         const { error } = await supabase.from('rooms').update({
@@ -530,7 +541,7 @@ const LocationManagement: React.FC = () => {
         if (error) throw error;
       }
 
-      await fetchData();
+      await fetchData(true);
       setShowRoomModal(false);
       setSelectedAssignRooms([]);
       setEditingRoom(null);
@@ -551,6 +562,228 @@ const LocationManagement: React.FC = () => {
         Swal.fire('Error', getText('Room code already exists! Please use a different code.', 'Kode ruangan sudah ada! Gunakan kode lain.'), 'error');
       } else {
         Swal.fire('Error', getText('Failed to save room', 'Gagal menyimpan ruangan') + ': ' + (e.message || 'Unknown error'), 'error');
+      }
+    } finally {
+      setLoadingRoom(false);
+    }
+  };
+
+  const executeSaveCabinet = async () => {
+    if (cabinetModalMode === 'manual') {
+      // Manual - logic
+      if (!tabelForm.name.trim()) { Swal.fire('Warning', getText('Please enter cabinet name', 'Masukkan nama kabinet'), 'warning'); return; }
+
+      try {
+        setLoadingCabinet(true);
+        // Combine name and description for storage
+        const combinedDescription = tabelForm.description
+          ? `${tabelForm.name.trim()} | ${tabelForm.description.trim()} `
+          : tabelForm.name.trim(); // Ensure trailing space for safety
+
+        const dataToSave = {
+          description: combinedDescription,
+          rack: tabelForm.rack,
+          room_id: selectedTabelRoomId || tabelForm.room_id,
+          attachments: tabelForm.attachments || null
+        };
+
+        if (editingTabel) {
+          const { error } = await supabase.from('table').update({
+            description: combinedDescription,
+            rack: tabelForm.rack,
+            attachments: tabelForm.attachments || null
+          }).eq('id', editingTabel.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from('table').insert([dataToSave]);
+          if (error) throw error;
+        }
+
+        setShowTabelModal(false);
+        setTabelForm({ name: '', description: '', rack: '', room_id: '', attachments: '' });
+        setCabinetImagePreview('');
+        await fetchData(true);
+        Swal.fire({ icon: 'success', title: getText('Saved!', 'Tersimpan!'), timer: 1500, showConfirmButton: false });
+      } catch (e: any) {
+        console.error(e);
+        Swal.fire('Error', getText('Failed to save cabinet', 'Gagal menyimpan kabinet') + (e.message ? `: ${e.message}` : ''), 'error');
+      } finally {
+        setLoadingCabinet(false);
+      }
+    } else {
+      // Claim - from stock
+      if (!selectedStockForCabinet) { Swal.fire('Warning', getText('Please select a stock item', 'Pilih item stock'), 'warning'); return; }
+      if (claimQuantity < 1 || claimQuantity > selectedStockForCabinet.quantity) {
+        Swal.fire('Warning', getText('Invalid quantity', 'Jumlah tidak valid'), 'warning');
+        return;
+      }
+
+      try {
+        setLoadingCabinet(true);
+        const roomId = selectedTabelRoomId || tabelForm.room_id;
+
+        // Create cabinet entries only (Box has its own modal now)
+        const cabinetEntries = [];
+        for (let i = 0; i < claimQuantity; i++) {
+          cabinetEntries.push({
+            description: claimQuantity > 1
+              ? `${selectedStockForCabinet.nama} #${i + 1} (${selectedStockForCabinet.code})`
+              : `${selectedStockForCabinet.nama} (${selectedStockForCabinet.code})`,
+            rack: tabelForm.rack,
+            room_id: roomId,
+            attachments: tabelForm.attachments || null
+          });
+        }
+
+        const { error: insertError } = await supabase.from('table').insert(cabinetEntries);
+        if (insertError) throw insertError;
+
+        // Reduce stock quantity by claimed amount
+        const newQuantity = selectedStockForCabinet.quantity - claimQuantity;
+        const { error: updateError } = await supabase.from('stock').update({ quantity: newQuantity }).eq('id', selectedStockForCabinet.id);
+        if (updateError) throw updateError;
+
+        setShowTabelModal(false);
+        setCabinetModalMode('manual');
+        setSelectedStockForCabinet(null);
+        setClaimQuantity(1);
+        setTabelForm({ name: '', description: '', rack: '', room_id: '', attachments: '' });
+        setCabinetImagePreview('');
+        await fetchData(true);
+
+        Swal.fire({
+          icon: 'success',
+          title: getText('Cabinet claimed!', 'Kabinet diambil!'),
+          text: getText(`${claimQuantity} ${selectedStockForCabinet.nama} claimed. Stock reduced by ${claimQuantity}.`, `${claimQuantity} ${selectedStockForCabinet.nama} diambil. Stock berkurang ${claimQuantity}.`),
+          timer: 2000,
+          showConfirmButton: false
+        });
+      } catch (e: any) {
+        console.error(e);
+        Swal.fire('Error', getText('Failed to claim cabinet', 'Gagal mengambil kabinet') + (e.message ? `: ${e.message}` : ''), 'error');
+      } finally {
+        setLoadingCabinet(false);
+      }
+    }
+  };
+
+  const executeSaveRack = async () => {
+    if (!rackForm.name.trim()) { Swal.fire('Warning', getText('Please enter rack name', 'Masukkan nama rak'), 'warning'); return; }
+
+    try {
+      setLoadingRack(true);
+      const tableId = selectedRackTableId || rackForm.table_id;
+
+      if (editingRack) {
+        const { error } = await supabase.from('rack').update({ name: rackForm.name.trim() }).eq('id', editingRack.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('rack').insert([{ name: rackForm.name.trim(), table_id: tableId }]);
+        if (error) throw error;
+      }
+
+      setShowRackModal(false);
+      await fetchData(true);
+      Swal.fire({ icon: 'success', title: getText('Saved!', 'Tersimpan!'), timer: 1500, showConfirmButton: false });
+    } catch (e: any) {
+      console.error(e);
+      Swal.fire('Error', getText('Failed to save rack', 'Gagal menyimpan rak') + (e.message ? `: ${e.message}` : ''), 'error');
+    } finally {
+      setLoadingRack(false);
+    }
+  };
+
+  const executeSaveBox = async () => {
+    if (boxModalMode === 'manual') {
+      // Manual - logic
+      if (!boxForm.name.trim()) { Swal.fire('Warning', getText('Please enter box name', 'Masukkan nama box'), 'warning'); return; }
+
+      try {
+        setLoadingBox(true);
+        const rackId = selectedBoxRackId || boxForm.rack_id;
+
+        if (editingBox) {
+          const { error } = await supabase.from('box').update({
+            name: boxForm.name.trim(),
+            description: boxForm.description,
+            attachments: boxForm.attachments || null
+          }).eq('id', editingBox.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from('box').insert([{
+            name: boxForm.name.trim(),
+            description: boxForm.description,
+            rack_id: rackId,
+            attachments: boxForm.attachments || null
+          }]);
+          if (error) throw error;
+        }
+
+        setShowBoxModal(false);
+        setBoxModalMode('manual');
+        setBoxForm({ name: '', description: '', rack_id: '', attachments: '' });
+        setBoxImagePreview('');
+        await fetchData(true);
+        Swal.fire({ icon: 'success', title: getText('Saved!', 'Tersimpan!'), timer: 1500, showConfirmButton: false });
+      } catch (e: any) {
+        console.error(e);
+        Swal.fire('Error', getText('Failed to save box', 'Gagal menyimpan box') + (e.message ? `: ${e.message}` : ''), 'error');
+      } finally {
+        setLoadingBox(false);
+      }
+    } else {
+      // Claim - from stock
+      if (!selectedStockForBox) { Swal.fire('Warning', getText('Please select a stock item', 'Pilih item stock'), 'warning'); return; }
+      if (boxClaimQuantity < 1 || boxClaimQuantity > selectedStockForBox.quantity) {
+        Swal.fire('Warning', getText('Invalid quantity', 'Jumlah tidak valid'), 'warning');
+        return;
+      }
+
+      try {
+        setLoadingBox(true);
+        const rackId = selectedBoxRackId || boxForm.rack_id;
+
+        // Create boxes with stock name
+        const boxEntries = [];
+        for (let i = 0; i < boxClaimQuantity; i++) {
+          boxEntries.push({
+            name: boxClaimQuantity > 1
+              ? `${selectedStockForBox.nama} #${i + 1} `
+              : selectedStockForBox.nama, // Ensure trailing space for safety
+            description: `${selectedStockForBox.code} - Claimed from stock`,
+            rack_id: rackId,
+            attachments: boxForm.attachments || null
+          });
+        }
+
+        const { error: insertError } = await supabase.from('box').insert(boxEntries);
+        if (insertError) throw insertError;
+
+        // Reduce stock quantity
+        const newQuantity = selectedStockForBox.quantity - boxClaimQuantity;
+        const { error: updateError } = await supabase.from('stock').update({ quantity: newQuantity }).eq('id', selectedStockForBox.id);
+        if (updateError) throw updateError;
+
+        setShowBoxModal(false);
+        setSelectedStockForBox(null);
+        setBoxClaimQuantity(1);
+        setBoxModalMode('manual');
+        setBoxForm({ name: '', description: '', rack_id: '', attachments: '' });
+        setBoxImagePreview('');
+        await fetchData(true);
+
+        Swal.fire({
+          icon: 'success',
+          title: getText('Box claimed!', 'Box diambil!'),
+          text: getText(`${boxClaimQuantity} box claimed. Stock reduced by ${boxClaimQuantity}.`, `${boxClaimQuantity} box diambil. Stock berkurang ${boxClaimQuantity}.`),
+          timer: 2000,
+          showConfirmButton: false
+        });
+      } catch (e: any) {
+        console.error(e);
+        Swal.fire('Error', getText('Failed to claim box', 'Gagal mengambil box') + (e.message ? `: ${e.message}` : ''), 'error');
+      } finally {
+        setLoadingBox(false);
       }
     }
   };
@@ -812,6 +1045,7 @@ const LocationManagement: React.FC = () => {
     if (!batchMoveTargetRack || selectedItemsForMove.size === 0) return;
 
     try {
+      setLoadingBatchMove(true);
       const ids = Array.from(selectedItemsForMove);
       const { error } = await supabase
         .from('box')
@@ -820,7 +1054,7 @@ const LocationManagement: React.FC = () => {
 
       if (error) throw error;
 
-      await fetchData();
+      await fetchData(true);
       clearSelection();
       setShowBatchMoveModal(false);
       setBatchMoveTargetRack('');
@@ -828,6 +1062,8 @@ const LocationManagement: React.FC = () => {
     } catch (error) {
       console.error('Error moving boxes:', error);
       Swal.fire('Error', getText('Failed to move boxes', 'Gagal memindahkan box'), 'error');
+    } finally {
+      setLoadingBatchMove(false);
     }
   };
 
@@ -867,7 +1103,7 @@ const LocationManagement: React.FC = () => {
 
       if (error) throw error;
 
-      await fetchData();
+      await fetchData(true);
       Swal.fire({ icon: 'success', title: getText('Moved!', 'Dipindahkan!'), timer: 1000, showConfirmButton: false });
     } catch (error) {
       console.error('Error moving box:', error);
@@ -894,7 +1130,7 @@ const LocationManagement: React.FC = () => {
 
       if (error) throw error;
 
-      await fetchData();
+      await fetchData(true);
       setInlineEditingId(null);
       setInlineEditValue('');
     } catch (error) {
@@ -1252,7 +1488,7 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                                           const result = await Swal.fire({ title: getText('Delete Room?', 'Hapus Ruangan?'), text: getText('This will also delete all cabinets in this room', 'Ini juga akan menghapus semua kabinet di ruangan ini'), icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444' });
                                           if (result.isConfirmed) {
                                             await supabase.from('rooms').delete().eq('id', room.id);
-                                            fetchData();
+                                            fetchData(true);
                                             Swal.fire('Deleted', getText('Room deleted', 'Ruangan dihapus'), 'success');
                                           }
                                         }}
@@ -1938,16 +2174,21 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                 <div className="flex gap-2">
                   <button onClick={() => { setShowRoomModal(false); setSelectedAssignRooms([]); setAssignTargetFloor(''); }} className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors">{getText('Cancel', 'Batal')}</button>
                   {roomModalMode === 'create' ? (
-                    <button onClick={executeSaveRoom} className="px-5 py-2 bg-teal-500 text-white font-medium rounded-lg hover:bg-teal-600 shadow-sm transition-all flex items-center gap-1.5">
-                      <Save className="h-4 w-4" /> {editingRoom ? getText('Save', 'Simpan') : getText('Create', 'Buat')}
+                    <button
+                      onClick={executeSaveRoom}
+                      disabled={loadingRoom}
+                      className="px-5 py-2 bg-teal-500 text-white font-medium rounded-lg hover:bg-teal-600 shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {loadingRoom ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      {editingRoom ? getText('Save', 'Simpan') : getText('Create', 'Buat')}
                     </button>
                   ) : (
                     <button
                       onClick={executeRoomAssignment}
-                      disabled={selectedAssignRooms.length === 0}
+                      disabled={selectedAssignRooms.length === 0 || loadingRoom}
                       className="px-5 py-2 bg-teal-500 text-white font-medium rounded-lg hover:bg-teal-600 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all flex items-center gap-1.5"
                     >
-                      <ArrowRightLeft className="h-4 w-4" />
+                      {loadingRoom ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRightLeft className="h-4 w-4" />}
                       {getText('Move', 'Pindahkan')}
                       {selectedAssignRooms.length > 0 && <span className="bg-teal-600 px-1.5 py-0.5 rounded text-xs ml-1">{selectedAssignRooms.length}</span>}
                     </button>
@@ -2179,7 +2420,7 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                     const result = await Swal.fire({ title: getText('Delete Cabinet?', 'Hapus Kabinet?'), icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444' });
                     if (result.isConfirmed) {
                       await supabase.from('table').delete().eq('id', editingTabel.id);
-                      setShowTabelModal(false); fetchData();
+                      setShowTabelModal(false); fetchData(true);
                       Swal.fire('Deleted', getText('Cabinet deleted', 'Kabinet dihapus'), 'success');
                     }
                   }} className="px-3 py-2 text-red-600 font-medium hover:bg-red-50 rounded-lg flex items-center gap-1.5 text-sm transition-colors">
@@ -2188,76 +2429,13 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                 ) : <div />}
                 <div className="flex gap-2">
                   <button onClick={() => { setShowTabelModal(false); setCabinetModalMode('manual'); setSelectedStockForCabinet(null); setClaimQuantity(1); }} className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors">{getText('Cancel', 'Batal')}</button>
-                  <button onClick={async () => {
-                    if (cabinetModalMode === 'manual') {
-                      // Manual - logic
-                      if (!tabelForm.name.trim()) { Swal.fire('Warning', getText('Please enter cabinet name', 'Masukkan nama kabinet'), 'warning'); return; }
-                      try {
-                        // Combine name and description for storage
-                        const combinedDescription = tabelForm.description
-                          ? `${tabelForm.name.trim()} | ${tabelForm.description.trim()} `
-                          : tabelForm.name.trim();
-                        const dataToSave = { description: combinedDescription, rack: tabelForm.rack, room_id: selectedTabelRoomId || tabelForm.room_id, attachments: tabelForm.attachments || null };
-                        if (editingTabel) {
-                          await supabase.from('table').update({ description: combinedDescription, rack: tabelForm.rack, attachments: tabelForm.attachments || null }).eq('id', editingTabel.id);
-                        } else {
-                          await supabase.from('table').insert([dataToSave]);
-                        }
-                        setShowTabelModal(false);
-                        setTabelForm({ name: '', description: '', rack: '', room_id: '', attachments: '' });
-                        setCabinetImagePreview('');
-                        fetchData();
-                        Swal.fire({ icon: 'success', title: getText('Saved!', 'Tersimpan!'), timer: 1500, showConfirmButton: false });
-                      } catch (e) { console.error(e); Swal.fire('Error', getText('Failed to save cabinet', 'Gagal menyimpan kabinet'), 'error'); }
-                    } else {
-                      // Claim - from stock
-                      if (!selectedStockForCabinet) { Swal.fire('Warning', getText('Please select a stock item', 'Pilih item stock'), 'warning'); return; }
-                      if (claimQuantity < 1 || claimQuantity > selectedStockForCabinet.quantity) {
-                        Swal.fire('Warning', getText('Invalid quantity', 'Jumlah tidak valid'), 'warning');
-                        return;
-                      }
-                      try {
-                        const roomId = selectedTabelRoomId || tabelForm.room_id;
-
-                        // Create cabinet entries only (Box has its own modal now)
-                        const cabinetEntries = [];
-                        for (let i = 0; i < claimQuantity; i++) {
-                          cabinetEntries.push({
-                            description: claimQuantity > 1
-                              ? `${selectedStockForCabinet.nama} #${i + 1} (${selectedStockForCabinet.code})`
-                              : `${selectedStockForCabinet.nama} (${selectedStockForCabinet.code})`,
-                            rack: tabelForm.rack,
-                            room_id: roomId,
-                            attachments: tabelForm.attachments || null
-                          });
-                        }
-                        await supabase.from('table').insert(cabinetEntries);
-
-                        // Reduce stock quantity by claimed amount
-                        const newQuantity = selectedStockForCabinet.quantity - claimQuantity;
-                        await supabase.from('stock').update({ quantity: newQuantity }).eq('id', selectedStockForCabinet.id);
-
-                        setShowTabelModal(false);
-                        setCabinetModalMode('manual');
-                        setSelectedStockForCabinet(null);
-                        setClaimQuantity(1);
-                        setTabelForm({ name: '', description: '', rack: '', room_id: '', attachments: '' });
-                        setCabinetImagePreview('');
-                        fetchData();
-
-                        Swal.fire({
-                          icon: 'success',
-                          title: getText('Cabinet claimed!', 'Kabinet diambil!'),
-                          text: getText(`${claimQuantity} ${selectedStockForCabinet.nama} claimed.Stock reduced by ${claimQuantity} `, `${claimQuantity} ${selectedStockForCabinet.nama} diambil.Stock berkurang ${claimQuantity} `),
-                          timer: 2000,
-                          showConfirmButton: false
-                        });
-                      } catch (e) { console.error(e); Swal.fire('Error', getText('Failed to claim cabinet', 'Gagal mengambil kabinet'), 'error'); }
-                    }
-                  }}
-                    disabled={cabinetModalMode === 'claim' && !selectedStockForCabinet}
-                    className="px-5 py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all flex items-center gap-1.5">
-                    <Save className="h-4 w-4" /> {cabinetModalMode === 'claim' ? getText('Claim', 'Ambil') : getText('Save', 'Simpan')}
+                  <button
+                    onClick={executeSaveCabinet}
+                    disabled={(cabinetModalMode === 'claim' && !selectedStockForCabinet) || (loadingCabinet)}
+                    className="px-5 py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all flex items-center gap-1.5"
+                  >
+                    {loadingCabinet ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {cabinetModalMode === 'claim' ? getText('Claim', 'Ambil') : getText('Save', 'Simpan')}
                   </button>
                 </div>
               </div>
@@ -2303,7 +2481,7 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                     const result = await Swal.fire({ title: getText('Delete Rack?', 'Hapus Rak?'), text: getText('All boxes inside will be deleted', 'Semua box di dalamnya akan terhapus'), icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444' });
                     if (result.isConfirmed) {
                       await supabase.from('rack').delete().eq('id', editingRack.id);
-                      setShowRackModal(false); fetchData();
+                      setShowRackModal(false); fetchData(true);
                       Swal.fire('Deleted', getText('Rack deleted', 'Rak dihapus'), 'success');
                     }
                   }} className="px-3 py-2 text-red-600 font-medium hover:bg-red-50 rounded-lg flex items-center gap-1.5 text-sm transition-colors">
@@ -2312,20 +2490,13 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                 ) : <div />}
                 <div className="flex gap-2">
                   <button onClick={() => setShowRackModal(false)} className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors">{getText('Cancel', 'Batal')}</button>
-                  <button onClick={async () => {
-                    if (!rackForm.name.trim()) { Swal.fire('Warning', getText('Please enter rack name', 'Masukkan nama rak'), 'warning'); return; }
-                    try {
-                      const tableId = selectedRackTableId || rackForm.table_id;
-                      if (editingRack) {
-                        await supabase.from('rack').update({ name: rackForm.name.trim() }).eq('id', editingRack.id);
-                      } else {
-                        await supabase.from('rack').insert([{ name: rackForm.name.trim(), table_id: tableId }]);
-                      }
-                      setShowRackModal(false); fetchData();
-                      Swal.fire({ icon: 'success', title: getText('Saved!', 'Tersimpan!'), timer: 1500, showConfirmButton: false });
-                    } catch (e) { console.error(e); Swal.fire('Error', getText('Failed to save rack', 'Gagal menyimpan rak'), 'error'); }
-                  }} className="px-5 py-2 bg-amber-500 text-white font-medium rounded-lg hover:bg-amber-600 shadow-sm transition-all flex items-center gap-1.5">
-                    <Save className="h-4 w-4" /> {getText('Save', 'Simpan')}
+                  <button
+                    onClick={executeSaveRack}
+                    disabled={loadingRack}
+                    className="px-5 py-2 bg-amber-500 text-white font-medium rounded-lg hover:bg-amber-600 shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loadingRack ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {getText('Save', 'Simpan')}
                   </button>
                 </div>
               </div>
@@ -2521,7 +2692,7 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                     const result = await Swal.fire({ title: getText('Delete Box?', 'Hapus Box?'), icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444' });
                     if (result.isConfirmed) {
                       await supabase.from('box').delete().eq('id', editingBox.id);
-                      setShowBoxModal(false); fetchData();
+                      setShowBoxModal(false); fetchData(true);
                       Swal.fire('Deleted', getText('Box deleted', 'Box dihapus'), 'success');
                     }
                   }} className="px-3 py-2 text-red-600 font-medium hover:bg-red-50 rounded-lg flex items-center gap-1.5 text-sm transition-colors">
@@ -2530,73 +2701,13 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                 ) : <div />}
                 <div className="flex gap-2">
                   <button onClick={() => { setShowBoxModal(false); setBoxModalMode('manual'); setSelectedStockForBox(null); setBoxClaimQuantity(1); }} className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors">{getText('Cancel', 'Batal')}</button>
-                  <button onClick={async () => {
-                    if (boxModalMode === 'manual') {
-                      // Manual - logic
-                      if (!boxForm.name.trim()) { Swal.fire('Warning', getText('Please enter box name', 'Masukkan nama box'), 'warning'); return; }
-                      try {
-                        const rackId = selectedBoxRackId || boxForm.rack_id;
-                        if (editingBox) {
-                          await supabase.from('box').update({ name: boxForm.name.trim(), description: boxForm.description, attachments: boxForm.attachments || null }).eq('id', editingBox.id);
-                        } else {
-                          await supabase.from('box').insert([{ name: boxForm.name.trim(), description: boxForm.description, rack_id: rackId, attachments: boxForm.attachments || null }]);
-                        }
-                        setShowBoxModal(false); setBoxModalMode('manual');
-                        setBoxForm({ name: '', description: '', rack_id: '', attachments: '' });
-                        setBoxImagePreview('');
-                        fetchData();
-                        Swal.fire({ icon: 'success', title: getText('Saved!', 'Tersimpan!'), timer: 1500, showConfirmButton: false });
-                      } catch (e) { console.error(e); Swal.fire('Error', getText('Failed to save box', 'Gagal menyimpan box'), 'error'); }
-                    } else {
-                      // Claim - from stock
-                      if (!selectedStockForBox) { Swal.fire('Warning', getText('Please select a stock item', 'Pilih item stock'), 'warning'); return; }
-                      if (boxClaimQuantity < 1 || boxClaimQuantity > selectedStockForBox.quantity) {
-                        Swal.fire('Warning', getText('Invalid quantity', 'Jumlah tidak valid'), 'warning');
-                        return;
-                      }
-                      try {
-                        const rackId = selectedBoxRackId || boxForm.rack_id;
-
-                        // Create boxes with stock name
-                        const boxEntries = [];
-                        for (let i = 0; i < boxClaimQuantity; i++) {
-                          boxEntries.push({
-                            name: boxClaimQuantity > 1
-                              ? `${selectedStockForBox.nama} #${i + 1} `
-                              : selectedStockForBox.nama,
-                            description: `${selectedStockForBox.code} - Claimed from stock`,
-                            rack_id: rackId,
-                            attachments: boxForm.attachments || null
-                          });
-                        }
-                        await supabase.from('box').insert(boxEntries);
-
-                        // Reduce stock quantity
-                        const newQuantity = selectedStockForBox.quantity - boxClaimQuantity;
-                        await supabase.from('stock').update({ quantity: newQuantity }).eq('id', selectedStockForBox.id);
-
-                        setShowBoxModal(false);
-                        setSelectedStockForBox(null);
-                        setBoxClaimQuantity(1);
-                        setBoxModalMode('manual');
-                        setBoxForm({ name: '', description: '', rack_id: '', attachments: '' });
-                        setBoxImagePreview('');
-                        fetchData();
-
-                        Swal.fire({
-                          icon: 'success',
-                          title: getText('Box claimed!', 'Box diambil!'),
-                          text: getText(`${boxClaimQuantity} box claimed.Stock reduced by ${boxClaimQuantity} `, `${boxClaimQuantity} box diambil.Stock berkurang ${boxClaimQuantity} `),
-                          timer: 2000,
-                          showConfirmButton: false
-                        });
-                      } catch (e) { console.error(e); Swal.fire('Error', getText('Failed to claim box', 'Gagal mengambil box'), 'error'); }
-                    }
-                  }}
-                    disabled={boxModalMode === 'claim' && !selectedStockForBox}
+                  <button
+                    onClick={executeSaveBox}
+                    disabled={(boxModalMode === 'claim' && !selectedStockForBox) || loadingBox}
                     className="px-5 py-2 bg-emerald-500 text-white font-medium rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all flex items-center gap-1.5"
                   >
-                    <Save className="h-4 w-4" /> {boxModalMode === 'claim' ? getText('Claim', 'Ambil') : getText('Save', 'Simpan')}
+                    {loadingBox ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {boxModalMode === 'claim' ? getText('Claim', 'Ambil') : getText('Save', 'Simpan')}
                   </button>
                 </div>
               </div>
@@ -2996,7 +3107,7 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                                 const result = await Swal.fire({ title: getText('Delete Rack?', 'Hapus Rak?'), text: getText('All boxes inside will be deleted', 'Semua box di dalamnya akan terhapus'), icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444' });
                                 if (result.isConfirmed) {
                                   await supabase.from('rack').delete().eq('id', rack.id);
-                                  fetchData();
+                                  fetchData(true);
                                   Swal.fire('Deleted', getText('Rack deleted', 'Rak dihapus'), 'success');
                                 }
                               }}
@@ -3139,7 +3250,7 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                                             const result = await Swal.fire({ title: getText('Delete Box?', 'Hapus Box?'), icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444' });
                                             if (result.isConfirmed) {
                                               await supabase.from('box').delete().eq('id', box.id);
-                                              fetchData();
+                                              fetchData(true);
                                             }
                                           }}
                                           className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md"
@@ -3282,10 +3393,10 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                 </button>
                 <button
                   onClick={executeBatchMove}
-                  disabled={!batchMoveTargetRack}
+                  disabled={!batchMoveTargetRack || loadingBatchMove}
                   className="px-5 py-2 bg-violet-600 text-white font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all flex items-center gap-1.5"
                 >
-                  <Move className="h-4 w-4" />
+                  {loadingBatchMove ? <Loader2 className="h-4 w-4 animate-spin" /> : <Move className="h-4 w-4" />}
                   {getText('Move', 'Pindahkan')} ({selectedItemsForMove.size})
                 </button>
               </div>

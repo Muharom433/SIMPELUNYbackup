@@ -301,7 +301,7 @@ const RoomInfoDisplay: React.FC<{
 // ===== MAIN COMPONENT =====
 const ValidationQueue: React.FC = () => {
     const { profile } = useAuth();
-
+    const { getText } = useLanguage();
     const [activeTab, setActiveTab] = useState<'room' | 'equipment'>('room');
     const [checkouts, setCheckouts] = useState<CheckoutWithDetails[]>([]);
     const [loading, setLoading] = useState(true);
@@ -1105,15 +1105,15 @@ const ValidationQueue: React.FC = () => {
                     <div>
                         <h1 className="text-3xl font-bold flex items-center space-x-3">
                             <Bell className="h-8 w-8" />
-                            <span>Validasi Pengembalian</span>
+                            <span>{getText('Return Validation', 'Validasi Pengembalian')}</span>
                         </h1>
                         <p className="mt-2 opacity-90">
-                            Verifikasi dan setujui pengembalian dari pengguna
+                            {getText('Verify and approve returns from users', 'Verifikasi dan setujui pengembalian dari pengguna')}
                         </p>
                     </div>
                     <div className="hidden md:block text-right">
                         <div className="text-2xl font-bold">{checkouts.filter(c => c.status === 'returned').length}</div>
-                        <div className="text-sm opacity-80">Menunggu Validasi</div>
+                        <div className="text-sm opacity-80">{getText('Awaiting Validation', 'Menunggu Validasi')}</div>
                     </div>
                 </div>
             </div>
@@ -1131,7 +1131,7 @@ const ValidationQueue: React.FC = () => {
                     >
                         <div className="flex items-center justify-center space-x-2">
                             <Building className="h-5 w-5" />
-                            <span>Pengembalian Ruangan</span>
+                            <span>{getText('Room Returns', 'Pengembalian Ruangan')}</span>
                         </div>
                     </button>
                     <button
@@ -1143,7 +1143,7 @@ const ValidationQueue: React.FC = () => {
                     >
                         <div className="flex items-center justify-center space-x-2">
                             <Package className="h-5 w-5" />
-                            <span>Pengembalian Peralatan</span>
+                            <span>{getText('Equipment Returns', 'Pengembalian Peralatan')}</span>
                         </div>
                     </button>
                 </div>
@@ -1156,7 +1156,7 @@ const ValidationQueue: React.FC = () => {
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                         <input
                             type="text"
-                            placeholder="Cari berdasarkan nama, NIM, ruangan..."
+                            placeholder={getText('Search by name, ID, room...', 'Cari berdasarkan nama, NIM, ruangan...')}
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -1169,10 +1169,10 @@ const ValidationQueue: React.FC = () => {
                             onChange={(e) => setStatusFilter(e.target.value as any)}
                             className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         >
-                            <option value="all">Semua Status</option>
-                            <option value="returned">Menunggu Validasi</option>
-                            <option value="active">Selesai Divalidasi</option>
-                            <option value="overdue">Terlambat</option>
+                            <option value="all">{getText('All Status', 'Semua Status')}</option>
+                            <option value="returned">{getText('Awaiting Validation', 'Menunggu Validasi')}</option>
+                            <option value="active">{getText('Validated', 'Selesai Divalidasi')}</option>
+                            <option value="overdue">{getText('Overdue', 'Terlambat')}</option>
                         </select>
 
                         <button
@@ -1181,7 +1181,7 @@ const ValidationQueue: React.FC = () => {
                             className="flex items-center space-x-2 px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 disabled:opacity-50"
                         >
                             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                            <span>Refresh</span>
+                            <span>{getText('Refresh', 'Refresh')}</span>
                         </button>
                     </div>
                 </div>
@@ -1196,8 +1196,8 @@ const ValidationQueue: React.FC = () => {
                 ) : filteredCheckouts.length === 0 ? (
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
                         <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
-                        <h3 className="text-xl font-semibold text-gray-900 mb-2">Tidak Ada Data</h3>
-                        <p className="text-gray-600">Tidak ada pengembalian yang perlu divalidasi.</p>
+                        <h3 className="text-xl font-semibold text-gray-900 mb-2">{getText('No Data', 'Tidak Ada Data')}</h3>
+                        <p className="text-gray-600">{getText('No returns need validation.', 'Tidak ada pengembalian yang perlu divalidasi.')}</p>
                     </div>
                 ) : (
                     filteredCheckouts.map((checkout) => {
@@ -1326,369 +1326,373 @@ const ValidationQueue: React.FC = () => {
             </div>
 
             {/* VERIFICATION MODAL */}
-            {showDetailModal && selectedCheckout && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden">
-                        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h2 className="text-2xl font-bold">Verifikasi Pengembalian</h2>
-                                    <p className="mt-1 opacity-90">
-                                        {selectedCheckout.user?.full_name} - {
-                                            activeTab === 'room'
-                                                ? getDisplayRoomName(selectedCheckout)
-                                                : 'Peminjaman Peralatan'
-                                        }
-                                    </p>
-                                </div>
-                                <button
-                                    onClick={() => setShowDetailModal(false)}
-                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg"
-                                >
-                                    <X className="h-6 w-6" />
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
-                            {/* User & Room Info */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                                <div className="bg-indigo-50 rounded-xl p-4">
-                                    <h4 className="font-semibold text-indigo-900 mb-2">Informasi Peminjam</h4>
-                                    <p className="font-medium">{selectedCheckout.user?.full_name}</p>
-                                    <p className="text-sm text-indigo-700">{selectedCheckout.user?.identity_number}</p>
-                                    <p className="text-sm text-indigo-700">{selectedCheckout.user?.phone_number}</p>
-                                </div>
-
-                                {activeTab === 'room' && (
-                                    <RoomInfoDisplay checkout={selectedCheckout} />
-                                )}
-
-                                <div className="bg-purple-50 rounded-xl p-4">
-                                    <h4 className="font-semibold text-purple-900 mb-2">Info Checkout</h4>
-                                    <p className="text-sm">
-                                        <strong>Tanggal:</strong> {format(new Date(selectedCheckout.checkout_date), 'dd MMM yyyy HH:mm')}
-                                    </p>
-                                    <p className="text-sm mt-1">
-                                        <strong>Status:</strong> {getStatusBadge(selectedCheckout.status)}
-                                    </p>
-                                    <p className="text-sm mt-1">
-                                        <strong>Items:</strong> {selectedCheckout.checkout_items?.length || 0}
-                                    </p>
+            {
+                showDetailModal && selectedCheckout && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden">
+                            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <h2 className="text-2xl font-bold">Verifikasi Pengembalian</h2>
+                                        <p className="mt-1 opacity-90">
+                                            {selectedCheckout.user?.full_name} - {
+                                                activeTab === 'room'
+                                                    ? getDisplayRoomName(selectedCheckout)
+                                                    : 'Peminjaman Peralatan'
+                                            }
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => setShowDetailModal(false)}
+                                        className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg"
+                                    >
+                                        <X className="h-6 w-6" />
+                                    </button>
                                 </div>
                             </div>
 
-                            {/* Warning jika ruangan berubah */}
-                            {hasRoomChanged(selectedCheckout) && (
-                                <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4">
-                                    <div className="flex items-start">
-                                        <AlertTriangle className="h-5 w-5 text-amber-600 mr-3 mt-0.5" />
-                                        <div>
-                                            <h4 className="font-semibold text-amber-800">Perpindahan Ruangan Terdeteksi</h4>
-                                            <p className="text-sm text-amber-700 mt-1">
-                                                Equipment yang divalidasi adalah equipment LAMA dari ruangan sebelumnya.
-                                                Data diambil dari <code className="bg-amber-100 px-1 rounded">checkout_items</code> table.
-                                            </p>
-                                        </div>
+                            <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+                                {/* User & Room Info */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                                    <div className="bg-indigo-50 rounded-xl p-4">
+                                        <h4 className="font-semibold text-indigo-900 mb-2">Informasi Peminjam</h4>
+                                        <p className="font-medium">{selectedCheckout.user?.full_name}</p>
+                                        <p className="text-sm text-indigo-700">{selectedCheckout.user?.identity_number}</p>
+                                        <p className="text-sm text-indigo-700">{selectedCheckout.user?.phone_number}</p>
+                                    </div>
+
+                                    {activeTab === 'room' && (
+                                        <RoomInfoDisplay checkout={selectedCheckout} />
+                                    )}
+
+                                    <div className="bg-purple-50 rounded-xl p-4">
+                                        <h4 className="font-semibold text-purple-900 mb-2">Info Checkout</h4>
+                                        <p className="text-sm">
+                                            <strong>Tanggal:</strong> {format(new Date(selectedCheckout.checkout_date), 'dd MMM yyyy HH:mm')}
+                                        </p>
+                                        <p className="text-sm mt-1">
+                                            <strong>Status:</strong> {getStatusBadge(selectedCheckout.status)}
+                                        </p>
+                                        <p className="text-sm mt-1">
+                                            <strong>Items:</strong> {selectedCheckout.checkout_items?.length || 0}
+                                        </p>
                                     </div>
                                 </div>
-                            )}
 
-                            {/* Violation Reports */}
-                            {selectedCheckout.violation_reports && selectedCheckout.violation_reports.length > 0 && (
-                                <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-6">
-                                    <ViolationReportsDisplay reports={selectedCheckout.violation_reports} compact={false} />
+                                {/* Warning jika ruangan berubah */}
+                                {hasRoomChanged(selectedCheckout) && (
+                                    <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4">
+                                        <div className="flex items-start">
+                                            <AlertTriangle className="h-5 w-5 text-amber-600 mr-3 mt-0.5" />
+                                            <div>
+                                                <h4 className="font-semibold text-amber-800">Perpindahan Ruangan Terdeteksi</h4>
+                                                <p className="text-sm text-amber-700 mt-1">
+                                                    Equipment yang divalidasi adalah equipment LAMA dari ruangan sebelumnya.
+                                                    Data diambil dari <code className="bg-amber-100 px-1 rounded">checkout_items</code> table.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Violation Reports */}
+                                {selectedCheckout.violation_reports && selectedCheckout.violation_reports.length > 0 && (
+                                    <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-6">
+                                        <ViolationReportsDisplay reports={selectedCheckout.violation_reports} compact={false} />
+                                    </div>
+                                )}
+
+                                {/* Gap Analysis */}
+                                <div className="mb-6">
+                                    <GapAnalysisDisplay items={verificationItems} />
                                 </div>
-                            )}
 
-                            {/* Gap Analysis */}
-                            <div className="mb-6">
-                                <GapAnalysisDisplay items={verificationItems} />
-                            </div>
+                                {/* Equipment Verification List */}
+                                <div className="bg-gray-50 rounded-xl p-6">
+                                    <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
+                                        <Package className="h-5 w-5 mr-2 text-indigo-600" />
+                                        Verifikasi Peralatan
+                                    </h3>
 
-                            {/* Equipment Verification List */}
-                            <div className="bg-gray-50 rounded-xl p-6">
-                                <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
-                                    <Package className="h-5 w-5 mr-2 text-indigo-600" />
-                                    Verifikasi Peralatan
-                                </h3>
+                                    <div className="space-y-4">
+                                        {verificationItems.map((item, index) => {
+                                            const gap = item.borrowed_quantity - item.previously_returned - item.returned_quantity;
 
-                                <div className="space-y-4">
-                                    {verificationItems.map((item, index) => {
-                                        const gap = item.borrowed_quantity - item.previously_returned - item.returned_quantity;
-
-                                        return (
-                                            <div
-                                                key={item.equipment_id}
-                                                className={`border-2 rounded-xl p-4 ${item.is_verified
-                                                    ? 'border-green-300 bg-green-50'
-                                                    : 'border-gray-200 bg-white'
-                                                    }`}
-                                            >
-                                                <div className="flex items-start justify-between mb-4">
-                                                    <div className="flex items-center space-x-3">
-                                                        <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${item.is_verified ? 'bg-green-100' : 'bg-gray-100'
-                                                            }`}>
-                                                            {item.is_verified ? (
-                                                                <CheckCircle className="h-5 w-5 text-green-600" />
-                                                            ) : (
-                                                                <Package className="h-5 w-5 text-gray-600" />
-                                                            )}
-                                                        </div>
-                                                        <div>
-                                                            <h4 className="font-semibold text-gray-900 flex items-center">
-                                                                {item.equipment_name}
-                                                                {item.is_mandatory && (
-                                                                    <span className="ml-2 px-2 py-0.5 bg-red-100 text-red-800 text-xs rounded">
-                                                                        WAJIB
-                                                                    </span>
+                                            return (
+                                                <div
+                                                    key={item.equipment_id}
+                                                    className={`border-2 rounded-xl p-4 ${item.is_verified
+                                                        ? 'border-green-300 bg-green-50'
+                                                        : 'border-gray-200 bg-white'
+                                                        }`}
+                                                >
+                                                    <div className="flex items-start justify-between mb-4">
+                                                        <div className="flex items-center space-x-3">
+                                                            <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${item.is_verified ? 'bg-green-100' : 'bg-gray-100'
+                                                                }`}>
+                                                                {item.is_verified ? (
+                                                                    <CheckCircle className="h-5 w-5 text-green-600" />
+                                                                ) : (
+                                                                    <Package className="h-5 w-5 text-gray-600" />
                                                                 )}
-                                                            </h4>
-                                                            <p className="text-sm text-gray-600">Kode: {item.equipment_code || 'N/A'}</p>
+                                                            </div>
+                                                            <div>
+                                                                <h4 className="font-semibold text-gray-900 flex items-center">
+                                                                    {item.equipment_name}
+                                                                    {item.is_mandatory && (
+                                                                        <span className="ml-2 px-2 py-0.5 bg-red-100 text-red-800 text-xs rounded">
+                                                                            WAJIB
+                                                                        </span>
+                                                                    )}
+                                                                </h4>
+                                                                <p className="text-sm text-gray-600">Kode: {item.equipment_code || 'N/A'}</p>
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                </div>
 
-                                                {/* Quantity Grid */}
-                                                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-                                                    <div className="text-center p-2 bg-blue-50 rounded-lg">
-                                                        <div className="text-lg font-bold text-blue-600">{item.borrowed_quantity}</div>
-                                                        <div className="text-xs text-blue-700">Dipinjam</div>
-                                                    </div>
+                                                    {/* Quantity Grid */}
+                                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+                                                        <div className="text-center p-2 bg-blue-50 rounded-lg">
+                                                            <div className="text-lg font-bold text-blue-600">{item.borrowed_quantity}</div>
+                                                            <div className="text-xs text-blue-700">Dipinjam</div>
+                                                        </div>
 
-                                                    <div className="text-center p-2 bg-green-50 rounded-lg">
-                                                        <div className="text-lg font-bold text-green-600">{item.previously_returned}</div>
-                                                        <div className="text-xs text-green-700">Sudah Kembali</div>
-                                                    </div>
+                                                        <div className="text-center p-2 bg-green-50 rounded-lg">
+                                                            <div className="text-lg font-bold text-green-600">{item.previously_returned}</div>
+                                                            <div className="text-xs text-green-700">Sudah Kembali</div>
+                                                        </div>
 
-                                                    <div className="text-center p-2 bg-white rounded-lg border-2 border-gray-300">
-                                                        <div className="flex items-center justify-center space-x-2">
-                                                            <button
-                                                                onClick={() => {
-                                                                    const newItems = [...verificationItems];
-                                                                    newItems[index].returned_quantity = Math.max(0, item.returned_quantity - 1);
-                                                                    newItems[index].is_verified = newItems[index].returned_quantity > 0;
-                                                                    setVerificationItems(newItems);
-                                                                }}
-                                                                disabled={item.returned_quantity <= 0}
-                                                                className="p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded disabled:opacity-50"
-                                                            >
-                                                                <Minus className="h-3 w-3" />
-                                                            </button>
-                                                            <span className="text-lg font-bold text-gray-900 w-8 text-center">
-                                                                {item.returned_quantity}
-                                                            </span>
+                                                        <div className="text-center p-2 bg-white rounded-lg border-2 border-gray-300">
+                                                            <div className="flex items-center justify-center space-x-2">
+                                                                <button
+                                                                    onClick={() => {
+                                                                        const newItems = [...verificationItems];
+                                                                        newItems[index].returned_quantity = Math.max(0, item.returned_quantity - 1);
+                                                                        newItems[index].is_verified = newItems[index].returned_quantity > 0;
+                                                                        setVerificationItems(newItems);
+                                                                    }}
+                                                                    disabled={item.returned_quantity <= 0}
+                                                                    className="p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded disabled:opacity-50"
+                                                                >
+                                                                    <Minus className="h-3 w-3" />
+                                                                </button>
+                                                                <span className="text-lg font-bold text-gray-900 w-8 text-center">
+                                                                    {item.returned_quantity}
+                                                                </span>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        const maxReturn = item.borrowed_quantity - item.previously_returned;
+                                                                        const newItems = [...verificationItems];
+                                                                        newItems[index].returned_quantity = Math.min(maxReturn, item.returned_quantity + 1);
+                                                                        newItems[index].is_verified = newItems[index].returned_quantity > 0;
+                                                                        setVerificationItems(newItems);
+                                                                    }}
+                                                                    disabled={item.returned_quantity >= item.borrowed_quantity - item.previously_returned}
+                                                                    className="p-1 bg-green-100 hover:bg-green-200 text-green-600 rounded disabled:opacity-50"
+                                                                >
+                                                                    <Plus className="h-3 w-3" />
+                                                                </button>
+                                                            </div>
+                                                            <div className="text-xs text-gray-600 mt-1">Dikembalikan</div>
+                                                        </div>
+
+                                                        <div className={`text-center p-2 rounded-lg ${gap > 0 ? 'bg-red-50' : 'bg-emerald-50'}`}>
+                                                            <div className={`text-lg font-bold ${gap > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                                {gap}
+                                                            </div>
+                                                            <div className={`text-xs ${gap > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                                                                {gap > 0 ? 'Kurang' : 'OK'}
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex items-center justify-center">
                                                             <button
                                                                 onClick={() => {
                                                                     const maxReturn = item.borrowed_quantity - item.previously_returned;
                                                                     const newItems = [...verificationItems];
-                                                                    newItems[index].returned_quantity = Math.min(maxReturn, item.returned_quantity + 1);
-                                                                    newItems[index].is_verified = newItems[index].returned_quantity > 0;
+                                                                    newItems[index].returned_quantity = maxReturn;
+                                                                    newItems[index].is_verified = true;
                                                                     setVerificationItems(newItems);
                                                                 }}
-                                                                disabled={item.returned_quantity >= item.borrowed_quantity - item.previously_returned}
-                                                                className="p-1 bg-green-100 hover:bg-green-200 text-green-600 rounded disabled:opacity-50"
+                                                                className="px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-xs font-medium"
                                                             >
-                                                                <Plus className="h-3 w-3" />
+                                                                Semua
                                                             </button>
                                                         </div>
-                                                        <div className="text-xs text-gray-600 mt-1">Dikembalikan</div>
                                                     </div>
 
-                                                    <div className={`text-center p-2 rounded-lg ${gap > 0 ? 'bg-red-50' : 'bg-emerald-50'}`}>
-                                                        <div className={`text-lg font-bold ${gap > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                                                            {gap}
-                                                        </div>
-                                                        <div className={`text-xs ${gap > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
-                                                            {gap > 0 ? 'Kurang' : 'OK'}
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="flex items-center justify-center">
-                                                        <button
-                                                            onClick={() => {
-                                                                const maxReturn = item.borrowed_quantity - item.previously_returned;
+                                                    {/* Condition Notes */}
+                                                    <div className="mb-3">
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Catatan kondisi (opsional)..."
+                                                            value={item.condition_notes || ''}
+                                                            onChange={(e) => {
                                                                 const newItems = [...verificationItems];
-                                                                newItems[index].returned_quantity = maxReturn;
-                                                                newItems[index].is_verified = true;
+                                                                newItems[index].condition_notes = e.target.value;
                                                                 setVerificationItems(newItems);
                                                             }}
-                                                            className="px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-xs font-medium"
-                                                        >
-                                                            Semua
-                                                        </button>
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                        />
+                                                    </div>
+
+                                                    {/* Verification Checkbox */}
+                                                    <div className="flex items-center space-x-3">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={item.is_verified}
+                                                            onChange={(e) => {
+                                                                const newItems = [...verificationItems];
+                                                                newItems[index].is_verified = e.target.checked;
+                                                                if (e.target.checked && newItems[index].returned_quantity === 0) {
+                                                                    newItems[index].returned_quantity = item.borrowed_quantity - item.previously_returned;
+                                                                }
+                                                                setVerificationItems(newItems);
+                                                            }}
+                                                            className="h-5 w-5 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                                                        />
+                                                        <label className="text-sm font-medium text-gray-900">
+                                                            Verifikasi dan kembalikan ke stok + simpan di equipment_back
+                                                        </label>
                                                     </div>
                                                 </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
 
-                                                {/* Condition Notes */}
-                                                <div className="mb-3">
-                                                    <input
-                                                        type="text"
-                                                        placeholder="Catatan kondisi (opsional)..."
-                                                        value={item.condition_notes || ''}
-                                                        onChange={(e) => {
-                                                            const newItems = [...verificationItems];
-                                                            newItems[index].condition_notes = e.target.value;
-                                                            setVerificationItems(newItems);
-                                                        }}
-                                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                                                    />
-                                                </div>
-
-                                                {/* Verification Checkbox */}
-                                                <div className="flex items-center space-x-3">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={item.is_verified}
-                                                        onChange={(e) => {
-                                                            const newItems = [...verificationItems];
-                                                            newItems[index].is_verified = e.target.checked;
-                                                            if (e.target.checked && newItems[index].returned_quantity === 0) {
-                                                                newItems[index].returned_quantity = item.borrowed_quantity - item.previously_returned;
-                                                            }
-                                                            setVerificationItems(newItems);
-                                                        }}
-                                                        className="h-5 w-5 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                                                    />
-                                                    <label className="text-sm font-medium text-gray-900">
-                                                        Verifikasi dan kembalikan ke stok + simpan di equipment_back
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
+                            {/* Footer Actions */}
+                            <div className="border-t px-6 py-4 bg-gray-50 flex justify-between items-center">
+                                <div className="text-sm text-gray-600">
+                                    {verificationItems.filter(i => i.is_verified).length > 0
+                                        ? `${verificationItems.filter(i => i.is_verified).length} dari ${verificationItems.length} item akan dikembalikan`
+                                        : verificationItems.length > 0
+                                            ? `Tidak ada item yang diverifikasi (approve untuk full gap)`
+                                            : `Tidak ada equipment dalam checkout ini`
+                                    }
+                                </div>
+                                <div className="flex space-x-3">
+                                    <button
+                                        onClick={() => handleRejectReturn(selectedCheckout.id)}
+                                        disabled={processingIds.has(selectedCheckout.id)}
+                                        className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                                    >
+                                        <X className="h-4 w-4" />
+                                        <span>Tolak</span>
+                                    </button>
+                                    <button
+                                        onClick={() => handleApproveReturn(selectedCheckout.id)}
+                                        disabled={processingIds.has(selectedCheckout.id)}
+                                        className="flex items-center space-x-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                                    >
+                                        {processingIds.has(selectedCheckout.id) ? (
+                                            <RefreshCw className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                            <CheckCircle className="h-4 w-4" />
+                                        )}
+                                        <span>Setujui & Update Stock</span>
+                                    </button>
                                 </div>
                             </div>
                         </div>
-
-                        {/* Footer Actions */}
-                        <div className="border-t px-6 py-4 bg-gray-50 flex justify-between items-center">
-                            <div className="text-sm text-gray-600">
-                                {verificationItems.filter(i => i.is_verified).length > 0
-                                    ? `${verificationItems.filter(i => i.is_verified).length} dari ${verificationItems.length} item akan dikembalikan`
-                                    : verificationItems.length > 0
-                                        ? `Tidak ada item yang diverifikasi (approve untuk full gap)`
-                                        : `Tidak ada equipment dalam checkout ini`
-                                }
-                            </div>
-                            <div className="flex space-x-3">
-                                <button
-                                    onClick={() => handleRejectReturn(selectedCheckout.id)}
-                                    disabled={processingIds.has(selectedCheckout.id)}
-                                    className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
-                                >
-                                    <X className="h-4 w-4" />
-                                    <span>Tolak</span>
-                                </button>
-                                <button
-                                    onClick={() => handleApproveReturn(selectedCheckout.id)}
-                                    disabled={processingIds.has(selectedCheckout.id)}
-                                    className="flex items-center space-x-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                                >
-                                    {processingIds.has(selectedCheckout.id) ? (
-                                        <RefreshCw className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                        <CheckCircle className="h-4 w-4" />
-                                    )}
-                                    <span>Setujui & Update Stock</span>
-                                </button>
-                            </div>
-                        </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* REPORT MODAL */}
-            {showReportModal && reportCheckoutId && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
-                        <div className="flex items-center justify-between mb-6">
-                            <h3 className="text-lg font-semibold text-gray-900">Tambah Laporan Pelanggaran</h3>
-                            <button
-                                onClick={() => {
-                                    setShowReportModal(false);
-                                    setReportCheckoutId(null);
-                                }}
-                                className="text-gray-400 hover:text-gray-600"
-                            >
-                                <X className="h-5 w-5" />
-                            </button>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Judul Laporan</label>
-                                <input
-                                    type="text"
-                                    value={reportData.title}
-                                    onChange={(e) => setReportData(prev => ({ ...prev, title: e.target.value }))}
-                                    placeholder="Judul singkat..."
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Jenis Pelanggaran</label>
-                                <select
-                                    value={reportData.violation_type}
-                                    onChange={(e) => setReportData(prev => ({ ...prev, violation_type: e.target.value as ViolationType }))}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            {
+                showReportModal && reportCheckoutId && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
+                            <div className="flex items-center justify-between mb-6">
+                                <h3 className="text-lg font-semibold text-gray-900">Tambah Laporan Pelanggaran</h3>
+                                <button
+                                    onClick={() => {
+                                        setShowReportModal(false);
+                                        setReportCheckoutId(null);
+                                    }}
+                                    className="text-gray-400 hover:text-gray-600"
                                 >
-                                    <option value="damage">Kerusakan</option>
-                                    <option value="loss">Kehilangan</option>
-                                    <option value="late_return">Keterlambatan</option>
-                                    <option value="misuse">Penyalahgunaan</option>
-                                    <option value="other">Lainnya</option>
-                                </select>
+                                    <X className="h-5 w-5" />
+                                </button>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Deskripsi *</label>
-                                <textarea
-                                    value={reportData.description}
-                                    onChange={(e) => setReportData(prev => ({ ...prev, description: e.target.value }))}
-                                    placeholder="Jelaskan detail pelanggaran..."
-                                    rows={4}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                />
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Judul Laporan</label>
+                                    <input
+                                        type="text"
+                                        value={reportData.title}
+                                        onChange={(e) => setReportData(prev => ({ ...prev, title: e.target.value }))}
+                                        placeholder="Judul singkat..."
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Jenis Pelanggaran</label>
+                                    <select
+                                        value={reportData.violation_type}
+                                        onChange={(e) => setReportData(prev => ({ ...prev, violation_type: e.target.value as ViolationType }))}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    >
+                                        <option value="damage">Kerusakan</option>
+                                        <option value="loss">Kehilangan</option>
+                                        <option value="late_return">Keterlambatan</option>
+                                        <option value="misuse">Penyalahgunaan</option>
+                                        <option value="other">Lainnya</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Deskripsi *</label>
+                                    <textarea
+                                        value={reportData.description}
+                                        onChange={(e) => setReportData(prev => ({ ...prev, description: e.target.value }))}
+                                        placeholder="Jelaskan detail pelanggaran..."
+                                        rows={4}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Tingkat Keparahan</label>
+                                    <select
+                                        value={reportData.severity}
+                                        onChange={(e) => setReportData(prev => ({ ...prev, severity: e.target.value as any }))}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    >
+                                        <option value="minor">Minor</option>
+                                        <option value="major">Major</option>
+                                        <option value="critical">Critical</option>
+                                    </select>
+                                </div>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Tingkat Keparahan</label>
-                                <select
-                                    value={reportData.severity}
-                                    onChange={(e) => setReportData(prev => ({ ...prev, severity: e.target.value as any }))}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            <div className="flex justify-end space-x-3 mt-6">
+                                <button
+                                    onClick={() => {
+                                        setShowReportModal(false);
+                                        setReportCheckoutId(null);
+                                    }}
+                                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
                                 >
-                                    <option value="minor">Minor</option>
-                                    <option value="major">Major</option>
-                                    <option value="critical">Critical</option>
-                                </select>
+                                    Batal
+                                </button>
+                                <button
+                                    onClick={handleAddReport}
+                                    disabled={!reportData.description.trim()}
+                                    className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50"
+                                >
+                                    Tambah Laporan
+                                </button>
                             </div>
-                        </div>
-
-                        <div className="flex justify-end space-x-3 mt-6">
-                            <button
-                                onClick={() => {
-                                    setShowReportModal(false);
-                                    setReportCheckoutId(null);
-                                }}
-                                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                            >
-                                Batal
-                            </button>
-                            <button
-                                onClick={handleAddReport}
-                                disabled={!reportData.description.trim()}
-                                className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50"
-                            >
-                                Tambah Laporan
-                            </button>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 };
 
