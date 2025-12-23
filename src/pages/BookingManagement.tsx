@@ -3,7 +3,7 @@ import {
     Calendar, Clock, User, Building, CheckCircle, XCircle, AlertTriangle,
     Eye, Edit, Trash2, RefreshCw, Filter, Search, ChevronDown, ChevronUp,
     Package, Plus, Minus, X, Check, ArrowRight, FileText, Users, Info,
-    AlertCircle, Phone, MapPin, BookOpen, Timer, Zap, Settings, Save
+    AlertCircle, Phone, MapPin, BookOpen, Timer, Zap, Settings, Save, Download, Loader2
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -11,7 +11,34 @@ import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
 import { useLanguage } from '../contexts/LanguageContext';
 
-// ===== TYPE DEFINITIONS =====
+// ==================== HELPER COMPONENTS ====================
+const PhotoPlaceholder = ({ title, subtitle, isSmall = false }: { title?: string, subtitle?: string, isSmall?: boolean }) => (
+    <div className={`absolute inset-0 flex flex-col items-center justify-center bg-blue-50 text-center p-4 z-10 ${isSmall ? 'p-1' : 'p-4'}`}>
+        <div className={`${isSmall ? 'w-4 h-4' : 'w-16 h-16 mb-3'} bg-blue-100 rounded-full flex items-center justify-center animate-pulse`}>
+            <Loader2 className={`${isSmall ? 'w-3 h-3' : 'w-8 h-8'} text-blue-600 animate-spin`} />
+        </div>
+        {!isSmall && title && <h3 className="font-bold text-lg text-gray-800 animate-pulse">{title}</h3>}
+        {!isSmall && subtitle && <p className="text-sm text-gray-500 mb-2 animate-pulse">{subtitle}</p>}
+        {!isSmall && <p className="text-xs text-blue-600 font-medium animate-pulse">Memuat foto...</p>}
+    </div>
+);
+
+const ImageWithLoader = ({ src, alt, className, title, subtitle, isSmall = false }: { src: string, alt: string, className?: string, title?: string, subtitle?: string, isSmall?: boolean }) => {
+    const [isLoading, setIsLoading] = useState(true);
+
+    return (
+        <>
+            {isLoading && <PhotoPlaceholder title={title} subtitle={subtitle} isSmall={isSmall} />}
+            <img
+                src={src}
+                alt={alt}
+                className={`${className} ${isLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
+                onLoad={() => setIsLoading(false)}
+            />
+        </>
+    );
+};
+
 interface Room {
     id: string;
     name: string;
@@ -60,7 +87,7 @@ interface Booking {
     user_info?: any;
     created_at: string;
     updated_at: string;
-    attachments?: number;
+    attachments?: string[];
     equipment_details?: any;
     equipment_back?: string[];
     quantities_back?: number[];
@@ -391,7 +418,7 @@ const BookingManagement: React.FC = () => {
                 .select(`
                     id, user_id, room_id, start_time, end_time, purpose, sks, class_type, 
                     status, equipment_requested, equipment_quantities, notes, 
-                    created_at, updated_at, user_info, equipment_details,
+                    created_at, updated_at, user_info, equipment_details, attachments,
                     user:users!bookings_user_id_fkey(
                         id, full_name, identity_number, phone_number, email, study_program_id
                     ),
@@ -1698,6 +1725,124 @@ const BookingManagement: React.FC = () => {
                                                     </div>
                                                 );
                                             })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* ===== PERMIT DOCUMENTS SECTION ===== */}
+                                {selectedBooking.attachments && selectedBooking.attachments.length > 0 && (
+                                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
+                                        <div className="flex items-center space-x-2 mb-4">
+                                            <div className="h-8 w-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                                                <FileText className="h-4 w-4 text-white" />
+                                            </div>
+                                            <div>
+                                                <h4 className="font-semibold text-blue-900">Dokumen Izin</h4>
+                                                <p className="text-xs text-blue-700">{selectedBooking.attachments.length} dokumen terlampir</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                            {selectedBooking.attachments.map((attachment, index) => {
+                                                const isPDF = attachment.startsWith('data:application/pdf') || attachment.toLowerCase().includes('.pdf');
+
+                                                return (
+                                                    <div key={index} className="relative group">
+                                                        <div
+                                                            onClick={() => window.open(attachment, '_blank')}
+                                                            className="cursor-pointer bg-white rounded-lg border border-blue-200 p-3 hover:shadow-md transition-all duration-200 hover:scale-105"
+                                                        >
+                                                            {isPDF ? (
+                                                                <div className="flex flex-col items-center">
+                                                                    <div className="h-16 w-16 bg-red-100 rounded-lg flex items-center justify-center mb-2">
+                                                                        <FileText className="h-8 w-8 text-red-600" />
+                                                                    </div>
+                                                                    <span className="text-xs text-center text-gray-700 font-medium">
+                                                                        PDF Document
+                                                                    </span>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="relative">
+                                                                    <div className="relative w-full h-16 mb-2">
+                                                                        <ImageWithLoader
+                                                                            src={attachment}
+                                                                            alt={`Permit Document ${index + 1}`}
+                                                                            className="w-full h-16 object-cover rounded-lg"
+                                                                            isSmall={true}
+                                                                        />
+                                                                    </div>
+                                                                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg transition-all duration-200 flex items-center justify-center">
+                                                                        <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                                                                    </div>
+                                                                    <span className="text-xs text-center text-gray-700 font-medium block">
+                                                                        Image File
+                                                                    </span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                const modal = document.createElement('div');
+                                                                modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4';
+                                                                modal.onclick = () => document.body.removeChild(modal);
+
+                                                                if (isPDF) {
+                                                                    modal.innerHTML = `
+                                                                        <div class="bg-white rounded-lg p-4 max-w-4xl w-full h-full max-h-[90vh] overflow-auto">
+                                                                            <div class="flex justify-between items-center mb-4">
+                                                                                <h3 class="text-lg font-semibold">PDF Document</h3>
+                                                                                <button onclick="document.body.removeChild(this.closest('.fixed'))" class="text-gray-500 hover:text-gray-700">
+                                                                                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                                                                    </svg>
+                                                                                </button>
+                                                                            </div>
+                                                                            <iframe src="${attachment}" class="w-full h-full" frameborder="0"></iframe>
+                                                                        </div>
+                                                                    `;
+                                                                } else {
+                                                                    modal.innerHTML = `
+                                                                        <div class="relative max-w-4xl max-h-[90vh]">
+                                                                            <img src="${attachment}" alt="Document" class="max-w-full max-h-full object-contain rounded-lg" />
+                                                                            <button onclick="document.body.removeChild(this.closest('.fixed'))" class="absolute top-4 right-4 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-75">
+                                                                                <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                                                                </svg>
+                                                                            </button>
+                                                                        </div>
+                                                                    `;
+                                                                }
+
+                                                                document.body.appendChild(modal);
+                                                            }}
+                                                            className="absolute top-1 right-1 bg-blue-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-blue-700"
+                                                            title="Quick View"
+                                                        >
+                                                            <Eye className="h-3 w-3" />
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        <div className="mt-4 pt-4 border-t border-blue-200">
+                                            <button
+                                                onClick={() => {
+                                                    selectedBooking.attachments?.forEach((attachment, index) => {
+                                                        const link = document.createElement('a');
+                                                        link.href = attachment;
+                                                        link.download = `permit_document_${index + 1}${attachment.startsWith('data:application/pdf') ? '.pdf' : '.jpg'}`;
+                                                        link.click();
+                                                    });
+                                                    toast.success('Dokumen berhasil diunduh');
+                                                }}
+                                                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
+                                            >
+                                                <Download className="h-4 w-4" />
+                                                <span>Unduh Semua Dokumen</span>
+                                            </button>
                                         </div>
                                     </div>
                                 )}

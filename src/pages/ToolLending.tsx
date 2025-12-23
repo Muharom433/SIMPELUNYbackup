@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useEquipmentData } from '../hooks/useEquipmentData';
 import { StudyProgram } from '../types';
 import toast from 'react-hot-toast';
 import { format, isBefore, startOfDay, isSameDay } from 'date-fns';
@@ -55,12 +56,125 @@ interface IdentitySuggestion {
     full_name: string;
     phone_number: string;
     email?: string;
-    email?: string;
     department_id?: string;
     department_name?: string;
     study_program_id?: string;
     study_program_name?: string;
 }
+
+// =====================================================
+// IMAGE WITH LOADER - Same as Tool Administration
+// Shows loading state while image renders
+// =====================================================
+const ImageWithLoader: React.FC<{
+    src: string | string[] | null | undefined;
+    alt: string;
+    className?: string;
+}> = ({ src, alt, className = "" }) => {
+    const [isLoading, setIsLoading] = useState(true);
+    const [hasError, setHasError] = useState(false);
+    const imgRef = useRef<HTMLImageElement>(null);
+
+    // Extract actual image source - handle array or string
+    const getImageSrc = (): string | null => {
+        if (!src) return null;
+
+        // If it's an array, get first element
+        if (Array.isArray(src)) {
+            return src.length > 0 ? src[0] : null;
+        }
+
+        // If it's a string that looks like JSON array, parse it
+        if (typeof src === 'string' && src.startsWith('[')) {
+            try {
+                const parsed = JSON.parse(src);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    return parsed[0];
+                }
+            } catch {
+                // Not valid JSON, use as-is
+            }
+        }
+
+        return src;
+    };
+
+    const imageSrc = getImageSrc();
+
+    useEffect(() => {
+        setIsLoading(true);
+        setHasError(false);
+        // Check if image is already loaded (e.g. from cache)
+        if (imgRef.current && imgRef.current.complete) {
+            setIsLoading(false);
+        }
+    }, [imageSrc]);
+
+    // No image source - show placeholder
+    if (!imageSrc) {
+        return (
+            <div className={`w-full h-full flex items-center justify-center bg-gray-100 rounded-lg ${className}`}>
+                <Camera className="h-6 w-6 text-gray-400" />
+            </div>
+        );
+    }
+
+    // Image failed to load
+    if (hasError) {
+        return (
+            <div className={`w-full h-full flex items-center justify-center bg-gray-100 rounded-lg ${className}`}>
+                <Camera className="h-6 w-6 text-gray-400" />
+            </div>
+        );
+    }
+
+    return (
+        <div className={`relative ${className}`}>
+            {/* Loading placeholder */}
+            {isLoading && (
+                <div className="absolute inset-0 bg-gray-200 animate-pulse rounded-lg flex items-center justify-center">
+                    <Camera className="h-6 w-6 text-gray-400" />
+                </div>
+            )}
+            {/* Actual image */}
+            <img
+                ref={imgRef}
+                src={imageSrc}
+                alt={alt}
+                className={`w-full h-full object-cover rounded-lg transition-opacity duration-300 ${isLoading ? 'opacity-0' : 'opacity-100'}`}
+                onLoad={() => setIsLoading(false)}
+                onError={() => {
+                    setIsLoading(false);
+                    setHasError(true);
+                }}
+            />
+        </div>
+    );
+};
+
+// Helper function to extract image source from attachment (handles array/string)
+const getAttachmentSrc = (attachment: string | string[] | null | undefined): string | null => {
+    if (!attachment) return null;
+
+    // If it's an array, get first element
+    if (Array.isArray(attachment)) {
+        return attachment.length > 0 ? attachment[0] : null;
+    }
+
+    // If it's a string that looks like JSON array, parse it
+    if (typeof attachment === 'string' && attachment.startsWith('[')) {
+        try {
+            const parsed = JSON.parse(attachment);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                return parsed[0];
+            }
+        } catch {
+            // Not valid JSON, use as-is
+        }
+    }
+
+    return attachment;
+};
 
 // =====================================================
 // DATETIME PICKER MODAL COMPONENT
@@ -357,6 +471,15 @@ const DateTimePickerModal: React.FC<{
 const ToolLending: React.FC = () => {
     const { getText } = useLanguage();
 
+    // ✅ USE HOOK: Equipment data dengan caching seperti useRoomData
+    const {
+        equipment: allEquipment,
+        locations,
+        loading: loadingEquipment,
+        fetchEquipmentData,
+        refresh: refreshEquipment
+    } = useEquipmentData();
+
     // Identity states
     const [identityNumber, setIdentityNumber] = useState('');
     const [fullName, setFullName] = useState('');
@@ -378,20 +501,18 @@ const ToolLending: React.FC = () => {
     const [isManualEntry, setIsManualEntry] = useState(false);
     const [identityVerified, setIdentityVerified] = useState(false);
 
-    // Equipment states
-    const [equipment, setEquipment] = useState<EquipmentWithDetails[]>([]);
+    // Equipment states (filtered view)
     const [filteredEquipment, setFilteredEquipment] = useState<EquipmentWithDetails[]>([]);
     const [selectedEquipments, setSelectedEquipments] = useState<Map<string, SelectedEquipment>>(new Map());
     const [searchTerm, setSearchTerm] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('all');
 
-    const [loadingEquipment, setLoadingEquipment] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
-    // Location data
-    const [tables, setTables] = useState<Table[]>([]);
-    const [racks, setRacks] = useState<Rack[]>([]);
-    const [boxes, setBoxes] = useState<Box[]>([]);
+    // Location data dari hook
+    const tables = locations.tables;
+    const racks = locations.racks;
+    const boxes = locations.boxes;
 
     // Equipment detail modal
     const [showDetailModal, setShowDetailModal] = useState(false);
@@ -528,8 +649,8 @@ const ToolLending: React.FC = () => {
         setIsManualEntry(false);
         setIdentityVerified(true);
 
-        // Fetch equipment based on department and study program
-        fetchEquipmentData(user.department_id || null, user.study_program_id || null);
+        // ✅ Equipment filtering happens automatically via useEffect when selectedStudyProgramId changes
+        // No need to call fetchEquipmentData here - data is already cached from initial load
     }
 
     function handleIdentityChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -561,89 +682,10 @@ const ToolLending: React.FC = () => {
         }
     }
 
-    // ==================== DATA FETCHING ====================
+    // ==================== DATA FETCHING (using hook) ====================
 
-    const fetchEquipmentData = useCallback(async (departmentId: string | null, studyProgramId: string | null = null) => {
-        try {
-            setLoadingEquipment(true);
-
-            // 1. Fetch relevant Room IDs first (optimization)
-            // Show rooms if: General OR User's Dept OR User's Study Program
-            const roomConditions = ['and(department_id.is.null,study_program_id.is.null)'];
-
-            if (departmentId) {
-                roomConditions.push(`department_id.eq.${departmentId}`);
-            }
-            if (studyProgramId) {
-                roomConditions.push(`study_program_id.eq.${studyProgramId}`);
-            }
-
-            const { data: validRooms, error: roomError } = await supabase
-                .from('rooms')
-                .select('id')
-                .or(roomConditions.join(','));
-
-            if (roomError) throw roomError;
-
-            // If no valid rooms found, return empty (e.g., if user has no matching dept/prodi and no general rooms exist)
-            if (!validRooms || validRooms.length === 0) {
-                setEquipment([]);
-                setFilteredEquipment([]);
-                setLoadingEquipment(false);
-                return;
-            }
-
-            const validRoomIds = validRooms.map(r => r.id);
-
-            // 2. Fetch Equipment in these rooms
-            const { data: equipmentData, error: equipmentError } = await supabase
-                .from('equipment')
-                .select(`
-                    id, name, code, category, quantity, unit, condition, is_available, attachments,
-                    rooms_id, table_id, rack_id, box_id,
-                    rooms:rooms_id(
-                        id, name, code, department_id, study_program_id, floor,
-                        department:departments(id, name, code),
-                        building:building_id(name, campus:campus_id(name))
-                    )
-                `)
-                .eq('is_available', true)
-                .gt('quantity', 0)
-                .in('rooms_id', validRoomIds)
-                .order('name');
-
-            if (equipmentError) throw equipmentError;
-
-            // Type assertion for the complex join result
-            const typedEquipment = (equipmentData || []) as unknown as EquipmentWithDetails[];
-
-            setEquipment(typedEquipment);
-            setFilteredEquipment(typedEquipment);
-
-            // Fetch location data (Optimized table fetch)
-            const [tablesRes, racksRes, boxesRes] = await Promise.all([
-                supabase.from('table').select('id, room_id, description, rack').in('room_id', validRoomIds),
-                supabase.from('rack').select('id, name, table_id').order('name'),
-                supabase.from('box').select('id, name, description, rack_id').order('name')
-            ]);
-
-            if (tablesRes.data) setTables(tablesRes.data);
-            if (racksRes.data) setRacks(racksRes.data);
-            if (boxesRes.data) setBoxes(boxesRes.data);
-
-        } catch (error: any) {
-            console.error('Error fetching equipment:', error);
-            // Ignore 406 error which can happen with complex queries sometimes
-            // Also handle database statement timeout errors (code 57014)
-            if (error?.code === '57014') {
-                toast.error(getText('Loading equipment timed out. Please try again.', 'Waktu pemuatan habis. Silakan coba lagi.'));
-            } else if (error?.code !== '406') {
-                toast.error(getText('Failed to load equipment', 'Gagal memuat peralatan'));
-            }
-        } finally {
-            setLoadingEquipment(false);
-        }
-    }, [getText]);
+    // ✅ Equipment data sudah di-handle oleh useEquipmentData hook
+    // Hook menggunakan Zustand store dengan caching seperti useRoomData
 
     // Fetch Study Programs
     const fetchStudyPrograms = useCallback(async () => {
@@ -657,7 +699,6 @@ const ToolLending: React.FC = () => {
             setStudyPrograms(data || []);
         } catch (error) {
             console.error('Error fetching study programs:', error);
-            // Silent error or toast?
         }
     }, []);
 
@@ -665,16 +706,48 @@ const ToolLending: React.FC = () => {
         fetchStudyPrograms();
     }, [fetchStudyPrograms]);
 
-    // Initial load - fetch equipment with no department filter
+    // ✅ Initial load - FORCE REFRESH to get fresh data with attachments
     useEffect(() => {
-        fetchEquipmentData(null);
-    }, [fetchEquipmentData]);
+        // Force refresh to ensure we get attachments (may have been cached without them)
+        fetchEquipmentData(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // ==================== EQUIPMENT FILTERING ====================
 
+    // Apply all filters: study program, search, and category
     useEffect(() => {
-        let filtered = [...equipment];
+        let filtered = [...(allEquipment as EquipmentWithDetails[])];
 
+        // First filter by study program if selected
+        if (selectedStudyProgramId) {
+            const selectedProgram = studyPrograms.find(p => p.id === selectedStudyProgramId);
+            const departmentId = selectedProgram?.department?.id || null;
+
+            filtered = filtered.filter(eq => {
+                const room = eq.rooms;
+                if (!room) return false;
+
+                // General room - accessible by all
+                if (!room.department_id && !room.study_program_id) {
+                    return true;
+                }
+
+                // Match by study program
+                if (selectedStudyProgramId && room.study_program_id === selectedStudyProgramId) {
+                    return true;
+                }
+
+                // Match by department
+                if (departmentId && room.department_id === departmentId) {
+                    return true;
+                }
+
+                return false;
+            });
+        }
+
+        // Then apply search
         if (searchTerm) {
             const search = searchTerm.toLowerCase();
             filtered = filtered.filter(eq =>
@@ -685,14 +758,15 @@ const ToolLending: React.FC = () => {
             );
         }
 
+        // Then apply category
         if (categoryFilter !== 'all') {
             filtered = filtered.filter(eq => eq.category === categoryFilter);
         }
 
         setFilteredEquipment(filtered);
-    }, [equipment, searchTerm, categoryFilter]);
+    }, [allEquipment, searchTerm, categoryFilter, selectedStudyProgramId, studyPrograms]);
 
-    const categories = [...new Set(equipment.map(eq => eq.category).filter(Boolean))];
+    const categories = [...new Set((allEquipment as EquipmentWithDetails[]).map(eq => eq.category).filter(Boolean))];
 
     // Filter Study Programs
     const filteredStudyPrograms = studyPrograms.filter(program =>
@@ -970,13 +1044,16 @@ const ToolLending: React.FC = () => {
         const tableId = eq.table_id || rack?.table_id;
         const table = tables.find(t => t.id === tableId);
 
+        // Extract attachment source (handles array/string)
+        const attachmentSrc = getAttachmentSrc(eq.attachments);
+
         return (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
                     {/* Header with Photo */}
-                    {eq.attachments ? (
+                    {attachmentSrc ? (
                         <div className="relative h-64">
-                            <img src={eq.attachments} alt={eq.name} className="w-full h-full object-cover" />
+                            <img src={attachmentSrc} alt={eq.name} className="w-full h-full object-cover" />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
                             <button
                                 onClick={() => setShowDetailModal(false)}
@@ -989,7 +1066,7 @@ const ToolLending: React.FC = () => {
                                 <p className="text-white/80 font-mono">{eq.code}</p>
                             </div>
                             <button
-                                onClick={() => setFullscreenPhoto(eq.attachments || null)}
+                                onClick={() => setFullscreenPhoto(attachmentSrc)}
                                 className="absolute bottom-4 right-4 p-2 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-lg text-white"
                             >
                                 <Maximize2 className="h-5 w-5" />
@@ -1291,14 +1368,48 @@ const ToolLending: React.FC = () => {
                                             {/* Equipment List */}
                                             <div className="space-y-3 max-h-[600px] overflow-y-auto">
                                                 {loadingEquipment ? (
-                                                    <div className="text-center py-8">
-                                                        <RefreshCw className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-2" />
-                                                        <p className="text-gray-600">{getText('Loading equipment...', 'Memuat peralatan...')}</p>
+                                                    /* ✅ SKELETON LOADING - Show while loading */
+                                                    <div className="space-y-3">
+                                                        <div className="flex items-center justify-center py-4">
+                                                            <Loader2 className="h-6 w-6 animate-spin text-blue-600 mr-2" />
+                                                            <span className="text-blue-600 font-medium">
+                                                                {getText('Loading equipment...', 'Memuat peralatan...')}
+                                                            </span>
+                                                        </div>
+                                                        {/* Skeleton cards */}
+                                                        {[1, 2, 3, 4].map((i) => (
+                                                            <div key={i} className="p-4 rounded-lg border-2 border-gray-200 bg-gray-50 animate-pulse">
+                                                                <div className="flex gap-4">
+                                                                    <div className="w-20 h-20 rounded-lg bg-gray-200"></div>
+                                                                    <div className="flex-1 space-y-2">
+                                                                        <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                                                                        <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                                                                        <div className="flex gap-4">
+                                                                            <div className="h-3 bg-gray-200 rounded w-16"></div>
+                                                                            <div className="h-3 bg-gray-200 rounded w-24"></div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
                                                     </div>
                                                 ) : filteredEquipment.length === 0 ? (
                                                     <div className="text-center py-8">
                                                         <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                                                         <p className="text-gray-600">{getText('No equipment available', 'Tidak ada peralatan tersedia')}</p>
+                                                        <p className="text-sm text-gray-500 mt-2">
+                                                            {searchTerm || categoryFilter !== 'all'
+                                                                ? getText('Try changing search or filter', 'Coba ubah pencarian atau filter')
+                                                                : getText('Equipment will appear after data is loaded', 'Peralatan akan muncul setelah data dimuat')
+                                                            }
+                                                        </p>
+                                                        <button
+                                                            onClick={() => refreshEquipment()}
+                                                            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 mx-auto"
+                                                        >
+                                                            <RefreshCw className="h-4 w-4" />
+                                                            {getText('Reload', 'Muat Ulang')}
+                                                        </button>
                                                     </div>
                                                 ) : (
                                                     filteredEquipment.map((eq) => {
@@ -1346,13 +1457,11 @@ const ToolLending: React.FC = () => {
                                                                             }
                                                                         }}
                                                                     >
-                                                                        {eq.attachments ? (
-                                                                            <img src={eq.attachments} alt={eq.name} className="w-full h-full object-cover" />
-                                                                        ) : (
-                                                                            <div className="w-full h-full flex items-center justify-center">
-                                                                                <Camera className="h-6 w-6 text-gray-400" />
-                                                                            </div>
-                                                                        )}
+                                                                        <ImageWithLoader
+                                                                            src={eq.attachments}
+                                                                            alt={eq.name}
+                                                                            className="w-full h-full"
+                                                                        />
                                                                     </div>
 
                                                                     {/* Equipment Info */}

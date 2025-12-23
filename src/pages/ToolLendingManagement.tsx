@@ -7,7 +7,6 @@ import {
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
-
 import { Equipment, User as UserType } from '../types';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -20,15 +19,15 @@ interface LendingRecord {
     date: string;
     id_equipment: string[];
     qty: number[];
-    status: 'pending' | 'approved' | 'rejected' | 'borrow' | 'completed'; // ✅ TAMBAH STATUS
-    attachments?: string[]; // ✅ TAMBAH ATTACHMENTS
+    status: 'pending' | 'approved' | 'rejected' | 'borrow' | 'completed';
+    attachments?: string[];
     user_info?: {
         full_name: string;
         identity_number: string;
         phone_number?: string;
         email?: string;
     };
-    user?: UserType;
+    user?: UserType & { study_program_id?: string };
     equipment_details?: Equipment[];
 }
 
@@ -66,18 +65,15 @@ const ToolLendingManagement: React.FC = () => {
     const [lendingRecords, setLendingRecords] = useState<LendingRecord[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-    const [statusFilter, setStatusFilter] = useState<string>('all'); // ✅ FILTER STATUS
+    const [statusFilter, setStatusFilter] = useState<string>('all');
     const [dateFilter, setDateFilter] = useState<string>('all');
     const [selectedRecord, setSelectedRecord] = useState<LendingRecord | null>(null);
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
     const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
 
-
-
     useEffect(() => {
         fetchLendingRecords();
-
 
         // Real-time subscription
         const subscription = supabase
@@ -91,49 +87,119 @@ const ToolLendingManagement: React.FC = () => {
         return () => {
             subscription.unsubscribe();
         };
-    }, []);
-
-
+    }, [profile?.id]);
 
     const fetchLendingRecords = async () => {
         try {
             setLoading(true);
 
-            const { data: lendingData, error: lendingError } = await supabase
-                .from('lending_tool')
-                .select('*')
-                .order('created_at', { ascending: false })
-                .limit(50);
+            const userRole = profile?.role;
+            let lendingData: any[] = [];
 
-            if (lendingError) throw lendingError;
-            if (!lendingData) { setLendingRecords([]); setLoading(false); return; }
+            // ==================== SWITCH BY ROLE ====================
+            switch (userRole) {
+                case 'super_admin': {
+                    // ✅ SUPER ADMIN: Fetch semua lending records tanpa filter
+                    console.log('👑 Super Admin: Fetching ALL lending records...');
 
-            // Get laboratory's department_id and study_program_id for filtering
-            const isLaboratory = profile?.role === 'laboratory';
-            const laborDeptId = profile?.department_id;
-            const laborStudyProgramId = profile?.study_program_id;
+                    const { data, error } = await supabase
+                        .from('lending_tool')
+                        .select('*')
+                        .order('created_at', { ascending: false })
+                        .limit(100);
 
-            // Fetch user details and equipment details for each record
+                    if (error) throw error;
+                    lendingData = data || [];
+
+                    console.log(`   ✅ Total records fetched: ${lendingData.length}`);
+                    break;
+                }
+
+                case 'laboratory': {
+                    // ✅ LABORAN: Filter berdasarkan Study Program dari User
+                    const laborStudyProgramId = profile?.study_program_id;
+                    console.log(`🔬 Laboran: Filtering by Study Program ID: ${laborStudyProgramId}`);
+
+                    if (!laborStudyProgramId) {
+                        console.warn('⚠️ Laboran has no study_program_id assigned');
+                        setLendingRecords([]);
+                        setLoading(false);
+                        return;
+                    }
+
+                    // Step 1: Fetch users dari Study Program yang sama
+                    console.log('   📚 Step 1: Fetching users from same study program...');
+                    const { data: usersInProdi, error: usersError } = await supabase
+                        .from('users')
+                        .select('id, full_name')
+                        .eq('study_program_id', laborStudyProgramId);
+
+                    if (usersError) throw usersError;
+
+                    if (!usersInProdi || usersInProdi.length === 0) {
+                        console.log('   ⚠️ No users found in this study program');
+                        setLendingRecords([]);
+                        setLoading(false);
+                        return;
+                    }
+
+                    console.log(`   ✅ Found ${usersInProdi.length} users in study program`);
+                    const userIds = usersInProdi.map(u => u.id);
+
+                    // Step 2: Fetch lending_tool records only for users in same study program
+                    console.log('   📦 Step 2: Fetching lending records for these users...');
+                    const { data, error } = await supabase
+                        .from('lending_tool')
+                        .select('*')
+                        .in('id_user', userIds)
+                        .order('created_at', { ascending: false })
+                        .limit(50);
+
+                    if (error) throw error;
+                    lendingData = data || [];
+
+                    console.log(`   ✅ Total records for study program: ${lendingData.length}`);
+                    break;
+                }
+
+                default: {
+                    // ❌ Role lain tidak memiliki akses
+                    console.warn(`⚠️ Unknown role: ${userRole} - Access denied`);
+                    setLendingRecords([]);
+                    setLoading(false);
+                    return;
+                }
+            }
+
+            // ==================== FETCH USER & EQUIPMENT DETAILS ====================
+            if (lendingData.length === 0) {
+                setLendingRecords([]);
+                setLoading(false);
+                return;
+            }
+
+            console.log('📋 Fetching user and equipment details...');
+
             const recordsWithDetails = await Promise.all(
                 lendingData.map(async (record) => {
-                    let user: UserType | null = null;
+                    let user: (UserType & { study_program_id?: string }) | null = null;
                     let equipmentDetails: Equipment[] = [];
 
                     // Fetch user data if exists
                     if (record.id_user) {
                         const { data: userData } = await supabase
                             .from('users')
-                            .select('id, full_name, identity_number, email, role, phone_number')
+                            .select('id, full_name, identity_number, email, role, phone_number, study_program_id')
                             .eq('id', record.id_user)
                             .maybeSingle();
                         if (userData) user = userData as any;
                     }
 
-                    // Fetch equipment details with room information for filtering
+                    // Fetch equipment details (simplified - no room join to avoid timeout)
                     if (record.id_equipment && record.id_equipment.length > 0) {
                         const { data: equipmentData } = await supabase
                             .from('equipment')
-                            .select('id, name, code, quantity, unit, rooms:rooms_id(id, name, study_program_id, department_id)')
+                            .select('id, name, code, quantity, unit')
                             .in('id', record.id_equipment);
 
                         if (equipmentData) {
@@ -152,34 +218,8 @@ const ToolLendingManagement: React.FC = () => {
                 })
             );
 
-            // Laboratory filtering logic:
-            // - Department MUST be same as laboran's department
-            // - Study program can be NULL (show) OR same as laboran's study program (show)
-            // - If study program is DIFFERENT from laboran's → don't show
-            let filteredRecords = recordsWithDetails;
-            if (isLaboratory && laborDeptId) {
-                filteredRecords = recordsWithDetails.filter(record => {
-                    // Check if any equipment in this record belongs to a room that matches laboran's criteria
-                    if (!record.equipment_details || record.equipment_details.length === 0) return false;
-                    return record.equipment_details.some((eq: any) => {
-                        const room = eq.rooms;
-                        if (!room) return false;
-
-                        // Department must match
-                        if (room.department_id !== laborDeptId) return false;
-
-                        // Study program check: null OR same as laboran
-                        if (room.study_program_id === null || room.study_program_id === laborStudyProgramId) {
-                            return true;
-                        }
-
-                        return false;
-                    });
-                });
-                console.log(`🔬 Laboran filter: ${filteredRecords.length} records from ${recordsWithDetails.length}`);
-            }
-
-            setLendingRecords(filteredRecords);
+            setLendingRecords(recordsWithDetails);
+            console.log(`✅ Fetch complete. Total records loaded: ${recordsWithDetails.length}`);
 
         } catch (error) {
             console.error('Error fetching lending records:', error);
@@ -188,8 +228,6 @@ const ToolLendingManagement: React.FC = () => {
             setLoading(false);
         }
     };
-
-    // ✅ TAMBAH FUNGSI APPROVAL/REJECTION
 
     const handleStatusUpdate = async (recordId: string, newStatus: 'approved' | 'rejected') => {
         try {
@@ -206,7 +244,7 @@ const ToolLendingManagement: React.FC = () => {
                 qty: record.qty
             });
 
-            // ✅ ADD: Equipment quantity management (same as BookingManagement)
+            // ✅ ADD: Equipment quantity management
             if (record.id_equipment && record.id_equipment.length > 0) {
                 const validEquipmentList = [];
                 const invalidEquipment = [];
@@ -231,7 +269,7 @@ const ToolLendingManagement: React.FC = () => {
                     if (checkError || !equipment) {
                         console.warn(`⚠️ Equipment ${equipmentId} not found - will be skipped`);
                         invalidEquipment.push({ equipmentId, index: i, reason: 'not_found' });
-                        continue; // Skip missing equipment
+                        continue;
                     }
 
                     // For approval, check sufficient quantity
@@ -244,7 +282,7 @@ const ToolLendingManagement: React.FC = () => {
                             available: equipment.quantity,
                             needed: quantity
                         });
-                        continue; // Skip insufficient equipment
+                        continue;
                     }
 
                     console.log(`✅ Equipment validated:`, {
@@ -277,16 +315,12 @@ const ToolLendingManagement: React.FC = () => {
                         warningMessage += `${insufficientCount} equipment has insufficient quantity. `;
                     }
 
-                    // ✅ OPTION 1: Skip invalid equipment and continue with valid ones
                     if (validEquipmentList.length > 0) {
                         warningMessage += `Continuing with ${validEquipmentList.length} valid equipment.`;
                         toast.error(warningMessage);
                     } else {
-                        // ✅ OPTION 2: No valid equipment, cannot proceed with equipment updates
                         warningMessage += 'No valid equipment to process.';
                         toast.error(warningMessage);
-
-                        // Still update record status but skip equipment updates
                         console.log('ℹ️ Proceeding with status update only (no equipment changes)');
                     }
                 }
@@ -311,7 +345,6 @@ const ToolLendingManagement: React.FC = () => {
 
                             if (updateError) {
                                 console.error(`❌ Failed to update ${equipmentItem.id}:`, updateError);
-                                // Continue with other equipment instead of failing completely
                             } else {
                                 console.log(`✅ ${equipmentItem.name}: ${equipmentItem.currentQuantity} → ${newQuantity}`);
                             }
@@ -339,10 +372,10 @@ const ToolLendingManagement: React.FC = () => {
                 }
             }
 
-            // ✅ UPDATE LENDING STATUS (always proceed with this)
+            // ✅ UPDATE LENDING STATUS
             let finalStatus: string = newStatus;
             if (newStatus === 'approved') {
-                finalStatus = 'borrow'; // Change to 'borrow' when approved
+                finalStatus = 'borrow';
             }
 
             const { error: recordError } = await supabase
@@ -367,7 +400,6 @@ const ToolLendingManagement: React.FC = () => {
             // Refresh data
             await fetchLendingRecords();
 
-
             // Close modal if open
             if (selectedRecord?.id === recordId) {
                 setShowDetailModal(false);
@@ -384,6 +416,7 @@ const ToolLendingManagement: React.FC = () => {
             });
         }
     };
+
     const handleDelete = async (recordId: string) => {
         try {
             setProcessingIds(prev => new Set(prev).add(recordId));
@@ -437,7 +470,6 @@ const ToolLendingManagement: React.FC = () => {
                         }
                     } catch (error) {
                         console.warn(`⚠️ Error restoring equipment ${equipmentId}:`, error);
-                        // Don't fail delete operation for this
                     }
                 }
 
@@ -456,7 +488,6 @@ const ToolLendingManagement: React.FC = () => {
             setShowDeleteConfirm(null);
             await fetchLendingRecords();
 
-
         } catch (error: any) {
             console.error('❌ Error deleting lending record:', error);
             toast.error(error.message || getText('Failed to delete lending record', 'Gagal menghapus data peminjaman'));
@@ -468,6 +499,7 @@ const ToolLendingManagement: React.FC = () => {
             });
         }
     };
+
     const filteredRecords = lendingRecords.filter(record => {
         const userName = record.user?.full_name || record.user_info?.full_name || '';
         const userIdentity = record.user?.identity_number || record.user_info?.identity_number || '';
@@ -478,7 +510,6 @@ const ToolLendingManagement: React.FC = () => {
             userIdentity.toLowerCase().includes(searchTerm.toLowerCase()) ||
             equipmentNames.toLowerCase().includes(searchTerm.toLowerCase());
 
-        // ✅ FILTER STATUS
         const matchesStatus = statusFilter === 'all' || record.status === statusFilter;
 
         let matchesDate = true;
@@ -511,7 +542,6 @@ const ToolLendingManagement: React.FC = () => {
             record.user?.identity_number || record.user_info?.identity_number || 'No contact';
     };
 
-    // ✅ FUNGSI STATUS COLOR
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'pending': return 'bg-yellow-100 text-yellow-800';
@@ -566,15 +596,34 @@ const ToolLendingManagement: React.FC = () => {
                         <p className="mt-2 opacity-90">
                             {getText('Manage equipment lending requests and monitor usage', 'Kelola permintaan peminjaman peralatan dan pantau penggunaan')}
                         </p>
+                        {/* Role Context Badge */}
+                        <div className="mt-3 flex items-center space-x-2">
+                            {profile?.role === 'super_admin' ? (
+                                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/20 text-white backdrop-blur-sm">
+                                    <span className="w-2 h-2 bg-yellow-400 rounded-full mr-2 animate-pulse"></span>
+                                    {getText('Super Admin - All Users', 'Super Admin - Semua Pengguna')}
+                                </span>
+                            ) : profile?.role === 'laboratory' ? (
+                                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/20 text-white backdrop-blur-sm">
+                                    <span className="w-2 h-2 bg-cyan-400 rounded-full mr-2 animate-pulse"></span>
+                                    {getText('Laboratory - Study Program Filter', 'Laboran - Filter Program Studi')}
+                                </span>
+                            ) : null}
+                        </div>
                     </div>
                     <div className="hidden md:block text-right">
                         <div className="text-2xl font-bold">{lendingRecords.length}</div>
                         <div className="text-sm opacity-80">{getText('Total Records', 'Total Data')}</div>
+                        {profile?.role === 'laboratory' && (
+                            <div className="text-xs opacity-60 mt-1">
+                                {getText('Filtered by your study program', 'Difilter berdasarkan program studi Anda')}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
 
-            {/* ✅ STATISTICS CARDS - DENGAN STATUS BARU */}
+            {/* Statistics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
                 {[
                     {
@@ -622,7 +671,7 @@ const ToolLendingManagement: React.FC = () => {
                 ))}
             </div>
 
-            {/* ✅ FILTERS - DENGAN STATUS FILTER */}
+            {/* Filters */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
                     <div className="flex flex-col sm:flex-row gap-4 flex-1">
@@ -637,7 +686,6 @@ const ToolLendingManagement: React.FC = () => {
                             />
                         </div>
 
-                        {/* ✅ STATUS FILTER */}
                         <select
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value)}
@@ -679,7 +727,7 @@ const ToolLendingManagement: React.FC = () => {
                 </div>
             </div>
 
-            {/* ✅ RECORDS TABLE - DENGAN STATUS DAN ACTIONS */}
+            {/* Records Table */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full">
@@ -845,7 +893,7 @@ const ToolLendingManagement: React.FC = () => {
                                                         <Eye className="h-4 w-4" />
                                                     </button>
 
-                                                    {/* ✅ APPROVE/REJECT BUTTONS */}
+                                                    {/* Approve/Reject Buttons */}
                                                     {record.status === 'pending' && (
                                                         <>
                                                             <button
@@ -887,7 +935,7 @@ const ToolLendingManagement: React.FC = () => {
                 </div>
             </div>
 
-            {/* ✅ DETAIL MODAL - DENGAN ATTACHMENTS DAN ACTIONS */}
+            {/* Detail Modal */}
             {showDetailModal && selectedRecord && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -1036,7 +1084,7 @@ const ToolLendingManagement: React.FC = () => {
                                     </div>
                                 </div>
 
-                                {/* ✅ ATTACHMENTS SECTION */}
+                                {/* Attachments Section */}
                                 {selectedRecord.attachments && selectedRecord.attachments.length > 0 && (
                                     <div>
                                         <h4 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
@@ -1152,7 +1200,7 @@ const ToolLendingManagement: React.FC = () => {
                                     </div>
                                 )}
 
-                                {/* ✅ ACTIONS UNTUK PENDING STATUS */}
+                                {/* Actions for Pending Status */}
                                 {selectedRecord.status === 'pending' && (
                                     <div className="flex space-x-3 pt-4 border-t">
                                         <button

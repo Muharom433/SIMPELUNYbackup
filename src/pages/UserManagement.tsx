@@ -779,13 +779,61 @@ const UserManagement: React.FC = () => {
   const handleDelete = async (userId: string) => {
     try {
       setProcessingIds(prev => new Set(prev).add(userId));
-      const { error } = await supabase
-        .from('users')
-        .delete()
-        .eq('id', userId);
 
-      if (error) throw error;
-      toast.success(getText('User deleted successfully', 'Pengguna berhasil dihapus'));
+      // Try cascade delete via RPC first
+      console.log('🗑️ Attempting cascade delete for user:', userId);
+
+      const { data: rpcResult, error: rpcError } = await supabase
+        .rpc('delete_user_with_cascade', { target_user_id: userId });
+
+      if (rpcError) {
+        console.warn('⚠️ RPC cascade delete failed, trying fallback:', rpcError.message);
+
+        // Fallback: manually delete related records then user
+        // 1. Delete checkout_items (via checkouts)
+        const { data: checkouts } = await supabase
+          .from('checkouts')
+          .select('id')
+          .eq('user_id', userId);
+
+        if (checkouts && checkouts.length > 0) {
+          const checkoutIds = checkouts.map(c => c.id);
+          await supabase.from('checkout_items').delete().in('checkout_id', checkoutIds);
+          await supabase.from('checkouts').delete().eq('user_id', userId);
+        }
+
+        // 2. Delete bookings
+        await supabase.from('bookings').delete().eq('user_id', userId);
+
+        // 3. Delete lending_tool
+        await supabase.from('lending_tool').delete().eq('id_user', userId);
+
+        // 4. Delete room_users
+        await supabase.from('room_users').delete().eq('user_id', userId);
+
+        // 5. Delete reports (reporter_id)
+        await supabase.from('reports').delete().eq('reporter_id', userId);
+
+        // 6. Delete exam_schedules (if user is examiner)
+        await supabase.from('exam_schedules').delete().eq('examiner_id', userId);
+
+        // 7. Delete session_schedules (if user is lecturer) 
+        await supabase.from('session_schedules').delete().eq('lecturer_id', userId);
+
+        // 8. Finally delete user
+        const { error: deleteError } = await supabase
+          .from('users')
+          .delete()
+          .eq('id', userId);
+
+        if (deleteError) throw deleteError;
+
+        console.log('✅ Fallback delete completed');
+      } else {
+        console.log('✅ RPC cascade delete completed:', rpcResult);
+      }
+
+      toast.success(getText('User and all related data deleted successfully', 'Pengguna dan semua data terkait berhasil dihapus'));
       setShowDeleteConfirm(null);
       fetchUsers();
     } catch (error: any) {

@@ -39,7 +39,7 @@ export function useAuth() {
 
     try {
       setLoading(true);
-      
+
       // Use the authenticate_user function from your database
       const { data, error } = await supabase.rpc('authenticate_user', {
         input_username: username,
@@ -52,9 +52,9 @@ export function useAuth() {
       }
 
       if (!data || data.length === 0 || !data[0].success) {
-        return { 
-          data: null, 
-          error: { message: data?.[0]?.message || 'Invalid username or password' } 
+        return {
+          data: null,
+          error: { message: data?.[0]?.message || 'Invalid username or password' }
         };
       }
 
@@ -67,6 +67,7 @@ export function useAuth() {
         identity_number: userData.identity_number,
         role: userData.role,
         department_id: userData.department_id,
+        study_program_id: userData.study_program_id, // ✅ ADDED for laboran filter
         username: username,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -74,7 +75,7 @@ export function useAuth() {
 
       setUser(authenticatedUser);
       setProfile(authenticatedUser);
-      
+
       // Cache user in localStorage
       localStorage.setItem('faculty_user', JSON.stringify(authenticatedUser));
 
@@ -88,8 +89,8 @@ export function useAuth() {
   };
 
   const signUp = async (
-    username: string, 
-    password: string, 
+    username: string,
+    password: string,
     userData: {
       full_name: string;
       identity_number: string;
@@ -102,14 +103,14 @@ export function useAuth() {
 
     try {
       setLoading(true);
-      
+
       // Check if username already exists
       const { data: existingUser, error: checkError } = await supabase
         .from('users')
         .select('id')
         .eq('username', username)
         .single();
-        
+
       if (existingUser) {
         return { data: null, error: { message: 'Username already exists' } };
       }
@@ -120,11 +121,11 @@ export function useAuth() {
         .select('id')
         .eq('identity_number', userData.identity_number)
         .single();
-        
+
       if (existingIdentity) {
         return { data: null, error: { message: 'Identity number already exists' } };
       }
-      
+
       // Generate email if not provided
       const email = `${username}@faculty.edu`;
 
@@ -146,7 +147,7 @@ export function useAuth() {
 
       if (profileError) {
         console.error('Profile creation error:', profileError);
-        
+
         if (profileError.code === '23505') {
           if (profileError.message.includes('username')) {
             return { data: null, error: { message: 'Username already exists' } };
@@ -158,7 +159,7 @@ export function useAuth() {
             return { data: null, error: { message: 'Email already exists' } };
           }
         }
-        
+
         return { data: null, error: { message: profileError.message || 'Failed to create account' } };
       }
 
@@ -179,13 +180,13 @@ export function useAuth() {
       setUser(null);
       setProfile(null);
       localStorage.removeItem('faculty_user');
-      
+
       try {
         await supabase.rpc('set_current_user', { user_id: null });
       } catch (error) {
         console.error('Error clearing user context:', error);
       }
-      
+
       return { error: null };
     } catch (error) {
       console.error('Sign out error:', error);
