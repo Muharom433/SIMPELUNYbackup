@@ -1,26 +1,28 @@
 // src/hooks/useEquipmentData.ts
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useEquipmentStore, EquipmentItem, EquipmentRoom } from '../stores/equipmentStore';
 
 export const useEquipmentData = () => {
-    const {
-        locations,
-        setEquipment,
-        setRooms,
-        setLocations,
-        shouldRefresh,
-        getEquipmentWithRooms,
-        getCacheStats,
-        markStale
-    } = useEquipmentStore();
+    // Get state from store using selectors (stable references)
+    const storeEquipment = useEquipmentStore(state => state.equipment);
+    const locations = useEquipmentStore(state => state.locations);
+    const setEquipment = useEquipmentStore(state => state.setEquipment);
+    const setRooms = useEquipmentStore(state => state.setRooms);
+    const setLocations = useEquipmentStore(state => state.setLocations);
+    const shouldRefresh = useEquipmentStore(state => state.shouldRefresh);
+    const getCacheStats = useEquipmentStore(state => state.getCacheStats);
+    const markStale = useEquipmentStore(state => state.markStale);
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Memoize equipment to prevent infinite re-renders
+    // Equipment already has rooms included from the join
+    const equipment = useMemo(() => storeEquipment, [storeEquipment]);
+
     /**
      * Fetch location data in background (non-blocking)
-     * Declared first karena dipakai oleh fetchEquipmentData
      */
     const fetchLocations = useCallback(async () => {
         try {
@@ -43,48 +45,47 @@ export const useEquipmentData = () => {
     }, [setLocations]);
 
     /**
-     * Fetch equipment data dengan parallel fetch strategy (seperti useRoomData)
-     * - NO DATABASE JOINS = lebih cepat
-     * - Parallel fetch = equipment + rooms bersamaan
-     * - JS mapping = gabungkan data di client
+     * Fetch equipment data with rooms directly joined
      */
     const fetchEquipmentData = useCallback(async (forceRefresh = false) => {
         // Check cache first
         if (!forceRefresh && !shouldRefresh()) {
             console.log('📦 Equipment dari cache');
-            return getEquipmentWithRooms();
+            return storeEquipment;
         }
 
         setLoading(true);
         setError(null);
 
         try {
-            console.log('🚀 Fetching equipment (with attachments, smaller batch)...');
+            console.log('🚀 Fetching ALL equipment data (will be cached)...');
             const startTime = Date.now();
 
-            // ✅ OPTIMIZED: Fetch rooms FIRST (smaller table, faster)
+            // Fetch rooms (for other uses)
             const roomsRes = await supabase
                 .from('rooms')
                 .select('id, name, code, department_id, study_program_id')
-                .limit(100);
+                .order('name');
 
             if (roomsRes.error) {
                 console.warn('Rooms fetch warning:', roomsRes.error);
             }
 
-            // ✅ INCLUDE attachments like Tool Administration does
-            // Use smaller limit (25) to avoid timeout with base64 images
+            // Fetch equipment WITH ROOMS - TANPA attachments untuk menghindari timeout
+            // Filter is_available dan quantity di client untuk query lebih cepat
             const equipmentRes = await supabase
                 .from('equipment')
-                .select('id, name, code, category, quantity, unit, condition, is_available, attachments, rooms_id, table_id, rack_id, box_id')
-                .eq('is_available', true)
-                .gt('quantity', 0)
-                .order('name')
-                .limit(25); // Keep small to avoid timeout with base64 images
+                .select(`
+                    id, name, code, category, quantity, unit, condition, is_available,
+                    rooms_id, table_id, rack_id, box_id,
+                    rooms:rooms_id (
+                        id, name, code, department_id, study_program_id
+                    )
+                `)
+                .order('name');
 
-            console.log(`⚡ Sequential fetch selesai dalam ${Date.now() - startTime}ms`);
+            console.log(`⚡ Fetch selesai dalam ${Date.now() - startTime}ms`);
 
-            // Handle errors gracefully
             if (equipmentRes.error) {
                 console.error('Equipment fetch error:', equipmentRes.error);
                 setEquipment([]);
@@ -95,19 +96,28 @@ export const useEquipmentData = () => {
             const rawEquipment = equipmentRes.data || [];
             const rawRooms = (roomsRes.data || []) as EquipmentRoom[];
 
-            console.log(`📦 Data: ${rawEquipment.length} equipment, ${rawRooms.length} rooms`);
+            console.log(`📦 Loaded: ${rawEquipment.length} equipment, ${rawRooms.length} rooms`);
 
-            // Save to store
+            // Process equipment - filter is_available dan quantity di client
+            const processedEquipment = rawEquipment
+                .filter((eq: any) => eq.is_available === true && eq.quantity > 0)
+                .map((eq: any) => ({
+                    ...eq,
+                    rooms: eq.rooms || null
+                })) as EquipmentItem[];
+
+            console.log(`📦 After filter: ${processedEquipment.length} available equipment`);
+
+            // Save to store for caching
             setRooms(rawRooms);
-            setEquipment(rawEquipment as EquipmentItem[]);
+            setEquipment(processedEquipment);
 
-            // ✅ BACKGROUND: Load location data (non-blocking)
+            // Load location data in background
             fetchLocations();
 
-            const stats = getCacheStats();
-            console.log(`✅ Equipment loaded. Cache hit rate: ${stats.hitRate.toFixed(1)}%`);
+            console.log(`✅ Equipment cached successfully`);
 
-            return getEquipmentWithRooms();
+            return processedEquipment;
 
         } catch (err: any) {
             console.error('❌ Error loading equipment:', err);
@@ -116,7 +126,7 @@ export const useEquipmentData = () => {
         } finally {
             setLoading(false);
         }
-    }, [shouldRefresh, setEquipment, setRooms, getEquipmentWithRooms, getCacheStats, fetchLocations]);
+    }, [shouldRefresh, setEquipment, setRooms, storeEquipment, fetchLocations]);
 
     /**
      * Filter equipment by study program (client-side filtering)
@@ -125,13 +135,11 @@ export const useEquipmentData = () => {
         departmentId: string | null,
         studyProgramId: string | null
     ): EquipmentItem[] => {
-        const allEquipment = getEquipmentWithRooms();
-
         if (!departmentId && !studyProgramId) {
-            return allEquipment;
+            return storeEquipment;
         }
 
-        return allEquipment.filter(eq => {
+        return storeEquipment.filter((eq: EquipmentItem) => {
             const room = eq.rooms;
             if (!room) return false;
 
@@ -152,7 +160,7 @@ export const useEquipmentData = () => {
 
             return false;
         });
-    }, [getEquipmentWithRooms]);
+    }, [storeEquipment]);
 
     /**
      * Force refresh data
@@ -163,8 +171,8 @@ export const useEquipmentData = () => {
     }, [markStale, fetchEquipmentData]);
 
     return {
-        // Data
-        equipment: getEquipmentWithRooms(),
+        // Data - stable reference from useMemo
+        equipment,
         locations,
 
         // Status

@@ -25,6 +25,9 @@ export interface EquipmentItem {
     table_id?: string;
     rack_id?: string;
     box_id?: string;
+    // Direct department and study program IDs for faster filtering
+    department_id?: string;
+    study_program_id?: string;
     // Mapped room data (from JS mapping, not DB join)
     rooms?: EquipmentRoom | null;
 }
@@ -105,12 +108,13 @@ export const useEquipmentStore = create<EquipmentStore>((set, get) => ({
         return isStale || isExpired || isEmpty;
     },
 
-    // Map equipment with rooms from cache
+    // Map equipment with rooms from cache (or use embedded rooms from join)
     getEquipmentWithRooms: () => {
         const { equipment, rooms } = get();
         return equipment.map(eq => ({
             ...eq,
-            rooms: eq.rooms_id ? rooms.get(eq.rooms_id) || null : null
+            // Prioritize embedded rooms from join, fallback to manual mapping
+            rooms: eq.rooms || (eq.rooms_id ? rooms.get(eq.rooms_id) || null : null)
         }));
     },
 

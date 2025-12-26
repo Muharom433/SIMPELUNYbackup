@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     Wrench, Search, Package, User, Building, MapPin,
     X, Plus, Minus, CheckCircle, Send, Info,
-    Eye, Maximize2, Camera, RefreshCw,
+    Eye, Maximize2, Camera, RefreshCw, FlaskConical,
     FileText, AlertTriangle, Upload, Trash2, Loader2, ChevronDown,
     ChevronLeft, ChevronRight, Calendar, Clock
 } from 'lucide-react';
@@ -174,6 +174,76 @@ const getAttachmentSrc = (attachment: string | string[] | null | undefined): str
     }
 
     return attachment;
+};
+
+// Lazy Equipment Image - fetches photo on demand
+const LazyEquipmentImage: React.FC<{
+    equipmentId: string;
+    alt: string;
+    className?: string;
+}> = ({ equipmentId, alt, className = "" }) => {
+    const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [hasFetched, setHasFetched] = useState(false);
+    const imgRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        // Use Intersection Observer for lazy loading
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting && !hasFetched) {
+                    setHasFetched(true);
+                    // Fetch photo
+                    supabase
+                        .from('equipment')
+                        .select('attachments')
+                        .eq('id', equipmentId)
+                        .single()
+                        .then(({ data, error }) => {
+                            if (!error && data?.attachments) {
+                                const src = getAttachmentSrc(data.attachments);
+                                setPhotoUrl(src);
+                            }
+                            setIsLoading(false);
+                        });
+                }
+            },
+            { threshold: 0.1 }
+        );
+
+        if (imgRef.current) {
+            observer.observe(imgRef.current);
+        }
+
+        return () => observer.disconnect();
+    }, [equipmentId, hasFetched]);
+
+    return (
+        <div ref={imgRef} className={`relative ${className}`}>
+            {isLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-lg">
+                    <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+                </div>
+            )}
+            {!isLoading && !photoUrl && (
+                <div className="w-full h-full flex items-center justify-center bg-gray-100 rounded-lg">
+                    <Camera className="h-6 w-6 text-gray-400" />
+                </div>
+            )}
+            {photoUrl && (
+                <img
+                    src={photoUrl}
+                    alt={alt}
+                    className={`w-full h-full object-cover rounded-lg ${isLoading ? 'opacity-0' : 'opacity-100'}`}
+                    onLoad={() => setIsLoading(false)}
+                    onError={() => {
+                        setIsLoading(false);
+                        setPhotoUrl(null);
+                    }}
+                />
+            )}
+        </div>
+    );
 };
 
 // =====================================================
@@ -507,6 +577,9 @@ const ToolLending: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('all');
 
+    // Tab: 'general' = equipment tanpa dept (umum), 'lab' = equipment dengan dept (sesuai user)
+    const [equipmentTab, setEquipmentTab] = useState<'general' | 'lab'>('general');
+
     const [submitting, setSubmitting] = useState(false);
 
     // Location data dari hook
@@ -715,36 +788,49 @@ const ToolLending: React.FC = () => {
 
     // ==================== EQUIPMENT FILTERING ====================
 
-    // Apply all filters: study program, search, and category
+    // Apply filters based on tab:
+    // Tab General: equipment with room.dept IS NULL (umum)
+    // Tab Lab: equipment filtered by user's dept/sp
     useEffect(() => {
         let filtered = [...(allEquipment as EquipmentWithDetails[])];
 
-        // First filter by study program if selected
-        if (selectedStudyProgramId) {
-            const selectedProgram = studyPrograms.find(p => p.id === selectedStudyProgramId);
-            const departmentId = selectedProgram?.department?.id || null;
+        // Get user's department from selected study program
+        const selectedProgram = studyPrograms.find(p => p.id === selectedStudyProgramId);
+        const userDeptId = selectedProgram?.department_id || selectedProgram?.department?.id || null;
 
+        // FILTER BY TAB
+        if (equipmentTab === 'general') {
+            // TAB UMUM: Equipment where room has NO department (general/shared)
             filtered = filtered.filter(eq => {
                 const room = eq.rooms;
-                if (!room) return false;
-
-                // General room - accessible by all
-                if (!room.department_id && !room.study_program_id) {
-                    return true;
-                }
-
-                // Match by study program
-                if (selectedStudyProgramId && room.study_program_id === selectedStudyProgramId) {
-                    return true;
-                }
-
-                // Match by department
-                if (departmentId && room.department_id === departmentId) {
-                    return true;
-                }
-
-                return false;
+                // No room or room without dept = general equipment
+                return !room?.department_id;
             });
+        } else {
+            // TAB LAB: Equipment filtered by user's dept/sp
+            if (selectedStudyProgramId && userDeptId) {
+                filtered = filtered.filter(eq => {
+                    const room = eq.rooms;
+                    if (!room) return false;
+
+                    const deptId = room.department_id;
+                    const spId = room.study_program_id;
+
+                    // Skip general equipment (no dept) - they're in the other tab
+                    if (!deptId) return false;
+
+                    // Must match user's department
+                    if (deptId !== userDeptId) return false;
+
+                    // If room has study_program_id, must match user's
+                    if (spId && spId !== selectedStudyProgramId) return false;
+
+                    return true;
+                });
+            } else {
+                // No study program selected - show nothing in lab tab
+                filtered = [];
+            }
         }
 
         // Then apply search
@@ -764,7 +850,7 @@ const ToolLending: React.FC = () => {
         }
 
         setFilteredEquipment(filtered);
-    }, [allEquipment, searchTerm, categoryFilter, selectedStudyProgramId, studyPrograms]);
+    }, [allEquipment, searchTerm, categoryFilter, selectedStudyProgramId, studyPrograms, equipmentTab]);
 
     const categories = [...new Set((allEquipment as EquipmentWithDetails[]).map(eq => eq.category).filter(Boolean))];
 
@@ -1341,6 +1427,42 @@ const ToolLending: React.FC = () => {
                                                 </div>
                                             </div>
 
+                                            {/* Equipment Type Tabs */}
+                                            <div className="flex gap-2 p-1 bg-gray-100 rounded-xl">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setEquipmentTab('general')}
+                                                    className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${equipmentTab === 'general'
+                                                        ? 'bg-white text-green-600 shadow-md'
+                                                        : 'text-gray-600 hover:text-gray-800 hover:bg-white/50'
+                                                        }`}
+                                                >
+                                                    <div className="flex items-center justify-center gap-2">
+                                                        <Package className="h-4 w-4" />
+                                                        {getText('General Equipment', 'Peralatan Umum')}
+                                                    </div>
+                                                    <p className="text-xs font-normal mt-0.5 opacity-70">
+                                                        {getText('For everyone', 'General')}
+                                                    </p>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setEquipmentTab('lab')}
+                                                    className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${equipmentTab === 'lab'
+                                                        ? 'bg-white text-blue-600 shadow-md'
+                                                        : 'text-gray-600 hover:text-gray-800 hover:bg-white/50'
+                                                        }`}
+                                                >
+                                                    <div className="flex items-center justify-center gap-2">
+                                                        <FlaskConical className="h-4 w-4" />
+                                                        {getText('Lab Equipment', 'Peralatan Lab')}
+                                                    </div>
+                                                    <p className="text-xs font-normal mt-0.5 opacity-70">
+                                                        {getText('For your Study Program', 'Sesuai Program Studi')}
+                                                    </p>
+                                                </button>
+                                            </div>
+
                                             {/* Search and Filter */}
                                             <div className="flex flex-col sm:flex-row gap-4">
                                                 <div className="relative flex-1">
@@ -1457,8 +1579,8 @@ const ToolLending: React.FC = () => {
                                                                             }
                                                                         }}
                                                                     >
-                                                                        <ImageWithLoader
-                                                                            src={eq.attachments}
+                                                                        <LazyEquipmentImage
+                                                                            equipmentId={eq.id}
                                                                             alt={eq.name}
                                                                             className="w-full h-full"
                                                                         />

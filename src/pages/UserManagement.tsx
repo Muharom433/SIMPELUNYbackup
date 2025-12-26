@@ -54,7 +54,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 
-// Zod schema remains the same
+// Zod schema - password optional/empty for edit mode
 const userSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
   email: z.string().email('Invalid email address').optional().or(z.literal('')),
@@ -64,7 +64,11 @@ const userSchema = z.object({
   role: z.enum(['super_admin', 'department_admin', 'lecturer', 'student', 'laboratory', 'staffing', 'purchasing', 'technician', 'frontdesk']),
   department_id: z.string().optional().nullable(),
   study_program_id: z.string().optional().nullable(),
-  password: z.string().min(6, 'Password must be at least 6 characters').optional(),
+  // Password: optional, but if provided must be at least 6 characters
+  password: z.string().optional().or(z.literal('')).refine(
+    (val) => !val || val.length === 0 || val.length >= 6,
+    { message: 'Password must be at least 6 characters' }
+  ),
 });
 
 type UserForm = z.infer<typeof userSchema>;
@@ -1978,7 +1982,15 @@ const UserManagement: React.FC = () => {
               </button>
               <button
                 type="submit"
-                onClick={form.handleSubmit(handleSubmit)}
+                onClick={() => {
+                  console.log('🔵 Submit button clicked');
+                  console.log('   submitting:', submitting);
+                  console.log('   processingIds.has(form):', processingIds.has('form'));
+                  console.log('   form.formState:', form.formState);
+                  console.log('   form.formState.isValid:', form.formState.isValid);
+                  console.log('   form.formState.errors:', form.formState.errors);
+                  form.handleSubmit(handleSubmit)();
+                }}
                 disabled={submitting || processingIds.has('form')}
                 className="flex-1 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors duration-200 font-medium flex items-center justify-center gap-2"
               >

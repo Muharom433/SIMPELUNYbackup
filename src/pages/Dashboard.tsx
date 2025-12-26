@@ -130,6 +130,124 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [scrollY, setScrollY] = useState(0);
   const [showOverlay, setShowOverlay] = useState(true);
 
+  // Interactive mouse tracking for hero section
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [isHovering, setIsHovering] = useState(false);
+  const heroRef = React.useRef<HTMLDivElement>(null);
+
+  // Floating particles with liquid movement
+  const [particles, setParticles] = useState<Array<{
+    id: number;
+    x: number;
+    y: number;
+    size: number;
+    speedX: number;
+    speedY: number;
+    opacity: number;
+    color: string;
+    phase: number; // For wave movement
+    amplitude: number; // Wave amplitude
+  }>>([]);
+
+  // Ripple effect for touch interaction
+  const [ripples, setRipples] = useState<Array<{
+    id: number;
+    x: number;
+    y: number;
+    size: number;
+    opacity: number;
+  }>>([]);
+
+  // Initialize particles with liquid-like properties
+  useEffect(() => {
+    const colors = ['#daa06d', '#c4926b', '#b8956f', '#e8d5c4', '#f0e6d6', '#d4a574', '#c9a86c'];
+    const initialParticles = Array.from({ length: 35 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      size: Math.random() * 80 + 30,
+      speedX: (Math.random() - 0.5) * 0.4,
+      speedY: (Math.random() - 0.5) * 0.4,
+      opacity: Math.random() * 0.5 + 0.15,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      phase: Math.random() * Math.PI * 2,
+      amplitude: Math.random() * 0.8 + 0.3
+    }));
+    setParticles(initialParticles);
+  }, []);
+
+  // Animate particles with liquid flow
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setParticles(prev => prev.map(p => {
+        // Advance phase for wave motion
+        const newPhase = p.phase + 0.05;
+
+        // Calculate natural wave offset (liquid movement)
+        const waveX = Math.cos(newPhase * 0.5) * 0.05 * p.amplitude;
+        const waveY = Math.sin(newPhase) * 0.2 * p.amplitude;
+
+        // Apply movement + wave
+        let newX = p.x + p.speedX + waveX;
+        let newY = p.y + p.speedY + waveY;
+
+        // Gentle wrap around for continuous flow
+        if (newX < -10) newX = 110;
+        if (newX > 110) newX = -10;
+        if (newY < -10) newY = 110;
+        if (newY > 110) newY = -10;
+
+        return {
+          ...p,
+          x: newX,
+          y: newY,
+          phase: newPhase
+        };
+      }));
+    }, 40);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Handle mouse movement on hero section (Liquid Repulsion)
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!heroRef.current) return;
+
+    const rect = heroRef.current.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+
+    setMousePosition({ x, y });
+
+    // Liquid repulsion effect - push particles away like water
+    setParticles(prev => prev.map(p => {
+      const dx = p.x - x;
+      const dy = p.y - y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const threshold = 18; // Interaction radius
+
+      if (dist < threshold) {
+        // Calculate repulsion force (stronger when closer)
+        const force = (threshold - dist) / threshold;
+        const angle = Math.atan2(dy, dx);
+
+        // Move particle away smoothly
+        const moveX = Math.cos(angle) * force * 1.5;
+        const moveY = Math.sin(angle) * force * 1.5;
+
+        return {
+          ...p,
+          x: p.x + moveX,
+          y: p.y + moveY,
+          // Add some kinetic energy to speed
+          speedX: p.speedX * 0.95 + moveX * 0.05,
+          speedY: p.speedY * 0.95 + moveY * 0.05
+        };
+      }
+      return p;
+    }));
+  };
+
   useEffect(() => {
     // Update time every second
     const timer = setInterval(() => {
@@ -273,60 +391,110 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         </div>
       )}
 
-      {/* Hero Section */}
-      <div className="relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden" style={{ background: 'linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)' }}>
-        {/* Background Faded Abstract Shapes with Glassmorphism */}
-        <div className="absolute inset-0">
-          {/* Large abstract shape - top right */}
+      {/* Hero Section - Interactive Background */}
+      <div
+        ref={heroRef}
+        className="relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden cursor-default"
+        style={{
+          background: `radial-gradient(circle at ${mousePosition.x}% ${mousePosition.y}%, rgba(218, 160, 109, 0.3) 0%, transparent 50%), linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)`,
+          transition: 'background 0.3s ease-out'
+        }}
+        onMouseMove={handleMouseMove}
+        onMouseEnter={() => setIsHovering(true)}
+        onMouseLeave={() => setIsHovering(false)}
+      >
+        {/* Interactive Floating Particles */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          {particles.map((particle) => (
+            <div
+              key={particle.id}
+              className="absolute rounded-full transition-all duration-300 ease-out"
+              style={{
+                left: `${particle.x}%`,
+                top: `${particle.y}%`,
+                width: `${particle.size}px`,
+                height: `${particle.size}px`,
+                background: `radial-gradient(circle at 30% 30%, ${particle.color} 0%, transparent 70%)`,
+                opacity: particle.opacity,
+                filter: 'blur(8px)',
+                transform: `translate(-50%, -50%) scale(${isHovering ? 1.2 : 1})`,
+                boxShadow: isHovering ? `0 0 ${particle.size}px ${particle.color}40` : 'none'
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Mouse Glow Effect */}
+        {isHovering && (
+          <div
+            className="absolute pointer-events-none transition-all duration-100 ease-out"
+            style={{
+              left: `${mousePosition.x}%`,
+              top: `${mousePosition.y}%`,
+              width: '300px',
+              height: '300px',
+              background: 'radial-gradient(circle, rgba(218, 160, 109, 0.4) 0%, rgba(196, 146, 107, 0.2) 30%, transparent 70%)',
+              transform: 'translate(-50%, -50%)',
+              filter: 'blur(30px)',
+              borderRadius: '50%'
+            }}
+          />
+        )}
+
+        {/* Animated Background Orbs - Static decorative elements */}
+        <div className="absolute inset-0 pointer-events-none">
+          {/* Large abstract shape - top right with parallax */}
           <div
             className="absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full opacity-60 backdrop-blur-xl filter blur-sm"
             style={{
-              background: 'radial-gradient(circle at 30% 30%, #daa06d 0%, #e8d5c4 40%, transparent 70%)'
+              background: 'radial-gradient(circle at 30% 30%, #daa06d 0%, #e8d5c4 40%, transparent 70%)',
+              transform: `translate(${(mousePosition.x - 50) * 0.02}px, ${(mousePosition.y - 50) * 0.02}px)`
             }}
-          ></div>
+          />
           {/* Medium oval shape - center right */}
           <div
             className="absolute top-1/4 -right-20 w-[400px] h-[300px] rounded-full opacity-50 backdrop-blur-lg filter blur-md"
             style={{
               background: 'radial-gradient(ellipse at 20% 40%, #c4926b 0%, #f0e6d6 50%, transparent 80%)',
-              transform: 'rotate(25deg)'
+              transform: `rotate(25deg) translate(${(mousePosition.x - 50) * 0.03}px, ${(mousePosition.y - 50) * 0.03}px)`
             }}
-          ></div>
+          />
           {/* Abstract blob - bottom right */}
           <div
             className="absolute bottom-0 right-0 w-[350px] h-[350px] opacity-55 backdrop-blur-lg filter blur-sm"
             style={{
               background: 'radial-gradient(circle at 40% 60%, #b8956f 0%, #e8d5c4 60%, transparent 85%)',
-              borderRadius: '60% 40% 70% 30%'
+              borderRadius: '60% 40% 70% 30%',
+              transform: `translate(${(mousePosition.x - 50) * 0.025}px, ${(mousePosition.y - 50) * 0.025}px)`
             }}
-          ></div>
+          />
           {/* Flowing shape - top left */}
           <div
             className="absolute -top-20 -left-32 w-[450px] h-[300px] opacity-45 backdrop-blur-xl filter blur-lg"
             style={{
               background: 'radial-gradient(ellipse at 70% 50%, #daa06d 0%, #f5f0ea 45%, transparent 75%)',
               borderRadius: '40% 60% 50% 80%',
-              transform: 'rotate(-15deg)'
+              transform: `rotate(-15deg) translate(${(mousePosition.x - 50) * -0.02}px, ${(mousePosition.y - 50) * -0.02}px)`
             }}
-          ></div>
+          />
           {/* Curved shape - bottom left */}
           <div
             className="absolute bottom-10 -left-24 w-[300px] h-[200px] opacity-40 backdrop-blur-md filter blur-md"
             style={{
               background: 'radial-gradient(ellipse at 60% 30%, #c4926b 0%, #f0e6d6 55%, transparent 80%)',
               borderRadius: '70% 30% 40% 60%',
-              transform: 'rotate(20deg)'
+              transform: `rotate(20deg) translate(${(mousePosition.x - 50) * -0.015}px, ${(mousePosition.y - 50) * -0.015}px)`
             }}
-          ></div>
+          />
           {/* Extra flowing element - center */}
           <div
             className="absolute top-1/2 left-1/4 w-[250px] h-[400px] opacity-30 backdrop-blur-lg filter blur-xl"
             style={{
               background: 'linear-gradient(135deg, #e8d5c4 0%, #f5f0ea 50%, transparent 100%)',
               borderRadius: '50% 80% 30% 70%',
-              transform: 'rotate(45deg)'
+              transform: `rotate(45deg) translate(${(mousePosition.x - 50) * 0.02}px, ${(mousePosition.y - 50) * 0.02}px)`
             }}
-          ></div>
+          />
         </div>
         {/* Animated Background Elements */}
         <div className="absolute inset-0">

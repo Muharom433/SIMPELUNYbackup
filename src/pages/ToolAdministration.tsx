@@ -998,6 +998,9 @@ const ToolAdministration: React.FC = () => {
                 Spesification: data.Spesification || selectedStockForClaim.spesification, quantity: data.quantity,
                 unit: selectedStockForClaim.unit, stock_id: selectedStockForClaim.id,
                 attachments: equipmentImagePreview ? [equipmentImagePreview] : null,
+                // Auto-copy department_id and study_program_id from selected room
+                department_id: (selectedRoomForClaim as any)?.department_id || null,
+                study_program_id: (selectedRoomForClaim as any)?.study_program_id || null,
             };
 
             const { error: equipmentError } = await supabase.from('equipment').insert([equipmentData]);
@@ -1059,6 +1062,9 @@ const ToolAdministration: React.FC = () => {
                 quantity: data.quantity,
                 unit: data.unit,
                 attachments: attachmentsValue,
+                // Auto-copy department_id and study_program_id from selected room
+                department_id: (selectedRoomForEdit as any)?.department_id || null,
+                study_program_id: (selectedRoomForEdit as any)?.study_program_id || null,
             };
 
             const { error } = await supabase
@@ -2329,7 +2335,10 @@ const ToolAdministration: React.FC = () => {
                 id: newId, name: data.name, code: data.code, category: data.category, quantity: data.quantity, unit: data.unit,
                 condition: data.condition, rooms_id: data.rooms_id, table_id: data.table_id || null, rack_id: data.rack_id || null,
                 box_id: data.box_id || null, is_mandatory: data.is_mandatory, is_available: data.is_available,
-                Spesification: data.Spesification, attachments: equipmentImagePreview ? [equipmentImagePreview] : null, created_at: new Date().toISOString()
+                Spesification: data.Spesification, attachments: equipmentImagePreview ? [equipmentImagePreview] : null, created_at: new Date().toISOString(),
+                // Auto-copy department_id and study_program_id from selected room
+                department_id: (selectedRoomForEdit as any)?.department_id || null,
+                study_program_id: (selectedRoomForEdit as any)?.study_program_id || null,
             });
 
             if (error) throw error;
