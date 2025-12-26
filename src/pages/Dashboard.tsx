@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Calendar,
   Clock,
@@ -115,6 +116,7 @@ interface ReportComment {
 const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const { getText } = useLanguage();
   const { dashboard_video_url } = useSystemBranding();
+  const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats>({
     totalBookings: 1247,
     pendingBookings: 23,
@@ -318,7 +320,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
     if (user.role === 'super_admin') {
       return [
-        { icon: BarChart3, label: getText('System Analytics', 'Analitik Sistem'), path: '/', color: 'text-blue-600 bg-blue-50 hover:bg-blue-100', description: getText('View detailed analytics', 'Lihat analitik detail') },
         { icon: Building, label: getText('Room Management', 'Manajemen Ruangan'), path: '/rooms', color: 'text-green-600 bg-green-50 hover:bg-green-100', description: getText('Manage rooms', 'Kelola ruangan') },
         { icon: Users, label: getText('User Management', 'Manajemen Pengguna'), path: '/users', color: 'text-amber-600 bg-amber-50 hover:bg-amber-100', description: getText('Manage users', 'Kelola pengguna') },
         { icon: Calendar, label: getText('Booking Management', 'Manajemen Pemesanan'), path: '/bookings', color: 'text-orange-600 bg-orange-50 hover:bg-orange-100', description: getText('Handle bookings', 'Tangani pemesanan') },
@@ -331,7 +332,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
     if (user.role === 'department_admin') {
       return [
-        { icon: PieChart, label: getText('Dashboard', 'Dasbor'), path: '/', color: 'text-blue-600 bg-blue-50 hover:bg-blue-100', description: getText('Department overview', 'Gambaran departemen') },
         { icon: CalendarCheck, label: getText('Exam Management', 'Manajemen Ujian'), path: '/exams', color: 'text-green-600 bg-green-50 hover:bg-green-100', description: getText('Manage exam schedules', 'Kelola jadwal ujian') },
         { icon: Users, label: getText('User Management', 'Manajemen Pengguna'), path: '/users', color: 'text-amber-600 bg-amber-50 hover:bg-amber-100', description: getText('Manage department users', 'Kelola pengguna departemen') },
         { icon: User, label: getText('Profile', 'Profil'), path: '/profile', color: 'text-orange-600 bg-orange-50 hover:bg-orange-100', description: getText('Update profile', 'Perbarui profil') },
@@ -340,7 +340,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
     // Student and lecturer
     return [
-      { icon: Home, label: getText('Dashboard', 'Dasbor'), path: '/', color: 'text-blue-600 bg-blue-50 hover:bg-blue-100', description: getText('View overview', 'Lihat gambaran') },
       { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book', color: 'text-green-600 bg-green-50 hover:bg-green-100', description: getText('Reserve a room', 'Reservasi ruangan') },
       { icon: Package, label: getText('Tool Lending', 'Peminjaman Alat'), path: '/tools', color: 'text-amber-600 bg-amber-50 hover:bg-amber-100', description: getText('Borrow equipment', 'Pinjam peralatan') },
       { icon: CheckCircle, label: getText('Check Out', 'Pengembalian'), path: '/checkout', color: 'text-orange-600 bg-orange-50 hover:bg-orange-100', description: getText('Return items', 'Kembalikan barang') },
@@ -352,49 +351,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
-      {/* Overlay dengan Gradasi Gelap */}
-      {showOverlay && (
-        <div
-          className="fixed inset-0 z-50 cursor-pointer"
-          onClick={handleOverlayClick}
-          style={{
-            background: 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.5) 30%, rgba(0,0,0,0.7) 60%, rgba(0,0,0,0.9) 100%)',
-            backdropFilter: 'blur(2px)'
-          }}
-        >
-          {/* Konten Overlay di Tengah */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            {/* Animasi Panah Bouncy */}
-            <div className="text-center mb-8">
-              <div className="relative">
-                {/* Glow Effect */}
-                <div className="absolute -inset-4 bg-blue-400 rounded-full blur-xl opacity-30 animate-pulse"></div>
-
-                {/* Panah dengan Animasi Bounce */}
-                <div className="relative bg-white/20 backdrop-blur-md rounded-full p-6 shadow-2xl border border-white/30">
-                  <ChevronDown className="w-12 h-12 text-white animate-bounce" />
-                </div>
-              </div>
-            </div>
-
-            {/* Text Instruction */}
-            <div className="text-center text-white/90">
-              <p className="text-lg font-semibold mb-2">Scroll untuk melihat tutorial</p>
-              <p className="text-sm opacity-80">Klik di mana saja untuk menutup</p>
-            </div>
-
-            {/* Decorative Elements */}
-            <div className="absolute bottom-10 left-10 w-20 h-20 rounded-full bg-blue-400/20 blur-xl animate-pulse"></div>
-            <div className="absolute top-10 right-10 w-16 h-16 rounded-full bg-purple-400/20 blur-xl animate-pulse delay-1000"></div>
-            <div className="absolute top-1/3 left-1/4 w-24 h-24 rounded-full bg-green-400/20 blur-xl animate-pulse delay-500"></div>
+      {/* Scroll Indicator Arrow - Fades out on scroll */}
+      <div
+        className="fixed bottom-10 left-1/2 transform -translate-x-1/2 z-40 pointer-events-none transition-transform duration-100 ease-out"
+        style={{
+          opacity: Math.max(0, 1 - scrollY / 150),
+          transform: `translate(-50%, ${scrollY * 0.2}px)`
+        }}
+      >
+        <div className="flex flex-col items-center gap-2">
+          <span className="text-sm font-medium text-amber-900/60 tracking-wider uppercase text-[10px] animate-pulse">
+            Scroll Down
+          </span>
+          <div className="bg-white/30 backdrop-blur-md p-3 rounded-full shadow-lg border border-white/40 animate-bounce">
+            <ChevronDown className="w-6 h-6 text-amber-800" />
           </div>
         </div>
-      )}
+      </div>
 
       {/* Hero Section - Interactive Background */}
       <div
         ref={heroRef}
-        className="relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden cursor-default"
+        className="min-h-screen w-full flex items-center relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden cursor-default"
         style={{
           background: `radial-gradient(circle at ${mousePosition.x}% ${mousePosition.y}%, rgba(218, 160, 109, 0.3) 0%, transparent 50%), linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)`,
           transition: 'background 0.3s ease-out'
@@ -404,7 +382,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         onMouseLeave={() => setIsHovering(false)}
       >
         {/* Interactive Floating Particles */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute inset-0 pointer-events-none overflow-hidden"
+          style={{ transform: `translateY(${scrollY * 0.2}px)` }}>
           {particles.map((particle) => (
             <div
               key={particle.id}
@@ -496,6 +475,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             }}
           />
         </div>
+
         {/* Animated Background Elements */}
         <div className="absolute inset-0">
           <div
@@ -524,6 +504,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           ></div>
         </div>
 
+        {/* Hero Content */}
         <div className="relative px-6 py-16 sm:px-12 lg:px-16">
           <div className="max-w-7xl mx-auto">
             <div className="grid lg:grid-cols-2 gap-8 items-center">
@@ -532,16 +513,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 <div className="space-y-4">
                   <div className="inline-flex items-center px-4 py-2 bg-white bg-opacity-30 backdrop-blur-sm rounded-full text-sm font-medium">
                     <Star className="w-4 h-4 mr-2" style={{ color: '#8b4513' }} />
-                    Best Faculty Management System
+                    All in One Services
                   </div>
                   <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold leading-tight">
-                    Faculty of
+                    {getText('Faculty of', 'Fakultas')}
                     <span className="block bg-clip-text text-transparent" style={{ background: 'linear-gradient(to right, #8b4513, #654321)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                      Vocational
+                      {getText('Vocational', 'Vokasi')}
                     </span>
                   </h1>
                   <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold" style={{ color: '#3c2415' }}>
-                    Yogyakarta State University
+                    {getText('Yogyakarta State University', 'Universitas Yogyakarta')}
                   </h2>
                   <p className="text-sm sm:text-base lg:text-lg leading-relaxed max-w-lg" style={{ color: '#4a2c1a' }}>
                     SIMPEL kuliah or Sistem Pelayanan kuliah is an Innovation to improve our services.
@@ -552,7 +533,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 <div className="flex items-center space-x-6 text-sm" style={{ color: '#654321' }}>
                   <div className="flex items-center space-x-2">
                     <MapPin className="w-4 h-4" />
-                    <span>Faculty of Vocational</span>
+                    <span>{getText('Faculty of Vocational', 'FakultasVokasi')}</span>
                   </div>
                 </div>
               </div>
@@ -572,9 +553,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                         alt="Graduate Student"
                         className="w-full h-auto max-w-xs lg:max-w-md object-contain"
                         onError={(e) => {
-                          // Fallback if image doesn't load
-                          e.currentTarget.style.display = 'none';
-                          e.currentTarget.nextElementSibling.style.display = 'flex';
+                          const target = e.currentTarget;
+                          target.style.display = 'none';
+                          const nextEl = target.nextElementSibling as HTMLElement;
+                          if (nextEl) nextEl.style.display = 'flex';
                         }}
                       />
                       <div className="w-full h-80 flex items-center justify-center" style={{ display: 'none' }}>
@@ -584,7 +566,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
                     {/* Building Text - Top Left Corner */}
                     <div
-                      className="absolute top-16 -left-8 lg:top-20 lg:-left-12 z-20"
+                      className="absolute top-12 -left-12 lg:top-6 lg:-left-20 z-20"
                       style={{ animation: 'float 6s ease-in-out infinite' }}
                     >
                       <img
@@ -592,8 +574,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                         alt="Building Career"
                         className="w-80 h-auto lg:w-104 drop-shadow-lg"
                         onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                          e.currentTarget.nextElementSibling.style.display = 'block';
+                          const target = e.currentTarget;
+                          target.style.display = 'none';
+                          const nextEl = target.nextElementSibling as HTMLElement;
+                          if (nextEl) nextEl.style.display = 'block';
                         }}
                       />
                       <div
@@ -608,7 +592,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
                     {/* Shaping Text - Bottom Right Corner */}
                     <div
-                      className="absolute bottom-2 -right-12 lg:bottom-4 lg:-right-20 z-20"
+                      className="absolute -bottom-8 -right-16 lg:-bottom-12 lg:-right-24 z-20"
                       style={{ animation: 'float 6s ease-in-out infinite 3s' }}
                     >
                       <img
@@ -616,8 +600,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                         alt="Shaping Future"
                         className="w-80 h-auto lg:w-104 drop-shadow-lg"
                         onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                          e.currentTarget.nextElementSibling.style.display = 'block';
+                          const target = e.currentTarget;
+                          target.style.display = 'none';
+                          const nextEl = target.nextElementSibling as HTMLElement;
+                          if (nextEl) nextEl.style.display = 'block';
                         }}
                       />
                       <div
@@ -708,11 +694,38 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         </div>
       </div>
 
+      {/* Quick Actions Grid */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 relative z-10">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
+          {quickActions.map((action, index) => {
+            const Icon = action.icon;
+            return (
+              <button
+                key={index}
+                onClick={() => navigate(action.path)}
+                className="group relative bg-white rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2 overflow-hidden border border-orange-100"
+              >
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <Icon className="w-24 h-24 text-orange-500" />
+                </div>
+                <div className="relative z-10 flex flex-col items-center text-center">
+                  <div className="p-4 rounded-xl bg-orange-50 text-orange-600 mb-4 group-hover:scale-110 transition-transform duration-300">
+                    <Icon className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-2">{action.label}</h3>
+                  <p className="text-sm text-gray-500">{action.description}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Public Reports Section */}
       <ReportsSection />
 
       {/* CSS Styles */}
-      <style jsx global>{`
+      <style>{`
         @keyframes blob {
           0% { transform: translate(0px, 0px) scale(1); }
           33% { transform: translate(30px, -50px) scale(1.1); }
@@ -762,13 +775,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 };
 
 // ReportsSection Component untuk public reports display
-const ReportsSection = () => {
+const ReportsSection: React.FC = () => {
   const { getText } = useLanguage();
   const [reports, setReports] = useState<PublicReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedReport, setSelectedReport] = useState<PublicReport | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [comments, setComments] = useState<any[]>([]);
+  const [comments, setComments] = useState<ReportComment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [commenterInfo, setCommenterInfo] = useState({ name: '', email: '' });
   const [currentPage, setCurrentPage] = useState(1);
@@ -792,11 +805,9 @@ const ReportsSection = () => {
       const { data, error, count } = await supabase
         .from('reports')
         .select(`
-          *,
-          room:rooms(name)
+        *,
+        room:rooms(name)
         `, { count: 'exact' })
-        // Exclude internal technician tasks (requires DB migration)
-        // .neq('source', 'technician')
         // Show unresolved OR (resolved AND updated/resolved this month)
         .or(`status.neq.resolved,and(status.eq.resolved,updated_at.gte.${startOfMonth.toISOString()})`)
         .order('created_at', { ascending: false })
@@ -814,7 +825,7 @@ const ReportsSection = () => {
     }
   };
 
-  const fetchComments = async (reportId) => {
+  const fetchComments = async (reportId: string) => {
     try {
       const { data, error } = await supabase
         .from('report_comments')
@@ -830,7 +841,7 @@ const ReportsSection = () => {
   };
 
   const addComment = async () => {
-    if (!newComment.trim() || !commenterInfo.name.trim()) return;
+    if (!newComment.trim() || !commenterInfo.name.trim() || !selectedReport) return;
 
     try {
       const { error } = await supabase
@@ -852,8 +863,8 @@ const ReportsSection = () => {
     }
   };
 
-  const getCategoryIcon = (category) => {
-    const icons = {
+  const getCategoryIcon = (category: string) => {
+    const icons: Record<string, React.ComponentType<{ className?: string }>> = {
       equipment: Package,
       room_condition: Building,
       cleanliness: Activity,
@@ -863,8 +874,8 @@ const ReportsSection = () => {
     return icons[category] || AlertCircle;
   };
 
-  const getStatusColor = (status) => {
-    const colors = {
+  const getStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
       new: 'text-blue-600',
       in_progress: 'text-orange-600',
       resolved: 'text-green-600',
@@ -873,8 +884,8 @@ const ReportsSection = () => {
     return colors[status] || 'text-gray-600';
   };
 
-  const getPriorityDot = (priority) => {
-    const colors = {
+  const getPriorityDot = (priority: string) => {
+    const colors: Record<string, string> = {
       low: 'bg-green-500',
       medium: 'bg-yellow-500',
       high: 'bg-red-500',
@@ -914,7 +925,7 @@ const ReportsSection = () => {
         <div className="bg-white/70 backdrop-blur-lg rounded-2xl sm:rounded-3xl shadow-xl border border-white/20 overflow-hidden">
           <div className="p-4 sm:p-6 lg:p-8">
             <div className="space-y-4 sm:space-y-6">
-              {reports.map((report, index) => {
+              {reports.map((report) => {
                 const CategoryIcon = getCategoryIcon(report.category);
                 return (
                   <div
