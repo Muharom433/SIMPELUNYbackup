@@ -131,13 +131,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [scrollY, setScrollY] = useState(0);
   const [showOverlay, setShowOverlay] = useState(true);
+  const [showScrollIndicator, setShowScrollIndicator] = useState(true);
 
   // Interactive mouse tracking for hero section
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isHovering, setIsHovering] = useState(false);
   const heroRef = React.useRef<HTMLDivElement>(null);
 
-  // Floating particles with liquid movement
+  // Floating particles with smoke movement
   const [particles, setParticles] = useState<Array<{
     id: number;
     x: number;
@@ -147,8 +148,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     speedY: number;
     opacity: number;
     color: string;
-    phase: number; // For wave movement
-    amplitude: number; // Wave amplitude
+    phase: number; // For swirl movement
+    amplitude: number; // Swirl amplitude
+    blur: number; // Individual blur for depth
   }>>([]);
 
   // Ripple effect for touch interaction
@@ -160,44 +162,56 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     opacity: number;
   }>>([]);
 
-  // Initialize particles with liquid-like properties
+  // Initialize particles with elegant smoke properties using #daa06d palette
   useEffect(() => {
-    const colors = ['#daa06d', '#c4926b', '#b8956f', '#e8d5c4', '#f0e6d6', '#d4a574', '#c9a86c'];
-    const initialParticles = Array.from({ length: 35 }, (_, i) => ({
+    // Elegant amber/gold smoke colors based on #daa06d
+    const colors = [
+      'rgba(218, 160, 109, 0.6)', // Main amber
+      'rgba(196, 146, 107, 0.5)', // Darker amber
+      'rgba(232, 213, 196, 0.7)', // Light cream
+      'rgba(240, 230, 214, 0.6)', // Soft beige
+      'rgba(212, 165, 116, 0.5)', // Golden
+      'rgba(184, 149, 111, 0.4)', // Bronze
+      'rgba(255, 248, 240, 0.5)', // Warm white
+    ];
+    const initialParticles = Array.from({ length: 30 }, (_, i) => ({
       id: i,
       x: Math.random() * 100,
       y: Math.random() * 100,
-      size: Math.random() * 80 + 30,
-      speedX: (Math.random() - 0.5) * 0.4,
-      speedY: (Math.random() - 0.5) * 0.4,
-      opacity: Math.random() * 0.5 + 0.15,
+      size: Math.random() * 150 + 60, // Large, soft clouds
+      speedX: (Math.random() - 0.5) * 0.15, // Very slow horizontal drift
+      speedY: -Math.random() * 0.2 - 0.05, // Gentle upward float
+      opacity: Math.random() * 0.35 + 0.1,
       color: colors[Math.floor(Math.random() * colors.length)],
       phase: Math.random() * Math.PI * 2,
-      amplitude: Math.random() * 0.8 + 0.3
+      amplitude: Math.random() * 0.5 + 0.2,
+      blur: Math.random() * 25 + 15 // Soft, elegant blur
     }));
     setParticles(initialParticles);
   }, []);
 
-  // Animate particles with liquid flow
+  // Animate particles with elegant flowing motion
   useEffect(() => {
     const interval = setInterval(() => {
       setParticles(prev => prev.map(p => {
-        // Advance phase for wave motion
-        const newPhase = p.phase + 0.05;
+        // Smooth phase advancement for organic motion
+        const newPhase = p.phase + 0.015;
 
-        // Calculate natural wave offset (liquid movement)
-        const waveX = Math.cos(newPhase * 0.5) * 0.05 * p.amplitude;
-        const waveY = Math.sin(newPhase) * 0.2 * p.amplitude;
+        // Elegant flowing swirl (like soft mist)
+        const swirlX = Math.sin(newPhase * 0.4) * 0.06 * p.amplitude;
+        const swirlY = Math.cos(newPhase * 0.25) * 0.04 * p.amplitude;
 
-        // Apply movement + wave
-        let newX = p.x + p.speedX + waveX;
-        let newY = p.y + p.speedY + waveY;
+        // Apply smooth movement
+        let newX = p.x + p.speedX + swirlX;
+        let newY = p.y + p.speedY + swirlY;
 
-        // Gentle wrap around for continuous flow
-        if (newX < -10) newX = 110;
-        if (newX > 110) newX = -10;
-        if (newY < -10) newY = 110;
-        if (newY > 110) newY = -10;
+        // Seamless wraparound for continuous elegance
+        if (newY < -20) {
+          newY = 120;
+          newX = Math.random() * 100;
+        }
+        if (newX < -15) newX = 115;
+        if (newX > 115) newX = -15;
 
         return {
           ...p,
@@ -206,7 +220,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           phase: newPhase
         };
       }));
-    }, 40);
+    }, 60);
 
     return () => clearInterval(interval);
   }, []);
@@ -221,29 +235,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
     setMousePosition({ x, y });
 
-    // Liquid repulsion effect - push particles away like water
+    // Elegant particle interaction - soft dispersion like mist
     setParticles(prev => prev.map(p => {
       const dx = p.x - x;
       const dy = p.y - y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      const threshold = 18; // Interaction radius
+      const threshold = 25; // Wider, softer interaction
 
       if (dist < threshold) {
-        // Calculate repulsion force (stronger when closer)
-        const force = (threshold - dist) / threshold;
+        // Gentle, elegant dispersion
+        const force = (threshold - dist) / threshold * 0.8;
         const angle = Math.atan2(dy, dx);
 
-        // Move particle away smoothly
-        const moveX = Math.cos(angle) * force * 1.5;
-        const moveY = Math.sin(angle) * force * 1.5;
+        // Soft outward flow
+        const moveX = Math.cos(angle) * force * 0.8;
+        const moveY = Math.sin(angle) * force * 0.6;
 
         return {
           ...p,
           x: p.x + moveX,
           y: p.y + moveY,
-          // Add some kinetic energy to speed
-          speedX: p.speedX * 0.95 + moveX * 0.05,
-          speedY: p.speedY * 0.95 + moveY * 0.05
+          speedX: p.speedX * 0.95 + moveX * 0.03,
+          speedY: p.speedY * 0.95 + moveY * 0.03
         };
       }
       return p;
@@ -256,12 +269,38 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       setCurrentTime(new Date());
     }, 1000);
 
-    // Handle scroll for animations
+    // Get the main scrollable element
+    const mainElement = document.querySelector('main');
+
+    // Handle scroll for animations and indicator visibility
     const handleScroll = () => {
-      setScrollY(window.scrollY);
+      // Get scroll position from the main element, not window
+      const currentScrollY = mainElement ? mainElement.scrollTop : 0;
+      setScrollY(currentScrollY);
+
+      // Hide scroll indicator when scrolled past 300px
+      if (currentScrollY > 300) {
+        setShowScrollIndicator(false);
+      } else {
+        setShowScrollIndicator(true);
+      }
     };
 
-    window.addEventListener('scroll', handleScroll, { passive: true });
+    // Additional wheel event listener for better scroll detection
+    const handleWheel = (e: WheelEvent) => {
+      const currentScrollY = mainElement ? mainElement.scrollTop : 0;
+
+      // If scrolling down and past threshold, hide indicator
+      if (e.deltaY > 0 && currentScrollY > 250) {
+        setShowScrollIndicator(false);
+      }
+    };
+
+    // Attach scroll listener to main element instead of window
+    if (mainElement) {
+      mainElement.addEventListener('scroll', handleScroll, { passive: true });
+      mainElement.addEventListener('wheel', handleWheel, { passive: true });
+    }
 
     // Mock recent activity data
     const mockActivity: RecentActivity[] = [
@@ -291,7 +330,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
     return () => {
       clearInterval(timer);
-      window.removeEventListener('scroll', handleScroll);
+      if (mainElement) {
+        mainElement.removeEventListener('scroll', handleScroll);
+        mainElement.removeEventListener('wheel', handleWheel);
+      }
     };
   }, []);
 
@@ -351,161 +393,180 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
-      {/* Scroll Indicator Arrow - Fades out on scroll */}
-      <div
-        className="fixed bottom-10 left-1/2 transform -translate-x-1/2 z-40 pointer-events-none transition-transform duration-100 ease-out"
-        style={{
-          opacity: Math.max(0, 1 - scrollY / 150),
-          transform: `translate(-50%, ${scrollY * 0.2}px)`
-        }}
-      >
-        <div className="flex flex-col items-center gap-2">
-          <span className="text-sm font-medium text-amber-900/60 tracking-wider uppercase text-[10px] animate-pulse">
-            Scroll Down
-          </span>
-          <div className="bg-white/30 backdrop-blur-md p-3 rounded-full shadow-lg border border-white/40 animate-bounce">
-            <ChevronDown className="w-6 h-6 text-amber-800" />
+      {/* Scroll Indicator Arrow - Completely disappears at specific height */}
+      {showScrollIndicator && (
+        <div
+          className="fixed bottom-10 left-1/2 transform -translate-x-1/2 z-40 pointer-events-none transition-all duration-300 ease-out"
+          style={{
+            opacity: Math.max(0, 1 - scrollY / 250),
+            transform: `translate(-50%, ${Math.min(scrollY * 0.3, 50)}px)`
+          }}
+        >
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-sm font-medium text-amber-800/60 tracking-wider uppercase text-[10px] animate-pulse">
+              Scroll Down
+            </span>
+            <div className="bg-white/50 backdrop-blur-xl p-3 rounded-full shadow-xl border border-amber-200/30 animate-bounce">
+              <ChevronDown className="w-6 h-6 text-amber-700" />
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Hero Section - Interactive Background */}
+      {/* Hero Section - Modern Elegant Background with #daa06d */}
       <div
         ref={heroRef}
-        className="min-h-screen w-full flex items-center relative bg-gradient-to-br from-white via-orange-100 to-amber-200 overflow-hidden cursor-default"
+        className="min-h-screen w-full flex items-center relative overflow-hidden cursor-default"
         style={{
-          background: `radial-gradient(circle at ${mousePosition.x}% ${mousePosition.y}%, rgba(218, 160, 109, 0.3) 0%, transparent 50%), linear-gradient(to bottom right, #ffffff, #f3e8d9, #daa06d)`,
-          transition: 'background 0.3s ease-out'
+          background: `
+            radial-gradient(ellipse 120% 80% at ${mousePosition.x}% ${mousePosition.y}%, rgba(218, 160, 109, 0.25) 0%, transparent 50%),
+            radial-gradient(ellipse 80% 60% at 20% 30%, rgba(232, 213, 196, 0.4) 0%, transparent 60%),
+            radial-gradient(ellipse 70% 50% at 80% 70%, rgba(218, 160, 109, 0.2) 0%, transparent 50%),
+            linear-gradient(135deg, #fffbf5 0%, #f8f0e6 25%, #f3e8d9 50%, #ebe0d1 75%, #e8d5c4 100%)
+          `,
+          transition: 'background 0.4s ease-out'
         }}
         onMouseMove={handleMouseMove}
         onMouseEnter={() => setIsHovering(true)}
         onMouseLeave={() => setIsHovering(false)}
       >
-        {/* Interactive Floating Particles */}
+        {/* Elegant Floating Particles */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden"
-          style={{ transform: `translateY(${scrollY * 0.2}px)` }}>
+          style={{ transform: `translateY(${scrollY * 0.15}px)` }}>
           {particles.map((particle) => (
             <div
               key={particle.id}
-              className="absolute rounded-full transition-all duration-300 ease-out"
+              className="absolute rounded-full transition-all duration-700 ease-out"
               style={{
                 left: `${particle.x}%`,
                 top: `${particle.y}%`,
                 width: `${particle.size}px`,
                 height: `${particle.size}px`,
-                background: `radial-gradient(circle at 30% 30%, ${particle.color} 0%, transparent 70%)`,
+                background: `radial-gradient(circle at 35% 35%, ${particle.color} 0%, rgba(218, 160, 109, 0.15) 50%, transparent 80%)`,
                 opacity: particle.opacity,
-                filter: 'blur(8px)',
-                transform: `translate(-50%, -50%) scale(${isHovering ? 1.2 : 1})`,
-                boxShadow: isHovering ? `0 0 ${particle.size}px ${particle.color}40` : 'none'
+                filter: `blur(${particle.blur}px)`,
+                transform: `translate(-50%, -50%) scale(${isHovering ? 1.08 : 1})`,
+                mixBlendMode: 'soft-light'
               }}
             />
           ))}
         </div>
 
-        {/* Mouse Glow Effect */}
+        {/* Elegant Mouse Glow Effect */}
         {isHovering && (
           <div
-            className="absolute pointer-events-none transition-all duration-100 ease-out"
+            className="absolute pointer-events-none transition-all duration-200 ease-out"
             style={{
               left: `${mousePosition.x}%`,
               top: `${mousePosition.y}%`,
-              width: '300px',
-              height: '300px',
-              background: 'radial-gradient(circle, rgba(218, 160, 109, 0.4) 0%, rgba(196, 146, 107, 0.2) 30%, transparent 70%)',
+              width: '400px',
+              height: '400px',
+              background: `
+                radial-gradient(circle, 
+                  rgba(218, 160, 109, 0.35) 0%, 
+                  rgba(232, 213, 196, 0.2) 35%, 
+                  transparent 70%
+                )`,
               transform: 'translate(-50%, -50%)',
-              filter: 'blur(30px)',
+              filter: 'blur(50px)',
               borderRadius: '50%'
             }}
           />
         )}
 
-        {/* Animated Background Orbs - Static decorative elements */}
+        {/* Elegant Decorative Elements - Modern Glass Morphism */}
         <div className="absolute inset-0 pointer-events-none">
-          {/* Large abstract shape - top right with parallax */}
+          {/* Large elegant orb - top right */}
           <div
-            className="absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full opacity-60 backdrop-blur-xl filter blur-sm"
+            className="absolute -top-40 -right-40 w-[600px] h-[600px] rounded-full opacity-40"
             style={{
-              background: 'radial-gradient(circle at 30% 30%, #daa06d 0%, #e8d5c4 40%, transparent 70%)',
-              transform: `translate(${(mousePosition.x - 50) * 0.02}px, ${(mousePosition.y - 50) * 0.02}px)`
-            }}
-          />
-          {/* Medium oval shape - center right */}
-          <div
-            className="absolute top-1/4 -right-20 w-[400px] h-[300px] rounded-full opacity-50 backdrop-blur-lg filter blur-md"
-            style={{
-              background: 'radial-gradient(ellipse at 20% 40%, #c4926b 0%, #f0e6d6 50%, transparent 80%)',
-              transform: `rotate(25deg) translate(${(mousePosition.x - 50) * 0.03}px, ${(mousePosition.y - 50) * 0.03}px)`
-            }}
-          />
-          {/* Abstract blob - bottom right */}
-          <div
-            className="absolute bottom-0 right-0 w-[350px] h-[350px] opacity-55 backdrop-blur-lg filter blur-sm"
-            style={{
-              background: 'radial-gradient(circle at 40% 60%, #b8956f 0%, #e8d5c4 60%, transparent 85%)',
-              borderRadius: '60% 40% 70% 30%',
+              background: 'radial-gradient(circle at 30% 30%, rgba(218, 160, 109, 0.5) 0%, rgba(232, 213, 196, 0.3) 40%, transparent 70%)',
+              filter: 'blur(60px)',
               transform: `translate(${(mousePosition.x - 50) * 0.025}px, ${(mousePosition.y - 50) * 0.025}px)`
             }}
           />
-          {/* Flowing shape - top left */}
+          {/* Medium flowing shape - center right */}
           <div
-            className="absolute -top-20 -left-32 w-[450px] h-[300px] opacity-45 backdrop-blur-xl filter blur-lg"
+            className="absolute top-1/3 -right-24 w-[450px] h-[350px] opacity-35"
             style={{
-              background: 'radial-gradient(ellipse at 70% 50%, #daa06d 0%, #f5f0ea 45%, transparent 75%)',
-              borderRadius: '40% 60% 50% 80%',
-              transform: `rotate(-15deg) translate(${(mousePosition.x - 50) * -0.02}px, ${(mousePosition.y - 50) * -0.02}px)`
+              background: 'radial-gradient(ellipse at 25% 45%, rgba(196, 146, 107, 0.4) 0%, rgba(240, 230, 214, 0.25) 50%, transparent 80%)',
+              filter: 'blur(50px)',
+              borderRadius: '60% 40% 55% 45%',
+              transform: `rotate(15deg) translate(${(mousePosition.x - 50) * 0.03}px, ${(mousePosition.y - 50) * 0.03}px)`
             }}
           />
-          {/* Curved shape - bottom left */}
+          {/* Soft glow - bottom right */}
           <div
-            className="absolute bottom-10 -left-24 w-[300px] h-[200px] opacity-40 backdrop-blur-md filter blur-md"
+            className="absolute -bottom-20 -right-10 w-[400px] h-[400px] opacity-30"
             style={{
-              background: 'radial-gradient(ellipse at 60% 30%, #c4926b 0%, #f0e6d6 55%, transparent 80%)',
-              borderRadius: '70% 30% 40% 60%',
-              transform: `rotate(20deg) translate(${(mousePosition.x - 50) * -0.015}px, ${(mousePosition.y - 50) * -0.015}px)`
+              background: 'radial-gradient(circle at 45% 55%, rgba(218, 160, 109, 0.45) 0%, rgba(232, 213, 196, 0.2) 55%, transparent 85%)',
+              filter: 'blur(55px)',
+              borderRadius: '55% 45% 60% 40%',
+              transform: `translate(${(mousePosition.x - 50) * 0.02}px, ${(mousePosition.y - 50) * 0.02}px)`
             }}
           />
-          {/* Extra flowing element - center */}
+          {/* Elegant mist - top left */}
           <div
-            className="absolute top-1/2 left-1/4 w-[250px] h-[400px] opacity-30 backdrop-blur-lg filter blur-xl"
+            className="absolute -top-32 -left-40 w-[500px] h-[350px] opacity-30"
             style={{
-              background: 'linear-gradient(135deg, #e8d5c4 0%, #f5f0ea 50%, transparent 100%)',
-              borderRadius: '50% 80% 30% 70%',
-              transform: `rotate(45deg) translate(${(mousePosition.x - 50) * 0.02}px, ${(mousePosition.y - 50) * 0.02}px)`
+              background: 'radial-gradient(ellipse at 65% 45%, rgba(232, 213, 196, 0.5) 0%, rgba(255, 251, 245, 0.3) 45%, transparent 75%)',
+              filter: 'blur(55px)',
+              borderRadius: '45% 55% 50% 75%',
+              transform: `rotate(-10deg) translate(${(mousePosition.x - 50) * -0.02}px, ${(mousePosition.y - 50) * -0.02}px)`
+            }}
+          />
+          {/* Subtle accent - bottom left */}
+          <div
+            className="absolute bottom-20 -left-28 w-[320px] h-[240px] opacity-25"
+            style={{
+              background: 'radial-gradient(ellipse at 55% 35%, rgba(184, 149, 111, 0.4) 0%, rgba(240, 230, 214, 0.2) 55%, transparent 80%)',
+              filter: 'blur(45px)',
+              borderRadius: '65% 35% 45% 55%',
+              transform: `rotate(25deg) translate(${(mousePosition.x - 50) * -0.018}px, ${(mousePosition.y - 50) * -0.018}px)`
+            }}
+          />
+          {/* Central flowing element */}
+          <div
+            className="absolute top-1/2 left-1/4 w-[280px] h-[420px] opacity-20"
+            style={{
+              background: 'linear-gradient(145deg, rgba(218, 160, 109, 0.35) 0%, rgba(255, 248, 240, 0.2) 50%, transparent 100%)',
+              filter: 'blur(50px)',
+              borderRadius: '50% 75% 35% 65%',
+              transform: `rotate(40deg) translate(${(mousePosition.x - 50) * 0.022}px, ${(mousePosition.y - 50) * 0.022}px)`
             }}
           />
         </div>
 
-        {/* Animated Background Elements */}
+        {/* Animated Background Orbs - Elegant Motion */}
         <div className="absolute inset-0">
           <div
-            className="absolute top-20 left-10 w-72 h-72 rounded-full mix-blend-multiply filter blur-xl opacity-20"
+            className="absolute top-16 left-8 w-80 h-80 rounded-full mix-blend-soft-light filter blur-3xl opacity-25"
             style={{
-              background: '#daa06d',
-              transform: `translateY(${scrollY * 0.5}px)`,
-              animation: 'blob 7s infinite'
-            }}
-          ></div>
-          <div
-            className="absolute top-40 right-10 w-72 h-72 rounded-full mix-blend-multiply filter blur-xl opacity-20"
-            style={{
-              background: '#c4926b',
-              transform: `translateY(${scrollY * 0.3}px)`,
-              animation: 'blob 7s infinite 2s'
-            }}
-          ></div>
-          <div
-            className="absolute bottom-20 left-20 w-72 h-72 rounded-full mix-blend-multiply filter blur-xl opacity-20"
-            style={{
-              background: '#b8956f',
+              background: 'radial-gradient(circle, #daa06d 0%, transparent 70%)',
               transform: `translateY(${scrollY * 0.4}px)`,
-              animation: 'blob 7s infinite 4s'
+              animation: 'elegant-float 12s ease-in-out infinite'
+            }}
+          ></div>
+          <div
+            className="absolute top-48 right-12 w-72 h-72 rounded-full mix-blend-soft-light filter blur-3xl opacity-20"
+            style={{
+              background: 'radial-gradient(circle, #c4926b 0%, transparent 70%)',
+              transform: `translateY(${scrollY * 0.3}px)`,
+              animation: 'elegant-float 12s ease-in-out infinite 4s'
+            }}
+          ></div>
+          <div
+            className="absolute bottom-24 left-16 w-64 h-64 rounded-full mix-blend-soft-light filter blur-3xl opacity-18"
+            style={{
+              background: 'radial-gradient(circle, #b8956f 0%, transparent 70%)',
+              transform: `translateY(${scrollY * 0.35}px)`,
+              animation: 'elegant-float 12s ease-in-out infinite 8s'
             }}
           ></div>
         </div>
 
         {/* Hero Content */}
-        <div className="relative px-6 py-16 sm:px-12 lg:px-16">
+        <div className="relative px-6 py-8 sm:px-12 lg:px-16">
           <div className="max-w-7xl mx-auto">
             <div className="grid lg:grid-cols-2 gap-8 items-center">
               {/* Left Content */}
@@ -731,6 +792,25 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           33% { transform: translate(30px, -50px) scale(1.1); }
           66% { transform: translate(-20px, 20px) scale(0.9); }
           100% { transform: translate(0px, 0px) scale(1); }
+        }
+        
+        @keyframes elegant-float {
+          0%, 100% { 
+            transform: translateY(0px) scale(1); 
+            opacity: 0.25;
+          }
+          25% { 
+            transform: translateY(-20px) scale(1.03); 
+            opacity: 0.3;
+          }
+          50% { 
+            transform: translateY(-35px) scale(1.05); 
+            opacity: 0.22;
+          }
+          75% { 
+            transform: translateY(-15px) scale(1.02); 
+            opacity: 0.28;
+          }
         }
         
         @keyframes float {

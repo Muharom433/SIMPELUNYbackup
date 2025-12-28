@@ -61,7 +61,7 @@ const userSchema = z.object({
   full_name: z.string().min(2, 'Full name is required'),
   identity_number: z.string().min(1, 'Identity number is required'),
   phone_number: z.string().optional().or(z.literal('')),
-  role: z.enum(['super_admin', 'department_admin', 'lecturer', 'student', 'laboratory', 'staffing', 'purchasing', 'technician', 'frontdesk']),
+  role: z.enum(['super_admin', 'department_admin', 'lecturer', 'student', 'laboratory', 'staffing', 'purchasing', 'technician', 'frontdesk', 'staff']),
   department_id: z.string().optional().nullable(),
   study_program_id: z.string().optional().nullable(),
   // Password: optional, but if provided must be at least 6 characters
@@ -430,6 +430,7 @@ const UserManagement: React.FC = () => {
       case 'purchasing': return Home;
       case 'technician': return Settings;
       case 'frontdesk': return Calendar;
+      case 'staff': return User;
       default: return User;
     }
   }, []);
@@ -445,6 +446,7 @@ const UserManagement: React.FC = () => {
       case 'purchasing': return getText('Purchasing', 'Pengadaan');
       case 'technician': return getText('Technician', 'Teknisi');
       case 'frontdesk': return getText('Front Desk', 'Front Desk');
+      case 'staff': return getText('Staff', 'Tenaga Kependidikan');
       default: return role;
     }
   }, [getText]);
@@ -460,6 +462,7 @@ const UserManagement: React.FC = () => {
       case 'purchasing': return 'bg-cyan-100 text-cyan-800 border-cyan-200';
       case 'technician': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'frontdesk': return 'bg-pink-100 text-pink-800 border-pink-200';
+      case 'staff': return 'bg-indigo-100 text-indigo-800 border-indigo-200';
       default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   }, []);
@@ -1792,6 +1795,7 @@ const UserManagement: React.FC = () => {
                           <option value="purchasing">{getText('Purchasing', 'Pengadaan')}</option>
                           <option value="technician">{getText('Technician', 'Teknisi')}</option>
                           <option value="frontdesk">{getText('Front Desk', 'Front Desk')}</option>
+                          <option value="staff">{getText('Staff', 'Tenaga Kependidikan')}</option>
                         </>
                       )}
                       {profile?.role === 'super_admin' && (
@@ -1821,6 +1825,7 @@ const UserManagement: React.FC = () => {
                       {watchRole === 'purchasing' && getText('Equipment stock and location management', 'Manajemen stok peralatan dan lokasi')}
                       {watchRole === 'technician' && getText('View reports and maintenance tasks', 'Melihat laporan dan tugas pemeliharaan')}
                       {watchRole === 'frontdesk' && getText('View schedules and room booking', 'Melihat jadwal dan pemesanan ruangan')}
+                      {watchRole === 'staff' && getText('Profile access only', 'Hanya akses profil')}
                     </div>
                   </div>
                 </div>

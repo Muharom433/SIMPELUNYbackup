@@ -7,7 +7,7 @@ export interface Database {
           email: string;
           full_name: string;
           identity_number: string;
-          role: 'student' | 'department_admin' | 'super_admin' | 'lecturer' | 'laboratory' | 'staffing' | 'purchasing' | 'technician' | 'frontdesk';
+          role: 'student' | 'department_admin' | 'super_admin' | 'lecturer' | 'laboratory' | 'staffing' | 'purchasing' | 'technician' | 'frontdesk' | 'staff';
           department_id: string | null;
           study_program_id: string | null;
           phone_number: string | null;
@@ -19,7 +19,7 @@ export interface Database {
           email: string;
           full_name: string;
           identity_number: string;
-          role?: 'student' | 'department_admin' | 'super_admin' | 'lecturer' | 'laboratory' | 'staffing' | 'purchasing' | 'technician' | 'frontdesk';
+          role?: 'student' | 'department_admin' | 'super_admin' | 'lecturer' | 'laboratory' | 'staffing' | 'purchasing' | 'technician' | 'frontdesk' | 'staff';
           department_id?: string | null;
           study_program_id?: string | null;
           phone_number?: string | null;
@@ -31,7 +31,7 @@ export interface Database {
           email?: string;
           full_name?: string;
           identity_number?: string;
-          role?: 'student' | 'department_admin' | 'super_admin' | 'lecturer' | 'laboratory' | 'staffing' | 'purchasing' | 'technician' | 'frontdesk';
+          role?: 'student' | 'department_admin' | 'super_admin' | 'lecturer' | 'laboratory' | 'staffing' | 'purchasing' | 'technician' | 'frontdesk' | 'staff';
           department_id?: string | null;
           study_program_id?: string | null;
           phone_number?: string | null;

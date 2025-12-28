@@ -1,5 +1,6 @@
 import React, { Suspense } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { SystemSettingsProvider } from './contexts/SystemSettingsContext';
@@ -31,6 +32,12 @@ import { useAuthContext } from './contexts/AuthContext';
 const ToolAdministration = React.lazy(() => import('./pages/ToolAdministration'));
 const ToolLending = React.lazy(() => import('./pages/ToolLending'));
 const ToolLendingManagement = React.lazy(() => import('./pages/ToolLendingManagement'));
+
+// Lazy loaded components for Form Builder feature
+const FormManagement = React.lazy(() => import('./pages/FormManagement'));
+const FormBuilder = React.lazy(() => import('./pages/FormBuilder'));
+const FormView = React.lazy(() => import('./pages/FormView'));
+const FormResponses = React.lazy(() => import('./pages/FormResponses'));
 
 // Loading component for Suspense fallback
 const LazyLoadingFallback = () => (
@@ -98,7 +105,17 @@ const AppContent = () => {
           <Route path="locations" element={<LocationManagement />} />
           <Route path="laboratory-locations" element={<LaboratoryLocationManagement />} />
           <Route path="schedule-calendar" element={<ScheduleCalendar />} />
+
+          {/* Form Builder Routes (within Layout) */}
+          <Route path="forms" element={<Suspense fallback={<LazyLoadingFallback />}><FormManagement /></Suspense>} />
+          <Route path="form-builder" element={<Suspense fallback={<LazyLoadingFallback />}><FormBuilder /></Suspense>} />
+          <Route path="form-builder/:id" element={<Suspense fallback={<LazyLoadingFallback />}><FormBuilder /></Suspense>} />
+          <Route path="form-responses/:id" element={<Suspense fallback={<LazyLoadingFallback />}><FormResponses /></Suspense>} />
         </Route>
+
+        {/* Public Form View - Standalone without Layout */}
+        <Route path="form/:id" element={<Suspense fallback={<LazyLoadingFallback />}><FormView /></Suspense>} />
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
@@ -111,6 +128,28 @@ function App() {
       <AuthProvider>
         <SystemSettingsProvider>
           <AppContent />
+          <Toaster
+            position="top-center"
+            toastOptions={{
+              duration: 3000,
+              style: {
+                background: '#363636',
+                color: '#fff',
+              },
+              success: {
+                iconTheme: {
+                  primary: '#22c55e',
+                  secondary: '#fff',
+                },
+              },
+              error: {
+                iconTheme: {
+                  primary: '#ef4444',
+                  secondary: '#fff',
+                },
+              },
+            }}
+          />
         </SystemSettingsProvider>
       </AuthProvider>
     </LanguageProvider>
