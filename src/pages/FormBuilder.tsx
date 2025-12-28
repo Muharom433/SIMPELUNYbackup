@@ -977,7 +977,7 @@ const FormBuilder: React.FC = () => {
                                                         >
                                                             <option value="">{getText('Select option', 'Pilih opsi')}</option>
                                                             {triggerOptions.map((opt) => (
-                                                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                                <option key={opt.value} value={opt.label}>{opt.label}</option>
                                                             ))}
                                                         </select>
                                                     ) : (

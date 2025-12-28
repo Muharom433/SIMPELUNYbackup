@@ -503,14 +503,30 @@ const ToolAdministration: React.FC = () => {
                 setBoxes(boxesData || []);
 
                 let filteredRooms = roomsData || [];
-                if (isLaboratory && profile?.department_id) {
-                    const laborDeptId = profile.department_id;
-                    const laborStudyProgramId = profile.study_program_id;
-                    filteredRooms = filteredRooms.filter((room: any) => {
-                        if (room.department_id !== laborDeptId) return false;
-                        if (room.study_program_id === null || room.study_program_id === laborStudyProgramId) return true;
-                        return false;
-                    });
+                // Laboratory filter: STRICT filtering
+                // - Room must have department_id = user's department_id (NOT NULL required)
+                // - If room has study_program_id (NOT NULL), must match user's study_program_id
+                // - No general/shared rooms (dept or study_program is null = not shown)
+                if (isLaboratory) {
+                    const laborDeptId = profile?.department_id;
+                    const laborStudyProgramId = profile?.study_program_id;
+
+                    if (laborDeptId) {
+                        filteredRooms = filteredRooms.filter((room: any) => {
+                            // Room must have department_id and match user's department
+                            if (!room.department_id || room.department_id !== laborDeptId) {
+                                return false;
+                            }
+                            // If room has study_program_id, it must match user's study_program_id
+                            if (room.study_program_id && room.study_program_id !== laborStudyProgramId) {
+                                return false;
+                            }
+                            return true;
+                        });
+                    } else {
+                        // No department_id on user = no rooms
+                        filteredRooms = [];
+                    }
                 }
                 setRooms(filteredRooms as any);
 
@@ -521,11 +537,13 @@ const ToolAdministration: React.FC = () => {
 
                 const accessibleRoomIds = filteredRooms.map(room => room.id);
 
-                if (isLaboratory && profile?.department_id) {
+                // Laboratory: filter equipment to accessible rooms only
+                if (isLaboratory) {
                     if (accessibleRoomIds.length > 0) {
                         equipmentQuery = equipmentQuery.in('rooms_id', accessibleRoomIds);
                     } else {
-                        equipmentQuery = equipmentQuery.in('rooms_id', ['nomatch']);
+                        // No accessible rooms = no equipment
+                        equipmentQuery = equipmentQuery.in('rooms_id', ['__no_match__']);
                     }
                 } else if (isDepartmentAdmin && profile?.department_id) {
                     if (accessibleRoomIds.length > 0) {
@@ -536,7 +554,26 @@ const ToolAdministration: React.FC = () => {
                 const { data: equipmentData, error: equipmentError } = await equipmentQuery;
                 if (equipmentError) throw equipmentError;
 
-                setEquipment((equipmentData || []).map(item => ({ ...item, table_id: item.table_id })));
+                // For laboratory: additional client-side filter to ensure equipment is from rooms with department_id
+                let filteredEquipment = (equipmentData || []).map(item => ({ ...item, table_id: item.table_id }));
+                if (isLaboratory) {
+                    const laborDeptId = profile?.department_id;
+                    const laborStudyProgramId = profile?.study_program_id;
+                    filteredEquipment = filteredEquipment.filter((eq: any) => {
+                        const room = eq.rooms;
+                        // Must have room with department_id matching user's
+                        if (!room || !room.department_id || room.department_id !== laborDeptId) {
+                            return false;
+                        }
+                        // If room has study_program_id, must match user's
+                        if (room.study_program_id && room.study_program_id !== laborStudyProgramId) {
+                            return false;
+                        }
+                        return true;
+                    });
+                }
+
+                setEquipment(filteredEquipment);
 
             } catch (error) {
                 console.error('Error loading initial data:', error);
@@ -1201,7 +1238,8 @@ const ToolAdministration: React.FC = () => {
         });
     }, [equipment, equipmentSearchTerm, equipmentCategoryFilter, roomFilter]);
 
-    const availableStocks = useMemo(() => stocks.filter(stock => stock.quantity > 0), [stocks]);
+    // Exclude Box and Cabinet from claimable stocks
+    const availableStocks = useMemo(() => stocks.filter(stock => stock.quantity > 0 && stock.category !== 'Box' && stock.category !== 'Cabinet'), [stocks]);
 
     const availableRooms = useMemo(() => {
         if (isDepartmentAdmin && profile?.department_id) return rooms.filter(room => room.department_id === profile.department_id);
@@ -1248,7 +1286,7 @@ const ToolAdministration: React.FC = () => {
             return (
                 <div className="text-center py-8">
                     <RefreshCw className="h-8 w-8 animate-spin text-blue-500 mx-auto mb-3" />
-                    <p className="text-gray-600">Analyzing gaps...</p>
+                    <p className="text-gray-600">{getText('Analyzing gaps...', 'Menganalisis gap...')}</p>
                 </div>
             );
         }
@@ -1257,14 +1295,14 @@ const ToolAdministration: React.FC = () => {
             return (
                 <div className="text-center py-12 bg-green-50 rounded-xl border-2 border-green-200">
                     <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-3" />
-                    <h4 className="text-lg font-bold text-green-800 mb-1">✅ All Clear!</h4>
-                    <p className="text-green-600">No missing items detected</p>
+                    <h4 className="text-lg font-bold text-green-800 mb-1">✅ {getText('All Clear!', 'Semua Bersih!')}</h4>
+                    <p className="text-green-600">{getText('No missing items detected', 'Tidak ada barang hilang terdeteksi')}</p>
                 </div>
             );
         }
 
         const gapsByUser = lendingDetails.reduce((acc, gap) => {
-            const userName = gap.user_name || 'Unknown User';
+            const userName = gap.user_name || getText('Unknown User', 'Pengguna Tidak Dikenal');
             if (!acc[userName]) acc[userName] = [];
             acc[userName].push(gap);
             return acc;
@@ -1279,7 +1317,7 @@ const ToolAdministration: React.FC = () => {
                         <div className="flex items-center gap-3">
                             <AlertTriangle className="h-8 w-8" />
                             <div>
-                                <h3 className="text-xl font-bold">Gap Detected</h3>
+                                <h3 className="text-xl font-bold">{getText('Gap Detected', 'Gap Terdeteksi')}</h3>
                                 <p className="text-sm opacity-90">{Object.keys(gapsByUser).length} users with missing items</p>
                             </div>
                         </div>
@@ -1667,13 +1705,13 @@ const ToolAdministration: React.FC = () => {
             <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full h-[85vh] overflow-hidden flex flex-col">
                 <div className="bg-gradient-to-r from-purple-500 to-purple-600 p-6 text-white flex-shrink-0">
                     <div className="flex items-center justify-between">
-                        <h3 className="text-2xl font-bold">Claim Equipment from Stock</h3>
+                        <h3 className="text-2xl font-bold">{getText('Claim Equipment from Stock', 'Klaim Peralatan dari Stok')}</h3>
                         <button onClick={() => { setShowClaimModal(false); setSelectedStockForClaim(null); setSelectedRoomForClaim(null); setEquipmentImagePreview(''); }} className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"><X className="h-6 w-6" /></button>
                     </div>
                 </div>
                 <form onSubmit={claimForm.handleSubmit(handleClaimSubmit)} className="p-6 space-y-4 flex-1 overflow-y-auto">
                     <div>
-                        <label className="block text-sm font-bold mb-2">Select Stock *</label>
+                        <label className="block text-sm font-bold mb-2">{getText('Select Stock', 'Pilih Stok')} *</label>
                         <DropdownSearch
                             items={availableStocks}
                             selectedItem={selectedStockForClaim}
@@ -1703,50 +1741,50 @@ const ToolAdministration: React.FC = () => {
                     {selectedStockForClaim && (
                         <>
                             <div>
-                                <label className="block text-sm font-bold mb-2">Pilih Ruangan *</label>
-                                <DropdownSearch items={availableRooms} selectedItem={selectedRoomForClaim} onSelect={(room) => { setSelectedRoomForClaim(room); claimForm.setValue('rooms_id', room.id); }} placeholder="Search rooms..." showCode
+                                <label className="block text-sm font-bold mb-2">{getText('Select Room', 'Pilih Ruangan')} *</label>
+                                <DropdownSearch items={availableRooms} selectedItem={selectedRoomForClaim} onSelect={(room) => { setSelectedRoomForClaim(room); claimForm.setValue('rooms_id', room.id); }} placeholder={getText('Search rooms...', 'Cari ruangan...')} showCode
                                     renderItem={(room) => (<div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"><div className="flex items-center justify-between"><div><div className="font-bold text-gray-900">{room.name}</div><div className="text-xs text-gray-500 font-mono">{room.code}</div></div>{room.department && <div className="text-xs text-blue-600">{room.department.name}</div>}</div></div>)} />
                                 {isDepartmentAdmin && claimForm.formState.errors.rooms_id && <p className="text-red-500 text-sm mt-1">{claimForm.formState.errors.rooms_id.message}</p>}
                             </div>
 
                             {selectedRoomForClaim && (
                                 <div>
-                                    <label className="block text-sm font-bold mb-2">Pilih Lemari (Opsional)</label>
+                                    <label className="block text-sm font-bold mb-2">{getText('Select Cabinet (Optional)', 'Pilih Lemari (Opsional)')}</label>
                                     <DropdownSearch items={tables.filter(t => t.room_id === selectedRoomForClaim.id)} selectedItem={selectedTableForClaim}
                                         onSelect={(table) => { setSelectedTableForClaim(table); setSelectedRackForClaim(null); setSelectedBoxForClaim(null); claimForm.setValue('table_id', table.id); claimForm.setValue('rack_id', ''); claimForm.setValue('box_id', ''); }}
-                                        placeholder="Select cabinet..."
-                                        renderItem={(table) => (<div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"><div className="font-bold text-gray-900">{table.description}</div><div className="text-xs text-gray-500">Rak: {table.rack}</div></div>)} />
+                                        placeholder={getText('Select cabinet...', 'Pilih lemari...')}
+                                        renderItem={(table) => (<div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"><div className="font-bold text-gray-900">{table.description}</div><div className="text-xs text-gray-500">{getText('Rack', 'Rak')}: {table.rack}</div></div>)} />
                                 </div>
                             )}
 
                             {selectedTableForClaim && (
                                 <div>
-                                    <label className="block text-sm font-bold mb-2">Pilih Rak (Opsional)</label>
+                                    <label className="block text-sm font-bold mb-2">{getText('Select Rack (Optional)', 'Pilih Rak (Opsional)')}</label>
                                     <DropdownSearch items={racks.filter(r => r.table_id === selectedTableForClaim.id)} selectedItem={selectedRackForClaim}
                                         onSelect={(rack) => { setSelectedRackForClaim(rack); setSelectedBoxForClaim(null); claimForm.setValue('rack_id', rack.id); claimForm.setValue('box_id', ''); }}
-                                        placeholder="Select rack..."
+                                        placeholder={getText('Select rack...', 'Pilih rak...')}
                                         renderItem={(rack) => (<div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"><div className="font-bold text-gray-900">{rack.name}</div></div>)} />
                                 </div>
                             )}
 
                             {selectedRackForClaim && (
                                 <div>
-                                    <label className="block text-sm font-bold mb-2">Pilih Box (Opsional)</label>
+                                    <label className="block text-sm font-bold mb-2">{getText('Select Box (Optional)', 'Pilih Box (Opsional)')}</label>
                                     <DropdownSearch items={boxes.filter(b => b.rack_id === selectedRackForClaim.id)} selectedItem={selectedBoxForClaim}
                                         onSelect={(box) => { setSelectedBoxForClaim(box); claimForm.setValue('box_id', box.id); }}
-                                        placeholder="Select box..."
+                                        placeholder={getText('Select box...', 'Pilih box...')}
                                         renderItem={(box) => (<div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"><div className="font-bold text-gray-900">{box.name}</div><div className="text-xs text-gray-500">{box.description}</div></div>)} />
                                 </div>
                             )}
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-bold mb-2">Equipment Name *</label>
+                                    <label className="block text-sm font-bold mb-2">{getText('Equipment Name', 'Nama Peralatan')} *</label>
                                     <input {...claimForm.register('name')} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors" />
                                     {claimForm.formState.errors.name && <p className="text-red-500 text-sm mt-1">{claimForm.formState.errors.name.message}</p>}
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold mb-2">Code *</label>
+                                    <label className="block text-sm font-bold mb-2">{getText('Code', 'Kode')} *</label>
                                     <input {...claimForm.register('code')} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none font-mono transition-colors" />
                                     {claimForm.formState.errors.code && <p className="text-red-500 text-sm mt-1">{claimForm.formState.errors.code.message}</p>}
                                 </div>
@@ -1754,12 +1792,12 @@ const ToolAdministration: React.FC = () => {
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-bold mb-2">Quantity (Max: {maxClaimQuantity}) *</label>
+                                    <label className="block text-sm font-bold mb-2">{getText('Quantity', 'Jumlah')} ({getText('Max', 'Maks')}: {maxClaimQuantity}) *</label>
                                     <input type="number" {...claimForm.register('quantity', { valueAsNumber: true })} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors" min="1" max={maxClaimQuantity} />
                                     {claimForm.formState.errors.quantity && <p className="text-red-500 text-sm mt-1">{claimForm.formState.errors.quantity.message}</p>}
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold mb-2">Condition *</label>
+                                    <label className="block text-sm font-bold mb-2">{getText('Condition', 'Kondisi')} *</label>
                                     <select {...claimForm.register('condition')} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors">
                                         <option value="GOOD">Good</option><option value="BROKEN">Broken</option><option value="MAINTENANCE">Maintenance</option>
                                     </select>
@@ -1767,19 +1805,19 @@ const ToolAdministration: React.FC = () => {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-bold mb-2">Specifications (Optional)</label>
+                                <label className="block text-sm font-bold mb-2">{getText('Specifications (Optional)', 'Spesifikasi (Opsional)')}</label>
                                 <textarea {...claimForm.register('Spesification')} rows={3} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors" placeholder="Add specific details..." />
                             </div>
 
                             <div>
-                                <label className="block text-sm font-bold mb-2">Equipment Photo</label>
+                                <label className="block text-sm font-bold mb-2">{getText('Equipment Photo', 'Foto Peralatan')}</label>
                                 <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 hover:border-purple-400 transition-colors">
                                     {equipmentImagePreview ? (
                                         <div className="space-y-3">
                                             <div className="relative w-full h-48 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center">
                                                 <ImageWithLoader src={equipmentImagePreview} alt="Preview" className="w-full h-full object-contain" />
                                             </div>
-                                            {equipmentImagePreview === selectedStockForClaim?.attachments && <div className="text-center text-xs text-gray-500 bg-gray-100 rounded-lg py-1">📷 Using Stock Photo</div>}
+                                            {equipmentImagePreview === selectedStockForClaim?.attachments && <div className="text-center text-xs text-gray-500 bg-gray-100 rounded-lg py-1">📷 {getText('Using Stock Photo', 'Menggunakan Foto Stok')}</div>}
                                             <div className="flex justify-center gap-3">
                                                 {/* Hidden file input */}
                                                 <input
@@ -1795,10 +1833,10 @@ const ToolAdministration: React.FC = () => {
                                                     onClick={() => claimFileInputRef.current?.click()}
                                                     className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-lg cursor-pointer hover:bg-purple-200 transition-colors"
                                                 >
-                                                    <Upload className="h-4 w-4" /><span className="text-sm font-medium">Ganti Foto</span>
+                                                    <Upload className="h-4 w-4" /><span className="text-sm font-medium">{getText('Change Photo', 'Ganti Foto')}</span>
                                                 </button>
                                                 <button type="button" onClick={clearEquipmentImage} className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors">
-                                                    <Trash2 className="h-4 w-4" /><span className="text-sm font-medium">Hapus</span>
+                                                    <Trash2 className="h-4 w-4" /><span className="text-sm font-medium">{getText('Delete', 'Hapus')}</span>
                                                 </button>
                                             </div>
                                         </div>
@@ -1819,7 +1857,7 @@ const ToolAdministration: React.FC = () => {
                                             >
                                                 <Upload className="h-8 w-8 text-gray-400 mb-2" />
                                                 <span className="text-sm text-gray-500 font-medium">Click to upload photo</span>
-                                                <span className="text-xs text-gray-400 mt-1">Max 5MB (JPG, PNG)</span>
+                                                <span className="text-xs text-gray-400 mt-1">{getText('Max 5MB (JPG, PNG)', 'Maks 5MB (JPG, PNG)')}</span>
                                             </div>
                                         </>
                                     )}
@@ -1829,20 +1867,20 @@ const ToolAdministration: React.FC = () => {
                             <div className="flex items-center gap-4">
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input type="checkbox" {...claimForm.register('is_mandatory')} className="w-5 h-5 text-purple-600 rounded focus:ring-2 focus:ring-purple-300" />
-                                    <span className="text-sm font-medium">Mandatory Equipment</span>
+                                    <span className="text-sm font-medium">{getText('Mandatory Equipment', 'Peralatan Wajib')}</span>
                                 </label>
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input type="checkbox" {...claimForm.register('is_available')} className="w-5 h-5 text-purple-600 rounded focus:ring-2 focus:ring-purple-300" />
-                                    <span className="text-sm font-medium">Available for Lending</span>
+                                    <span className="text-sm font-medium">{getText('Available for Lending', 'Tersedia untuk Dipinjam')}</span>
                                 </label>
                             </div>
                         </>
                     )}
 
                     <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-4">
-                        <button type="button" onClick={() => { setShowClaimModal(false); setSelectedStockForClaim(null); setSelectedRoomForClaim(null); setEquipmentImagePreview(''); }} className="px-6 py-2 border-2 border-gray-300 rounded-xl font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+                        <button type="button" onClick={() => { setShowClaimModal(false); setSelectedStockForClaim(null); setSelectedRoomForClaim(null); setEquipmentImagePreview(''); }} className="px-6 py-2 border-2 border-gray-300 rounded-xl font-medium hover:bg-gray-50 transition-colors">{getText('Cancel', 'Batal')}</button>
                         <button type="submit" disabled={loadingEquipment || !selectedStockForClaim || !selectedRoomForClaim} className="px-6 py-2 bg-purple-500 text-white rounded-xl font-medium hover:bg-purple-600 disabled:opacity-50 transition-colors">
-                            {loadingEquipment ? 'Claiming...' : 'Claim Equipment'}
+                            {loadingEquipment ? getText('Claiming...', 'Mengklaim...') : getText('Claim Equipment', 'Klaim Peralatan')}
                         </button>
                     </div>
                 </form>
@@ -1877,21 +1915,14 @@ const ToolAdministration: React.FC = () => {
         };
 
         return (
-            <div className="fixed inset-0 z-50 flex">
-                {/* Backdrop */}
-                <div
-                    className="flex-1 bg-black bg-opacity-50"
-                    onClick={() => { setShowEditModal(false); setEditingEquipment(null); setSelectedRoomForEdit(null); }}
-                />
-
-                {/* Slide Panel from Right */}
-                <div className="w-full max-w-lg bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-                    {/* Header - Fixed */}
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                    {/* Header */}
                     <div className="bg-gradient-to-r from-amber-500 to-amber-600 p-6 text-white flex-shrink-0">
                         <div className="flex items-center justify-between">
                             <div>
-                                <h3 className="text-xl font-bold">Edit Equipment</h3>
-                                <p className="text-sm opacity-90">{editingEquipment?.name}</p>
+                                <h3 className="text-2xl font-bold">{getText('Edit Equipment', 'Edit Peralatan')}</h3>
+                                <p className="text-sm opacity-90 mt-1">{editingEquipment?.name}</p>
                             </div>
                             <button
                                 onClick={() => { setShowEditModal(false); setEditingEquipment(null); setSelectedRoomForEdit(null); }}
@@ -1913,7 +1944,7 @@ const ToolAdministration: React.FC = () => {
                         })} className="space-y-4">
                             {/* Room Selection */}
                             <div>
-                                <label className="block text-sm font-bold mb-2">Pilih Ruangan *</label>
+                                <label className="block text-sm font-bold mb-2">{getText('Select Room', 'Pilih Ruangan')} *</label>
                                 <DropdownSearch
                                     items={availableRooms}
                                     selectedItem={selectedRoomForEdit}
@@ -1924,7 +1955,7 @@ const ToolAdministration: React.FC = () => {
                                         setSelectedBoxForEdit(null);
                                         editForm.setValue('rooms_id', room.id);
                                     }}
-                                    placeholder="Search rooms..."
+                                    placeholder={getText('Search rooms...', 'Cari ruangan...')}
                                     showCode
                                 />
                             </div>
@@ -1932,7 +1963,7 @@ const ToolAdministration: React.FC = () => {
                             {/* Cabinet Selection */}
                             {selectedRoomForEdit && (
                                 <div>
-                                    <label className="block text-sm font-bold mb-2">Pilih Lemari (Opsional)</label>
+                                    <label className="block text-sm font-bold mb-2">{getText('Select Cabinet (Optional)', 'Pilih Lemari (Opsional)')}</label>
                                     <DropdownSearch
                                         items={tables.filter(t => t.room_id === selectedRoomForEdit.id)}
                                         selectedItem={selectedTableForEdit}
@@ -1942,7 +1973,7 @@ const ToolAdministration: React.FC = () => {
                                             setSelectedBoxForEdit(null);
                                             editForm.setValue('table_id', table.id);
                                         }}
-                                        placeholder="Select cabinet..."
+                                        placeholder={getText('Select cabinet...', 'Pilih lemari...')}
                                     />
                                 </div>
                             )}
@@ -1950,7 +1981,7 @@ const ToolAdministration: React.FC = () => {
                             {/* Rack Selection */}
                             {selectedTableForEdit && (
                                 <div>
-                                    <label className="block text-sm font-bold mb-2">Pilih Rak (Opsional)</label>
+                                    <label className="block text-sm font-bold mb-2">{getText('Select Rack (Optional)', 'Pilih Rak (Opsional)')}</label>
                                     <DropdownSearch
                                         items={racks.filter(r => r.table_id === selectedTableForEdit.id)}
                                         selectedItem={selectedRackForEdit}
@@ -1959,7 +1990,7 @@ const ToolAdministration: React.FC = () => {
                                             setSelectedBoxForEdit(null);
                                             editForm.setValue('rack_id', rack.id);
                                         }}
-                                        placeholder="Select rack..."
+                                        placeholder={getText('Select rack...', 'Pilih rak...')}
                                     />
                                 </div>
                             )}
@@ -1967,7 +1998,7 @@ const ToolAdministration: React.FC = () => {
                             {/* Box Selection */}
                             {selectedRackForEdit && (
                                 <div>
-                                    <label className="block text-sm font-bold mb-2">Pilih Box (Opsional)</label>
+                                    <label className="block text-sm font-bold mb-2">{getText('Select Box (Optional)', 'Pilih Box (Opsional)')}</label>
                                     <DropdownSearch
                                         items={boxes.filter(b => b.rack_id === selectedRackForEdit.id)}
                                         selectedItem={selectedBoxForEdit}
@@ -1983,7 +2014,7 @@ const ToolAdministration: React.FC = () => {
                             {/* Name & Code */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-bold mb-2">Name *</label>
+                                    <label className="block text-sm font-bold mb-2">{getText('Name', 'Nama')} *</label>
                                     <input
                                         {...editForm.register('name')}
                                         className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
@@ -1993,7 +2024,7 @@ const ToolAdministration: React.FC = () => {
                                     )}
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold mb-2">Code *</label>
+                                    <label className="block text-sm font-bold mb-2">{getText('Code', 'Kode')} *</label>
                                     <input
                                         {...editForm.register('code')}
                                         className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none font-mono transition-colors"
@@ -2003,12 +2034,12 @@ const ToolAdministration: React.FC = () => {
 
                             {/* Category */}
                             <div>
-                                <label className="block text-sm font-bold mb-2">Category *</label>
+                                <label className="block text-sm font-bold mb-2">{getText('Category', 'Kategori')} *</label>
                                 <select
                                     {...editForm.register('category')}
                                     className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
                                 >
-                                    <option value="">Select Category</option>
+                                    <option value="">{getText('Select Category', 'Pilih Kategori')}</option>
                                     {categories.map(cat => <option key={cat.name} value={cat.name}>{cat.name}</option>)}
                                 </select>
                             </div>
@@ -2016,7 +2047,7 @@ const ToolAdministration: React.FC = () => {
                             {/* Quantity, Unit, Condition */}
                             <div className="grid grid-cols-3 gap-4">
                                 <div>
-                                    <label className="block text-sm font-bold mb-2">Qty *</label>
+                                    <label className="block text-sm font-bold mb-2">{getText('Qty', 'Jml')} *</label>
                                     <input
                                         type="number"
                                         {...editForm.register('quantity', { valueAsNumber: true })}
@@ -2024,14 +2055,14 @@ const ToolAdministration: React.FC = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold mb-2">Unit *</label>
+                                    <label className="block text-sm font-bold mb-2">{getText('Unit', 'Satuan')} *</label>
                                     <input
                                         {...editForm.register('unit')}
                                         className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold mb-2">Condition</label>
+                                    <label className="block text-sm font-bold mb-2">{getText('Condition', 'Kondisi')}</label>
                                     <select
                                         {...editForm.register('condition')}
                                         className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
@@ -2045,7 +2076,7 @@ const ToolAdministration: React.FC = () => {
 
                             {/* Specifications */}
                             <div>
-                                <label className="block text-sm font-bold mb-2">Specifications</label>
+                                <label className="block text-sm font-bold mb-2">{getText('Specifications', 'Spesifikasi')}</label>
                                 <textarea
                                     {...editForm.register('Spesification')}
                                     rows={2}
@@ -2055,7 +2086,7 @@ const ToolAdministration: React.FC = () => {
 
                             {/* Photo Upload - Using programmatic file input */}
                             <div>
-                                <label className="block text-sm font-bold mb-2">Equipment Photo</label>
+                                <label className="block text-sm font-bold mb-2">{getText('Equipment Photo', 'Foto Peralatan')}</label>
                                 <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 hover:border-amber-400 transition-colors">
                                     {loadingImage ? (
                                         <div className="h-40 flex flex-col items-center justify-center bg-gray-50 rounded-lg">
@@ -2103,11 +2134,11 @@ const ToolAdministration: React.FC = () => {
                             <div className="flex items-center gap-6">
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input type="checkbox" {...editForm.register('is_mandatory')} className="w-5 h-5 text-amber-600 rounded" />
-                                    <span className="text-sm font-medium">Mandatory</span>
+                                    <span className="text-sm font-medium">{getText('Mandatory', 'Wajib')}</span>
                                 </label>
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input type="checkbox" {...editForm.register('is_available')} className="w-5 h-5 text-amber-600 rounded" />
-                                    <span className="text-sm font-medium">Available</span>
+                                    <span className="text-sm font-medium">{getText('Available', 'Tersedia')}</span>
                                 </label>
                             </div>
                         </form>
@@ -2121,7 +2152,7 @@ const ToolAdministration: React.FC = () => {
                                 onClick={() => { setShowEditModal(false); setEditingEquipment(null); setSelectedRoomForEdit(null); }}
                                 className="px-6 py-2 border-2 border-gray-300 rounded-xl font-medium hover:bg-white transition-colors"
                             >
-                                Cancel
+                                {getText('Cancel', 'Batal')}
                             </button>
                             <button
                                 type="submit"
@@ -2129,7 +2160,7 @@ const ToolAdministration: React.FC = () => {
                                 disabled={loadingEquipment || !selectedRoomForEdit}
                                 className="px-6 py-2 bg-amber-500 text-white rounded-xl font-medium hover:bg-amber-600 disabled:opacity-50 transition-colors"
                             >
-                                {loadingEquipment ? 'Updating...' : 'Update Equipment'}
+                                {loadingEquipment ? getText('Updating...', 'Memperbarui...') : getText('Update Equipment', 'Perbarui Peralatan')}
                             </button>
                         </div>
                     </div>
@@ -2181,7 +2212,7 @@ const ToolAdministration: React.FC = () => {
                         <div className="flex items-center justify-between">
                             <div>
                                 <h3 className="text-2xl font-bold">{selectedEquipment?.name}</h3>
-                                <p className="text-sm opacity-90 mt-1">Complete Equipment Information</p>
+                                <p className="text-sm opacity-90 mt-1">{getText('Complete Equipment Information', 'Informasi Lengkap Peralatan')}</p>
                             </div>
                             <button onClick={() => setShowDetailModal(false)} className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"><X className="h-6 w-6" /></button>
                         </div>
@@ -2221,80 +2252,80 @@ const ToolAdministration: React.FC = () => {
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div className="space-y-4">
                                 <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-xl border border-blue-200">
-                                    <h4 className="font-bold text-blue-900 mb-3 flex items-center gap-2"><Package className="h-5 w-5" />Basic Information</h4>
+                                    <h4 className="font-bold text-blue-900 mb-3 flex items-center gap-2"><Package className="h-5 w-5" />{getText('Basic Information', 'Informasi Dasar')}</h4>
                                     <div className="space-y-3">
-                                        <div><p className="text-xs text-blue-700 mb-1">Equipment Name</p><p className="font-bold text-gray-900">{selectedEquipment?.name}</p></div>
-                                        <div><p className="text-xs text-blue-700 mb-1">Equipment Code</p><p className="font-mono font-bold text-gray-900">{selectedEquipment?.code}</p></div>
-                                        <div><p className="text-xs text-blue-700 mb-1">Category</p><p className="font-bold text-gray-900">{selectedEquipment?.category}</p></div>
+                                        <div><p className="text-xs text-blue-700 mb-1">{getText('Equipment Name', 'Nama Peralatan')}</p><p className="font-bold text-gray-900">{selectedEquipment?.name}</p></div>
+                                        <div><p className="text-xs text-blue-700 mb-1">{getText('Equipment Code', 'Kode Peralatan')}</p><p className="font-mono font-bold text-gray-900">{selectedEquipment?.code}</p></div>
+                                        <div><p className="text-xs text-blue-700 mb-1">{getText('Category', 'Kategori')}</p><p className="font-bold text-gray-900">{selectedEquipment?.category}</p></div>
                                     </div>
                                 </div>
                                 <div className="bg-gradient-to-r from-purple-50 to-purple-100 p-4 rounded-xl border border-purple-200">
-                                    <h4 className="font-bold text-purple-900 mb-3 flex items-center gap-2"><Database className="h-5 w-5" />Quantity & Unit</h4>
+                                    <h4 className="font-bold text-purple-900 mb-3 flex items-center gap-2"><Database className="h-5 w-5" />{getText('Quantity & Unit', 'Jumlah & Satuan')}</h4>
                                     <div className="space-y-3">
-                                        <div><p className="text-xs text-purple-700 mb-1">Quantity</p><p className="text-2xl font-bold text-purple-900">{selectedEquipment?.quantity}</p></div>
-                                        <div><p className="text-xs text-purple-700 mb-1">Unit</p><p className="font-bold text-gray-900">{selectedEquipment?.unit}</p></div>
+                                        <div><p className="text-xs text-purple-700 mb-1">{getText('Quantity', 'Jumlah')}</p><p className="text-2xl font-bold text-purple-900">{selectedEquipment?.quantity}</p></div>
+                                        <div><p className="text-xs text-purple-700 mb-1">{getText('Unit', 'Satuan')}</p><p className="font-bold text-gray-900">{selectedEquipment?.unit}</p></div>
                                     </div>
                                 </div>
                                 <div className="bg-gradient-to-r from-green-50 to-green-100 p-4 rounded-xl border border-green-200">
-                                    <h4 className="font-bold text-green-900 mb-3 flex items-center gap-2"><MapPin className="h-5 w-5" />Location</h4>
+                                    <h4 className="font-bold text-green-900 mb-3 flex items-center gap-2"><MapPin className="h-5 w-5" />{getText('Location', 'Lokasi')}</h4>
                                     <div className="space-y-3">
-                                        {(selectedEquipment?.rooms as any)?.building?.campus?.name && <div><p className="text-xs text-green-700 mb-1">Campus</p><p className="font-bold text-gray-900">{(selectedEquipment?.rooms as any).building.campus.name}</p></div>}
-                                        {(selectedEquipment?.rooms as any)?.building?.name && <div><p className="text-xs text-green-700 mb-1">Building</p><p className="font-bold text-gray-900">{(selectedEquipment?.rooms as any).building.name}</p></div>}
-                                        {(selectedEquipment?.rooms as any)?.floor && <div><p className="text-xs text-green-700 mb-1">Floor</p><p className="font-bold text-gray-900">Lantai {(selectedEquipment?.rooms as any).floor}</p></div>}
-                                        <div><p className="text-xs text-green-700 mb-1">Room</p><p className="font-bold text-gray-900">{selectedEquipment?.rooms?.name || 'No room assigned'}</p></div>
-                                        {selectedEquipment?.rooms?.code && <div><p className="text-xs text-green-700 mb-1">Room Code</p><p className="font-mono font-bold text-gray-900">{selectedEquipment.rooms.code}</p></div>}
-                                        {selectedEquipment?.rooms?.department && <div><p className="text-xs text-green-700 mb-1">Department</p><p className="font-bold text-blue-900">{selectedEquipment.rooms.department.name}</p></div>}
+                                        {(selectedEquipment?.rooms as any)?.building?.campus?.name && <div><p className="text-xs text-green-700 mb-1">{getText('Campus', 'Kampus')}</p><p className="font-bold text-gray-900">{(selectedEquipment?.rooms as any).building.campus.name}</p></div>}
+                                        {(selectedEquipment?.rooms as any)?.building?.name && <div><p className="text-xs text-green-700 mb-1">{getText('Building', 'Gedung')}</p><p className="font-bold text-gray-900">{(selectedEquipment?.rooms as any).building.name}</p></div>}
+                                        {(selectedEquipment?.rooms as any)?.floor && <div><p className="text-xs text-green-700 mb-1">{getText('Floor', 'Lantai')}</p><p className="font-bold text-gray-900">{getText('Floor', 'Lantai')} {(selectedEquipment?.rooms as any).floor}</p></div>}
+                                        <div><p className="text-xs text-green-700 mb-1">{getText('Room', 'Ruangan')}</p><p className="font-bold text-gray-900">{selectedEquipment?.rooms?.name || getText('No room assigned', 'Tidak ada ruangan')}</p></div>
+                                        {selectedEquipment?.rooms?.code && <div><p className="text-xs text-green-700 mb-1">{getText('Room Code', 'Kode Ruangan')}</p><p className="font-mono font-bold text-gray-900">{selectedEquipment.rooms.code}</p></div>}
+                                        {selectedEquipment?.rooms?.department && <div><p className="text-xs text-green-700 mb-1">{getText('Department', 'Departemen')}</p><p className="font-bold text-blue-900">{selectedEquipment.rooms.department.name}</p></div>}
                                         {(() => {
                                             const box = boxes.find(b => b.id === selectedEquipment?.box_id);
                                             const rackId = selectedEquipment?.rack_id || box?.rack_id;
                                             const rack = racks.find(r => r.id === rackId);
                                             const tableId = selectedEquipment?.table_id || rack?.table_id;
                                             const table = tables.find(t => t.id === tableId);
-                                            return (<>{table && <div><p className="text-xs text-green-700 mb-1">Lemari/Meja</p><p className="font-bold text-gray-900">{table.description}</p></div>}{rack && <div><p className="text-xs text-green-700 mb-1">Rak</p><p className="font-bold text-gray-900">{rack.name}</p></div>}{box && <div><p className="text-xs text-green-700 mb-1">Box</p><p className="font-bold text-gray-900">{box.name}</p></div>}</>);
+                                            return (<>{table && <div><p className="text-xs text-green-700 mb-1">{getText('Cabinet/Table', 'Lemari/Meja')}</p><p className="font-bold text-gray-900">{table.description}</p></div>}{rack && <div><p className="text-xs text-green-700 mb-1">{getText('Rack', 'Rak')}</p><p className="font-bold text-gray-900">{rack.name}</p></div>}{box && <div><p className="text-xs text-green-700 mb-1">Box</p><p className="font-bold text-gray-900">{box.name}</p></div>}</>);
                                         })()}
                                     </div>
                                 </div>
                             </div>
                             <div className="space-y-4">
                                 <div className="bg-gradient-to-r from-amber-50 to-amber-100 p-4 rounded-xl border border-amber-200">
-                                    <h4 className="font-bold text-amber-900 mb-3 flex items-center gap-2"><AlertTriangle className="h-5 w-5" />Status & Condition</h4>
+                                    <h4 className="font-bold text-amber-900 mb-3 flex items-center gap-2"><AlertTriangle className="h-5 w-5" />{getText('Status & Condition', 'Status & Kondisi')}</h4>
                                     <div className="space-y-3">
-                                        <div><p className="text-xs text-amber-700 mb-1">Condition</p>
+                                        <div><p className="text-xs text-amber-700 mb-1">{getText('Condition', 'Kondisi')}</p>
                                             <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-bold ${selectedEquipment && getConditionBadge(selectedEquipment.condition).bg} ${selectedEquipment && getConditionBadge(selectedEquipment.condition).text}`}>
                                                 {selectedEquipment && (() => { const Badge = getConditionBadge(selectedEquipment.condition); const Icon = Badge.icon; return <><Icon className="h-4 w-4" /> {Badge.label}</>; })()}
                                             </div>
                                         </div>
-                                        <div><p className="text-xs text-amber-700 mb-1">Availability</p><p className="font-bold text-gray-900">{selectedEquipment?.is_available ? '✅ Available for Lending' : '❌ Not Available'}</p></div>
-                                        <div><p className="text-xs text-amber-700 mb-1">Mandatory</p><p className="font-bold text-gray-900">{selectedEquipment?.is_mandatory ? '⭐ Yes - Required Equipment' : 'No - Optional'}</p></div>
+                                        <div><p className="text-xs text-amber-700 mb-1">{getText('Availability', 'Ketersediaan')}</p><p className="font-bold text-gray-900">{selectedEquipment?.is_available ? getText('✅ Available for Lending', '✅ Tersedia untuk Dipinjam') : getText('❌ Not Available', '❌ Tidak Tersedia')}</p></div>
+                                        <div><p className="text-xs text-amber-700 mb-1">{getText('Mandatory', 'Wajib')}</p><p className="font-bold text-gray-900">{selectedEquipment?.is_mandatory ? getText('⭐ Yes - Required Equipment', '⭐ Ya - Peralatan Wajib') : getText('No - Optional', 'Tidak - Opsional')}</p></div>
                                     </div>
                                 </div>
                                 {selectedEquipment?.Spesification && (
                                     <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-4 rounded-xl border border-gray-200">
-                                        <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2"><FileText className="h-5 w-5" />Specifications</h4>
+                                        <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2"><FileText className="h-5 w-5" />{getText('Specifications', 'Spesifikasi')}</h4>
                                         <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">{selectedEquipment.Spesification}</p>
                                     </div>
                                 )}
                                 {selectedEquipment?.stock && (
                                     <div className="bg-gradient-to-r from-cyan-50 to-cyan-100 p-4 rounded-xl border border-cyan-200">
-                                        <h4 className="font-bold text-cyan-900 mb-3 flex items-center gap-2"><Warehouse className="h-5 w-5" />Source Stock</h4>
+                                        <h4 className="font-bold text-cyan-900 mb-3 flex items-center gap-2"><Warehouse className="h-5 w-5" />{getText('Source Stock', 'Sumber Stok')}</h4>
                                         <div className="space-y-2">
-                                            <div><p className="text-xs text-cyan-700 mb-1">Stock Name</p><p className="font-bold text-gray-900">{selectedEquipment.stock.nama}</p></div>
-                                            <div><p className="text-xs text-cyan-700 mb-1">Stock Code</p><p className="font-mono font-bold text-gray-900">{selectedEquipment.stock.code}</p></div>
-                                            <div><p className="text-xs text-cyan-700 mb-1">Remaining in Stock</p><p className="font-bold text-gray-900">{selectedEquipment.stock.quantity} {selectedEquipment.stock.unit}</p></div>
+                                            <div><p className="text-xs text-cyan-700 mb-1">{getText('Stock Name', 'Nama Stok')}</p><p className="font-bold text-gray-900">{selectedEquipment.stock.nama}</p></div>
+                                            <div><p className="text-xs text-cyan-700 mb-1">{getText('Stock Code', 'Kode Stok')}</p><p className="font-mono font-bold text-gray-900">{selectedEquipment.stock.code}</p></div>
+                                            <div><p className="text-xs text-cyan-700 mb-1">{getText('Remaining in Stock', 'Sisa di Stok')}</p><p className="font-bold text-gray-900">{selectedEquipment.stock.quantity} {selectedEquipment.stock.unit}</p></div>
                                         </div>
                                     </div>
                                 )}
                                 <div className="bg-gradient-to-r from-slate-50 to-slate-100 p-4 rounded-xl border border-slate-200">
-                                    <h4 className="font-bold text-slate-900 mb-3 flex items-center gap-2"><Clock className="h-5 w-5" />Timestamps</h4>
-                                    {selectedEquipment?.created_at && <div><p className="text-xs text-slate-700 mb-1">Created At</p><p className="font-bold text-gray-900">{format(new Date(selectedEquipment.created_at), 'MMM dd, yyyy HH:mm')}</p></div>}
+                                    <h4 className="font-bold text-slate-900 mb-3 flex items-center gap-2"><Clock className="h-5 w-5" />{getText('Timestamps', 'Stempel Waktu')}</h4>
+                                    {selectedEquipment?.created_at && <div><p className="text-xs text-slate-700 mb-1">{getText('Created At', 'Dibuat Pada')}</p><p className="font-bold text-gray-900">{format(new Date(selectedEquipment.created_at), 'MMM dd, yyyy HH:mm')}</p></div>}
                                 </div>
                             </div>
                         </div>
                     </div>
                     <div className="p-6 border-t border-gray-200 bg-gray-50 flex-shrink-0">
                         <div className="flex flex-wrap gap-3 justify-end">
-                            <button onClick={() => setShowDetailModal(false)} className="px-5 py-2 border-2 border-gray-300 rounded-xl font-medium hover:bg-white transition-colors">Close</button>
-                            <button onClick={() => { setShowDetailModal(false); handleOpenEditModal(selectedEquipment!); }} className="px-5 py-2 bg-amber-500 text-white rounded-xl font-medium hover:bg-amber-600 transition-colors">Edit Equipment</button>
+                            <button onClick={() => setShowDetailModal(false)} className="px-5 py-2 border-2 border-gray-300 rounded-xl font-medium hover:bg-white transition-colors">{getText('Close', 'Tutup')}</button>
+                            <button onClick={() => { setShowDetailModal(false); handleOpenEditModal(selectedEquipment!); }} className="px-5 py-2 bg-amber-500 text-white rounded-xl font-medium hover:bg-amber-600 transition-colors">{getText('Edit Equipment', 'Edit Peralatan')}</button>
                         </div>
                     </div>
                 </div>
@@ -2310,7 +2341,7 @@ const ToolAdministration: React.FC = () => {
                     <div className="flex items-center justify-between">
                         <div>
                             <h3 className="text-2xl font-bold">{selectedEquipment?.name}</h3>
-                            <p className="text-sm opacity-90 mt-1">Gap Analysis - Missing Items Tracker</p>
+                            <p className="text-sm opacity-90 mt-1">{getText('Gap Analysis - Missing Items Tracker', 'Analisis Gap - Pelacak Barang Hilang')}</p>
                         </div>
                         <button onClick={() => setShowTrackRecordModal(false)} className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"><X className="h-6 w-6" /></button>
                     </div>
@@ -2318,7 +2349,7 @@ const ToolAdministration: React.FC = () => {
                 <div className="p-6 overflow-y-auto flex-1">{renderSimpleGapAnalysis()}</div>
                 <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
                     <div className="flex justify-end">
-                        <button onClick={() => setShowTrackRecordModal(false)} className="px-5 py-2 bg-gray-600 text-white rounded-xl font-medium hover:bg-gray-700 transition-colors">Close</button>
+                        <button onClick={() => setShowTrackRecordModal(false)} className="px-5 py-2 bg-gray-600 text-white rounded-xl font-medium hover:bg-gray-700 transition-colors">{getText('Close', 'Tutup')}</button>
                     </div>
                 </div>
             </div>
@@ -2360,25 +2391,25 @@ const ToolAdministration: React.FC = () => {
             <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
                 <div className="bg-gradient-to-r from-green-500 to-emerald-600 p-6 text-white flex-shrink-0">
                     <div className="flex items-center justify-between">
-                        <h3 className="text-2xl font-bold">Add New Equipment</h3>
+                        <h3 className="text-2xl font-bold">{getText('Add New Equipment', 'Tambah Peralatan Baru')}</h3>
                         <button onClick={() => { setShowDirectAddModal(false); editForm.reset(); setEquipmentImagePreview(''); }} className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"><X className="h-6 w-6" /></button>
                     </div>
                 </div>
                 <form onSubmit={editForm.handleSubmit(handleDirectAddSubmit)} className="p-6 space-y-4 flex-1 overflow-y-auto">
                     <div>
-                        <label className="block text-sm font-bold mb-2">Select Room *</label>
+                        <label className="block text-sm font-bold mb-2">{getText('Select Room', 'Pilih Ruangan')} *</label>
                         <DropdownSearch items={isLaboratory && profile?.department_id ? rooms.filter(r => r.department_id === profile.department_id) : rooms} selectedItem={selectedRoomForEdit}
                             onSelect={(room) => { setSelectedRoomForEdit(room); setSelectedTableForEdit(null); setSelectedRackForEdit(null); setSelectedBoxForEdit(null); editForm.setValue('rooms_id', room.id); editForm.setValue('table_id', ''); editForm.setValue('rack_id', ''); editForm.setValue('box_id', ''); }}
-                            placeholder="Search rooms..." showCode />
+                            placeholder={getText('Search rooms...', 'Cari ruangan...')} showCode />
                     </div>
 
                     {selectedRoomForEdit && (
                         <div>
-                            <label className="block text-sm font-bold mb-2">Select Cabinet (Optional)</label>
+                            <label className="block text-sm font-bold mb-2">{getText('Select Cabinet (Optional)', 'Pilih Lemari (Opsional)')}</label>
                             <DropdownSearch items={tables.filter(t => t.room_id === selectedRoomForEdit.id)} selectedItem={selectedTableForEdit}
                                 onSelect={(table) => { setSelectedTableForEdit(table); setSelectedRackForEdit(null); setSelectedBoxForEdit(null); editForm.setValue('table_id', table.id); editForm.setValue('rack_id', ''); editForm.setValue('box_id', ''); }}
-                                placeholder="Select cabinet..."
-                                renderItem={(table) => (<div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"><div className="font-bold text-gray-900">{table.description}</div><div className="text-xs text-gray-500">Rack: {table.rack}</div></div>)} />
+                                placeholder={getText('Select cabinet...', 'Pilih lemari...')}
+                                renderItem={(table) => (<div className="p-3 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"><div className="font-bold text-gray-900">{table.description}</div><div className="text-xs text-gray-500">{getText('Rack', 'Rak')}: {table.rack}</div></div>)} />
                         </div>
                     )}
 
@@ -2404,21 +2435,21 @@ const ToolAdministration: React.FC = () => {
 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-bold mb-2">Name *</label>
+                            <label className="block text-sm font-bold mb-2">{getText('Name', 'Nama')} *</label>
                             <input {...editForm.register('name')} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors" />
                             {editForm.formState.errors.name && <p className="text-red-500 text-sm mt-1">{editForm.formState.errors.name.message}</p>}
                         </div>
                         <div>
-                            <label className="block text-sm font-bold mb-2">Code *</label>
+                            <label className="block text-sm font-bold mb-2">{getText('Code', 'Kode')} *</label>
                             <input {...editForm.register('code')} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none font-mono transition-colors" />
                             {editForm.formState.errors.code && <p className="text-red-500 text-sm mt-1">{editForm.formState.errors.code.message}</p>}
                         </div>
                     </div>
 
                     <div>
-                        <label className="block text-sm font-bold mb-2">Category *</label>
+                        <label className="block text-sm font-bold mb-2">{getText('Category', 'Kategori')} *</label>
                         <select {...editForm.register('category')} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors">
-                            <option value="">Select Category</option>
+                            <option value="">{getText('Select Category', 'Pilih Kategori')}</option>
                             {categories.map(cat => <option key={cat.name} value={cat.name}>{cat.name}</option>)}
                         </select>
                         {editForm.formState.errors.category && <p className="text-red-500 text-sm mt-1">{editForm.formState.errors.category.message}</p>}
@@ -2426,15 +2457,15 @@ const ToolAdministration: React.FC = () => {
 
                     <div className="grid grid-cols-3 gap-4">
                         <div>
-                            <label className="block text-sm font-bold mb-2">Quantity *</label>
+                            <label className="block text-sm font-bold mb-2">{getText('Quantity', 'Jumlah')} *</label>
                             <input type="number" {...editForm.register('quantity', { valueAsNumber: true })} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors" />
                         </div>
                         <div>
-                            <label className="block text-sm font-bold mb-2">Unit *</label>
+                            <label className="block text-sm font-bold mb-2">{getText('Unit', 'Satuan')} *</label>
                             <input {...editForm.register('unit')} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors" />
                         </div>
                         <div>
-                            <label className="block text-sm font-bold mb-2">Condition *</label>
+                            <label className="block text-sm font-bold mb-2">{getText('Condition', 'Kondisi')} *</label>
                             <select {...editForm.register('condition')} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors">
                                 <option value="GOOD">Good</option><option value="BROKEN">Broken</option><option value="MAINTENANCE">Maintenance</option>
                             </select>
@@ -2442,12 +2473,12 @@ const ToolAdministration: React.FC = () => {
                     </div>
 
                     <div>
-                        <label className="block text-sm font-bold mb-2">Specifications</label>
+                        <label className="block text-sm font-bold mb-2">{getText('Specifications', 'Spesifikasi')}</label>
                         <textarea {...editForm.register('Spesification')} rows={3} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors" />
                     </div>
 
                     <div>
-                        <label className="block text-sm font-bold mb-2">Equipment Photo</label>
+                        <label className="block text-sm font-bold mb-2">{getText('Equipment Photo', 'Foto Peralatan')}</label>
                         <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 hover:border-green-400 transition-colors">
                             {equipmentImagePreview ? (
                                 <div className="space-y-3">
@@ -2492,8 +2523,8 @@ const ToolAdministration: React.FC = () => {
                                         className="flex flex-col items-center justify-center h-32 cursor-pointer"
                                     >
                                         <Upload className="h-8 w-8 text-gray-400 mb-2" />
-                                        <span className="text-sm text-gray-500 font-medium">Click to upload photo</span>
-                                        <span className="text-xs text-gray-400 mt-1">Max 5MB (JPG, PNG)</span>
+                                        <span className="text-sm text-gray-500 font-medium">{getText('Click to upload photo', 'Klik untuk unggah foto')}</span>
+                                        <span className="text-xs text-gray-400 mt-1">{getText('Max 5MB (JPG, PNG)', 'Maks 5MB (JPG, PNG)')}</span>
                                     </div>
                                 </>
                             )}
@@ -2503,18 +2534,18 @@ const ToolAdministration: React.FC = () => {
                     <div className="flex items-center gap-4">
                         <label className="flex items-center gap-2 cursor-pointer">
                             <input type="checkbox" {...editForm.register('is_mandatory')} className="w-5 h-5 text-green-600 rounded focus:ring-2 focus:ring-green-300" />
-                            <span className="text-sm font-medium">Mandatory</span>
+                            <span className="text-sm font-medium">{getText('Mandatory', 'Wajib')}</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
                             <input type="checkbox" {...editForm.register('is_available')} className="w-5 h-5 text-green-600 rounded focus:ring-2 focus:ring-green-300" />
-                            <span className="text-sm font-medium">Available</span>
+                            <span className="text-sm font-medium">{getText('Available', 'Tersedia')}</span>
                         </label>
                     </div>
 
                     <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-4">
-                        <button type="button" onClick={() => { setShowDirectAddModal(false); editForm.reset(); setEquipmentImagePreview(''); }} className="px-6 py-2 border-2 border-gray-300 rounded-xl font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+                        <button type="button" onClick={() => { setShowDirectAddModal(false); editForm.reset(); setEquipmentImagePreview(''); }} className="px-6 py-2 border-2 border-gray-300 rounded-xl font-medium hover:bg-gray-50 transition-colors">{getText('Cancel', 'Batal')}</button>
                         <button type="submit" disabled={loadingEquipment || !selectedRoomForEdit} className="px-6 py-2 bg-green-500 text-white rounded-xl font-medium hover:bg-green-600 disabled:opacity-50 transition-colors">
-                            {loadingEquipment ? 'Adding...' : 'Add Equipment'}
+                            {loadingEquipment ? getText('Adding...', 'Menambahkan...') : getText('Add Equipment', 'Tambah Peralatan')}
                         </button>
                     </div>
                 </form>
@@ -2541,38 +2572,38 @@ const ToolAdministration: React.FC = () => {
             <div className="bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-600 rounded-2xl p-6 text-white shadow-xl mb-6">
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-3xl font-bold mb-2">Inventory Management</h1>
-                        <p className="opacity-90">Manage warehouse stock and equipment</p>
+                        <h1 className="text-3xl font-bold mb-2">{isLaboratory ? getText('Equipment Management', 'Manajemen Peralatan') : getText('Inventory Management', 'Manajemen Inventaris')}</h1>
+                        <p className="opacity-90">{isLaboratory ? getText('Manage equipment for your study program', 'Kelola peralatan program studi Anda') : getText('Manage warehouse stock and equipment', 'Kelola stok gudang dan peralatan')}</p>
                     </div>
                     <div className="flex gap-4">
                         {!isLaboratory && (
                             <div className="text-center bg-white bg-opacity-20 rounded-xl p-3">
                                 <div className="text-2xl font-bold">{stocks.length}</div>
-                                <div className="text-sm">Stocks</div>
+                                <div className="text-sm">{getText('Stocks', 'Stok')}</div>
                             </div>
                         )}
                         <div className="text-center bg-white bg-opacity-20 rounded-xl p-3">
                             <div className="text-2xl font-bold">{equipment.length}</div>
-                            <div className="text-sm">Equipment</div>
+                            <div className="text-sm">{getText('Equipment', 'Peralatan')}</div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* Tabs */}
+            {/* Tabs - Hidden for Laboratory (they only see Equipment) */}
             <div className="bg-white rounded-2xl shadow-lg mb-6">
-                <div className="border-b border-gray-200">
-                    <nav className="flex">
-                        {!isLaboratory && (
+                {!isLaboratory && (
+                    <div className="border-b border-gray-200">
+                        <nav className="flex">
                             <button onClick={() => setActiveTab('stock')} className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 border-b-2 transition-all ${activeTab === 'stock' ? 'border-blue-500 text-blue-600 bg-blue-50' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                                 <Warehouse className="h-5 w-5" />Stock ({stocks.length})
                             </button>
-                        )}
-                        <button onClick={() => setActiveTab('equipment')} className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 border-b-2 transition-all ${activeTab === 'equipment' ? 'border-purple-500 text-purple-600 bg-purple-50' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-                            <Package className="h-5 w-5" />Equipment ({equipment.length})
-                        </button>
-                    </nav>
-                </div>
+                            <button onClick={() => setActiveTab('equipment')} className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 border-b-2 transition-all ${activeTab === 'equipment' ? 'border-purple-500 text-purple-600 bg-purple-50' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                                <Package className="h-5 w-5" />Equipment ({equipment.length})
+                            </button>
+                        </nav>
+                    </div>
+                )}
 
                 <div className="p-6">
                     {/* Stock Tab */}
@@ -2581,10 +2612,10 @@ const ToolAdministration: React.FC = () => {
                             <div className="flex gap-4">
                                 <div className="relative flex-1">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                                    <input type="text" placeholder="Search stock by name or code..." value={stockSearchTerm} onChange={(e) => setStockSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors" />
+                                    <input type="text" placeholder={getText('Search stock by name or code...', 'Cari stok berdasarkan nama atau kode...')} value={stockSearchTerm} onChange={(e) => setStockSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors" />
                                 </div>
                                 <button onClick={() => handleOpenStockModal()} className="flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 font-medium transition-colors">
-                                    <Plus className="h-5 w-5" />Add Stock
+                                    <Plus className="h-5 w-5" />{getText('Add Stock', 'Tambah Stok')}
                                 </button>
                             </div>
 
@@ -2621,20 +2652,20 @@ const ToolAdministration: React.FC = () => {
                         </div>
                     )}
 
-                    {/* Equipment Tab */}
-                    {activeTab === 'equipment' && (
+                    {/* Equipment Tab - Always visible for Laboratory */}
+                    {(activeTab === 'equipment' || isLaboratory) && (
                         <div className="space-y-4">
                             <div className="flex gap-4">
                                 <div className="relative flex-1">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                                    <input type="text" placeholder="Search equipment by name or code..." value={equipmentSearchTerm} onChange={(e) => setEquipmentSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors" />
+                                    <input type="text" placeholder={getText('Search equipment by name or code...', 'Cari peralatan berdasarkan nama atau kode...')} value={equipmentSearchTerm} onChange={(e) => setEquipmentSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors" />
                                 </div>
                                 <div className="flex gap-2">
                                     <button onClick={() => { editForm.reset(); editForm.setValue('quantity', 1); setEquipmentImagePreview(''); setSelectedRoomForEdit(null); setSelectedTableForEdit(null); setSelectedRackForEdit(null); setSelectedBoxForEdit(null); setShowDirectAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-green-500 text-white rounded-xl hover:bg-green-600 font-medium transition-colors">
-                                        <Plus className="h-5 w-5" />Add Equipment
+                                        <Plus className="h-5 w-5" />{getText('Add Equipment', 'Tambah Peralatan')}
                                     </button>
                                     <button onClick={handleOpenClaimModal} disabled={!canClaimEquipment} className="flex items-center gap-2 px-6 py-3 bg-purple-500 text-white rounded-xl hover:bg-purple-600 font-medium disabled:opacity-50 transition-colors">
-                                        <PackagePlus className="h-5 w-5" />{isLaboratory ? 'Claim Stock' : 'Claim Equipment'}
+                                        <PackagePlus className="h-5 w-5" />{isLaboratory ? getText('Claim Stock', 'Klaim Stok') : getText('Claim Equipment', 'Klaim Peralatan')}
                                     </button>
                                 </div>
                             </div>

@@ -13,7 +13,8 @@ import {
   Sparkles,
   X,
   Globe,
-  FileText
+  FileText,
+  HandHelping
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -33,6 +34,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
   const [pendingBookingsCount, setPendingBookingsCount] = useState(0);
   const [pendingCheckoutsCount, setPendingCheckoutsCount] = useState(0);
   const [newReportsCount, setNewReportsCount] = useState(0);
+  const [pendingToolLendingCount, setPendingToolLendingCount] = useState(0);
   const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
@@ -88,6 +90,13 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
         .select('id', { count: 'exact', head: true })
         .eq('status', 'new');
       setNewReportsCount(reportsCount || 0);
+
+      // Fetch for tool lending (pending requests)
+      const { count: toolLendingCount } = await supabase
+        .from('lending_tool')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending');
+      setPendingToolLendingCount(toolLendingCount || 0);
 
     } catch (error) {
       console.error('Error fetching notification counts:', error);
@@ -172,7 +181,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
     };
   }, [user]);
 
-  const totalNotifications = pendingBookingsCount + pendingCheckoutsCount + newReportsCount;
+  const totalNotifications = pendingBookingsCount + pendingCheckoutsCount + newReportsCount + pendingToolLendingCount;
 
   const changeLanguage = (lang: 'en' | 'id') => {
     setLanguage(lang);
@@ -439,6 +448,28 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                                     </p>
                                     <p className="text-sm text-gray-600">
                                       {newReportsCount} {getText('new report', 'laporan baru')} {getText('requiring attention', 'memerlukan perhatian')}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {pendingToolLendingCount > 0 && (
+                              <div
+                                className="p-4 hover:bg-purple-50 cursor-pointer rounded"
+                                onClick={() => {
+                                  navigate('/tool-lending-management');
+                                  setShowNotificationsDropdown(false);
+                                }}
+                              >
+                                <div className="flex items-start space-x-3">
+                                  <HandHelping className="h-5 w-5 text-purple-600 mt-1" />
+                                  <div>
+                                    <p className="text-sm font-semibold text-gray-900">
+                                      {getText('Pending Tool Lending', 'Peminjaman Alat Pending')}
+                                    </p>
+                                    <p className="text-sm text-gray-600">
+                                      {pendingToolLendingCount} {getText('tool lending', 'peminjaman alat')} {getText('in progress', 'sedang berlangsung')}
                                     </p>
                                   </div>
                                 </div>

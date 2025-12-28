@@ -4,7 +4,7 @@ import { NavLink } from 'react-router-dom';
 import {
     LayoutDashboard, Calendar, Package, CheckCircle, BookOpen, Users, Building, Settings, User, FileText,
     BarChart3, Clock, GraduationCap, Wrench, ClipboardCheck, MapPin, CalendarCheck, CheckSquare, X,
-    ChevronRight, Sparkles, Home, PieChart, Zap, HandHelping, UserCheck, Map, ZoomIn, ZoomOut
+    ChevronRight, Sparkles, Home, PieChart, Zap, HandHelping, UserCheck, Map, ZoomIn, ZoomOut, AlertTriangle
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -22,6 +22,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
     const [pendingBookingsCount, setPendingBookingsCount] = useState(0);
     const [pendingCheckoutsCount, setPendingCheckoutsCount] = useState(0);
     const [newReportsCount, setNewReportsCount] = useState(0);
+    const [pendingToolLendingCount, setPendingToolLendingCount] = useState(0);
     const [showProfileModal, setShowProfileModal] = useState(false);
 
     // Use system settings from global context (no more local fetch needed)
@@ -117,6 +118,13 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
             const { count: checkoutsCount } = await checkoutsQuery;
             setPendingCheckoutsCount(checkoutsCount || 0);
 
+            // Fetch for tool lending (pending requests)
+            const { count: toolLendingCount } = await supabase
+                .from('lending_tool')
+                .select('id', { count: 'exact', head: true })
+                .eq('status', 'pending');
+            setPendingToolLendingCount(toolLendingCount || 0);
+
         } catch (error) {
             console.error("Error fetching notification counts:", error);
         }
@@ -175,13 +183,13 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: MapPin, label: getText('Departments', 'Departemen'), path: '/departments' },
                 { icon: GraduationCap, label: getText('Study Programs', 'Program Studi'), path: '/study-programs' },
                 { icon: Calendar, label: getText('Booking Management', 'Manajemen Pemesanan'), path: '/bookings', badge: pendingBookingsCount > 0 ? pendingBookingsCount : null },
-                { icon: HandHelping, label: getText('Tool Lending Administration', 'Administrasi Peminjaman Alat'), path: '/tool-lending-management' },
+                { icon: HandHelping, label: getText('Tool Lending Administration', 'Administrasi Peminjaman Alat'), path: '/tool-lending-management', badge: pendingToolLendingCount > 0 ? pendingToolLendingCount : null },
                 { icon: ClipboardCheck, label: getText('Validation Queue', 'Antrian Validasi'), path: '/validation', badge: pendingCheckoutsCount > 0 ? pendingCheckoutsCount : null },
                 { icon: Clock, label: getText('Lecture Schedules', 'Jadwal Kuliah'), path: '/schedules' },
                 { icon: CalendarCheck, label: getText('Exam Management', 'Manajemen Ujian'), path: '/exams' },
                 { icon: UserCheck, label: getText('Session Schedule', 'Jadwal Sidang'), path: '/session-schedule' },
                 { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' },
-                { icon: FileText, label: getText('Reports', 'Laporan'), path: '/reports', badge: newReportsCount > 0 ? newReportsCount : null },
+                { icon: AlertTriangle, label: getText('Reports', 'Laporan'), path: '/reports', badge: newReportsCount > 0 ? newReportsCount : null },
                 { icon: FileText, label: getText('Form Builder', 'Pembuat Formulir'), path: '/forms' },
                 { icon: Settings, label: getText('System Settings', 'Pengaturan Sistem'), path: '/settings' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
@@ -192,7 +200,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
         if (user.role === 'laboratory') {
             return [
                 { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' },
-                { icon: HandHelping, label: getText('Tool Lending Management', 'Manajemen Peminjaman Alat'), path: '/tool-lending-management' },
+                { icon: HandHelping, label: getText('Tool Lending Management', 'Manajemen Peminjaman Alat'), path: '/tool-lending-management', badge: pendingToolLendingCount > 0 ? pendingToolLendingCount : null },
                 { icon: Building, label: getText('Room Management', 'Manajemen Ruangan'), path: '/rooms' },
                 { icon: Map, label: getText('Location Management', 'Manajemen Lokasi'), path: '/laboratory-locations' },
                 { icon: Calendar, label: getText('Booking Management', 'Manajemen Pemesanan'), path: '/bookings', badge: pendingBookingsCount > 0 ? pendingBookingsCount : null },
@@ -222,7 +230,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
         // Jika user adalah technician (Teknisi)
         if (user.role === 'technician') {
             return [
-                { icon: FileText, label: getText('Reports', 'Laporan'), path: '/reports' },
+                { icon: AlertTriangle, label: getText('Reports', 'Laporan'), path: '/reports' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
         }
