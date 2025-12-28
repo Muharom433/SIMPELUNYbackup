@@ -29,6 +29,7 @@ import toast from 'react-hot-toast';
 import { alert } from '../components/Alert/AlertHelper';
 import { format } from 'date-fns';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useThrottledSubmit } from '../hooks/useThrottledSubmit';
 
 const permitSchema = z.object({
   selected_bookings: z.array(z.string()).optional(),
@@ -120,6 +121,7 @@ interface LendingToolWithDetails {
 type CombinedRecord = BookingWithDetails | LendingToolWithDetails;
 
 const PermitLetter: React.FC = () => {
+  const { isSubmitting: isThrottling, throttledSubmit } = useThrottledSubmit(3000);
   const { getText } = useLanguage();
   const [allRecords, setAllRecords] = useState<CombinedRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -139,6 +141,7 @@ const PermitLetter: React.FC = () => {
     id: string;
     full_name: string;
     role: string;
+    identity_number?: string;
     study_program_id?: string;
     study_program_name?: string;
   }>>([]);
@@ -151,6 +154,7 @@ const PermitLetter: React.FC = () => {
     id: string;
     full_name: string;
     role: string;
+    identity_number?: string;
     study_program_name?: string;
   } | null>(null);
 
@@ -159,6 +163,7 @@ const PermitLetter: React.FC = () => {
     id: string;
     full_name: string;
     role: string;
+    identity_number?: string;
     study_program_name?: string;
   } | null>(null);
 
@@ -226,6 +231,7 @@ const PermitLetter: React.FC = () => {
           id: firstRecord.user.id,
           full_name: firstRecord.user.full_name,
           role: userInfo?.role || 'student',
+          identity_number: userInfo?.identity_number,
           study_program_name: userInfo?.study_program_name || '',
         });
       }
@@ -258,6 +264,7 @@ const PermitLetter: React.FC = () => {
         id: user.id,
         full_name: user.full_name,
         role: user.role,
+        identity_number: user.identity_number || '',
         study_program_id: user.study_program_id,
         study_program_name: user.study_programs?.name || '',
       }));
@@ -273,7 +280,7 @@ const PermitLetter: React.FC = () => {
     try {
       setLoading(true);
 
-      console.log('Fetching pending bookings and pending tool lending requests...');
+
 
       // ✅ PERBAIKAN: Fetch pending bookings (belum ada permit)
       const { data: bookingsData, error: bookingsError } = await supabase
@@ -299,8 +306,7 @@ const PermitLetter: React.FC = () => {
         throw lendingToolsError;
       }
 
-      console.log('Pending bookings found:', bookingsData?.length || 0);
-      console.log('Pending tool lending found:', lendingToolsData?.length || 0);
+
 
       // Process bookings
       const bookingsWithDetails = await Promise.all(
@@ -321,7 +327,7 @@ const PermitLetter: React.FC = () => {
                 user = userData;
               }
             } catch (error) {
-              console.log('User not found for booking:', booking.id);
+
             }
           }
 
@@ -354,7 +360,7 @@ const PermitLetter: React.FC = () => {
                 room = roomData;
               }
             } catch (error) {
-              console.log('Room not found for booking:', booking.id);
+
             }
           }
 
@@ -386,7 +392,7 @@ const PermitLetter: React.FC = () => {
                 user = userData;
               }
             } catch (error) {
-              console.log('User not found for lending tool:', lendingTool.id);
+
             }
           }
 
@@ -409,7 +415,7 @@ const PermitLetter: React.FC = () => {
                 }));
               }
             } catch (error) {
-              console.log('Equipment not found for lending tool:', lendingTool.id);
+
             }
           }
 
@@ -424,7 +430,7 @@ const PermitLetter: React.FC = () => {
 
       // Combine both types of records
       const combinedRecords = [...bookingsWithDetails, ...lendingToolsWithDetails];
-      console.log('Combined records:', combinedRecords.length, combinedRecords);
+
       setAllRecords(combinedRecords);
 
     } catch (error) {
@@ -561,7 +567,7 @@ const PermitLetter: React.FC = () => {
             throw error;
           }
         }
-        console.log(`Updated ${data.selected_bookings.length} booking(s) with permit attachments`);
+
       }
 
       // Update selected lending tools with attachments
@@ -580,7 +586,7 @@ const PermitLetter: React.FC = () => {
             throw error;
           }
         }
-        console.log(`Updated ${data.selected_lendings.length} lending tool(s) with permit attachments`);
+
       }
 
       alert.success(getText('Permit letter submitted successfully!', 'Surat izin berhasil dikirim!'));
@@ -867,11 +873,12 @@ const PermitLetter: React.FC = () => {
           .details-table th, .details-table td { border: 1px solid #000; padding: 8px; text-align: left; }
           .details-table th { background-color: #f0f0f0; font-weight: bold; }
           .closing { margin-top: 30px; }
-          .signature { margin-top: 20px; display: flex; justify-content: flex-end; }
+          .signature { margin-top: 20px; display: flex; justify-content: space-between; }
           .signature-box { text-align: center; width: 250px; }
           .signature-box .sign-area { height: 80px; display: flex; align-items: center; justify-content: center; }
           .signature-box .sign-area img { max-height: 70px; max-width: 200px; }
-          .signature-box .name { border-bottom: 1px solid #000; padding-bottom: 5px; font-weight: bold; }
+          .signature-box .name { border-bottom: 1px solid #000; padding-bottom: 5px; font-weight: bold; font-style: italic; }
+          .signature-box .identity { font-size: 10pt; margin-top: 3px; }
           @media print { body { padding: 20px; } }
         </style>
       </head>
@@ -931,12 +938,20 @@ const PermitLetter: React.FC = () => {
 
         <div class="signature">
           <div class="signature-box">
-            <p>Hormat Saya,</p>
+            <p>Pemohon,</p>
             <div class="sign-area">
               ${applicantSignature ? `<img src="${applicantSignature}" alt="Tanda Tangan" />` : '<p style="color: #ccc; font-style: italic;">(Tanda Tangan)</p>'}
             </div>
             <p class="name">${applicantName}</p>
-            <p>${applicantRole}</p>
+            <p class="identity">${applicantUser?.identity_number || firstRecord.user?.identity_number || '-'}</p>
+          </div>
+          <div class="signature-box">
+            <p>Penerima,</p>
+            <div class="sign-area">
+              
+            </div>
+            <p class="name">${recipientName}</p>
+            <p class="identity">${selectedRecipient?.identity_number || '-'}</p>
           </div>
         </div>
 
@@ -1022,7 +1037,7 @@ const PermitLetter: React.FC = () => {
   };
 
   // Check if submit button should be enabled
-  const isSubmitEnabled = selectedRecords.length > 0 && attachments.length > 0 && !loading;
+  const isSubmitEnabled = selectedRecords.length > 0 && attachments.length > 0 && !loading && !isThrottling;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-amber-50 to-orange-50 relative">
@@ -1438,6 +1453,7 @@ const PermitLetter: React.FC = () => {
                                         id: user.id,
                                         full_name: user.full_name,
                                         role: user.role,
+                                        identity_number: user.identity_number,
                                         study_program_name: user.study_program_name,
                                       });
                                       setRecipientSearchTerm(user.full_name);
@@ -1649,7 +1665,7 @@ const PermitLetter: React.FC = () => {
                     </h2>
                   </div>
 
-                  <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
+                  <form onSubmit={form.handleSubmit((data) => throttledSubmit(() => handleSubmit(data)))} className="space-y-8">
                     {/* Selected Records Display */}
                     {selectedRecords.length > 0 && (
                       <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/50 rounded-2xl p-6">
@@ -1888,7 +1904,7 @@ const PermitLetter: React.FC = () => {
                           : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                           }`}
                       >
-                        {loading ? (
+                        {loading || isThrottling ? (
                           <>
                             <RefreshCw className="h-5 w-5 animate-spin" />
                             <span>{getText('Submitting Permit...', 'Mengirim Izin...')}</span>
@@ -1963,7 +1979,7 @@ const PermitLetter: React.FC = () => {
           </div>
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 

@@ -38,7 +38,7 @@ export const useEquipmentData = () => {
                 boxes: boxesRes.data || []
             });
 
-            console.log('📍 Location data loaded');
+
         } catch (err) {
             console.warn('⚠️ Location data warning:', err);
         }
@@ -50,7 +50,7 @@ export const useEquipmentData = () => {
     const fetchEquipmentData = useCallback(async (forceRefresh = false) => {
         // Check cache first
         if (!forceRefresh && !shouldRefresh()) {
-            console.log('📦 Equipment dari cache');
+
             return storeEquipment;
         }
 
@@ -58,7 +58,7 @@ export const useEquipmentData = () => {
         setError(null);
 
         try {
-            console.log('🚀 Fetching ALL equipment data (will be cached)...');
+
             const startTime = Date.now();
 
             // Fetch rooms (for other uses)
@@ -84,7 +84,7 @@ export const useEquipmentData = () => {
                 `)
                 .order('name');
 
-            console.log(`⚡ Fetch selesai dalam ${Date.now() - startTime}ms`);
+
 
             if (equipmentRes.error) {
                 console.error('Equipment fetch error:', equipmentRes.error);
@@ -96,7 +96,7 @@ export const useEquipmentData = () => {
             const rawEquipment = equipmentRes.data || [];
             const rawRooms = (roomsRes.data || []) as EquipmentRoom[];
 
-            console.log(`📦 Loaded: ${rawEquipment.length} equipment, ${rawRooms.length} rooms`);
+
 
             // Process equipment - filter is_available dan quantity di client
             const processedEquipment = rawEquipment
@@ -106,7 +106,7 @@ export const useEquipmentData = () => {
                     rooms: eq.rooms || null
                 })) as EquipmentItem[];
 
-            console.log(`📦 After filter: ${processedEquipment.length} available equipment`);
+
 
             // Save to store for caching
             setRooms(rawRooms);
@@ -115,7 +115,7 @@ export const useEquipmentData = () => {
             // Load location data in background
             fetchLocations();
 
-            console.log(`✅ Equipment cached successfully`);
+
 
             return processedEquipment;
 

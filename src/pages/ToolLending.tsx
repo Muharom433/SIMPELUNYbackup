@@ -12,6 +12,7 @@ import { useEquipmentData } from '../hooks/useEquipmentData';
 import { StudyProgram } from '../types';
 import toast from 'react-hot-toast';
 import { format, isBefore, startOfDay, isSameDay } from 'date-fns';
+import { useThrottledSubmit } from '../hooks/useThrottledSubmit';
 
 // Types
 interface EquipmentWithDetails {
@@ -539,6 +540,7 @@ const DateTimePickerModal: React.FC<{
 
 // Main Component
 const ToolLending: React.FC = () => {
+    const { isSubmitting: isThrottling, throttledSubmit } = useThrottledSubmit(3000);
     const { getText } = useLanguage();
 
     // ✅ USE HOOK: Equipment data dengan caching seperti useRoomData
@@ -1372,7 +1374,7 @@ const ToolLending: React.FC = () => {
 
                 <div className="max-w-7xl mx-auto px-4 py-8">
                     {/* Main Form - 2 Column Layout Like BookRoom */}
-                    <form onSubmit={handleSubmitRequest}>
+                    <form onSubmit={(e) => { e.preventDefault(); throttledSubmit(() => handleSubmitRequest(e)); }}>
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
                             {/* Equipment Selection - visually on RIGHT */}
@@ -2049,7 +2051,7 @@ const ToolLending: React.FC = () => {
                                         <button
                                             type="submit"
                                             disabled={
-                                                submitting ||
+                                                submitting || isThrottling ||
                                                 selectedEquipments.size === 0 ||
                                                 !identityNumber ||
                                                 !fullName ||
@@ -2057,9 +2059,13 @@ const ToolLending: React.FC = () => {
                                                 !purpose ||
                                                 !returnDate
                                             }
-                                            className="w-full flex items-center justify-center space-x-2 py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg"
+                                            className={`w-full flex items-center justify-center space-x-2 py-3 px-4 font-semibold rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 shadow-lg
+                                              ${submitting || isThrottling
+                                                    ? 'bg-gray-400 cursor-not-allowed opacity-50'
+                                                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700'
+                                                }`}
                                         >
-                                            {submitting ? (
+                                            {submitting || isThrottling ? (
                                                 <>
                                                     <RefreshCw className="h-5 w-5 animate-spin" />
                                                     <span>{getText('Submitting...', 'Mengirim...')}</span>

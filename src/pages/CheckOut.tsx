@@ -28,6 +28,7 @@ import {
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { format, parseISO } from 'date-fns';
+import { useThrottledSubmit } from '../hooks/useThrottledSubmit';
 
 // ===== SCHEMA =====
 const checkoutSchema = z.object({
@@ -143,6 +144,7 @@ const formatDate = (dateString: string) => {
 
 // ===== MAIN COMPONENT =====
 const CheckOut: React.FC = () => {
+  const { isSubmitting: isThrottling, throttledSubmit } = useThrottledSubmit(3000);
   const [allRecords, setAllRecords] = useState<CombinedRecord[]>([]);
   const [allEquipment, setAllEquipment] = useState<Equipment[]>([]);
   const [allRooms, setAllRooms] = useState<RoomInfo[]>([]);
@@ -154,7 +156,7 @@ const CheckOut: React.FC = () => {
   const [showReportForm, setShowReportForm] = useState(false);
   const [attachments, setAttachments] = useState<string[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
-  
+
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -178,10 +180,10 @@ const CheckOut: React.FC = () => {
         .from('equipment')
         .select('id, name, code, category, quantity, unit, is_mandatory')
         .order('name');
-      
+
       if (error) throw error;
       setAllEquipment(data || []);
-      console.log('✅ Loaded equipment:', data?.length || 0);
+
     } catch (error) {
       console.error('❌ Error fetching equipment:', error);
     }
@@ -194,10 +196,10 @@ const CheckOut: React.FC = () => {
         .from('rooms')
         .select('id, name, code, capacity, building_id')
         .order('name');
-      
+
       if (error) throw error;
       setAllRooms(data || []);
-      console.log('✅ Loaded rooms:', data?.length || 0);
+
     } catch (error) {
       console.error('❌ Error fetching rooms:', error);
     }
@@ -208,7 +210,7 @@ const CheckOut: React.FC = () => {
     try {
       setLoadingRecords(true);
 
-      console.log('🔍 Fetching records...');
+
 
       // ===== STEP 1: GET EXISTING CHECKOUTS =====
       const { data: existingCheckouts } = await supabase
@@ -219,8 +221,7 @@ const CheckOut: React.FC = () => {
       const checkedOutBookingIds = existingCheckouts?.filter(c => c.booking_id).map(c => c.booking_id) || [];
       const checkedOutLendingIds = existingCheckouts?.filter(c => c.lendingTool_id).map(c => c.lendingTool_id) || [];
 
-      console.log('   📋 Excluded bookings:', checkedOutBookingIds.length);
-      console.log('   📋 Excluded lending:', checkedOutLendingIds.length);
+
 
       // ===== STEP 2: FETCH BOOKINGS (status = borrowed) =====
       let bookingsQuery = supabase
@@ -234,18 +235,16 @@ const CheckOut: React.FC = () => {
       }
 
       const { data: bookingsData, error: bookingsError } = await bookingsQuery;
-      
+
       if (bookingsError) throw bookingsError;
 
-      console.log('   📊 Bookings found:', bookingsData?.length || 0);
+
 
       // ===== STEP 3: ENRICH BOOKINGS WITH USER, ROOM, EQUIPMENT =====
       const bookingsWithDetails: BookingWithDetails[] = await Promise.all(
         (bookingsData || []).map(async (booking) => {
-          console.log(`\n📋 Processing booking: ${booking.id}`);
-          console.log(`   user_id: ${booking.user_id}`);
-          console.log(`   room_id: ${booking.room_id}`);
-          
+
+
           // Fetch user
           let userData = null;
           if (booking.user_id) {
@@ -254,11 +253,11 @@ const CheckOut: React.FC = () => {
               .select('id, full_name, identity_number, email, phone_number')
               .eq('id', booking.user_id)
               .single();
-            
+
             if (userError) {
               console.error(`   ❌ User fetch error:`, userError);
             } else {
-              console.log(`   ✅ User: ${user?.full_name}`);
+
               userData = user;
             }
           }
@@ -266,46 +265,46 @@ const CheckOut: React.FC = () => {
           // Fetch room
           let roomData = null;
           if (booking.room_id) {
-            console.log(`   🏠 Fetching room with ID: ${booking.room_id}`);
-            
+
+
             const { data: room, error: roomError } = await supabase
               .from('rooms')
               .select('id, name, code, capacity, building_id')
               .eq('id', booking.room_id)
               .single();
-            
+
             if (roomError) {
               console.error(`   ❌ Room fetch error:`, roomError);
               console.error(`   ❌ Room ID was: ${booking.room_id}`);
               console.error(`   ❌ Error code: ${roomError.code}`);
               console.error(`   ❌ Error details:`, roomError.details);
             } else {
-              console.log(`   ✅ Room fetched: ${room?.name} (${room?.code})`);
+
               roomData = room;
             }
           } else {
-            console.log(`   ⚠️ No room_id in booking!`);
+
           }
 
           // Fetch equipment details
           let equipment_details: Equipment[] = [];
           if (booking.equipment_requested && Array.isArray(booking.equipment_requested) && booking.equipment_requested.length > 0) {
-            console.log(`   📦 Fetching ${booking.equipment_requested.length} equipment...`);
-            
+
+
             const { data: equipmentData, error: equipmentError } = await supabase
               .from('equipment')
               .select('id, name, code, category, quantity, unit, is_mandatory')
               .in('id', booking.equipment_requested);
-            
+
             if (equipmentError) {
               console.error(`   ❌ Equipment fetch error:`, equipmentError);
             } else {
-              console.log(`   ✅ Equipment fetched: ${equipmentData?.length || 0} items`);
+
               equipment_details = equipmentData || [];
             }
           }
 
-          console.log(`   ✅ Booking processed successfully`);
+
 
           return {
             ...booking,
@@ -329,16 +328,16 @@ const CheckOut: React.FC = () => {
       }
 
       const { data: lendingData, error: lendingError } = await lendingQuery;
-      
+
       if (lendingError) throw lendingError;
 
-      console.log('   📊 Lending tools found:', lendingData?.length || 0);
+
 
       // ===== STEP 5: ENRICH LENDING WITH USER, EQUIPMENT =====
       const lendingWithDetails: LendingToolWithDetails[] = await Promise.all(
         (lendingData || []).map(async (lending) => {
-          console.log(`\n🔧 Processing lending: ${lending.id}`);
-          
+
+
           // Fetch user
           let userData = null;
           if (lending.id_user) {
@@ -348,7 +347,7 @@ const CheckOut: React.FC = () => {
               .eq('id', lending.id_user)
               .single();
             userData = user;
-            console.log(`   ✅ User: ${user?.full_name}`);
+
           }
 
           // Fetch equipment details
@@ -358,10 +357,10 @@ const CheckOut: React.FC = () => {
               .from('equipment')
               .select('id, name, code, category, quantity, unit, is_mandatory')
               .in('id', lending.id_equipment);
-            
+
             if (equipmentData) {
               equipment_details = equipmentData;
-              console.log(`   ✅ Equipment: ${equipmentData.length} items`);
+
             }
           }
 
@@ -377,9 +376,7 @@ const CheckOut: React.FC = () => {
       const combinedRecords = [...bookingsWithDetails, ...lendingWithDetails];
       setAllRecords(combinedRecords);
 
-      console.log(`\n✅ Total records loaded: ${combinedRecords.length}`);
-      console.log(`   - Bookings: ${bookingsWithDetails.length}`);
-      console.log(`   - Lending tools: ${lendingWithDetails.length}`);
+
 
     } catch (error: any) {
       console.error('❌ Error fetching records:', error);
@@ -395,7 +392,7 @@ const CheckOut: React.FC = () => {
     fetchAllEquipment();
     fetchAllRooms();
     fetchAllRecords();
-    
+
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setShowRecordDropdown(false);
@@ -448,9 +445,9 @@ const CheckOut: React.FC = () => {
       event.preventDefault();
       event.stopPropagation();
     }
-    
-    console.log('📌 Selected record:', record);
-    
+
+
+
     form.setValue('record_id', record.id);
     form.setValue('record_type', record.record_type);
     setSelectedRecord(record);
@@ -480,9 +477,9 @@ const CheckOut: React.FC = () => {
 
     try {
       setUploadingImage(true);
-      
+
       const newAttachments: string[] = [];
-      
+
       for (const file of validFiles) {
         const base64String = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
@@ -490,15 +487,15 @@ const CheckOut: React.FC = () => {
           reader.onerror = reject;
           reader.readAsDataURL(file);
         });
-        
+
         newAttachments.push(base64String);
       }
-      
+
       const updatedAttachments = [...attachments, ...newAttachments];
       setAttachments(updatedAttachments);
       form.setValue('attachments', updatedAttachments);
       toast.success(`${newAttachments.length} gambar berhasil diunggah`);
-      
+
     } catch (error) {
       console.error('Error uploading images:', error);
       toast.error('Gagal mengunggah gambar');
@@ -546,7 +543,7 @@ const CheckOut: React.FC = () => {
       baseData.checkout_notes = `Pengembalian ${lending.equipment_details?.length || 0} peralatan dari lending tool.`;
     }
 
-    console.log('📝 Checkout data:', baseData);
+
     return baseData;
   };
 
@@ -556,27 +553,27 @@ const CheckOut: React.FC = () => {
       if (selectedRecord.record_type === 'booking') {
         const { error: updateError } = await supabase
           .from('bookings')
-          .update({ 
+          .update({
             status: 'returned',
             updated_at: new Date().toISOString()
           })
           .eq('id', selectedRecord.id);
 
         if (updateError) throw updateError;
-        console.log('✅ Booking status updated to returned');
+
       } else {
         const { error: updateError } = await supabase
           .from('lending_tool')
-          .update({ 
+          .update({
             status: 'returned',
             updated_at: new Date().toISOString()
           })
           .eq('id', selectedRecord.id);
 
         if (updateError) throw updateError;
-        console.log('✅ Lending tool status updated to returned');
+
       }
-      
+
       return true;
     } catch (error) {
       console.error('Error updating source record:', error);
@@ -589,12 +586,10 @@ const CheckOut: React.FC = () => {
     try {
       if (selectedRecord.record_type === 'booking') {
         const booking = selectedRecord as BookingWithDetails;
-        
+
         if (booking.equipment_requested && booking.equipment_requested.length > 0) {
-          console.log('📦 Creating checkout_items for booking...');
-          console.log('   equipment_requested:', booking.equipment_requested);
-          console.log('   equipment_quantities:', booking.equipment_quantities);
-          
+
+
           // ⭐⭐ CRITICAL: Single record dengan arrays
           const checkoutItemData = {
             checkout_id: checkoutId,
@@ -614,20 +609,18 @@ const CheckOut: React.FC = () => {
             console.error('❌ Error creating checkout_items:', itemsError);
             throw itemsError;
           }
-          
-          console.log(`✅ Created checkout_items with ${booking.equipment_requested.length} equipment`);
+
+
         } else {
-          console.log('ℹ️ No equipment in this booking');
+
         }
-        
+
       } else {
         const lending = selectedRecord as LendingToolWithDetails;
-        
+
         if (lending.id_equipment && lending.id_equipment.length > 0) {
-          console.log('📦 Creating checkout_items for lending tool...');
-          console.log('   equipment_requested:', lending.id_equipment);
-          console.log('   equipment_quantities:', lending.qty);
-          
+
+
           const checkoutItemData = {
             checkout_id: checkoutId,
             equipment_requested: lending.id_equipment,
@@ -646,13 +639,13 @@ const CheckOut: React.FC = () => {
             console.error('❌ Error creating checkout_items:', itemsError);
             throw itemsError;
           }
-          
-          console.log(`✅ Created checkout_items with ${lending.id_equipment.length} equipment`);
+
+
         } else {
-          console.log('ℹ️ No equipment in this lending tool');
+
         }
       }
-      
+
       return true;
     } catch (error) {
       console.error('Error creating checkout items:', error);
@@ -668,8 +661,8 @@ const CheckOut: React.FC = () => {
       }
 
       const reportData = {
-        reporter_id: selectedRecord.record_type === 'lending_tool' 
-          ? (selectedRecord as LendingToolWithDetails).id_user 
+        reporter_id: selectedRecord.record_type === 'lending_tool'
+          ? (selectedRecord as LendingToolWithDetails).id_user
           : (selectedRecord as BookingWithDetails).user_id,
         reporter_name: selectedRecord.user?.full_name || 'Pengguna Tidak Dikenal',
         reporter_email: selectedRecord.user?.email || 'unknown@email.com',
@@ -679,11 +672,11 @@ const CheckOut: React.FC = () => {
         priority: 'medium',
         title: `Laporan ${getCategoryText(data.report_category)} - ${format(new Date(), 'dd/MM/yyyy')}`,
         description: data.report_description,
-        location: selectedRecord.record_type === 'booking' 
-          ? (selectedRecord as BookingWithDetails).room?.name 
+        location: selectedRecord.record_type === 'booking'
+          ? (selectedRecord as BookingWithDetails).room?.name
           : 'Area Equipment',
-        room_id: selectedRecord.record_type === 'booking' 
-          ? (selectedRecord as BookingWithDetails).room_id 
+        room_id: selectedRecord.record_type === 'booking'
+          ? (selectedRecord as BookingWithDetails).room_id
           : null,
         status: 'new',
         attachments: attachments,
@@ -696,8 +689,8 @@ const CheckOut: React.FC = () => {
         .insert(reportData);
 
       if (reportError) throw reportError;
-      
-      console.log('✅ Issue report created');
+
+
       return true;
     } catch (error) {
       console.error('Error creating issue report:', error);
@@ -708,7 +701,7 @@ const CheckOut: React.FC = () => {
   // ===== HANDLE SUBMIT =====
   const handleSubmit = async (data: CheckoutForm) => {
     let checkoutId: string | undefined = undefined;
-    
+
     try {
       setSubmitting(true);
 
@@ -717,7 +710,7 @@ const CheckOut: React.FC = () => {
         return;
       }
 
-      console.log('🚀 Processing checkout for:', selectedRecord.id);
+
 
       // ===== STEP 1: UPDATE SOURCE RECORD STATUS =====
       await updateSourceRecordStatus(selectedRecord);
@@ -737,8 +730,7 @@ const CheckOut: React.FC = () => {
         throw checkoutError;
       }
 
-      checkoutId = checkoutResult.id;
-      console.log('✅ Checkout created:', checkoutId);
+
 
       // ===== STEP 4: CREATE CHECKOUT ITEMS =====
       await createCheckoutItems(checkoutId, selectedRecord);
@@ -753,7 +745,7 @@ const CheckOut: React.FC = () => {
       if (data.has_issues) {
         successMessage += ' Laporan masalah telah dikirim.';
       }
-      
+
       toast.success(successMessage, { duration: 5000 });
 
       // ===== RESET FORM =====
@@ -766,18 +758,18 @@ const CheckOut: React.FC = () => {
       setSelectedRecord(null);
       setAttachments([]);
       setSearchTerm('');
-      
+
       // Refresh data
       await fetchAllRecords();
 
     } catch (error: any) {
       console.error('❌ Error processing checkout:', error);
-      
+
       // Rollback
       if (selectedRecord && checkoutId) {
         try {
-          console.log('🔄 Rolling back...');
-          
+
+
           if (selectedRecord.record_type === 'booking') {
             await supabase
               .from('bookings')
@@ -789,14 +781,14 @@ const CheckOut: React.FC = () => {
               .update({ status: 'borrow' })
               .eq('id', selectedRecord.id);
           }
-          
+
           await supabase.from('checkouts').delete().eq('id', checkoutId);
-          console.log('✅ Rollback completed');
+
         } catch (rollbackError) {
           console.error('❌ Error rolling back:', rollbackError);
         }
       }
-      
+
       if (error.code === '23505') {
         toast.error('Data ini sudah pernah di-checkout');
       } else {
@@ -810,9 +802,9 @@ const CheckOut: React.FC = () => {
   // ===== FILTER RECORDS =====
   const filteredRecords = useMemo(() => {
     if (!searchTerm.trim()) return allRecords;
-    
+
     const searchLower = searchTerm.toLowerCase();
-    
+
     return allRecords.filter(record => {
       if (record.record_type === 'booking') {
         const booking = record as BookingWithDetails;
@@ -832,7 +824,7 @@ const CheckOut: React.FC = () => {
     });
   }, [allRecords, searchTerm]);
 
-  const isSubmitEnabled = selectedRecord && watchRecordId && !submitting;
+  const isSubmitEnabled = selectedRecord && watchRecordId && !submitting && !isThrottling;
 
   // ===== RENDER =====
   return (
@@ -883,7 +875,7 @@ const CheckOut: React.FC = () => {
                   <RefreshCw className={`h-4 w-4 text-gray-500 ${loadingRecords ? 'animate-spin' : ''}`} />
                 </button>
               </div>
-              
+
               <div className="relative">
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 z-10" />
                 <input
@@ -908,9 +900,9 @@ const CheckOut: React.FC = () => {
                 >
                   <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${showRecordDropdown ? 'rotate-180' : ''}`} />
                 </button>
-                
+
                 {showRecordDropdown && (
-                  <div 
+                  <div
                     className="absolute z-50 w-full mt-2 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-2xl max-h-96 overflow-y-auto"
                     onMouseDown={(e) => e.preventDefault()}
                   >
@@ -923,7 +915,7 @@ const CheckOut: React.FC = () => {
                       <div className="flex flex-col items-center justify-center py-12">
                         <Package className="h-12 w-12 text-gray-300 mb-3" />
                         <p className="text-gray-500 font-medium">
-                          {allRecords.length === 0 
+                          {allRecords.length === 0
                             ? 'Tidak ada data peminjaman aktif'
                             : 'Tidak ada data yang cocok'
                           }
@@ -939,11 +931,10 @@ const CheckOut: React.FC = () => {
                             className="w-full text-left p-4 hover:bg-emerald-50 cursor-pointer rounded-xl border transition-all mb-2 last:mb-0"
                           >
                             <div className="flex items-start space-x-3">
-                              <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                record.record_type === 'booking' 
-                                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500' 
-                                  : 'bg-gradient-to-r from-purple-500 to-indigo-500'
-                              }`}>
+                              <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${record.record_type === 'booking'
+                                ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
+                                : 'bg-gradient-to-r from-purple-500 to-indigo-500'
+                                }`}>
                                 {record.record_type === 'booking' ? (
                                   <Building className="h-5 w-5 text-white" />
                                 ) : (
@@ -958,16 +949,15 @@ const CheckOut: React.FC = () => {
                                   <CreditCard className="h-3 w-3 inline mr-1" />
                                   {record.user?.identity_number || 'No ID'}
                                 </div>
-                                
+
                                 <div className="space-y-1">
-                                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                    record.record_type === 'booking' 
-                                      ? 'bg-emerald-100 text-emerald-800' 
-                                      : 'bg-purple-100 text-purple-800'
-                                  }`}>
+                                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${record.record_type === 'booking'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-purple-100 text-purple-800'
+                                    }`}>
                                     {record.record_type === 'booking' ? 'Peminjaman Ruangan' : 'Peminjaman Peralatan'}
                                   </span>
-                                  
+
                                   {record.record_type === 'booking' ? (
                                     <>
                                       <div className="flex items-center text-xs text-gray-500">
@@ -1013,14 +1003,13 @@ const CheckOut: React.FC = () => {
                 <h2 className="text-2xl font-bold text-gray-800">Proses Pengembalian</h2>
               </div>
 
-              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
+              <form onSubmit={form.handleSubmit((data) => throttledSubmit(() => handleSubmit(data)))} className="space-y-8">
                 {/* Selected Record Details */}
                 {selectedRecord && (
-                  <div className={`border rounded-2xl p-6 ${
-                    selectedRecord.record_type === 'booking' 
-                      ? 'bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-200/50' 
-                      : 'bg-gradient-to-r from-purple-50 to-indigo-50 border-purple-200/50'
-                  }`}>
+                  <div className={`border rounded-2xl p-6 ${selectedRecord.record_type === 'booking'
+                    ? 'bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-200/50'
+                    : 'bg-gradient-to-r from-purple-50 to-indigo-50 border-purple-200/50'
+                    }`}>
                     <div className="flex items-center justify-between mb-6">
                       <div className="flex items-center space-x-3">
                         {selectedRecord.record_type === 'booking' ? (
@@ -1028,24 +1017,22 @@ const CheckOut: React.FC = () => {
                         ) : (
                           <Wrench className="h-6 w-6 text-purple-600" />
                         )}
-                        <h3 className={`text-xl font-bold ${
-                          selectedRecord.record_type === 'booking' ? 'text-emerald-900' : 'text-purple-900'
-                        }`}>
-                          {selectedRecord.record_type === 'booking' 
+                        <h3 className={`text-xl font-bold ${selectedRecord.record_type === 'booking' ? 'text-emerald-900' : 'text-purple-900'
+                          }`}>
+                          {selectedRecord.record_type === 'booking'
                             ? 'Detail Peminjaman Ruangan'
                             : 'Detail Peminjaman Peralatan'
                           }
                         </h3>
                       </div>
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                        selectedRecord.record_type === 'booking' 
-                          ? 'bg-emerald-100 text-emerald-800' 
-                          : 'bg-purple-100 text-purple-800'
-                      }`}>
+                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${selectedRecord.record_type === 'booking'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-purple-100 text-purple-800'
+                        }`}>
                         Status: {selectedRecord.status}
                       </span>
                     </div>
-                    
+
                     {/* User Info */}
                     <div className="mb-6">
                       <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
@@ -1077,7 +1064,7 @@ const CheckOut: React.FC = () => {
                         </div>
                       </div>
                     </div>
-                    
+
                     {/* Record Specific Info */}
                     {selectedRecord.record_type === 'booking' ? (
                       <>
@@ -1119,48 +1106,48 @@ const CheckOut: React.FC = () => {
                         </div>
 
                         {/* Equipment List */}
-                        {(selectedRecord as BookingWithDetails).equipment_details && 
-                         (selectedRecord as BookingWithDetails).equipment_details!.length > 0 && (
-                          <div>
-                            <div className="flex items-center justify-between mb-4">
-                              <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">
-                                Peralatan yang Dipinjam
-                              </span>
-                              <span className="text-sm text-emerald-600">
-                                {(selectedRecord as BookingWithDetails).equipment_details!.length} jenis
-                              </span>
-                            </div>
-                            
-                            <div className="space-y-3">
-                              {(selectedRecord as BookingWithDetails).equipment_details!.map((equipment, index) => {
-                                const quantity = (selectedRecord as BookingWithDetails).equipment_quantities?.[index] || 1;
-                                
-                                return (
-                                  <div key={equipment.id} className="flex items-center justify-between p-4 bg-white/60 rounded-xl border border-emerald-200/50">
-                                    <div className="flex items-center">
-                                      <div className="h-10 w-10 bg-emerald-100 rounded-lg flex items-center justify-center mr-3">
-                                        <Zap className="h-5 w-5 text-emerald-600" />
+                        {(selectedRecord as BookingWithDetails).equipment_details &&
+                          (selectedRecord as BookingWithDetails).equipment_details!.length > 0 && (
+                            <div>
+                              <div className="flex items-center justify-between mb-4">
+                                <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">
+                                  Peralatan yang Dipinjam
+                                </span>
+                                <span className="text-sm text-emerald-600">
+                                  {(selectedRecord as BookingWithDetails).equipment_details!.length} jenis
+                                </span>
+                              </div>
+
+                              <div className="space-y-3">
+                                {(selectedRecord as BookingWithDetails).equipment_details!.map((equipment, index) => {
+                                  const quantity = (selectedRecord as BookingWithDetails).equipment_quantities?.[index] || 1;
+
+                                  return (
+                                    <div key={equipment.id} className="flex items-center justify-between p-4 bg-white/60 rounded-xl border border-emerald-200/50">
+                                      <div className="flex items-center">
+                                        <div className="h-10 w-10 bg-emerald-100 rounded-lg flex items-center justify-center mr-3">
+                                          <Zap className="h-5 w-5 text-emerald-600" />
+                                        </div>
+                                        <div>
+                                          <div className="font-medium text-emerald-900">{equipment.name}</div>
+                                          <div className="text-xs text-emerald-700">{equipment.code || 'N/A'}</div>
+                                          {equipment.is_mandatory && (
+                                            <span className="inline-block mt-1 px-2 py-0.5 bg-red-100 text-red-800 text-xs rounded">
+                                              Wajib
+                                            </span>
+                                          )}
+                                        </div>
                                       </div>
-                                      <div>
-                                        <div className="font-medium text-emerald-900">{equipment.name}</div>
-                                        <div className="text-xs text-emerald-700">{equipment.code || 'N/A'}</div>
-                                        {equipment.is_mandatory && (
-                                          <span className="inline-block mt-1 px-2 py-0.5 bg-red-100 text-red-800 text-xs rounded">
-                                            Wajib
-                                          </span>
-                                        )}
+                                      <div className="text-right">
+                                        <div className="font-bold text-emerald-900 text-xl">{quantity}</div>
+                                        <div className="text-xs text-emerald-600">{equipment.unit || 'pcs'}</div>
                                       </div>
                                     </div>
-                                    <div className="text-right">
-                                      <div className="font-bold text-emerald-900 text-xl">{quantity}</div>
-                                      <div className="text-xs text-emerald-600">{equipment.unit || 'pcs'}</div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          )}
                       </>
                     ) : (
                       <>
@@ -1196,43 +1183,43 @@ const CheckOut: React.FC = () => {
                         </div>
 
                         {/* Equipment List */}
-                        {(selectedRecord as LendingToolWithDetails).equipment_details && 
-                         (selectedRecord as LendingToolWithDetails).equipment_details!.length > 0 && (
-                          <div>
-                            <div className="flex items-center justify-between mb-4">
-                              <span className="text-sm font-semibold text-purple-700 uppercase tracking-wide">
-                                Peralatan yang Dipinjam
-                              </span>
-                              <span className="text-sm text-purple-600">
-                                {(selectedRecord as LendingToolWithDetails).equipment_details!.length} jenis
-                              </span>
-                            </div>
-                            <div className="space-y-3">
-                              {(selectedRecord as LendingToolWithDetails).equipment_details!.map((equipment, index) => {
-                                const quantity = (selectedRecord as LendingToolWithDetails).qty?.[index] || 1;
+                        {(selectedRecord as LendingToolWithDetails).equipment_details &&
+                          (selectedRecord as LendingToolWithDetails).equipment_details!.length > 0 && (
+                            <div>
+                              <div className="flex items-center justify-between mb-4">
+                                <span className="text-sm font-semibold text-purple-700 uppercase tracking-wide">
+                                  Peralatan yang Dipinjam
+                                </span>
+                                <span className="text-sm text-purple-600">
+                                  {(selectedRecord as LendingToolWithDetails).equipment_details!.length} jenis
+                                </span>
+                              </div>
+                              <div className="space-y-3">
+                                {(selectedRecord as LendingToolWithDetails).equipment_details!.map((equipment, index) => {
+                                  const quantity = (selectedRecord as LendingToolWithDetails).qty?.[index] || 1;
 
-                                return (
-                                  <div key={equipment.id} className="flex items-center justify-between p-4 bg-white/60 rounded-xl border border-purple-200/50">
-                                    <div className="flex items-center">
-                                      <div className="h-10 w-10 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
-                                        <Wrench className="h-5 w-5 text-purple-600" />
+                                  return (
+                                    <div key={equipment.id} className="flex items-center justify-between p-4 bg-white/60 rounded-xl border border-purple-200/50">
+                                      <div className="flex items-center">
+                                        <div className="h-10 w-10 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
+                                          <Wrench className="h-5 w-5 text-purple-600" />
+                                        </div>
+                                        <div>
+                                          <div className="font-medium text-purple-900">{equipment.name}</div>
+                                          <div className="text-xs text-purple-700">{equipment.code || 'N/A'}</div>
+                                          <div className="text-xs text-purple-600 mt-1">{equipment.category || 'Kategori N/A'}</div>
+                                        </div>
                                       </div>
-                                      <div>
-                                        <div className="font-medium text-purple-900">{equipment.name}</div>
-                                        <div className="text-xs text-purple-700">{equipment.code || 'N/A'}</div>
-                                        <div className="text-xs text-purple-600 mt-1">{equipment.category || 'Kategori N/A'}</div>
+                                      <div className="text-right">
+                                        <div className="font-bold text-purple-900 text-xl">{quantity}</div>
+                                        <div className="text-xs text-purple-600">{equipment.unit || 'pcs'}</div>
                                       </div>
                                     </div>
-                                    <div className="text-right">
-                                      <div className="font-bold text-purple-900 text-xl">{quantity}</div>
-                                      <div className="text-xs text-purple-600">{equipment.unit || 'pcs'}</div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          )}
                       </>
                     )}
                   </div>
@@ -1368,13 +1355,12 @@ const CheckOut: React.FC = () => {
                   <button
                     type="submit"
                     disabled={!isSubmitEnabled || submitting}
-                    className={`flex-1 flex items-center justify-center space-x-3 px-8 py-4 font-semibold rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-lg ${
-                      isSubmitEnabled && !submitting
-                        ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 hover:shadow-xl cursor-pointer'
-                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    }`}
+                    className={`flex-1 flex items-center justify-center space-x-3 px-8 py-4 font-semibold rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-lg ${isSubmitEnabled && !submitting
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 hover:shadow-xl cursor-pointer'
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      }`}
                   >
-                    {submitting ? (
+                    {submitting || isThrottling ? (
                       <>
                         <RefreshCw className="h-5 w-5 animate-spin" />
                         <span>Memproses...</span>

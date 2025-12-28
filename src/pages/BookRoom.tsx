@@ -43,6 +43,7 @@ import {
 import { supabase } from "../lib/supabase";
 import { alert } from '../components/Alert/AlertHelper';
 import { useLanguage } from "../contexts/LanguageContext";
+import { useThrottledSubmit } from '../hooks/useThrottledSubmit';
 
 // =====================================================
 // TYPE DEFINITIONS
@@ -801,6 +802,7 @@ const EquipmentSelectionSection: React.FC<{
 // MAIN COMPONENT
 // =====================================================
 const BookRoom: React.FC = () => {
+  const { isSubmitting: isThrottling, throttledSubmit } = useThrottledSubmit(3000);
   const { getText } = useLanguage();
   const { register, handleSubmit, setValue, getValues, watch } = useForm<FormValues>({
     defaultValues: {
@@ -979,7 +981,7 @@ const BookRoom: React.FC = () => {
   const fetchMandatoryEquipmentForRoom = async (roomId: string) => {
     try {
       setLoadingEquipment(true);
-      console.log('🔧 Fetching mandatory equipment for room:', roomId);
+
 
       const { data, error } = await supabase
         .from('equipment')
@@ -994,7 +996,7 @@ const BookRoom: React.FC = () => {
 
       if (error) throw error;
 
-      console.log('🔧 Mandatory equipment found:', data?.length || 0);
+
 
       // Convert to EquipmentSelection with quantity = 1 for each mandatory item
       const mandatorySelections: EquipmentSelection[] = (data || []).map((eq: any) => ({
@@ -1018,7 +1020,7 @@ const BookRoom: React.FC = () => {
    */
   const fetchOptionalEquipment = async () => {
     try {
-      console.log('🔧 Fetching optional equipment...');
+
 
       const { data, error } = await supabase
         .from('equipment')
@@ -1034,7 +1036,7 @@ const BookRoom: React.FC = () => {
 
       if (error) throw error;
 
-      console.log('🔧 Optional equipment found:', data?.length || 0);
+
       setOptionalEquipment((data as any[]) || []);
 
     } catch (error) {
@@ -1154,7 +1156,7 @@ const BookRoom: React.FC = () => {
   const fetchRooms = useCallback(async (selectedDate: string) => {
     setLoadingRooms(true);
     try {
-      console.log(`🔍 Fetching rooms for date: ${selectedDate}`);
+
 
       const { data: roomsData, error } = await supabase
         .from('rooms')
@@ -1204,7 +1206,7 @@ const BookRoom: React.FC = () => {
 
       // 3. Get day name for lecture schedule matching
       const dayNameIndonesian = getDayNameIndonesian(selectedDate);
-      console.log(`📅 Day name: ${dayNameIndonesian}`);
+
 
       // 4. Fetch ALL schedule data in parallel
       const [bookingsResult, lecturesResult, examsResult, sessionsResult] = await Promise.all([
@@ -1281,12 +1283,7 @@ const BookRoom: React.FC = () => {
         })()
       ]);
 
-      console.log('📊 Schedule data fetched:', {
-        bookings: bookingsResult.length,
-        lectures: lecturesResult.length,
-        exams: examsResult.length,
-        sessions: sessionsResult.length
-      });
+
 
       // 5. Merge ALL data into rooms
       const fullyMergedRooms = mappedRooms.map(room => {
@@ -1331,7 +1328,7 @@ const BookRoom: React.FC = () => {
         };
       });
 
-      console.log('✅ Rooms merged with all schedules');
+
       setRooms(fullyMergedRooms);
 
     } catch (err) {
@@ -1988,7 +1985,7 @@ const BookRoom: React.FC = () => {
         setTargetDate(todayDate);
         await fetchRooms(todayDate);
 
-        console.log('✅ Rooms loaded for today on initial load');
+
       } catch (error) {
         console.error('❌ Error initializing data:', error);
       }
@@ -2211,10 +2208,7 @@ const BookRoom: React.FC = () => {
         }
       };
 
-      console.log('📦 Booking data with equipment:', {
-        equipment_requested: equipmentIds,
-        equipment_quantities: equipmentQuantities
-      });
+
 
       const { error } = await supabase.from('bookings').insert(bookingData);
       if (error) throw error;
@@ -2320,7 +2314,7 @@ const BookRoom: React.FC = () => {
             </div>
           </div>
 
-          <form onSubmit={handleSubmit(onSubmit)}>
+          <form onSubmit={handleSubmit((data) => throttledSubmit(() => onSubmit(data)))}>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* Left Column - Main Content */}
               <div className="lg:col-span-2 relative z-20">
@@ -3101,14 +3095,18 @@ const BookRoom: React.FC = () => {
                     <button
                       type="submit"
                       disabled={
-                        loading ||
+                        loading || isThrottling ||
                         (activeTab === 'course' && !selectedCourse) ||
                         (activeTab === 'normal' && !selectedRoom) ||
                         (watchPurpose === 'Other' && (!watchAttachments || watchAttachments.length === 0))
                       }
-                      className="w-full flex items-center justify-center space-x-2 py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg"
+                      className={`w-full flex items-center justify-center space-x-2 py-3 px-4 font-semibold rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 shadow-lg
+                        ${loading || isThrottling
+                          ? 'bg-gray-400 cursor-not-allowed opacity-50'
+                          : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700'
+                        }`}
                     >
-                      {loading ? (
+                      {loading || isThrottling ? (
                         <>
                           <RefreshCw className="h-5 w-5 animate-spin" />
                           <span>{getText('Sending...', 'Mengirim...')}</span>
