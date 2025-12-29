@@ -299,6 +299,7 @@ const UserManagement: React.FC = () => {
 
   // State hooks
   const [users, setUsers] = useState<User[]>([]);
+  const [totalUsers, setTotalUsers] = useState(0); // Added for server-side pagination
   const [departments, setDepartments] = useState<Department[]>([]);
   const [studyPrograms, setStudyPrograms] = useState<StudyProgram[]>([]);
   const [loading, setLoading] = useState(true);
@@ -398,6 +399,9 @@ const UserManagement: React.FC = () => {
 
   const itemsPerPage = 10;
   const [currentPage, setCurrentPage] = useState(1);
+  // Calculate startIndex for pagination display
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(''); // Debounced search state
 
   // Form hook
   const form = useForm<UserForm>({
@@ -468,33 +472,70 @@ const UserManagement: React.FC = () => {
   }, []);
 
   // API functions (keeping the same logic but with better error handling)
+  // Debounce search term
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      setCurrentPage(1); // Reset to first page on new search
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
   const fetchUsers = useCallback(async () => {
     try {
       setLoading(true);
+
+      // Start building the query
       let query = supabase.from('users').select(`
         *,
         department:departments(id, name, code),
         study_program:study_programs(id, name, code)
-      `);
+      `, { count: 'exact' });
 
-      if (profile?.role === 'super_admin') {
-        // Super admin sees all users
+      // Apply Search Filter (Server-side)
+      if (debouncedSearchTerm) {
+        const term = debouncedSearchTerm.toLowerCase();
+        // search fields: username, full_name, email, identity_number, phone_number
+        query = query.or(`username.ilike.%${term}%,full_name.ilike.%${term}%,email.ilike.%${term}%,identity_number.ilike.%${term}%,phone_number.ilike.%${term}%`);
+      }
+
+      // Apply Role Filter
+      if (roleFilter !== 'all') {
+        query = query.eq('role', roleFilter);
+      } else if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
+        // If not admin/super_admin and no specific role filter, restricts what regular users see might be needed
+        // but based on current logic, only specific roles access this page anyway.
+      }
+
+
+      // Apply Department Filter
+      if (departmentFilter !== 'all') {
+        query = query.eq('department_id', departmentFilter);
       } else if (profile?.role === 'department_admin' && profile.department_id) {
         query = query.eq('department_id', profile.department_id);
       }
 
+      // Apply Pagination
+      const from = (currentPage - 1) * itemsPerPage;
+      const to = from + itemsPerPage - 1;
+      query = query.range(from, to);
+
       query = query.order('created_at', { ascending: false });
 
-      const { data, error } = await query;
+      const { data, count, error } = await query;
       if (error) throw error;
+
       setUsers(data || []);
+      setTotalUsers(count || 0);
+
     } catch (error: any) {
       console.error('Error fetching users:', error);
       toast.error(getText('Failed to load users', 'Gagal memuat pengguna'));
     } finally {
       setLoading(false);
     }
-  }, [profile, getText]);
+  }, [profile, getText, debouncedSearchTerm, roleFilter, departmentFilter, currentPage]);
 
   const fetchDepartments = useCallback(async () => {
     try {
@@ -616,10 +657,15 @@ const UserManagement: React.FC = () => {
   useEffect(() => {
     if (profile) {
       fetchUsers();
+    }
+  }, [fetchUsers]); // fetchUsers now depends on filters/search/page, so it re-runs automatically
+
+  useEffect(() => {
+    if (profile) {
       fetchDepartments();
       fetchStudyPrograms();
     }
-  }, [profile, fetchUsers, fetchDepartments, fetchStudyPrograms]);
+  }, [profile, fetchDepartments, fetchStudyPrograms]);
 
   useEffect(() => {
     if (watchDepartmentId) {
@@ -636,34 +682,11 @@ const UserManagement: React.FC = () => {
     }
   }, [showUserDetail, fetchUserDetails]);
 
-  // Filtered users with multiple filters
-  const filteredUsers = useMemo(() => {
-    if (!users || users.length === 0) return [];
+  // Calculate total pages based on server count
+  const totalPages = Math.ceil(totalUsers / itemsPerPage);
 
-    return users.filter(user => {
-      const searchLower = searchTerm.toLowerCase().trim();
-
-      const matchesSearch = !searchLower ||
-        (user.full_name?.toLowerCase() || '').includes(searchLower) ||
-        (user.username?.toLowerCase() || '').includes(searchLower) ||
-        (user.email?.toLowerCase() || '').includes(searchLower) ||
-        (user.identity_number?.toLowerCase() || '').includes(searchLower) ||
-        (user.phone_number?.toLowerCase() || '').includes(searchLower) ||
-        (user.role?.toLowerCase() || '').includes(searchLower) ||
-        (user.department?.name?.toLowerCase() || '').includes(searchLower) ||
-        (user.study_program?.name?.toLowerCase() || '').includes(searchLower);
-
-      const matchesRole = roleFilter === 'all' || user.role === roleFilter;
-      const matchesDepartment = departmentFilter === 'all' || user.department_id === departmentFilter;
-
-      return matchesSearch && matchesRole && matchesDepartment;
-    });
-  }, [users, searchTerm, roleFilter, departmentFilter]);
-
-  // Pagination
-  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const currentTableData = filteredUsers.slice(startIndex, startIndex + itemsPerPage);
+  // NOTE: filtering is now done server-side, so displayed users are just 'users'
+  const currentTableData = users;
 
   // Access control check
   const hasAccess = profile && ['super_admin', 'department_admin', 'staffing'].includes(profile.role);
@@ -1038,7 +1061,7 @@ const UserManagement: React.FC = () => {
         {(searchTerm || roleFilter !== 'all' || departmentFilter !== 'all') && (
           <div className="mt-4 flex items-center justify-between text-sm">
             <div className="text-gray-600">
-              {filteredUsers.length} {getText('of', 'dari')} {users.length} {getText('users found', 'pengguna ditemukan')}
+              {totalUsers} {getText('users found', 'pengguna ditemukan')}
             </div>
             {(searchTerm || roleFilter !== 'all' || departmentFilter !== 'all') && (
               <button
@@ -1246,7 +1269,7 @@ const UserManagement: React.FC = () => {
             <div className="flex items-center justify-between">
               <div className="flex items-center text-sm text-gray-700">
                 <span>
-                  {getText('Showing', 'Menampilkan')} {startIndex + 1} - {Math.min(startIndex + itemsPerPage, filteredUsers.length)} {getText('of', 'dari')} {filteredUsers.length} {getText('users', 'pengguna')}
+                  {getText('Showing', 'Menampilkan')} {totalUsers > 0 ? startIndex + 1 : 0} - {Math.min(startIndex + itemsPerPage, totalUsers)} {getText('of', 'dari')} {totalUsers} {getText('users', 'pengguna')}
                 </span>
               </div>
 

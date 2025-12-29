@@ -116,10 +116,13 @@ const LectureSchedules: React.FC = () => {
   const { profile } = useAuth();
   const { getText } = useLanguage();
   const [schedules, setSchedules] = useState<LectureSchedule[]>([]);
+  const [totalSchedules, setTotalSchedules] = useState(0); // Server-side pagination
+  const [statsMap, setStatsMap] = useState<Record<string, number>>({}); // For chart
   const [rooms, setRooms] = useState<Room[]>([]);
   const [rescheduleRequests, setRescheduleRequests] = useState<RescheduleRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [roomFilter, setRoomFilter] = useState<string>('all');
   const [dayFilter, setDayFilter] = useState<string>('all');
   const [showModal, setShowModal] = useState(false);
@@ -182,11 +185,26 @@ const LectureSchedules: React.FC = () => {
 
   useEffect(() => {
     fetchSchedules();
+  }, [debouncedSearchTerm, roomFilter, dayFilter, currentPage]);
+
+  useEffect(() => {
     fetchRooms();
     fetchRescheduleRequests();
+    if (profile?.role === 'super_admin') {
+      fetchScheduleStats();
+    }
     const timer = setInterval(() => setCurrentTime(new Date()), 60000);
     return () => clearInterval(timer);
   }, []);
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      setCurrentPage(1);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   const fetchRooms = async () => {
     try {
@@ -205,39 +223,65 @@ const LectureSchedules: React.FC = () => {
     }
   };
 
-  // ✅ KODE YANG BENAR - tanpa JOIN
+  const fetchScheduleStats = async () => {
+    try {
+      // Fetch lightweight day counts for the chart
+      const { data, error } = await supabase
+        .from('lecture_schedules')
+        .select('day');
+
+      if (error) throw error;
+
+      const counts: Record<string, number> = {};
+      data?.forEach((row: { day: string | null }) => {
+        if (row.day) {
+          const key = row.day.toLowerCase();
+          counts[key] = (counts[key] || 0) + 1;
+        }
+      });
+      setStatsMap(counts);
+
+    } catch (error) {
+      console.error("Error fetching stats:", error);
+    }
+  };
+
   const fetchSchedules = async () => {
     try {
       setLoading(true);
-      const pageSize = 1000;
-      let allData: LectureSchedule[] = [];
-      let from = 0;
-      let to = pageSize - 1;
-      let keepFetching = true;
-      while (keepFetching) {
-        const { data, error } = await supabase
-          .from('lecture_schedules')
-          .select('*')
-          .order('day', { ascending: true })
-          .order('start_time', { ascending: true })
-          .range(from, to);
-        if (error) throw error;
-        if (data && data.length > 0) {
-          allData = allData.concat(data);
-          if (data.length < pageSize) {
-            // Data batch kurang dari pageSize berarti sudah habis
-            keepFetching = false;
-          } else {
-            // Siapkan range untuk batch berikutnya
-            from += pageSize;
-            to += pageSize;
-          }
-        } else {
-          // Tidak ada data lagi
-          keepFetching = false;
-        }
+
+      let query = supabase.from('lecture_schedules').select('*', { count: 'exact' });
+
+      // Search
+      if (debouncedSearchTerm) {
+        const term = debouncedSearchTerm.toLowerCase();
+        // search fields: course_name, course_code, lecturer, room (if stored as text)
+        query = query.or(`course_name.ilike.%${term}%,course_code.ilike.%${term}%,lecturer.ilike.%${term}%,room.ilike.%${term}%`);
       }
-      setSchedules(allData);
+
+      // Filters
+      if (roomFilter !== 'all') {
+        query = query.ilike('room', roomFilter); // Case-insensitive match for room name
+      }
+      if (dayFilter !== 'all') {
+        query = query.eq('day', dayFilter); // Exact match usually fine for day dropdown
+      }
+
+      // Pagination
+      const from = (currentPage - 1) * rowsPerPage;
+      const to = from + rowsPerPage - 1;
+      query = query.range(from, to);
+
+      // Order
+      query = query.order('day', { ascending: true })
+        .order('start_time', { ascending: true });
+
+      const { data, count, error } = await query;
+      if (error) throw error;
+
+      setSchedules(data || []);
+      setTotalSchedules(count || 0);
+
     } catch (error: any) {
       console.error('Error fetching schedules:', error);
       alert.error(error.message || 'Failed to load lecture schedules');
@@ -344,18 +388,22 @@ const LectureSchedules: React.FC = () => {
 
   const handleEdit = (schedule: LectureSchedule) => {
     setEditingSchedule(schedule);
+
+    // Find room ID based on room name
+    const room = rooms.find(r => r.name === schedule.room);
+
     form.reset({
       course_name: schedule.course_name || '',
       course_code: schedule.course_code || '',
       lecturer: schedule.lecturer || '',
-      room_id: schedule.room_id || '',
+      room: room?.id || '',
       subject_study: schedule.subject_study || '',
       day: schedule.day || '',
       start_time: schedule.start_time || '',
       end_time: schedule.end_time || '',
       semester: schedule.semester || 1,
       academics_year: schedule.academics_year || new Date().getFullYear(),
-      type: schedule.type || 'theory',
+      type: (schedule.type as 'theory' | 'practical') || 'theory',
       class: schedule.class || '',
       amount: schedule.amount || 0,
       kurikulum: schedule.kurikulum || '',
@@ -552,20 +600,18 @@ const LectureSchedules: React.FC = () => {
     }
   };
 
-  const filteredSchedules = useMemo(() => {
-    return schedules.filter(schedule => {
-      const matchesSearch =
-        (schedule.course_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-        (schedule.course_code?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-        (schedule.lecturer?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-        (schedule.room?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+  // Server-side pagination calculation
+  const totalPages = Math.ceil(totalSchedules / rowsPerPage);
+  const startIndex = (currentPage - 1) * rowsPerPage;
 
-      const matchesRoom = roomFilter === 'all' || schedule.room?.toLowerCase() === roomFilter.toLowerCase();
-      const matchesDay = dayFilter === 'all' || schedule.day?.toLowerCase() === dayFilter.toLowerCase();
-
-      return matchesSearch && matchesRoom && matchesDay;
-    });
-  }, [schedules, searchTerm, roomFilter, dayFilter]);
+  const requestSort = (key: keyof LectureSchedule) => {
+    let direction: 'ascending' | 'descending' = 'ascending';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
+      direction = 'descending';
+    }
+    setSortConfig({ key, direction });
+    // setCurrentPage(1); // No need to reset page on sort for current page sorting
+  };
 
   const filteredRescheduleRequests = useMemo(() => {
     return rescheduleRequests.filter(request => {
@@ -575,11 +621,13 @@ const LectureSchedules: React.FC = () => {
       return true;
     });
   }, [rescheduleRequests, rescheduleFilter]);
-
-  const sortedSchedules = useMemo(() => {
-    let sortableItems = [...filteredSchedules];
+  // Filtering is now server-side, so current data is just 'schedules'
+  // However, we still have client-side sorting if applied to the current page.
+  // Ideally, sorting should be server-side too, but for now we can sort the current page.
+  const currentTableData = useMemo(() => {
+    let data = [...schedules];
     if (sortConfig !== null) {
-      sortableItems.sort((a, b) => {
+      data.sort((a, b) => {
         const valA = a[sortConfig.key] || '';
         const valB = b[sortConfig.key] || '';
         if (valA < valB) {
@@ -591,28 +639,15 @@ const LectureSchedules: React.FC = () => {
         return 0;
       });
     }
-    return sortableItems;
-  }, [filteredSchedules, sortConfig]);
-
-  const requestSort = (key: keyof LectureSchedule) => {
-    let direction: 'ascending' | 'descending' = 'ascending';
-    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
-      direction = 'descending';
-    }
-    setSortConfig({ key, direction });
-    setCurrentPage(1);
-  };
-
-  const totalPages = Math.ceil(sortedSchedules.length / rowsPerPage);
-  const startIndex = (currentPage - 1) * rowsPerPage;
-  const currentTableData = sortedSchedules.slice(startIndex, startIndex + rowsPerPage);
+    return data;
+  }, [schedules, sortConfig]);
 
   const dayIntensityStats = useMemo(() => {
     if (profile?.role !== 'super_admin') return [];
 
     const stats = dayNames.map(day => {
-      const daySchedules = schedules.filter(s => s.day?.toLowerCase() === day.toLowerCase());
-      const count = daySchedules.length;
+      // Use the statsMap fetched separately
+      const count = statsMap[day.toLowerCase()] || 0;
 
       let intensity, color;
       if (count === 0) {
@@ -641,7 +676,7 @@ const LectureSchedules: React.FC = () => {
       };
     });
     return stats;
-  }, [schedules, profile?.role]);
+  }, [statsMap, profile?.role]);
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -1059,8 +1094,8 @@ const LectureSchedules: React.FC = () => {
           <div className="flex flex-col sm:flex-row justify-between items-center px-4 py-3 bg-gray-50 border-t border-gray-200 gap-3">
             <span className="text-sm text-gray-600">
               {getText(
-                `Showing ${sortedSchedules.length > 0 ? startIndex + 1 : 0} to ${Math.min(startIndex + rowsPerPage, sortedSchedules.length)} of ${sortedSchedules.length} entries`,
-                `Menampilkan ${sortedSchedules.length > 0 ? startIndex + 1 : 0} sampai ${Math.min(startIndex + rowsPerPage, sortedSchedules.length)} dari ${sortedSchedules.length} entri`
+                `Showing ${totalSchedules > 0 ? startIndex + 1 : 0} to ${Math.min(startIndex + rowsPerPage, totalSchedules)} of ${totalSchedules} entries`,
+                `Menampilkan ${totalSchedules > 0 ? startIndex + 1 : 0} sampai ${Math.min(startIndex + rowsPerPage, totalSchedules)} dari ${totalSchedules} entri`
               )}
             </span>
             <nav className="flex items-center gap-2">
