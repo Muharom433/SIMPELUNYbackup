@@ -60,6 +60,7 @@ import {
   Area,
   AreaChart,
 } from 'recharts';
+import Select from 'react-select';
 
 interface ReportData {
   bookings: {
@@ -1739,21 +1740,42 @@ const Reports: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   {getText('Room', 'Ruangan')}
                 </label>
-                <select
-                  value={newTask.room_id}
-                  onChange={(e) => {
-                    setNewTask({ ...newTask, room_id: e.target.value, equipment_ids: [] });
-                    fetchEquipmentByRoom(e.target.value);
+                <Select
+                  value={rooms.find(r => r.id === newTask.room_id) ? {
+                    value: newTask.room_id,
+                    label: `${rooms.find(r => r.id === newTask.room_id)?.name} (${rooms.find(r => r.id === newTask.room_id)?.code})`
+                  } : null}
+                  onChange={(selectedOption: any) => {
+                    const roomId = selectedOption ? selectedOption.value : '';
+                    setNewTask({ ...newTask, room_id: roomId, equipment_ids: [] });
+                    if (roomId) fetchEquipmentByRoom(roomId);
+                    else setEquipmentByRoom([]);
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">{getText('Select Room...', 'Pilih Ruangan...')}</option>
-                  {rooms.map((room) => (
-                    <option key={room.id} value={room.id}>
-                      {room.name} ({room.code})
-                    </option>
-                  ))}
-                </select>
+                  options={rooms.map(room => ({
+                    value: room.id,
+                    label: `${room.name} (${room.code})`
+                  }))}
+                  placeholder={getText('Select Room...', 'Pilih Ruangan...')}
+                  isClearable
+                  className="text-sm"
+                  styles={{
+                    control: (base) => ({
+                      ...base,
+                      borderColor: '#d1d5db',
+                      '&:hover': {
+                        borderColor: '#2563eb'
+                      },
+                      boxShadow: 'none',
+                      borderRadius: '0.5rem',
+                      padding: '2px'
+                    }),
+                    option: (base, state) => ({
+                      ...base,
+                      backgroundColor: state.isSelected ? '#2563eb' : state.isFocused ? '#eff6ff' : 'white',
+                      color: state.isSelected ? 'white' : 'black',
+                    })
+                  }}
+                />
               </div>
 
               {/* Equipment Multi-Select */}

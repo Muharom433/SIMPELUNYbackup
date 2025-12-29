@@ -740,8 +740,11 @@ const ToolAdministration: React.FC = () => {
                 }
             }
 
-            allRecords.sort((a, b) => new Date(b.date || b.created_at).getTime() - new Date(a.date || a.created_at).getTime());
-            setLendingDetails(allRecords);
+            // Filter out records with 0 or negative missing quantity
+            const filteredRecords = allRecords.filter(r => r.missing_quantity > 0);
+
+            filteredRecords.sort((a, b) => new Date(b.date || b.created_at).getTime() - new Date(a.date || a.created_at).getTime());
+            setLendingDetails(filteredRecords);
         } catch (error) {
             console.error('Error in track record analysis:', error);
             toast.error('Failed to load track record');
@@ -752,50 +755,101 @@ const ToolAdministration: React.FC = () => {
     };
 
     // ==================== HANDLE RESOLVE GAP ====================
+    // ==================== HANDLE RESOLVE GAP ====================
     const handleResolveGap = async (detail: LendingDetail) => {
         try {
-            if (!selectedEquipment || !detail.checkout) return;
+            if (!selectedEquipment) return;
 
-            const { data: currentItems, error: fetchError } = await supabase
-                .from('checkout_items').select('*').eq('checkout_id', detail.checkout.id).single();
-            if (fetchError) throw fetchError;
-            if (!currentItems) throw new Error('Checkout items not found');
+            // Scenario 1: Resolved via existing checkout
+            if (detail.checkout) {
+                const { data: currentItems, error: fetchError } = await supabase
+                    .from('checkout_items').select('*').eq('checkout_id', detail.checkout.id).single();
+                if (fetchError) throw fetchError;
+                if (!currentItems) throw new Error('Checkout items not found');
 
-            const eqIndex = currentItems.equipment_requested.findIndex((id: string) => id === selectedEquipment.id);
-            if (eqIndex === -1) throw new Error('Equipment not found in checkout_items');
+                const eqIndex = currentItems.equipment_requested.findIndex((id: string) => id === selectedEquipment.id);
+                if (eqIndex === -1) throw new Error('Equipment not found in checkout_items');
 
-            const borrowedQty = currentItems.equipment_quantities[eqIndex];
-            let quantitiesBack = currentItems.quantities_back || [];
-            while (quantitiesBack.length <= eqIndex) quantitiesBack.push(0);
-            quantitiesBack[eqIndex] = borrowedQty;
+                const borrowedQty = currentItems.equipment_quantities[eqIndex];
+                let quantitiesBack = currentItems.quantities_back || [];
+                while (quantitiesBack.length <= eqIndex) quantitiesBack.push(0);
+                quantitiesBack[eqIndex] = borrowedQty;
 
-            const { error: updateItemsError } = await supabase
-                .from('checkout_items').update({ quantities_back: quantitiesBack, status: 'completed' }).eq('checkout_id', detail.checkout.id);
-            if (updateItemsError) throw updateItemsError;
+                const { error: updateItemsError } = await supabase
+                    .from('checkout_items').update({ quantities_back: quantitiesBack, status: 'completed' }).eq('checkout_id', detail.checkout.id);
+                if (updateItemsError) throw updateItemsError;
 
-            const allReturned = currentItems.equipment_requested.every((eqId: string, idx: number) => {
-                const borrowed = currentItems.equipment_quantities[idx] || 0;
-                const returned = quantitiesBack[idx] || 0;
-                return returned >= borrowed;
-            });
+                const allReturned = currentItems.equipment_requested.every((eqId: string, idx: number) => {
+                    const borrowed = currentItems.equipment_quantities[idx] || 0;
+                    const returned = quantitiesBack[idx] || 0;
+                    return returned >= borrowed;
+                });
 
-            if (allReturned) {
-                await supabase.from('checkouts').update({ status: 'Active', actual_return_date: new Date().toISOString() }).eq('id', detail.checkout.id);
+                if (allReturned) {
+                    await supabase.from('checkouts').update({ status: 'completed', actual_return_date: new Date().toISOString() }).eq('id', detail.checkout.id);
+                }
+
+                if (detail.source === 'booking' && detail.checkout.booking_id) {
+                    await supabase.from('bookings').update({ status: 'returned' }).eq('id', detail.checkout.booking_id);
+                } else if (detail.source === 'lending_tool' && detail.checkout.lendingTool_id) {
+                    await supabase.from('lending_tool').update({ status: 'returned', updated_at: new Date().toISOString() }).eq('id', detail.checkout.lendingTool_id);
+                }
+
+            } else {
+                // Scenario 2: No checkout exists (Booking/Lending directly) - Create Checkout & Complete it
+                if (!detail.id) throw new Error('Source ID missing');
+
+                // Create checkout record
+                const { data: newCheckout, error: createCheckoutError } = await supabase
+                    .from('checkouts')
+                    .insert({
+                        user_id: detail.user?.id,
+                        booking_id: detail.source === 'booking' ? detail.id : null,
+                        lendingTool_id: detail.source === 'lending_tool' ? detail.id : null,
+                        checkout_date: detail.created_at, // Use original borrowing date
+                        expected_return_date: new Date().toISOString(), // Default to now as we are closing it
+                        actual_return_date: new Date().toISOString(),
+                        status: 'completed',
+                        type: detail.source === 'booking' ? 'booking' : 'lending'
+                    })
+                    .select()
+                    .single();
+
+                if (createCheckoutError) throw createCheckoutError;
+
+                // Create checkout items record
+                const { error: createItemsError } = await supabase
+                    .from('checkout_items')
+                    .insert({
+                        checkout_id: newCheckout.id,
+                        equipment_requested: [selectedEquipment.id],
+                        equipment_quantities: [detail.borrowed_quantity],
+                        equipment_back: [selectedEquipment.id],
+                        quantities_back: [detail.borrowed_quantity], // Returned full amount
+                        status: 'completed'
+                    });
+
+                if (createItemsError) throw createItemsError;
+
+                // Update original source status
+                if (detail.source === 'booking') {
+                    await supabase.from('bookings').update({ status: 'returned' }).eq('id', detail.id);
+                } else if (detail.source === 'lending_tool') {
+                    await supabase.from('lending_tool').update({ status: 'returned', updated_at: new Date().toISOString() }).eq('id', detail.id);
+                }
             }
 
-            if (detail.source === 'booking' && detail.checkout.booking_id) {
-                await supabase.from('bookings').update({ status: 'returned' }).eq('id', detail.checkout.booking_id);
-            } else if (detail.source === 'lending_tool' && detail.checkout.lendingTool_id) {
-                await supabase.from('lending_tool').update({ status: 'returned', updated_at: new Date().toISOString() }).eq('id', detail.checkout.lendingTool_id);
-            }
-
+            // Common: Update Equipment Quantity
             const { data: currentEquipment } = await supabase.from('equipment').select('quantity').eq('id', selectedEquipment.id).single();
             if (currentEquipment) {
-                const newQuantity = currentEquipment.quantity + detail.missing_quantity;
-                await supabase.from('equipment').update({ quantity: newQuantity, updated_at: new Date().toISOString() }).eq('id', selectedEquipment.id);
+                const newQuantity = currentEquipment.quantity + detail.borrowed_quantity; // Add back the full borrowed amount (since missing = borrowed implies 0 returned previously) or use detail.missing_quantity
+                // In Scenario 1: missing_quantity is correct.
+                // In Scenario 2: missing_quantity = borrowed_quantity (since 0 returned). 
+                // So using detail.missing_quantity is safer.
+                await supabase.from('equipment').update({ quantity: currentEquipment.quantity + detail.missing_quantity, updated_at: new Date().toISOString() }).eq('id', selectedEquipment.id);
             }
 
-            toast.success('Gap resolved successfully!');
+            toast.success('Gap resolved & checkout created!');
             await fetchGapAnalysis(selectedEquipment.id);
         } catch (error: any) {
             console.error('Error resolving gap:', error);

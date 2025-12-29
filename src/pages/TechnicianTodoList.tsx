@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     CheckSquare, Plus, Clock, CheckCircle, AlertCircle, RefreshCw,
-    Trash2, X, Search, Calendar, MapPin,
+    Trash2, X, Search, Calendar, MapPin, ArrowRight,
     Package, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -9,6 +9,8 @@ import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
+import Swal from 'sweetalert2';
+import Select from 'react-select';
 
 interface TechnicianTask {
     id: string;
@@ -291,7 +293,18 @@ const TechnicianTodoList: React.FC = () => {
     };
 
     const handleDeleteTask = async (taskId: string) => {
-        if (!confirm(getText('Delete this task?', 'Hapus tugas ini?'))) return;
+        const result = await Swal.fire({
+            title: getText('Delete this task?', 'Hapus tugas ini?'),
+            text: getText('This action cannot be undone.', 'Tindakan ini tidak dapat dibatalkan.'),
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: getText('Yes, delete it!', 'Ya, hapus!'),
+            cancelButtonText: getText('Cancel', 'Batal')
+        });
+
+        if (!result.isConfirmed) return;
 
         try {
             const { error } = await supabase
@@ -646,59 +659,51 @@ const TechnicianTodoList: React.FC = () => {
                                 </div>
 
                                 {/* Actions */}
-                                <div className="flex flex-col gap-2">
+                                {/* Actions */}
+                                <div className="flex items-center gap-2 mt-4 sm:mt-0">
                                     {task.status !== 'completed' && (
-                                        <>
-                                            {resolvingTaskId === task.id ? (
-                                                <div className="flex flex-col gap-2 w-full">
-                                                    <textarea
-                                                        value={resolveComment}
-                                                        onChange={(e) => setResolveComment(e.target.value)}
-                                                        className="w-full px-3 py-2 border border-green-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                                                        placeholder={getText('Add resolution note (required)...', 'Tambah catatan penyelesaian (wajib)...')}
-                                                        rows={2}
-                                                    />
-                                                    <div className="flex gap-2">
-                                                        <button
-                                                            onClick={() => handleResolveWithComment(task.id)}
-                                                            className="flex-1 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
-                                                        >
-                                                            {getText('Resolve', 'Selesaikan')}
-                                                        </button>
-                                                        <button
-                                                            onClick={() => { setResolvingTaskId(null); setResolveComment(''); }}
-                                                            className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm hover:bg-gray-300"
-                                                        >
-                                                            <X className="h-4 w-4" />
-                                                        </button>
-                                                    </div>
-                                                </div>
+                                        <button
+                                            onClick={async () => {
+                                                if (task.report_id) {
+                                                    setResolvingTaskId(task.id);
+                                                } else {
+                                                    const result = await Swal.fire({
+                                                        title: getText('Complete this task?', 'Selesaikan tugas ini?'),
+                                                        text: getText('Are you sure you want to mark this task as completed?', 'Yakin ingin menandai tugas ini sebagai selesai?'),
+                                                        icon: 'question',
+                                                        showCancelButton: true,
+                                                        confirmButtonColor: '#10B981',
+                                                        cancelButtonColor: '#6B7280',
+                                                        confirmButtonText: getText('Yes, complete it!', 'Ya, selesaikan!'),
+                                                        cancelButtonText: getText('Cancel', 'Batal')
+                                                    });
+
+                                                    if (result.isConfirmed) {
+                                                        handleUpdateStatus(task.id, 'completed');
+                                                    }
+                                                }
+                                            }}
+                                            className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm ${task.report_id
+                                                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                                : 'bg-green-600 text-white hover:bg-green-700'
+                                                }`}
+                                        >
+                                            {task.report_id ? (
+                                                <>
+                                                    <ArrowRight className="h-4 w-4" />
+                                                    {getText('Follow Up', 'Tindak Lanjuti')}
+                                                </>
                                             ) : (
-                                                <button
-                                                    onClick={() => {
-                                                        if (task.report_id) {
-                                                            setResolvingTaskId(task.id);
-                                                        } else {
-                                                            if (window.confirm(getText('Are you sure checking out this task?', 'Yakin ingin menyelesaikan tugas ini?'))) {
-                                                                handleUpdateStatus(task.id, 'completed');
-                                                            }
-                                                        }
-                                                    }}
-                                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${task.report_id
-                                                        ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                                                        : 'bg-green-100 text-green-700 hover:bg-green-200'
-                                                        }`}
-                                                >
-                                                    {task.report_id
-                                                        ? getText('Follow Up & Resolve', 'Tindak Lanjut & Selesai')
-                                                        : getText('Complete', 'Selesai')}
-                                                </button>
+                                                <>
+                                                    <CheckCircle className="h-4 w-4" />
+                                                    {getText('Complete', 'Selesai')}
+                                                </>
                                             )}
-                                        </>
+                                        </button>
                                     )}
                                     <button
                                         onClick={() => handleDeleteTask(task.id)}
-                                        className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                                        className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors border border-red-100 hover:border-red-200"
                                         title={getText('Delete', 'Hapus')}
                                     >
                                         <Trash2 className="h-4 w-4" />
@@ -759,23 +764,42 @@ const TechnicianTodoList: React.FC = () => {
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">{getText('Room', 'Ruangan')}</label>
-                                <select
-                                    value={formData.room_id}
-                                    onChange={(e) => {
-                                        const roomId = e.target.value;
+                                <Select
+                                    value={rooms.find(r => r.id === formData.room_id) ? {
+                                        value: formData.room_id,
+                                        label: `${rooms.find(r => r.id === formData.room_id)?.name} (${rooms.find(r => r.id === formData.room_id)?.code})`
+                                    } : null}
+                                    onChange={(selectedOption: any) => {
+                                        const roomId = selectedOption ? selectedOption.value : '';
                                         setFormData({ ...formData, room_id: roomId, equipment_ids: [] });
                                         if (roomId) fetchRoomEquipment(roomId);
                                         else setRoomEquipment([]);
                                     }}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                >
-                                    <option value="">{getText('Select Room...', 'Pilih Ruangan...')}</option>
-                                    {rooms.map((room) => (
-                                        <option key={room.id} value={room.id}>
-                                            {room.name} ({room.code})
-                                        </option>
-                                    ))}
-                                </select>
+                                    options={rooms.map(room => ({
+                                        value: room.id,
+                                        label: `${room.name} (${room.code})`
+                                    }))}
+                                    placeholder={getText('Select Room...', 'Pilih Ruangan...')}
+                                    isClearable
+                                    className="text-sm"
+                                    styles={{
+                                        control: (base) => ({
+                                            ...base,
+                                            borderColor: '#d1d5db',
+                                            '&:hover': {
+                                                borderColor: '#a855f7'
+                                            },
+                                            boxShadow: 'none',
+                                            borderRadius: '0.5rem',
+                                            padding: '2px'
+                                        }),
+                                        option: (base, state) => ({
+                                            ...base,
+                                            backgroundColor: state.isSelected ? '#9333ea' : state.isFocused ? '#f3e8ff' : 'white',
+                                            color: state.isSelected ? 'white' : 'black',
+                                        })
+                                    }}
+                                />
                             </div>
 
                             {formData.room_id && (
@@ -825,6 +849,57 @@ const TechnicianTodoList: React.FC = () => {
                                 className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
                             >
                                 {getText('Add Task', 'Tambah Tugas')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Resolve Task Modal */}
+            {resolvingTaskId && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+                        <div className="flex items-center justify-between p-6 border-b bg-gradient-to-r from-green-600 to-teal-600 rounded-t-2xl">
+                            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                                <CheckCircle className="h-6 w-6" />
+                                {getText('Resolve Task', 'Selesaikan Tugas')}
+                            </h2>
+                            <button
+                                onClick={() => { setResolvingTaskId(null); setResolveComment(''); }}
+                                className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                            >
+                                <X className="h-5 w-5 text-white" />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    {getText('Follow Up Note', 'Catatan Tindak Lanjut')} <span className="text-red-500">*</span>
+                                </label>
+                                <textarea
+                                    value={resolveComment}
+                                    onChange={(e) => setResolveComment(e.target.value)}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 min-h-[120px]"
+                                    placeholder={getText('Describe what was done to resolve this task...', 'Jelaskan apa yang dilakukan untuk menyelesaikan tugas ini...')}
+                                />
+                                <p className="mt-1 text-xs text-gray-500">
+                                    {getText('This comment will be added to the report history.', 'Komentar ini akan ditambahkan ke riwayat laporan.')}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-3 p-6 border-t bg-gray-50 rounded-b-2xl">
+                            <button
+                                onClick={() => { setResolvingTaskId(null); setResolveComment(''); }}
+                                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                            >
+                                {getText('Cancel', 'Batal')}
+                            </button>
+                            <button
+                                onClick={() => handleResolveWithComment(resolvingTaskId)}
+                                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={!resolveComment.trim()}
+                            >
+                                {getText('Resolve & Complete', 'Selesaikan & Tutup')}
                             </button>
                         </div>
                     </div>
