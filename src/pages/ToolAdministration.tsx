@@ -26,6 +26,10 @@ import toast from 'react-hot-toast';
 import { format, differenceInDays, parseISO } from 'date-fns';
 import { useLanguage } from '../contexts/LanguageContext';
 import Swal from 'sweetalert2';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
+import EquipmentImportModal from '../components/EquipmentImport/EquipmentImportModal';
 
 // ==================== TYPES ====================
 interface Stock {
@@ -384,6 +388,7 @@ const ToolAdministration: React.FC = () => {
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [showTrackRecordModal, setShowTrackRecordModal] = useState(false);
     const [showDirectAddModal, setShowDirectAddModal] = useState(false);
+    const [showImportModal, setShowImportModal] = useState(false);
     const [loadingDetailModal, setLoadingDetailModal] = useState(false);
 
     // Selected items
@@ -461,7 +466,8 @@ const ToolAdministration: React.FC = () => {
     const isDepartmentAdmin = profile?.role === 'department_admin';
     const isLaboratory = profile?.role === 'laboratory';
     const isPurchasing = profile?.role === 'purchasing';
-    const hasAccess = isSuperAdmin || isDepartmentAdmin || isLaboratory || isPurchasing;
+    const isTechnician = profile?.role === 'technician';
+    const hasAccess = isSuperAdmin || isDepartmentAdmin || isLaboratory || isPurchasing || isTechnician;
 
     // ==================== INITIAL DATA LOADING ====================
     useEffect(() => {
@@ -1253,6 +1259,135 @@ const ToolAdministration: React.FC = () => {
         return false;
     }, [hasAccess, isSuperAdmin, isDepartmentAdmin, isLaboratory, availableStocks, availableRooms]);
 
+    // ==================== EXPORT PDF FUNCTION ====================
+    const handleExportEquipmentPDF = () => {
+        if (filteredEquipment.length === 0) {
+            toast.error(getText('No equipment to export', 'Tidak ada peralatan untuk diekspor'));
+            return;
+        }
+
+        const doc = new jsPDF();
+        const today = format(new Date(), 'yyyy-MM-dd');
+
+        // Header
+        doc.setFontSize(18);
+        doc.setFont('helvetica', 'bold');
+        doc.text(getText('Equipment List', 'Daftar Peralatan'), 14, 20);
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${getText('Generated', 'Dibuat')}: ${format(new Date(), 'dd MMM yyyy HH:mm')}`, 14, 28);
+        doc.text(`${getText('Total', 'Total')}: ${filteredEquipment.length} ${getText('items', 'item')}`, 14, 34);
+
+        // Filter info
+        if (equipmentSearchTerm || equipmentCategoryFilter !== 'all' || roomFilter !== 'all') {
+            let filterText = `${getText('Filter', 'Filter')}: `;
+            const filters = [];
+            if (equipmentSearchTerm) filters.push(`"${equipmentSearchTerm}"`);
+            if (equipmentCategoryFilter !== 'all') filters.push(`${getText('Category', 'Kategori')}: ${equipmentCategoryFilter}`);
+            if (roomFilter !== 'all') {
+                const room = rooms.find(r => r.id === roomFilter);
+                if (room) filters.push(`${getText('Room', 'Ruangan')}: ${room.name}`);
+            }
+            doc.text(filterText + filters.join(', '), 14, 40);
+        }
+
+        // Table data
+        const tableData = filteredEquipment.map((eq, index) => [
+            index + 1,
+            eq.name,
+            eq.code,
+            eq.category,
+            eq.rooms?.name || '-',
+            eq.quantity || 0,
+            eq.unit || '-',
+            eq.condition || '-'
+        ]);
+
+        // Generate table
+        autoTable(doc, {
+            startY: equipmentSearchTerm || equipmentCategoryFilter !== 'all' || roomFilter !== 'all' ? 45 : 40,
+            head: [[
+                'No',
+                getText('Name', 'Nama'),
+                getText('Code', 'Kode'),
+                getText('Category', 'Kategori'),
+                getText('Room', 'Ruangan'),
+                getText('Qty', 'Jml'),
+                getText('Unit', 'Satuan'),
+                getText('Condition', 'Kondisi')
+            ]],
+            body: tableData,
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [79, 70, 229] },
+            alternateRowStyles: { fillColor: [245, 247, 250] },
+        });
+
+        // Save
+        doc.save(`equipment_list_${today}.pdf`);
+        toast.success(getText('PDF exported successfully', 'PDF berhasil diekspor'));
+    };
+
+    // ==================== EXPORT STOCK TRACK RECORD PDF ====================
+    const handleExportStockTrackPDF = () => {
+        if (!selectedStock || stockTrackRecords.length === 0) {
+            toast.error(getText('No data to export', 'Tidak ada data untuk diekspor'));
+            return;
+        }
+
+        const doc = new jsPDF();
+        const today = format(new Date(), 'yyyy-MM-dd');
+        const totalClaimed = stockTrackRecords.reduce((sum, r) => sum + r.quantity_claimed, 0);
+
+        // Header
+        doc.setFontSize(18);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Stock Track Record: ${selectedStock.nama}`, 14, 20);
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${getText('Code', 'Kode')}: ${selectedStock.code}`, 14, 28);
+        doc.text(`${getText('Generated', 'Dibuat')}: ${format(new Date(), 'dd MMM yyyy HH:mm')}`, 14, 34);
+        doc.text(`${getText('Total Claimed', 'Total Diklaim')}: ${totalClaimed} ${selectedStock.unit}`, 14, 40);
+        doc.text(`${getText('Remaining Stock', 'Sisa Stok')}: ${selectedStock.quantity} ${selectedStock.unit}`, 14, 46);
+
+        // Table data
+        const tableData = stockTrackRecords.map((record, index) => [
+            index + 1,
+            record.equipment_name,
+            record.equipment_code,
+            record.room_name || '-',
+            record.quantity_claimed,
+            record.condition
+        ]);
+
+        // Generate table
+        autoTable(doc, {
+            startY: 52,
+            head: [[
+                'No',
+                getText('Equipment Name', 'Nama Peralatan'),
+                getText('Code', 'Kode'),
+                getText('Room', 'Ruangan'),
+                getText('Qty', 'Jml'),
+                getText('Condition', 'Kondisi')
+            ]],
+            body: tableData,
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [129, 90, 213] },
+            alternateRowStyles: { fillColor: [245, 247, 250] },
+            columnStyles: {
+                0: { cellWidth: 12 },
+                4: { cellWidth: 15 },
+                5: { cellWidth: 25 }
+            }
+        });
+
+        // Save
+        doc.save(`stock_track_${selectedStock.code}_${today}.pdf`);
+        toast.success(getText('PDF exported successfully', 'PDF berhasil diekspor'));
+    };
+
     // ==================== HELPER FUNCTIONS ====================
     const getCategoryConfig = (categoryName: string) => categories.find(cat => cat.name === categoryName) || categories[0];
 
@@ -1691,7 +1826,15 @@ const ToolAdministration: React.FC = () => {
                 </div>
                 <div className="p-6 overflow-y-auto flex-1">{renderStockTrackRecord()}</div>
                 <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
-                    <div className="flex justify-end">
+                    <div className="flex justify-between">
+                        <button
+                            onClick={handleExportStockTrackPDF}
+                            disabled={stockTrackRecords.length === 0}
+                            className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <Download className="h-4 w-4" />
+                            {getText('Export PDF', 'Ekspor PDF')}
+                        </button>
                         <button onClick={() => setShowStockTrackModal(false)} className="px-5 py-2 bg-gray-600 text-white rounded-xl font-medium hover:bg-gray-700 transition-colors">Close</button>
                     </div>
                 </div>
@@ -2661,6 +2804,16 @@ const ToolAdministration: React.FC = () => {
                                     <input type="text" placeholder={getText('Search equipment by name or code...', 'Cari peralatan berdasarkan nama atau kode...')} value={equipmentSearchTerm} onChange={(e) => setEquipmentSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors" />
                                 </div>
                                 <div className="flex gap-2">
+                                    {/* Export PDF Button */}
+                                    <button onClick={handleExportEquipmentPDF} className="flex items-center gap-2 px-4 py-3 bg-red-500 text-white rounded-xl hover:bg-red-600 font-medium transition-colors" title={getText('Export to PDF', 'Ekspor ke PDF')}>
+                                        <Download className="h-5 w-5" />
+                                        <span className="hidden lg:inline">PDF</span>
+                                    </button>
+                                    {/* Import Excel Button */}
+                                    <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-4 py-3 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 font-medium transition-colors" title={getText('Import from Excel', 'Impor dari Excel')}>
+                                        <Upload className="h-5 w-5" />
+                                        <span className="hidden lg:inline">Excel</span>
+                                    </button>
                                     <button onClick={() => { editForm.reset(); editForm.setValue('quantity', 1); setEquipmentImagePreview(''); setSelectedRoomForEdit(null); setSelectedTableForEdit(null); setSelectedRackForEdit(null); setSelectedBoxForEdit(null); setShowDirectAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-green-500 text-white rounded-xl hover:bg-green-600 font-medium transition-colors">
                                         <Plus className="h-5 w-5" />{getText('Add Equipment', 'Tambah Peralatan')}
                                     </button>
@@ -2717,6 +2870,15 @@ const ToolAdministration: React.FC = () => {
             {showDetailModal && selectedEquipment && <EquipmentDetailModal />}
             {showTrackRecordModal && selectedEquipment && <TrackRecordModal />}
             {showDirectAddModal && <DirectAddModal />}
+
+            {/* Equipment Import Modal */}
+            <EquipmentImportModal
+                isOpen={showImportModal}
+                onClose={() => setShowImportModal(false)}
+                onSuccess={() => { fetchEquipment(); fetchStocks(); }}
+                rooms={rooms}
+                stocks={stocks}
+            />
 
             {/* Fullscreen Image Modals */}
             {showStockImageFullscreen && stockImagePreview && (

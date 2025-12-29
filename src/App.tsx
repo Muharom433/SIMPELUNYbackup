@@ -32,6 +32,7 @@ import { useAuthContext } from './contexts/AuthContext';
 const ToolAdministration = React.lazy(() => import('./pages/ToolAdministration'));
 const ToolLending = React.lazy(() => import('./pages/ToolLending'));
 const ToolLendingManagement = React.lazy(() => import('./pages/ToolLendingManagement'));
+const TechnicianTodoList = React.lazy(() => import('./pages/TechnicianTodoList'));
 
 // Lazy loaded components for Form Builder feature
 const FormManagement = React.lazy(() => import('./pages/FormManagement'));
@@ -105,6 +106,9 @@ const AppContent = () => {
           <Route path="locations" element={<LocationManagement />} />
           <Route path="laboratory-locations" element={<LaboratoryLocationManagement />} />
           <Route path="schedule-calendar" element={<ScheduleCalendar />} />
+
+          {/* Technician Routes */}
+          <Route path="technician-todo" element={<Suspense fallback={<LazyLoadingFallback />}><TechnicianTodoList /></Suspense>} />
 
           {/* Form Builder Routes (within Layout) */}
           <Route path="forms" element={<Suspense fallback={<LazyLoadingFallback />}><FormManagement /></Suspense>} />

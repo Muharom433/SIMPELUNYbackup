@@ -35,6 +35,7 @@ import {
   Check,
   Plus,
   Send,
+  UserPlus,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -188,14 +189,75 @@ const Reports: React.FC = () => {
     category: 'maintenance',
     priority: 'medium',
     location: '',
+    room_id: '',
+    equipment_ids: [] as string[],
+    attachments: [] as string[],
   });
+
+  // State for rooms, equipment, and technicians
+  const [rooms, setRooms] = useState<{ id: string; name: string; code: string }[]>([]);
+  const [equipmentByRoom, setEquipmentByRoom] = useState<{ id: string; name: string; code: string; condition: string }[]>([]);
+  const [technicians, setTechnicians] = useState<{ id: string; full_name: string }[]>([]);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [selectedTechnicianId, setSelectedTechnicianId] = useState('');
+  const [assigningReportId, setAssigningReportId] = useState<string | null>(null);
 
   const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'];
 
   useEffect(() => {
     fetchReportData();
     fetchIssueReports();
+    fetchRooms();
+    fetchTechnicians();
   }, [dateRange, departmentFilter, statusFilter, priorityFilter]);
+
+  // Fetch rooms for dropdown
+  const fetchRooms = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('rooms')
+        .select('id, name, code')
+        .order('name');
+      if (error) throw error;
+      setRooms(data || []);
+    } catch (error) {
+      console.error('Error fetching rooms:', error);
+    }
+  };
+
+  // Fetch technicians for assignment dropdown
+  const fetchTechnicians = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, full_name')
+        .eq('role', 'technician')
+        .order('full_name');
+      if (error) throw error;
+      setTechnicians(data || []);
+    } catch (error) {
+      console.error('Error fetching technicians:', error);
+    }
+  };
+
+  // Fetch equipment by room_id
+  const fetchEquipmentByRoom = async (roomId: string) => {
+    if (!roomId) {
+      setEquipmentByRoom([]);
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('equipment')
+        .select('id, name, code, condition')
+        .eq('rooms_id', roomId)
+        .order('name');
+      if (error) throw error;
+      setEquipmentByRoom(data || []);
+    } catch (error) {
+      console.error('Error fetching equipment:', error);
+    }
+  };
 
   const fetchReportData = async () => {
     try {
@@ -550,11 +612,15 @@ const Reports: React.FC = () => {
   const handleAddTask = async () => {
     try {
       if (!newTask.title || !newTask.description) {
-        toast.error('Please fill in all required fields');
+        toast.error(getText('Please fill in all required fields', 'Harap isi semua field yang diperlukan'));
         return;
       }
 
       setProcessingAction(true);
+
+      // Get room name for location field if room_id is selected
+      const selectedRoom = rooms.find(r => r.id === newTask.room_id);
+      const locationName = selectedRoom?.name || newTask.location || '';
 
       const { error } = await supabase
         .from('reports')
@@ -563,16 +629,19 @@ const Reports: React.FC = () => {
           description: newTask.description,
           category: newTask.category,
           priority: newTask.priority,
-          location: newTask.location,
+          location: locationName,
+          room_id: newTask.room_id || null,
+          equipment_ids: newTask.equipment_ids.length > 0 ? newTask.equipment_ids : null,
+          attachments: newTask.attachments.length > 0 ? newTask.attachments : null,
           status: 'new',
           is_anonymous: false,
-          reporter_name: profile?.full_name || 'System Technician',
+          reporter_name: profile?.full_name || 'Super Admin',
           reporter_id: profile?.id
         });
 
       if (error) throw error;
 
-      toast.success('Manual task added successfully');
+      toast.success(getText('Report added successfully', 'Laporan berhasil ditambahkan'));
       setShowAddModal(false);
       setNewTask({
         title: '',
@@ -580,13 +649,81 @@ const Reports: React.FC = () => {
         category: 'maintenance',
         priority: 'medium',
         location: '',
+        room_id: '',
+        equipment_ids: [],
+        attachments: [],
       });
+      setEquipmentByRoom([]);
       fetchIssueReports();
       fetchReportData();
 
     } catch (error) {
       console.error('Error adding task:', error);
-      toast.error('Failed to add manual task. Check database migration.');
+      toast.error(getText('Failed to add report', 'Gagal menambah laporan'));
+    } finally {
+      setProcessingAction(false);
+    }
+  };
+
+  // Function to assign report to a technician's to-do list
+  const handleAssignToTechnician = async (reportId: string, technicianId: string) => {
+    try {
+      setProcessingAction(true);
+
+      const report = issueReports.find(r => r.id === reportId);
+      if (!report) {
+        toast.error('Report not found');
+        return;
+      }
+
+      // Create a task in technician_tasks table
+      const { error: taskError } = await supabase
+        .from('technician_tasks')
+        .insert({
+          technician_id: technicianId,
+          report_id: reportId,
+          equipment_id: (report as any).equipment_id || null,
+          title: report.title,
+          description: report.description,
+          priority: report.priority,
+          status: 'pending',
+          assigned_by: profile?.id,
+          is_private: false
+        });
+
+      if (taskError) throw taskError;
+
+      // Update report status to in_progress and assigned_to
+      const { error: reportError } = await supabase
+        .from('reports')
+        .update({
+          status: 'in_progress',
+          assigned_to: technicianId,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', reportId);
+
+      if (reportError) throw reportError;
+
+      // Update equipment_ids status to MAINTENANCE
+      const equipmentIds = (report as any).equipment_ids as string[] | null;
+      if (equipmentIds && equipmentIds.length > 0) {
+        const { error: equipmentError } = await supabase
+          .from('equipment')
+          .update({ condition: 'MAINTENANCE' })
+          .in('id', equipmentIds);
+
+        if (equipmentError) {
+          console.error('Error updating equipment status:', equipmentError);
+        }
+      }
+
+      toast.success(getText('Report assigned to technician successfully', 'Laporan berhasil ditugaskan ke teknisi'));
+      fetchIssueReports();
+      fetchReportData();
+    } catch (error) {
+      console.error('Error assigning to technician:', error);
+      toast.error(getText('Failed to assign report', 'Gagal menugaskan laporan'));
     } finally {
       setProcessingAction(false);
     }
@@ -657,7 +794,7 @@ const Reports: React.FC = () => {
     return matchesSearch && matchesStatus && matchesPriority;
   });
 
-  if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin' && profile?.role !== 'technician') {
+  if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -932,10 +1069,23 @@ const Reports: React.FC = () => {
                               fetchReportComments(report.id);
                             }}
                             className="text-blue-600 hover:text-blue-900 p-1 rounded transition-colors duration-200"
-                            title="View Details"
+                            title={getText('View Details', 'Lihat Detail')}
                           >
                             <Eye className="h-4 w-4" />
                           </button>
+                          {/* Assign to Technician Button */}
+                          {report.status !== 'resolved' && report.status !== 'closed' && profile?.role === 'super_admin' && (
+                            <button
+                              onClick={() => {
+                                setAssigningReportId(report.id);
+                                setShowAssignModal(true);
+                              }}
+                              className="text-purple-600 hover:text-purple-900 p-1 rounded transition-colors duration-200"
+                              title={getText('Assign to Technician', 'Tugaskan ke Teknisi')}
+                            >
+                              <UserPlus className="h-4 w-4" />
+                            </button>
+                          )}
                           {report.status !== 'resolved' && report.status !== 'closed' && (
                             <button
                               onClick={() => {
@@ -943,7 +1093,7 @@ const Reports: React.FC = () => {
                                 setShowResolveModal(true);
                               }}
                               className="text-green-600 hover:text-green-900 p-1 rounded transition-colors duration-200"
-                              title="Resolve Issue"
+                              title={getText('Resolve Issue', 'Selesaikan Laporan')}
                             >
                               <Check className="h-4 w-4" />
                             </button>
@@ -951,7 +1101,7 @@ const Reports: React.FC = () => {
                           <button
                             onClick={() => setShowDeleteConfirm(report.id)}
                             className="text-red-600 hover:text-red-900 p-1 rounded transition-colors duration-200"
-                            title="Delete Report"
+                            title={getText('Delete Report', 'Hapus Laporan')}
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -1584,18 +1734,63 @@ const Reports: React.FC = () => {
                 </div>
               </div>
 
+              {/* Room Dropdown */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Location (Room/Area)
+                  {getText('Room', 'Ruangan')}
                 </label>
-                <input
-                  type="text"
-                  value={newTask.location}
-                  onChange={(e) => setNewTask({ ...newTask, location: e.target.value })}
+                <select
+                  value={newTask.room_id}
+                  onChange={(e) => {
+                    setNewTask({ ...newTask, room_id: e.target.value, equipment_ids: [] });
+                    fetchEquipmentByRoom(e.target.value);
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g. Server Room"
-                />
+                >
+                  <option value="">{getText('Select Room...', 'Pilih Ruangan...')}</option>
+                  {rooms.map((room) => (
+                    <option key={room.id} value={room.id}>
+                      {room.name} ({room.code})
+                    </option>
+                  ))}
+                </select>
               </div>
+
+              {/* Equipment Multi-Select */}
+              {newTask.room_id && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {getText('Equipment (optional)', 'Peralatan (opsional)')}
+                  </label>
+                  {equipmentByRoom.length === 0 ? (
+                    <p className="text-sm text-gray-500 italic">{getText('No equipment in this room', 'Tidak ada peralatan di ruangan ini')}</p>
+                  ) : (
+                    <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-lg p-2 space-y-1">
+                      {equipmentByRoom.map((eq) => (
+                        <label key={eq.id} className="flex items-center gap-2 p-1 hover:bg-gray-50 rounded cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={newTask.equipment_ids.includes(eq.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setNewTask({ ...newTask, equipment_ids: [...newTask.equipment_ids, eq.id] });
+                              } else {
+                                setNewTask({ ...newTask, equipment_ids: newTask.equipment_ids.filter(id => id !== eq.id) });
+                              }
+                            }}
+                            className="rounded text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm">{eq.name} ({eq.code})</span>
+                          <span className={`text-xs px-1 py-0.5 rounded ${eq.condition === 'GOOD' ? 'bg-green-100 text-green-700' :
+                            eq.condition === 'BROKEN' ? 'bg-red-100 text-red-700' :
+                              'bg-yellow-100 text-yellow-700'
+                            }`}>{eq.condition}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="pt-4 flex space-x-3">
                 <button
@@ -1611,6 +1806,80 @@ const Reports: React.FC = () => {
                 >
                   {processingAction ? getText('Adding...', 'Menambahkan...') : getText('Add Task', 'Tambah Tugas')}
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign to Technician Modal */}
+      {showAssignModal && assigningReportId && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {getText('Assign to Technician', 'Tugaskan ke Teknisi')}
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowAssignModal(false);
+                    setAssigningReportId(null);
+                    setSelectedTechnicianId('');
+                  }}
+                  className="p-1 hover:bg-gray-100 rounded-lg"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {getText('Select Technician', 'Pilih Teknisi')}
+                  </label>
+                  <select
+                    value={selectedTechnicianId}
+                    onChange={(e) => setSelectedTechnicianId(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="">{getText('Choose technician...', 'Pilih teknisi...')}</option>
+                    {technicians.map((tech) => (
+                      <option key={tech.id} value={tech.id}>
+                        {tech.full_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="pt-4 flex space-x-3">
+                  <button
+                    onClick={() => {
+                      setShowAssignModal(false);
+                      setAssigningReportId(null);
+                      setSelectedTechnicianId('');
+                    }}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                  >
+                    {getText('Cancel', 'Batal')}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!selectedTechnicianId) {
+                        toast.error(getText('Please select a technician', 'Pilih teknisi terlebih dahulu'));
+                        return;
+                      }
+                      await handleAssignToTechnician(assigningReportId, selectedTechnicianId);
+                      setShowAssignModal(false);
+                      setAssigningReportId(null);
+                      setSelectedTechnicianId('');
+                    }}
+                    disabled={!selectedTechnicianId || processingAction}
+                    className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                  >
+                    {processingAction ? getText('Assigning...', 'Menugaskan...') : getText('Assign', 'Tugaskan')}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

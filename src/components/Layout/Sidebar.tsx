@@ -230,7 +230,8 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
         // Jika user adalah technician (Teknisi)
         if (user.role === 'technician') {
             return [
-                { icon: AlertTriangle, label: getText('Reports', 'Laporan'), path: '/reports' },
+                { icon: CheckSquare, label: getText('To-Do List', 'Daftar Tugas'), path: '/technician-todo' },
+                { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
         }

@@ -35,7 +35,7 @@ const checkoutSchema = z.object({
   record_id: z.string().min(1, 'Pilih data untuk di-checkout'),
   record_type: z.enum(['booking', 'lending_tool']),
   has_issues: z.boolean().default(false),
-  report_category: z.enum(['equipment', 'room_condition', 'cleanliness', 'safety', 'maintenance', 'other']).optional(),
+  report_category: z.enum(['room', 'equipment']).optional(),
   report_description: z.string().optional(),
   attachments: z.array(z.string()).optional(),
 }).refine((data) => {
@@ -64,6 +64,7 @@ interface Equipment {
   name: string;
   code?: string;
   category?: string;
+  condition?: string;
   quantity: number;
   unit?: string;
   is_mandatory: boolean;
@@ -157,6 +158,10 @@ const CheckOut: React.FC = () => {
   const [attachments, setAttachments] = useState<string[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
 
+  // State for equipment issue selection
+  const [selectedEquipmentIds, setSelectedEquipmentIds] = useState<string[]>([]);
+  const [allRoomEquipment, setAllRoomEquipment] = useState<Equipment[]>([]);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -165,7 +170,7 @@ const CheckOut: React.FC = () => {
     defaultValues: {
       record_id: '',
       has_issues: false,
-      report_category: 'equipment',
+      report_category: 'room',
       attachments: [],
     },
   });
@@ -454,6 +459,33 @@ const CheckOut: React.FC = () => {
     setSearchTerm(getDisplayName(record));
     setShowRecordDropdown(false);
     form.clearErrors('record_id');
+
+    // Reset equipment selection and fetch room equipment for bookings
+    setSelectedEquipmentIds([]);
+    if (record.record_type === 'booking') {
+      const booking = record as BookingWithDetails;
+      if (booking.room_id) {
+        fetchRoomEquipment(booking.room_id);
+      }
+    } else {
+      setAllRoomEquipment([]);
+    }
+  };
+
+  // Fetch all equipment in a room (for issue reporting)
+  const fetchRoomEquipment = async (roomId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('equipment')
+        .select('id, name, code, category, condition, quantity, unit, is_mandatory')
+        .eq('rooms_id', roomId)
+        .order('name');
+      if (error) throw error;
+      setAllRoomEquipment(data || []);
+    } catch (error) {
+      console.error('Error fetching room equipment:', error);
+      setAllRoomEquipment([]);
+    }
   };
 
   // ===== HANDLE IMAGE UPLOAD =====
@@ -660,6 +692,11 @@ const CheckOut: React.FC = () => {
         return null;
       }
 
+      // For equipment category, use selected equipment; otherwise null
+      const equipmentIdsToReport = data.report_category === 'equipment' && selectedEquipmentIds.length > 0
+        ? selectedEquipmentIds
+        : null;
+
       const reportData = {
         reporter_id: selectedRecord.record_type === 'lending_tool'
           ? (selectedRecord as LendingToolWithDetails).id_user
@@ -670,7 +707,7 @@ const CheckOut: React.FC = () => {
         is_anonymous: false,
         category: data.report_category,
         priority: 'medium',
-        title: `Laporan ${getCategoryText(data.report_category)} - ${format(new Date(), 'dd/MM/yyyy')}`,
+        title: `Laporan ${data.report_category === 'room' ? 'Masalah Ruangan' : 'Masalah Peralatan'} - ${format(new Date(), 'dd/MM/yyyy')}`,
         description: data.report_description,
         location: selectedRecord.record_type === 'booking'
           ? (selectedRecord as BookingWithDetails).room?.name
@@ -678,6 +715,7 @@ const CheckOut: React.FC = () => {
         room_id: selectedRecord.record_type === 'booking'
           ? (selectedRecord as BookingWithDetails).room_id
           : null,
+        equipment_ids: equipmentIdsToReport,
         status: 'new',
         attachments: attachments,
         created_at: new Date().toISOString(),
@@ -1264,12 +1302,8 @@ const CheckOut: React.FC = () => {
                         {...form.register('report_category')}
                         className="w-full px-4 py-3 bg-white/50 border border-gray-200/50 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/50"
                       >
-                        <option value="equipment">{getCategoryText('equipment')}</option>
-                        <option value="room_condition">{getCategoryText('room_condition')}</option>
-                        <option value="cleanliness">{getCategoryText('cleanliness')}</option>
-                        <option value="safety">{getCategoryText('safety')}</option>
-                        <option value="maintenance">{getCategoryText('maintenance')}</option>
-                        <option value="other">{getCategoryText('other')}</option>
+                        <option value="room">Masalah Ruangan</option>
+                        <option value="equipment">Masalah Peralatan</option>
                       </select>
                       {form.formState.errors.report_category && (
                         <p className="mt-1 text-sm text-red-600 font-medium">
@@ -1277,6 +1311,72 @@ const CheckOut: React.FC = () => {
                         </p>
                       )}
                     </div>
+
+                    {/* Equipment Selection - Only show when category is equipment */}
+                    {form.watch('report_category') === 'equipment' && selectedRecord && (
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-3">
+                          Pilih Peralatan Bermasalah *
+                        </label>
+                        <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-xl bg-white/50 p-3 space-y-2">
+                          {/* Equipment from borrowing */}
+                          {selectedRecord.equipment_details && selectedRecord.equipment_details.length > 0 && (
+                            <>
+                              <p className="text-xs font-medium text-gray-500 uppercase mb-2">Peralatan Dipinjam</p>
+                              {selectedRecord.equipment_details.map((eq) => (
+                                <label key={eq.id} className="flex items-center gap-2 p-2 hover:bg-orange-50 rounded-lg cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedEquipmentIds.includes(eq.id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setSelectedEquipmentIds([...selectedEquipmentIds, eq.id]);
+                                      } else {
+                                        setSelectedEquipmentIds(selectedEquipmentIds.filter(id => id !== eq.id));
+                                      }
+                                    }}
+                                    className="rounded text-orange-600 focus:ring-orange-500"
+                                  />
+                                  <span className="text-sm font-medium">{eq.name}</span>
+                                  <span className="text-xs text-gray-500">({eq.code})</span>
+                                </label>
+                              ))}
+                            </>
+                          )}
+
+                          {/* All equipment in room (for booking) */}
+                          {selectedRecord.record_type === 'booking' && allRoomEquipment.length > 0 && (
+                            <>
+                              <p className="text-xs font-medium text-gray-500 uppercase mt-4 mb-2 border-t pt-3">Peralatan Lain di Ruangan</p>
+                              {allRoomEquipment
+                                .filter(eq => !selectedRecord.equipment_details?.find(e => e.id === eq.id))
+                                .map((eq) => (
+                                  <label key={eq.id} className="flex items-center gap-2 p-2 hover:bg-orange-50 rounded-lg cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedEquipmentIds.includes(eq.id)}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setSelectedEquipmentIds([...selectedEquipmentIds, eq.id]);
+                                        } else {
+                                          setSelectedEquipmentIds(selectedEquipmentIds.filter(id => id !== eq.id));
+                                        }
+                                      }}
+                                      className="rounded text-orange-600 focus:ring-orange-500"
+                                    />
+                                    <span className="text-sm">{eq.name}</span>
+                                    <span className="text-xs text-gray-500">({eq.code})</span>
+                                    <span className={`text-xs px-1 py-0.5 rounded ${eq.condition === 'GOOD' ? 'bg-green-100 text-green-700' :
+                                      eq.condition === 'BROKEN' ? 'bg-red-100 text-red-700' :
+                                        'bg-yellow-100 text-yellow-700'
+                                      }`}>{eq.condition || 'N/A'}</span>
+                                  </label>
+                                ))}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-3">
