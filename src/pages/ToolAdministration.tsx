@@ -30,6 +30,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import EquipmentImportModal from '../components/EquipmentImport/EquipmentImportModal';
+import { useDebouncedCallback } from 'use-debounce';
 
 // ==================== TYPES ====================
 interface Stock {
@@ -366,7 +367,11 @@ const ToolAdministration: React.FC = () => {
     const [stocks, setStocks] = useState<Stock[]>([]);
     const [loadingStocks, setLoadingStocks] = useState(true);
     const [stockSearchTerm, setStockSearchTerm] = useState('');
+    const [debouncedStockSearch, setDebouncedStockSearch] = useState('');
     const [stockCategoryFilter, setStockCategoryFilter] = useState<string>('all');
+    const [totalStocks, setTotalStocks] = useState(0);
+    const [stockPage, setStockPage] = useState(1);
+    const itemsPerPage = 10;
 
     // Equipment states
     const [equipment, setEquipment] = useState<EquipmentWithDetails[]>([]);
@@ -376,8 +381,11 @@ const ToolAdministration: React.FC = () => {
     const [boxes, setBoxes] = useState<Box[]>([]);
     const [loadingEquipment, setLoadingEquipment] = useState(true);
     const [equipmentSearchTerm, setEquipmentSearchTerm] = useState('');
+    const [debouncedEquipmentSearch, setDebouncedEquipmentSearch] = useState('');
     const [equipmentCategoryFilter, setEquipmentCategoryFilter] = useState<string>('all');
     const [roomFilter, setRoomFilter] = useState<string>('all');
+    const [totalEquipment, setTotalEquipment] = useState(0);
+    const [equipmentPage, setEquipmentPage] = useState(1);
 
     // Modal states
     const [showStockModal, setShowStockModal] = useState(false);
@@ -429,6 +437,17 @@ const ToolAdministration: React.FC = () => {
     const [selectedRackForEdit, setSelectedRackForEdit] = useState<Rack | null>(null);
     const [selectedBoxForEdit, setSelectedBoxForEdit] = useState<Box | null>(null);
 
+    // Debounced Search Handlers
+    const handleStockSearch = useDebouncedCallback((value: string) => {
+        setDebouncedStockSearch(value);
+        setStockPage(1);
+    }, 500);
+
+    const handleEquipmentSearch = useDebouncedCallback((value: string) => {
+        setDebouncedEquipmentSearch(value);
+        setEquipmentPage(1);
+    }, 500);
+
     // Forms
     const stockForm = useForm<StockForm>({
         resolver: zodResolver(stockSchema),
@@ -475,8 +494,8 @@ const ToolAdministration: React.FC = () => {
 
         const loadInitialData = async () => {
             try {
-                setLoadingStocks(true);
-                setLoadingEquipment(true);
+                setLoadingStocks(true); // Initial loading state
+                setLoadingEquipment(true); // Initial loading state
 
                 let roomsQuery = supabase.from('rooms').select('id, name, code, department_id, study_program_id, department:departments(id, name, code)');
                 if (isDepartmentAdmin && profile?.department_id) {
@@ -484,26 +503,24 @@ const ToolAdministration: React.FC = () => {
                 }
 
                 const [
-                    { data: stocksData, error: stocksError },
                     { data: roomsData, error: roomsError },
                     { data: tablesData, error: tablesError },
                     { data: racksData, error: racksError },
                     { data: boxesData, error: boxesError }
                 ] = await Promise.all([
-                    supabase.from('stock').select('id, nama, code, category, quantity, unit, spesification, created_at').order('created_at', { ascending: false }),
                     roomsQuery.order('name'),
                     supabase.from('table').select('id, room_id, description, rack'),
                     supabase.from('rack').select('id, name, table_id').order('name'),
                     supabase.from('box').select('id, name, description, rack_id').order('name')
                 ]);
 
-                if (stocksError) throw stocksError;
                 if (roomsError) throw roomsError;
                 if (tablesError) throw tablesError;
                 if (racksError) throw racksError;
                 if (boxesError) throw boxesError;
 
-                setStocks(stocksData || []);
+                // setStocks called separately via fetchStocks
+                // setStocks(stocksData || []);
                 setTables(tablesData || []);
                 setRacks(racksData || []);
                 setBoxes(boxesData || []);
@@ -536,62 +553,64 @@ const ToolAdministration: React.FC = () => {
                 }
                 setRooms(filteredRooms as any);
 
-                let equipmentQuery = supabase
-                    .from('equipment')
-                    .select(`id, name, code, category, quantity, unit, condition, created_at, table_id, rack_id, box_id, is_mandatory, is_available, Spesification, rooms_id, rooms:rooms_id(id, name, code, department_id, study_program_id, floor, department:departments(id, name, code)), stock:stock_id(id, nama, code, category, quantity, unit)`)
-                    .order('created_at', { ascending: false });
-
-                const accessibleRoomIds = filteredRooms.map(room => room.id);
-
-                // Laboratory: filter equipment to accessible rooms only
-                if (isLaboratory) {
-                    if (accessibleRoomIds.length > 0) {
-                        equipmentQuery = equipmentQuery.in('rooms_id', accessibleRoomIds);
-                    } else {
-                        // No accessible rooms = no equipment
-                        equipmentQuery = equipmentQuery.in('rooms_id', ['__no_match__']);
-                    }
-                } else if (isDepartmentAdmin && profile?.department_id) {
-                    if (accessibleRoomIds.length > 0) {
-                        equipmentQuery = equipmentQuery.in('rooms_id', accessibleRoomIds);
-                    }
-                }
-
-                const { data: equipmentData, error: equipmentError } = await equipmentQuery;
-                if (equipmentError) throw equipmentError;
-
-                // For laboratory: additional client-side filter to ensure equipment is from rooms with department_id
-                let filteredEquipment = (equipmentData || []).map(item => ({ ...item, table_id: item.table_id }));
-                if (isLaboratory) {
-                    const laborDeptId = profile?.department_id;
-                    const laborStudyProgramId = profile?.study_program_id;
-                    filteredEquipment = filteredEquipment.filter((eq: any) => {
-                        const room = eq.rooms;
-                        // Must have room with department_id matching user's
-                        if (!room || !room.department_id || room.department_id !== laborDeptId) {
-                            return false;
-                        }
-                        // If room has study_program_id, must match user's
-                        if (room.study_program_id && room.study_program_id !== laborStudyProgramId) {
-                            return false;
-                        }
-                        return true;
-                    });
-                }
-
-                setEquipment(filteredEquipment);
+                // Equipment fetching moved to fetchEquipment
+                // We just set loading to false here to allow the specific fetchers to take over
+                // or we can leave them true until the specific fetchers finish...
+                // Actually, the specific fetchers will set loading to true/false.
 
             } catch (error) {
                 console.error('Error loading initial data:', error);
                 toast.error('Failed to load data');
             } finally {
-                setLoadingStocks(false);
-                setLoadingEquipment(false);
+                // We don't turn off loading here because fetchStocks/fetchEquipment will handle their own loading states
+                // But we should probably turn them off if we errored out early?
+                // For safety, let's leave them as controlled by the specific fetchers.
+                // However, to ensure UI doesn't get stuck if this crashes:
+                // setLoadingStocks(false);
+                // setLoadingEquipment(false);
             }
         };
 
         loadInitialData();
-    }, [profile, hasAccess]);
+    }, [profile, hasAccess]); // Removed fetchStocks/fetchEquipment from here to avoid loops if we added them
+
+    // ==================== STOCK TRACK RECORD ====================
+    // Note: ensure fetchStockTrackRecord is below this block or correctly placed.
+
+    // ==================== STOCK TRACK RECORD ====================
+    // ==================== FETCHING LOGIC ====================
+    const fetchStocks = useCallback(async () => {
+        if (!hasAccess) return;
+        try {
+            setLoadingStocks(true);
+            let query = supabase.from('stock')
+                .select('*', { count: 'exact' });
+
+            if (debouncedStockSearch) {
+                query = query.or(`nama.ilike.%${debouncedStockSearch}%,code.ilike.%${debouncedStockSearch}%`);
+            }
+
+            if (stockCategoryFilter !== 'all') {
+                query = query.eq('category', stockCategoryFilter);
+            }
+
+            // Pagination
+            const from = (stockPage - 1) * itemsPerPage;
+            const to = from + itemsPerPage - 1;
+            query = query.range(from, to).order('created_at', { ascending: false });
+
+            const { data, count, error } = await query;
+
+            if (error) throw error;
+            setStocks(data || []);
+            setTotalStocks(count || 0);
+        } catch (error) {
+            console.error('Error fetching stocks:', error);
+            toast.error('Failed to load stocks');
+        } finally {
+            setLoadingStocks(false);
+        }
+    }, [debouncedStockSearch, stockCategoryFilter, stockPage, hasAccess, itemsPerPage]);
 
     // ==================== STOCK TRACK RECORD ====================
     const fetchStockTrackRecord = async (stockId: string) => {
@@ -630,7 +649,89 @@ const ToolAdministration: React.FC = () => {
         }
     };
 
-    // ==================== GAP ANALYSIS ====================
+    const fetchEquipment = useCallback(async () => {
+        if (!hasAccess) return;
+        try {
+            setLoadingEquipment(true);
+
+            // Base query
+            let query = supabase
+                .from('equipment')
+                .select(`id, name, code, category, quantity, unit, condition, created_at, table_id, rack_id, box_id, is_mandatory, is_available, Spesification, rooms_id, rooms:rooms_id(id, name, code, department_id, study_program_id, floor, department:departments(id, name, code)), stock:stock_id(id, nama, code, category, quantity, unit)`, { count: 'exact' });
+
+            // Search
+            if (debouncedEquipmentSearch) {
+                query = query.or(`name.ilike.%${debouncedEquipmentSearch}%,code.ilike.%${debouncedEquipmentSearch}%`);
+            }
+
+            // Filters
+            if (equipmentCategoryFilter !== 'all') {
+                query = query.eq('category', equipmentCategoryFilter);
+            }
+
+            if (roomFilter !== 'all') {
+                query = query.eq('rooms_id', roomFilter);
+            }
+
+            // Role-based filtering using the already loaded rooms list (which is filtered by role)
+            // Only apply if we are strictly filtering by role context (Lab/Dept Admin)
+            if ((isLaboratory || isDepartmentAdmin) && rooms.length > 0) {
+                // Optimization: If roomFilter is 'all', we must restrict to ALL allowed rooms.
+                // If roomFilter is specific, it's already handled above, BUT we must ensure that specific room is actually allowed.
+                // The accessibleRoomIds list comes from the `rooms` state which is already filtered in loadInitialData.
+                const accessibleRoomIds = rooms.map(r => r.id);
+                if (roomFilter === 'all') {
+                    query = query.in('rooms_id', accessibleRoomIds);
+                }
+            } else if ((isLaboratory || isDepartmentAdmin) && rooms.length === 0) {
+                // If user has no rooms, they shouldn't see any equipment
+                setEquipment([]);
+                setTotalEquipment(0);
+                setLoadingEquipment(false);
+                return;
+            }
+
+            // Pagination
+            const from = (equipmentPage - 1) * itemsPerPage;
+            const to = from + itemsPerPage - 1;
+            query = query.range(from, to).order('created_at', { ascending: false });
+
+            const { data, count, error } = await query;
+            if (error) throw error;
+            setEquipment(data || []);
+            setTotalEquipment(count || 0);
+
+        } catch (error) {
+            console.error('Error fetching equipment:', error);
+            toast.error('Failed to load equipment');
+        } finally {
+            setLoadingEquipment(false);
+        }
+    }, [debouncedEquipmentSearch, equipmentCategoryFilter, roomFilter, equipmentPage, hasAccess, itemsPerPage, isLaboratory, isDepartmentAdmin, rooms]);
+
+    // Update useEffect to trigger fetches
+    useEffect(() => {
+        if (activeTab === 'stock') {
+            fetchStocks();
+        }
+    }, [fetchStocks, activeTab]);
+
+    useEffect(() => {
+        if (activeTab === 'equipment' && rooms.length > 0) {
+            // Only fetch if rooms are loaded (for lab/dept admin safety)
+            // For super admin, rooms might be empty if there are no rooms, but they should still see equipment?
+            // Actually, equipment usually belongs to a room.
+            // Let's rely on fetchEquipment logic to handle it.
+            fetchEquipment();
+        } else if (activeTab === 'equipment' && !isLaboratory && !isDepartmentAdmin) {
+            // Super admin / others might fetch even if rooms logic is different
+            fetchEquipment();
+        }
+    }, [fetchEquipment, activeTab, rooms.length]); // specialized dependency to wait for rooms
+
+    // Replaces the huge initial data loader logic for stocks/equipment
+    // We still need loadInitialData for Rooms, Tables, Racks, Boxes within the main useEffect
+    // Removing the stock/equipment fetching parts from the main useEffect below...
     const fetchGapAnalysis = async (equipmentId: string) => {
         try {
             setLoadingTrack(true);
@@ -1189,41 +1290,7 @@ const ToolAdministration: React.FC = () => {
         }
     };
 
-    // ==================== DATA FETCH FUNCTIONS ====================
-    const fetchStocks = async () => {
-        try {
-            const { data, error } = await supabase.from('stock').select('id, nama, code, category, quantity, unit, spesification, created_at').order('created_at', { ascending: false });
-            if (error) throw error;
-            setStocks(data || []);
-        } catch (error) { console.error('Error fetching stocks:', error); toast.error('Failed to load stocks'); }
-    };
 
-    const fetchEquipment = async () => {
-        try {
-            // PENTING: Harus select `rooms_id` langsung selain relasi `rooms:rooms_id(...)`
-            // Agar form edit bisa menggunakan equipment.rooms_id untuk validasi
-            let query = supabase.from('equipment').select(`
-                id, name, code, category, quantity, unit, condition, 
-                table_id, rack_id, box_id, is_mandatory, is_available, 
-                Spesification, created_at, rooms_id,
-                rooms:rooms_id(id, name, code, department_id, study_program_id, floor, department:departments(id, name, code)), 
-                stock:stock_id(id, nama, code, category, quantity, unit)
-            `).order('created_at', { ascending: false });
-
-            if ((isDepartmentAdmin || isLaboratory) && profile?.department_id) {
-                const { data: departmentRooms } = await supabase.from('rooms').select('id').eq('department_id', profile.department_id);
-                if (departmentRooms && departmentRooms.length > 0) {
-                    query = query.in('rooms_id', departmentRooms.map(room => room.id));
-                }
-            }
-
-            const { data, error } = await query;
-            if (error) throw error;
-            console.log('📦 Fetched equipment:', data?.length, 'items');
-            console.log('📦 First item rooms_id:', data?.[0]?.rooms_id);
-            setEquipment((data || []).map(item => ({ ...item, table_id: item.table_id })));
-        } catch (error) { console.error('Error fetching equipment:', error); toast.error('Failed to load equipment'); }
-    };
 
     // ==================== DELETE HANDLERS ====================
     const handleDeleteStock = async (stockId: string) => {
@@ -1281,22 +1348,15 @@ const ToolAdministration: React.FC = () => {
     };
 
     // ==================== FILTER FUNCTIONS ====================
+    // Server-side filtering handles most of this now.
+    // We keep these memos to return the `stocks` and `equipment` arrays which represent the current page.
     const filteredStocks = useMemo(() => {
-        return stocks.filter(stock => {
-            const matchesSearch = stock.nama.toLowerCase().includes(stockSearchTerm.toLowerCase()) || stock.code.toLowerCase().includes(stockSearchTerm.toLowerCase());
-            const matchesCategory = stockCategoryFilter === 'all' || stock.category === stockCategoryFilter;
-            return matchesSearch && matchesCategory;
-        });
-    }, [stocks, stockSearchTerm, stockCategoryFilter]);
+        return stocks;
+    }, [stocks]);
 
     const filteredEquipment = useMemo(() => {
-        return equipment.filter(eq => {
-            const matchesSearch = eq.name.toLowerCase().includes(equipmentSearchTerm.toLowerCase()) || eq.code.toLowerCase().includes(equipmentSearchTerm.toLowerCase());
-            const matchesCategory = equipmentCategoryFilter === 'all' || eq.category === equipmentCategoryFilter;
-            const matchesRoom = roomFilter === 'all' || eq.rooms_id === roomFilter;
-            return matchesSearch && matchesCategory && matchesRoom;
-        });
-    }, [equipment, equipmentSearchTerm, equipmentCategoryFilter, roomFilter]);
+        return equipment;
+    }, [equipment]);
 
     // Exclude Box and Cabinet from claimable stocks
     const availableStocks = useMemo(() => stocks.filter(stock => stock.quantity > 0 && stock.category !== 'Box' && stock.category !== 'Cabinet'), [stocks]);
@@ -2809,7 +2869,16 @@ const ToolAdministration: React.FC = () => {
                             <div className="flex gap-4">
                                 <div className="relative flex-1">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                                    <input type="text" placeholder={getText('Search stock by name or code...', 'Cari stok berdasarkan nama atau kode...')} value={stockSearchTerm} onChange={(e) => setStockSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors" />
+                                    <input
+                                        type="text"
+                                        placeholder={getText('Search stock by name or code...', 'Cari stok berdasarkan nama atau kode...')}
+                                        value={stockSearchTerm}
+                                        onChange={(e) => {
+                                            setStockSearchTerm(e.target.value);
+                                            handleStockSearch(e.target.value);
+                                        }}
+                                        className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                                    />
                                 </div>
                                 <button onClick={() => handleOpenStockModal()} className="flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 font-medium transition-colors">
                                     <Plus className="h-5 w-5" />{getText('Add Stock', 'Tambah Stok')}
@@ -2846,6 +2915,35 @@ const ToolAdministration: React.FC = () => {
                                     );
                                 })}
                             </div>
+
+                            {/* Stock Pagination */}
+                            <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                                <div className="text-sm text-gray-500">
+                                    {getText('Showing', 'Menampilkan')} <span className="font-bold">{stocks.length}</span> {getText('of', 'dari')} <span className="font-bold">{totalStocks}</span> {getText('stocks', 'stok')}
+                                </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setStockPage(p => Math.max(1, p - 1))}
+                                        disabled={stockPage === 1 || loadingStocks}
+                                        className="px-4 py-2 border rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                                    >
+                                        {getText('Previous', 'Sebelumnya')}
+                                    </button>
+                                    <span className="px-4 py-2 bg-blue-50 text-blue-600 font-bold rounded-lg border border-blue-100">
+                                        {stockPage}
+                                    </span>
+                                    <button
+                                        onClick={() => setStockPage(p => {
+                                            const maxPage = Math.ceil(totalStocks / itemsPerPage);
+                                            return p < maxPage ? p + 1 : p;
+                                        })}
+                                        disabled={stockPage >= Math.ceil(totalStocks / itemsPerPage) || loadingStocks}
+                                        className="px-4 py-2 border rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                                    >
+                                        {getText('Next', 'Selanjutnya')}
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -2855,7 +2953,16 @@ const ToolAdministration: React.FC = () => {
                             <div className="flex gap-4">
                                 <div className="relative flex-1">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                                    <input type="text" placeholder={getText('Search equipment by name or code...', 'Cari peralatan berdasarkan nama atau kode...')} value={equipmentSearchTerm} onChange={(e) => setEquipmentSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors" />
+                                    <input
+                                        type="text"
+                                        placeholder={getText('Search equipment by name or code...', 'Cari peralatan berdasarkan nama atau kode...')}
+                                        value={equipmentSearchTerm}
+                                        onChange={(e) => {
+                                            setEquipmentSearchTerm(e.target.value);
+                                            handleEquipmentSearch(e.target.value);
+                                        }}
+                                        className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                                    />
                                 </div>
                                 <div className="flex gap-2">
                                     {/* Export PDF Button */}
@@ -2909,6 +3016,35 @@ const ToolAdministration: React.FC = () => {
                                         </div>
                                     );
                                 })}
+                            </div>
+
+                            {/* Equipment Pagination */}
+                            <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                                <div className="text-sm text-gray-500">
+                                    {getText('Showing', 'Menampilkan')} <span className="font-bold">{equipment.length}</span> {getText('of', 'dari')} <span className="font-bold">{totalEquipment}</span> {getText('items', 'item')}
+                                </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setEquipmentPage(p => Math.max(1, p - 1))}
+                                        disabled={equipmentPage === 1 || loadingEquipment}
+                                        className="px-4 py-2 border rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                                    >
+                                        {getText('Previous', 'Sebelumnya')}
+                                    </button>
+                                    <span className="px-4 py-2 bg-purple-50 text-purple-600 font-bold rounded-lg border border-purple-100">
+                                        {equipmentPage}
+                                    </span>
+                                    <button
+                                        onClick={() => setEquipmentPage(p => {
+                                            const maxPage = Math.ceil(totalEquipment / itemsPerPage);
+                                            return p < maxPage ? p + 1 : p;
+                                        })}
+                                        disabled={equipmentPage >= Math.ceil(totalEquipment / itemsPerPage) || loadingEquipment}
+                                        className="px-4 py-2 border rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                                    >
+                                        {getText('Next', 'Selanjutnya')}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     )}
