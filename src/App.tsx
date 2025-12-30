@@ -21,6 +21,7 @@ import LectureSchedules from './pages/LectureSchedules';
 import ExamManagement from './pages/ExamManagement';
 import SessionSchedule from './pages/SessionSchedule';
 import Reports from './pages/Reports';
+import TendikDirectory from './pages/TendikDirectory';
 import SystemSettings from './pages/SystemSettings';
 import LocationManagement from './pages/LocationManagement';
 import LaboratoryLocationManagement from './pages/LaboratoryLocationManagement';
@@ -119,6 +120,7 @@ const AppContent = () => {
 
         {/* Public Form View - Standalone without Layout */}
         <Route path="form/:id" element={<Suspense fallback={<LazyLoadingFallback />}><FormView /></Suspense>} />
+        <Route path="tendik" element={<Suspense fallback={<LazyLoadingFallback />}><TendikDirectory /></Suspense>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

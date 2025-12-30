@@ -4,7 +4,6 @@ import {
   Bell,
   LogOut,
   LogIn,
-  Settings,
   User as UserIcon,
   CheckSquare,
   Calendar,
@@ -19,7 +18,6 @@ import {
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import Swal from 'sweetalert2';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useSystemBranding } from '../../contexts/SystemSettingsContext';
 
@@ -35,6 +33,7 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
   const [pendingCheckoutsCount, setPendingCheckoutsCount] = useState(0);
   const [newReportsCount, setNewReportsCount] = useState(0);
   const [pendingToolLendingCount, setPendingToolLendingCount] = useState(0);
+  const [pendingTodosCount, setPendingTodosCount] = useState(0);
   const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
@@ -62,14 +61,28 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
 
   // Fetch notification counts function
   const fetchNotificationCounts = async () => {
-    // Only fetch for super_admin
-    if (user?.role !== 'super_admin') {
-      return;
-    }
-
     if (!supabase) return;
 
     try {
+      // Fetch for technician's pending todos
+      if (user?.role === 'technician') {
+        const { count: todosCount } = await supabase
+          .from('technician_tasks')
+          .select('id', { count: 'exact', head: true })
+          .eq('technician_id', user?.id)
+          .eq('status', 'pending');
+        setPendingTodosCount(todosCount || 0);
+        return; // Return early for technicians
+      }
+
+      // Only fetch for super_admin
+      if (user?.role !== 'super_admin') {
+        return;
+      }
+
+
+
+
       // Fetch for bookings
       const { count: bookingsCount } = await supabase
         .from('bookings')
@@ -107,13 +120,16 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
     // Initial fetch
     fetchNotificationCounts();
 
-    // Set up interval to refresh every minute (60000ms) only for super_admin
+    // Set up interval to refresh every minute (60000ms) for super_admin and technician
     let intervalId: NodeJS.Timeout;
     let bookingSubscription: any;
     let checkoutSubscription: any;
     let reportsSubscription: any;
 
-    if (user?.role === 'super_admin' && supabase) {
+    if (user?.role === 'technician' && supabase) {
+      // Set up interval for technician
+      intervalId = setInterval(fetchNotificationCounts, 60000);
+    } else if (user?.role === 'super_admin' && supabase) {
       // Set up interval for periodic refresh
       intervalId = setInterval(fetchNotificationCounts, 60000);
 
@@ -181,7 +197,9 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
     };
   }, [user]);
 
-  const totalNotifications = pendingBookingsCount + pendingCheckoutsCount + newReportsCount + pendingToolLendingCount;
+  const totalNotifications = user?.role === 'technician'
+    ? pendingTodosCount
+    : pendingBookingsCount + pendingCheckoutsCount + newReportsCount + pendingToolLendingCount;
 
   const changeLanguage = (lang: 'en' | 'id') => {
     setLanguage(lang);
@@ -341,159 +359,168 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
 
           {user && (
             <>
-              {/* Notifications - Only visible for super_admin */}
-              {user.role === 'super_admin' && (
-                <div className="relative" data-dropdown>
-                  <button
-                    className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
-                    onClick={() => {
-                      setShowNotificationsDropdown(!showNotificationsDropdown);
-                      setShowUserDropdown(false);
-                      setShowLanguageDropdown(false);
-                    }}
-                  >
-                    <Bell className="h-5 w-5" />
-                    {totalNotifications > 0 && (
-                      <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 rounded-full flex items-center justify-center">
-                        <span className="text-xs text-white font-bold">
-                          {totalNotifications > 99 ? '99+' : totalNotifications}
-                        </span>
+              {/* Notifications - Visible for all logged users */}
+              <div className="relative" data-dropdown>
+                <button
+                  className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
+                  onClick={() => {
+                    setShowNotificationsDropdown(!showNotificationsDropdown);
+                    setShowUserDropdown(false);
+                    setShowLanguageDropdown(false);
+                  }}
+                >
+                  <Bell className="h-5 w-5" />
+                  {totalNotifications > 0 && (
+                    <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 rounded-full flex items-center justify-center">
+                      <span className="text-xs text-white font-bold">
+                        {totalNotifications > 99 ? '99+' : totalNotifications}
                       </span>
-                    )}
-                  </button>
+                    </span>
+                  )}
+                </button>
 
-                  {showNotificationsDropdown && (
-                    <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                      <div className="p-4 border-b border-gray-200">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-lg font-bold text-gray-900">
-                            {getText('Notifications', 'Notifikasi')}
-                          </h3>
-                          <button
-                            onClick={() => setShowNotificationsDropdown(false)}
-                            className="p-1 rounded hover:bg-gray-100"
-                          >
-                            <X className="h-4 w-4 text-gray-500" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="max-h-80 overflow-y-auto">
-                        {totalNotifications === 0 ? (
-                          <div className="p-8 text-center">
-                            <Bell className="h-8 w-8 text-gray-400 mx-auto mb-4" />
-                            <p className="text-gray-500 font-medium">
-                              {getText('No new notifications', 'Tidak ada notifikasi baru')}
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="p-2 space-y-2">
-                            {pendingBookingsCount > 0 && (
-                              <div
-                                className="p-4 hover:bg-blue-50 cursor-pointer rounded"
-                                onClick={() => {
-                                  navigate('/bookings');
-                                  setShowNotificationsDropdown(false);
-                                }}
-                              >
-                                <div className="flex items-start space-x-3">
-                                  <Calendar className="h-5 w-5 text-blue-600 mt-1" />
-                                  <div>
-                                    <p className="text-sm font-semibold text-gray-900">
-                                      {getText('Pending Room Bookings', 'Pemesanan Ruangan Menunggu')}
-                                    </p>
-                                    <p className="text-sm text-gray-600">
-                                      {pendingBookingsCount} {getText('booking', 'pemesanan')} {getText('waiting for approval', 'menunggu persetujuan')}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-
-                            {pendingCheckoutsCount > 0 && (
-                              <div
-                                className="p-4 hover:bg-green-50 cursor-pointer rounded"
-                                onClick={() => {
-                                  navigate('/validation');
-                                  setShowNotificationsDropdown(false);
-                                }}
-                              >
-                                <div className="flex items-start space-x-3">
-                                  <CheckSquare className="h-5 w-5 text-green-600 mt-1" />
-                                  <div>
-                                    <p className="text-sm font-semibold text-gray-900">
-                                      {getText('Pending Checkouts', 'Pengembalian Menunggu')}
-                                    </p>
-                                    <p className="text-sm text-gray-600">
-                                      {pendingCheckoutsCount} {getText('checkout', 'pengembalian')} {getText('waiting for approval', 'menunggu persetujuan')}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-
-                            {newReportsCount > 0 && (
-                              <div
-                                className="p-4 hover:bg-orange-50 cursor-pointer rounded"
-                                onClick={() => {
-                                  navigate('/reports');
-                                  setShowNotificationsDropdown(false);
-                                }}
-                              >
-                                <div className="flex items-start space-x-3">
-                                  <FileText className="h-5 w-5 text-orange-600 mt-1" />
-                                  <div>
-                                    <p className="text-sm font-semibold text-gray-900">
-                                      {getText('New Reports', 'Laporan Baru')}
-                                    </p>
-                                    <p className="text-sm text-gray-600">
-                                      {newReportsCount} {getText('new report', 'laporan baru')} {getText('requiring attention', 'memerlukan perhatian')}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-
-                            {pendingToolLendingCount > 0 && (
-                              <div
-                                className="p-4 hover:bg-purple-50 cursor-pointer rounded"
-                                onClick={() => {
-                                  navigate('/tool-lending-management');
-                                  setShowNotificationsDropdown(false);
-                                }}
-                              >
-                                <div className="flex items-start space-x-3">
-                                  <HandHelping className="h-5 w-5 text-purple-600 mt-1" />
-                                  <div>
-                                    <p className="text-sm font-semibold text-gray-900">
-                                      {getText('Pending Tool Lending', 'Peminjaman Alat Pending')}
-                                    </p>
-                                    <p className="text-sm text-gray-600">
-                                      {pendingToolLendingCount} {getText('tool lending', 'peminjaman alat')} {getText('in progress', 'sedang berlangsung')}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
+                {showNotificationsDropdown && (
+                  <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                    <div className="p-4 border-b border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-bold text-gray-900">
+                          {getText('Notifications', 'Notifikasi')}
+                        </h3>
+                        <button
+                          onClick={() => setShowNotificationsDropdown(false)}
+                          className="p-1 rounded hover:bg-gray-100"
+                        >
+                          <X className="h-4 w-4 text-gray-500" />
+                        </button>
                       </div>
                     </div>
-                  )}
-                </div>
-              )}
 
-              {/* Settings */}
-              <button className="hidden sm:block p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg">
-                <Settings className="h-5 w-5"
-                  onClick={() => {
-                    Swal.fire({
-                      title: getText('Success', 'Berhasil'),
-                      text: getText('Success To Add User', 'Berhasil Menambah User'),
-                      icon: "success"
-                    });
-                  }} />
-              </button>
+                    <div className="max-h-80 overflow-y-auto">
+                      {totalNotifications === 0 ? (
+                        <div className="p-8 text-center">
+                          <Bell className="h-8 w-8 text-gray-400 mx-auto mb-4" />
+                          <p className="text-gray-500 font-medium">
+                            {getText('No new notifications', 'Tidak ada notifikasi baru')}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="p-2 space-y-2">
+                          {pendingBookingsCount > 0 && (
+                            <div
+                              className="p-4 hover:bg-blue-50 cursor-pointer rounded"
+                              onClick={() => {
+                                navigate('/bookings');
+                                setShowNotificationsDropdown(false);
+                              }}
+                            >
+                              <div className="flex items-start space-x-3">
+                                <Calendar className="h-5 w-5 text-blue-600 mt-1" />
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-900">
+                                    {getText('Pending Room Bookings', 'Pemesanan Ruangan Menunggu')}
+                                  </p>
+                                  <p className="text-sm text-gray-600">
+                                    {pendingBookingsCount} {getText('booking', 'pemesanan')} {getText('waiting for approval', 'menunggu persetujuan')}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {pendingCheckoutsCount > 0 && (
+                            <div
+                              className="p-4 hover:bg-green-50 cursor-pointer rounded"
+                              onClick={() => {
+                                navigate('/validation');
+                                setShowNotificationsDropdown(false);
+                              }}
+                            >
+                              <div className="flex items-start space-x-3">
+                                <CheckSquare className="h-5 w-5 text-green-600 mt-1" />
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-900">
+                                    {getText('Pending Checkouts', 'Pengembalian Menunggu')}
+                                  </p>
+                                  <p className="text-sm text-gray-600">
+                                    {pendingCheckoutsCount} {getText('checkout', 'pengembalian')} {getText('waiting for approval', 'menunggu persetujuan')}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {newReportsCount > 0 && (
+                            <div
+                              className="p-4 hover:bg-orange-50 cursor-pointer rounded"
+                              onClick={() => {
+                                navigate('/reports');
+                                setShowNotificationsDropdown(false);
+                              }}
+                            >
+                              <div className="flex items-start space-x-3">
+                                <FileText className="h-5 w-5 text-orange-600 mt-1" />
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-900">
+                                    {getText('New Reports', 'Laporan Baru')}
+                                  </p>
+                                  <p className="text-sm text-gray-600">
+                                    {newReportsCount} {getText('new report', 'laporan baru')} {getText('requiring attention', 'memerlukan perhatian')}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {pendingToolLendingCount > 0 && (
+                            <div
+                              className="p-4 hover:bg-purple-50 cursor-pointer rounded"
+                              onClick={() => {
+                                navigate('/tool-lending-management');
+                                setShowNotificationsDropdown(false);
+                              }}
+                            >
+                              <div className="flex items-start space-x-3">
+                                <HandHelping className="h-5 w-5 text-purple-600 mt-1" />
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-900">
+                                    {getText('Pending Tool Lending', 'Peminjaman Alat Pending')}
+                                  </p>
+                                  <p className="text-sm text-gray-600">
+                                    {pendingToolLendingCount} {getText('tool lending', 'peminjaman alat')} {getText('in progress', 'sedang berlangsung')}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* For Technician */}
+                          {user.role === 'technician' && pendingTodosCount > 0 && (
+                            <div
+                              className="p-4 hover:bg-yellow-50 cursor-pointer rounded"
+                              onClick={() => {
+                                navigate('/technician-todo');
+                                setShowNotificationsDropdown(false);
+                              }}
+                            >
+                              <div className="flex items-start space-x-3">
+                                <CheckSquare className="h-5 w-5 text-yellow-600 mt-1" />
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-900">
+                                    {getText('Pending To-Do Tasks', 'Tugas Pending')}
+                                  </p>
+                                  <p className="text-sm text-gray-600">
+                                    {pendingTodosCount} {getText('task', 'tugas')} {getText('waiting to be completed', 'menunggu dikerjakan')}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* User Menu */}
               <div className="relative" data-dropdown>
@@ -562,19 +589,6 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
                         <UserIcon className="h-4 w-4 text-gray-500" />
                         <span className="text-sm font-medium text-gray-700">
                           {getText('View Profile', 'Lihat Profil')}
-                        </span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          navigate('/settings');
-                          setShowUserDropdown(false);
-                        }}
-                        className="w-full flex items-center space-x-3 p-3 text-left hover:bg-gray-50 rounded"
-                      >
-                        <Settings className="h-4 w-4 text-gray-500" />
-                        <span className="text-sm font-medium text-gray-700">
-                          {getText('Settings', 'Pengaturan')}
                         </span>
                       </button>
                     </div>

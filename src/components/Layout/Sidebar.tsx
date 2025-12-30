@@ -23,6 +23,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
     const [pendingCheckoutsCount, setPendingCheckoutsCount] = useState(0);
     const [newReportsCount, setNewReportsCount] = useState(0);
     const [pendingToolLendingCount, setPendingToolLendingCount] = useState(0);
+    const [pendingTodosCount, setPendingTodosCount] = useState(0);
     const [showProfileModal, setShowProfileModal] = useState(false);
 
     // Use system settings from global context (no more local fetch needed)
@@ -79,14 +80,25 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
 
     // Fetch notification counts function
     const fetchNotificationCounts = async () => {
-        // Fetch for super_admin and laboratory
-        if (user?.role !== 'super_admin' && user?.role !== 'laboratory') {
-            return;
-        }
-
         if (!supabase) return;
 
         try {
+            // Fetch for technician's pending todos
+            if (user?.role === 'technician') {
+                const { count: todosCount } = await supabase
+                    .from('technician_tasks')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('technician_id', user?.id)
+                    .eq('status', 'pending');
+                setPendingTodosCount(todosCount || 0);
+                return; // Return early for technicians
+            }
+
+            // Fetch for super_admin and laboratory
+            if (user?.role !== 'super_admin' && user?.role !== 'laboratory') {
+                return;
+            }
+
             // Fetch for reports (only for super_admin)
             if (user?.role === 'super_admin') {
                 const { count: reportsCount } = await supabase
@@ -134,9 +146,9 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
         // Initial fetch
         fetchNotificationCounts();
 
-        // Set up interval to refresh every minute (60000ms) for super_admin and laboratory
+        // Set up interval to refresh every minute (60000ms) for super_admin, laboratory, and technician
         let intervalId: NodeJS.Timeout;
-        if (user?.role === 'super_admin' || user?.role === 'laboratory') {
+        if (user?.role === 'super_admin' || user?.role === 'laboratory' || user?.role === 'technician') {
             intervalId = setInterval(fetchNotificationCounts, 60000);
         }
 
@@ -230,7 +242,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
         // Jika user adalah technician (Teknisi)
         if (user.role === 'technician') {
             return [
-                { icon: CheckSquare, label: getText('To-Do List', 'Daftar Tugas'), path: '/technician-todo' },
+                { icon: CheckSquare, label: getText('To-Do List', 'Daftar Tugas'), path: '/technician-todo', badge: pendingTodosCount > 0 ? pendingTodosCount : null },
                 { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
