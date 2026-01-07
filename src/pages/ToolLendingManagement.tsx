@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     Wrench, Search, Eye, Trash2, RefreshCw, Download, User, Package,
     AlertCircle, Clock, X, CheckCircle, XCircle, Loader2,
-    FileText, Check, AlertTriangle
+    FileText, Check, AlertTriangle, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -10,6 +10,9 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { Equipment, User as UserType } from '../types';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
+
+// Pagination constants
+const ITEMS_PER_PAGE = 20;
 
 interface LendingRecord {
     id: string;
@@ -72,12 +75,16 @@ const ToolLendingManagement: React.FC = () => {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
     const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
 
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalRecords, setTotalRecords] = useState(0);
+
     useEffect(() => {
         fetchLendingRecords();
 
         // Real-time subscription
         const subscription = supabase
-            .channel('tool-administration')
+            .channel('tool-lending-management')
             .on('postgres_changes',
                 { event: '*', schema: 'public', table: 'lending_tool' },
                 () => { fetchLendingRecords(); }
@@ -87,145 +94,198 @@ const ToolLendingManagement: React.FC = () => {
         return () => {
             subscription.unsubscribe();
         };
-    }, [profile?.id]);
+    }, [profile?.id, currentPage]);
 
-    const fetchLendingRecords = async () => {
+    const fetchLendingRecords = useCallback(async () => {
         try {
             setLoading(true);
 
             const userRole = profile?.role;
-            let lendingData: any[] = [];
+            const offset = (currentPage - 1) * ITEMS_PER_PAGE;
 
-            // ==================== SWITCH BY ROLE ====================
-            switch (userRole) {
-                case 'super_admin': {
-                    // ✅ SUPER ADMIN: Fetch semua lending records tanpa filter
-                    console.log('👑 Super Admin: Fetching ALL lending records...');
+            console.log(`🔍 Fetching lending records - Role: ${userRole}, Page: ${currentPage}`);
 
-                    const { data, error } = await supabase
-                        .from('lending_tool')
-                        .select('*')
-                        .order('created_at', { ascending: false })
-                        .limit(100);
+            // ==================== SUPER ADMIN: SIMPLE DIRECT QUERY ====================
+            if (userRole === 'super_admin') {
+                // Count total (simple, fast)
+                const { count, error: countError } = await supabase
+                    .from('lending_tool')
+                    .select('id', { count: 'estimated', head: true }); // Use estimated for speed
 
-                    if (error) throw error;
-                    lendingData = data || [];
+                if (countError) throw countError;
+                setTotalRecords(count || 0);
 
-                    console.log(`   ✅ Total records fetched: ${lendingData.length}`);
-                    break;
-                }
+                // Fetch paginated records - SELECT ONLY NECESSARY COLUMNS
+                const { data: lendingData, error } = await supabase
+                    .from('lending_tool')
+                    .select('id, created_at, updated_at, id_user, date, id_equipment, qty, status, attachments')
+                    .order('created_at', { ascending: false })
+                    .range(offset, offset + ITEMS_PER_PAGE - 1);
 
-                case 'laboratory': {
-                    // ✅ LABORAN: Filter berdasarkan Study Program dari User
-                    const laborStudyProgramId = profile?.study_program_id;
-                    console.log(`🔬 Laboran: Filtering by Study Program ID: ${laborStudyProgramId}`);
+                if (error) throw error;
 
-                    if (!laborStudyProgramId) {
-                        console.warn('⚠️ Laboran has no study_program_id assigned');
-                        setLendingRecords([]);
-                        setLoading(false);
-                        return;
-                    }
-
-                    // Step 1: Fetch users dari Study Program yang sama
-                    console.log('   📚 Step 1: Fetching users from same study program...');
-                    const { data: usersInProdi, error: usersError } = await supabase
-                        .from('users')
-                        .select('id, full_name')
-                        .eq('study_program_id', laborStudyProgramId);
-
-                    if (usersError) throw usersError;
-
-                    if (!usersInProdi || usersInProdi.length === 0) {
-                        console.log('   ⚠️ No users found in this study program');
-                        setLendingRecords([]);
-                        setLoading(false);
-                        return;
-                    }
-
-                    console.log(`   ✅ Found ${usersInProdi.length} users in study program`);
-                    const userIds = usersInProdi.map(u => u.id);
-
-                    // Step 2: Fetch lending_tool records only for users in same study program
-                    console.log('   📦 Step 2: Fetching lending records for these users...');
-                    const { data, error } = await supabase
-                        .from('lending_tool')
-                        .select('*')
-                        .in('id_user', userIds)
-                        .order('created_at', { ascending: false })
-                        .limit(50);
-
-                    if (error) throw error;
-                    lendingData = data || [];
-
-                    console.log(`   ✅ Total records for study program: ${lendingData.length}`);
-                    break;
-                }
-
-                default: {
-                    // ❌ Role lain tidak memiliki akses
-                    console.warn(`⚠️ Unknown role: ${userRole} - Access denied`);
+                if (!lendingData || lendingData.length === 0) {
                     setLendingRecords([]);
                     setLoading(false);
                     return;
                 }
-            }
 
-            // ==================== FETCH USER & EQUIPMENT DETAILS ====================
-            if (lendingData.length === 0) {
-                setLendingRecords([]);
+                console.log(`📦 Super Admin: Fetched ${lendingData.length} records`);
+
+                // Batch fetch users and equipment for this page only
+                const userIds = [...new Set(lendingData.map(r => r.id_user).filter(Boolean))];
+                const equipmentIds = [...new Set(lendingData.flatMap(r => r.id_equipment || []))];
+
+                // Fetch users in batch
+                let usersMap = new Map<string, any>();
+                if (userIds.length > 0) {
+                    const { data: usersData } = await supabase
+                        .from('users')
+                        .select('id, full_name, identity_number, email, role, phone_number, study_program_id')
+                        .in('id', userIds);
+
+                    (usersData || []).forEach((u: any) => usersMap.set(u.id, u));
+                }
+
+                // Fetch equipment in batch
+                let equipmentMap = new Map<string, Equipment>();
+                if (equipmentIds.length > 0) {
+                    const { data: equipmentData } = await supabase
+                        .from('equipment')
+                        .select('id, name, code, quantity, unit')
+                        .in('id', equipmentIds);
+
+                    (equipmentData || []).forEach((eq: any) => equipmentMap.set(eq.id, eq));
+                }
+
+                // Map data
+                const recordsWithDetails: LendingRecord[] = lendingData.map((record: any) => ({
+                    ...record,
+                    user: record.id_user ? usersMap.get(record.id_user) || null : null,
+                    equipment_details: (record.id_equipment || [])
+                        .map((id: string) => equipmentMap.get(id))
+                        .filter(Boolean) as Equipment[]
+                }));
+
+                setLendingRecords(recordsWithDetails);
+                console.log(`✅ Super Admin fetch complete. ${recordsWithDetails.length} records`);
                 setLoading(false);
                 return;
             }
 
-            console.log('📋 Fetching user and equipment details...');
+            // ==================== LABORATORY: FILTER BY STUDY PROGRAM ====================
+            if (userRole === 'laboratory') {
+                const laborStudyProgramId = profile?.study_program_id;
 
-            const recordsWithDetails = await Promise.all(
-                lendingData.map(async (record) => {
-                    let user: (UserType & { study_program_id?: string }) | null = null;
-                    let equipmentDetails: Equipment[] = [];
+                if (!laborStudyProgramId) {
+                    console.warn('⚠️ Laboran has no study_program_id assigned');
+                    setLendingRecords([]);
+                    setTotalRecords(0);
+                    setLoading(false);
+                    return;
+                }
 
-                    // Fetch user data if exists
-                    if (record.id_user) {
-                        const { data: userData } = await supabase
-                            .from('users')
-                            .select('id, full_name, identity_number, email, role, phone_number, study_program_id')
-                            .eq('id', record.id_user)
-                            .maybeSingle();
-                        if (userData) user = userData as any;
-                    }
+                // Step 1: Get user IDs in same study program
+                const { data: usersInProdi, error: usersError } = await supabase
+                    .from('users')
+                    .select('id')
+                    .eq('study_program_id', laborStudyProgramId);
 
-                    // Fetch equipment details (simplified - no room join to avoid timeout)
-                    if (record.id_equipment && record.id_equipment.length > 0) {
-                        const { data: equipmentData } = await supabase
-                            .from('equipment')
-                            .select('id, name, code, quantity, unit')
-                            .in('id', record.id_equipment);
+                if (usersError) throw usersError;
 
-                        if (equipmentData) {
-                            // Sort equipment to match the order in id_equipment array
-                            equipmentDetails = record.id_equipment.map((id: string) =>
-                                equipmentData.find(eq => eq.id === id)
-                            ).filter(Boolean) as Equipment[];
-                        }
-                    }
+                if (!usersInProdi || usersInProdi.length === 0) {
+                    console.log('⚠️ No users in this study program');
+                    setLendingRecords([]);
+                    setTotalRecords(0);
+                    setLoading(false);
+                    return;
+                }
 
-                    return {
-                        ...record,
-                        user,
-                        equipment_details: equipmentDetails
-                    };
-                })
-            );
+                const userIdsInProdi = usersInProdi.map(u => u.id);
 
-            setLendingRecords(recordsWithDetails);
-            console.log(`✅ Fetch complete. Total records loaded: ${recordsWithDetails.length}`);
+                // Count total for this filter
+                const { count, error: countError } = await supabase
+                    .from('lending_tool')
+                    .select('id', { count: 'estimated', head: true }) // Use estimated
+                    .in('id_user', userIdsInProdi);
+
+                if (countError) throw countError;
+                setTotalRecords(count || 0);
+
+                // Fetch paginated records - SELECT ONLY NECESSARY COLUMNS
+                const { data: lendingData, error } = await supabase
+                    .from('lending_tool')
+                    .select('id, created_at, updated_at, id_user, date, id_equipment, qty, status, attachments')
+                    .in('id_user', userIdsInProdi)
+                    .order('created_at', { ascending: false })
+                    .range(offset, offset + ITEMS_PER_PAGE - 1);
+
+                if (error) throw error;
+
+                if (!lendingData || lendingData.length === 0) {
+                    setLendingRecords([]);
+                    setLoading(false);
+                    return;
+                }
+
+                console.log(`📦 Laboran: Fetched ${lendingData.length} records`);
+
+                // Batch fetch users and equipment for this page only
+                const pageUserIds = [...new Set(lendingData.map(r => r.id_user).filter(Boolean))];
+                const equipmentIds = [...new Set(lendingData.flatMap(r => r.id_equipment || []))];
+
+                let usersMap = new Map<string, any>();
+                if (pageUserIds.length > 0) {
+                    const { data: usersData } = await supabase
+                        .from('users')
+                        .select('id, full_name, identity_number, email, role, phone_number, study_program_id')
+                        .in('id', pageUserIds);
+
+                    (usersData || []).forEach((u: any) => usersMap.set(u.id, u));
+                }
+
+                let equipmentMap = new Map<string, Equipment>();
+                if (equipmentIds.length > 0) {
+                    const { data: equipmentData } = await supabase
+                        .from('equipment')
+                        .select('id, name, code, quantity, unit')
+                        .in('id', equipmentIds);
+
+                    (equipmentData || []).forEach((eq: any) => equipmentMap.set(eq.id, eq));
+                }
+
+                const recordsWithDetails: LendingRecord[] = lendingData.map((record: any) => ({
+                    ...record,
+                    user: record.id_user ? usersMap.get(record.id_user) || null : null,
+                    equipment_details: (record.id_equipment || [])
+                        .map((id: string) => equipmentMap.get(id))
+                        .filter(Boolean) as Equipment[]
+                }));
+
+                setLendingRecords(recordsWithDetails);
+                console.log(`✅ Laboran fetch complete. ${recordsWithDetails.length} records`);
+                setLoading(false);
+                return;
+            }
+
+            // ==================== OTHER ROLES: NO ACCESS ====================
+            console.warn(`⚠️ Unknown role: ${userRole} - Access denied`);
+            setLendingRecords([]);
+            setTotalRecords(0);
+            setLoading(false);
 
         } catch (error) {
             console.error('Error fetching lending records:', error);
             toast.error(getText('Failed to load lending records', 'Gagal memuat data peminjaman'));
-        } finally {
             setLoading(false);
+        }
+    }, [profile?.role, profile?.study_program_id, currentPage, getText]);
+
+    // Pagination helpers
+    const totalPages = Math.ceil(totalRecords / ITEMS_PER_PAGE);
+    const handlePageChange = (page: number) => {
+        if (page >= 1 && page <= totalPages) {
+            setCurrentPage(page);
         }
     };
 
@@ -935,6 +995,66 @@ const ToolLendingManagement: React.FC = () => {
                 </div>
             </div>
 
+            {/* Pagination */}
+            {totalPages > 1 && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                    <div className="flex items-center justify-between">
+                        <div className="text-sm text-gray-600">
+                            {getText(
+                                `Showing ${((currentPage - 1) * ITEMS_PER_PAGE) + 1} - ${Math.min(currentPage * ITEMS_PER_PAGE, totalRecords)} of ${totalRecords} records`,
+                                `Menampilkan ${((currentPage - 1) * ITEMS_PER_PAGE) + 1} - ${Math.min(currentPage * ITEMS_PER_PAGE, totalRecords)} dari ${totalRecords} data`
+                            )}
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <button
+                                onClick={() => handlePageChange(currentPage - 1)}
+                                disabled={currentPage === 1 || loading}
+                                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <ChevronLeft className="h-5 w-5" />
+                            </button>
+
+                            {/* Page numbers */}
+                            <div className="flex items-center space-x-1">
+                                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                    let pageNum: number;
+                                    if (totalPages <= 5) {
+                                        pageNum = i + 1;
+                                    } else if (currentPage <= 3) {
+                                        pageNum = i + 1;
+                                    } else if (currentPage >= totalPages - 2) {
+                                        pageNum = totalPages - 4 + i;
+                                    } else {
+                                        pageNum = currentPage - 2 + i;
+                                    }
+
+                                    return (
+                                        <button
+                                            key={pageNum}
+                                            onClick={() => handlePageChange(pageNum)}
+                                            disabled={loading}
+                                            className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${currentPage === pageNum
+                                                ? 'bg-green-600 text-white'
+                                                : 'text-gray-600 hover:bg-gray-100'
+                                                }`}
+                                        >
+                                            {pageNum}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            <button
+                                onClick={() => handlePageChange(currentPage + 1)}
+                                disabled={currentPage === totalPages || loading}
+                                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <ChevronRight className="h-5 w-5" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {/* Detail Modal */}
             {showDetailModal && selectedRecord && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
