@@ -31,6 +31,18 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import EquipmentImportModal from '../components/EquipmentImport/EquipmentImportModal';
 import { useDebouncedCallback } from 'use-debounce';
+import logoUNY from '../assets/logouny.png';
+
+const getImageDataUrl = async (url: string): Promise<string> => {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+};
 
 // ==================== TYPES ====================
 interface Stock {
@@ -85,6 +97,22 @@ interface StockTrackRecord {
     claimed_at: string;
     condition: string;
 }
+
+// Detail Equipment interface - for the detail_equipment table
+interface DetailEquipment {
+    id: string;
+    equipment_id: string;
+    name: string;
+    code: string;
+    quantity: number;
+    unit: string;
+    condition: string;
+    attachments?: string;
+    notes?: string;
+    created_at?: string;
+    updated_at?: string;
+}
+
 
 // ==================== HELPER COMPONENTS ====================
 const PhotoPlaceholder = ({ title, subtitle }: { title?: string, subtitle?: string }) => (
@@ -419,6 +447,8 @@ const ToolAdministration: React.FC = () => {
     const [photoExplicitlyRemoved, setPhotoExplicitlyRemoved] = useState(false);
     const [loadingImage, setLoadingImage] = useState(false);
     const [showEquipmentImageFullscreen, setShowEquipmentImageFullscreen] = useState(false);
+    const [showDetailImageFullscreen, setShowDetailImageFullscreen] = useState(false);
+    const [detailFullscreenImage, setDetailFullscreenImage] = useState('');
 
     // File input refs - prevents scroll jump when clicking upload
     const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -436,6 +466,25 @@ const ToolAdministration: React.FC = () => {
     const [selectedTableForEdit, setSelectedTableForEdit] = useState<Tabel | null>(null);
     const [selectedRackForEdit, setSelectedRackForEdit] = useState<Rack | null>(null);
     const [selectedBoxForEdit, setSelectedBoxForEdit] = useState<Box | null>(null);
+
+    // Detail Equipment states - for the detail_equipment table
+    const [detailEquipments, setDetailEquipments] = useState<DetailEquipment[]>([]);
+    const [loadingDetailEquipments, setLoadingDetailEquipments] = useState(false);
+    const [showDetailEquipmentModal, setShowDetailEquipmentModal] = useState(false);
+    const [editingDetailEquipment, setEditingDetailEquipment] = useState<DetailEquipment | null>(null);
+    const [detailEquipmentForm, setDetailEquipmentForm] = useState({
+        name: '',
+        code: '',
+        quantity: 1,
+        unit: 'pcs',
+        condition: 'GOOD',
+        notes: '',
+        attachments: ''
+    });
+    const [detailImagePreview, setDetailImagePreview] = useState<string>('');
+    const [loadingDetailImage, setLoadingDetailImage] = useState(false);
+    const detailFileInputRef = useRef<HTMLInputElement>(null);
+
 
     // Debounced Search Handlers
     const handleStockSearch = useDebouncedCallback((value: string) => {
@@ -654,10 +703,10 @@ const ToolAdministration: React.FC = () => {
         try {
             setLoadingEquipment(true);
 
-            // Base query
+            // Base query - include department_id and study_program_id from equipment table
             let query = supabase
                 .from('equipment')
-                .select(`id, name, code, category, quantity, unit, condition, created_at, table_id, rack_id, box_id, is_mandatory, is_available, Spesification, rooms_id, rooms:rooms_id(id, name, code, department_id, study_program_id, floor, department:departments(id, name, code)), stock:stock_id(id, nama, code, category, quantity, unit)`, { count: 'exact' });
+                .select(`id, name, code, category, quantity, unit, condition, created_at, table_id, rack_id, box_id, is_mandatory, is_available, Spesification, rooms_id, department_id, study_program_id, rooms:rooms_id(id, name, code, department_id, study_program_id, floor, department:departments(id, name, code)), stock:stock_id(id, nama, code, category, quantity, unit)`, { count: 'exact' });
 
             // Search
             if (debouncedEquipmentSearch) {
@@ -673,33 +722,83 @@ const ToolAdministration: React.FC = () => {
                 query = query.eq('rooms_id', roomFilter);
             }
 
-            // Role-based filtering using the already loaded rooms list (which is filtered by role)
-            // Only apply if we are strictly filtering by role context (Lab/Dept Admin)
-            if ((isLaboratory || isDepartmentAdmin) && rooms.length > 0) {
-                // Optimization: If roomFilter is 'all', we must restrict to ALL allowed rooms.
-                // If roomFilter is specific, it's already handled above, BUT we must ensure that specific room is actually allowed.
-                // The accessibleRoomIds list comes from the `rooms` state which is already filtered in loadInitialData.
-                const accessibleRoomIds = rooms.map(r => r.id);
-                if (roomFilter === 'all') {
-                    query = query.in('rooms_id', accessibleRoomIds);
+            // Role-based filtering:
+            // - Super Admin & Purchasing: See ALL equipment
+            // - Laboratory: Filter by department_id and study_program_id directly from equipment table
+            // - Department Admin: Filter by department_id
+            if (isLaboratory) {
+                const laborDeptId = profile?.department_id;
+                const laborStudyProgramId = profile?.study_program_id;
+
+                console.log('========== LABORAN EQUIPMENT FILTER DEBUG ==========');
+                console.log('User Profile:', profile);
+                console.log('User Role:', profile?.role);
+                console.log('User Dept ID:', laborDeptId);
+                console.log('User Prodi ID:', laborStudyProgramId);
+
+                if (laborDeptId) {
+                    // STRATEGY CHANGE: Fetch ALL equipment for the department first
+                    // Then filter in JS. This avoids fragile .or() syntax issues with Supabase client.
+                    query = query.eq('department_id', laborDeptId);
+                } else {
+                    console.log('WARNING: User has no department_id!');
+                    setEquipment([]);
+                    setTotalEquipment(0);
+                    setLoadingEquipment(false);
+                    return;
                 }
-            } else if ((isLaboratory || isDepartmentAdmin) && rooms.length === 0) {
-                // If user has no rooms, they shouldn't see any equipment
-                setEquipment([]);
-                setTotalEquipment(0);
-                setLoadingEquipment(false);
-                return;
+            } else if (isDepartmentAdmin && profile?.department_id) {
+                query = query.eq('department_id', profile.department_id);
             }
 
-            // Pagination
-            const from = (equipmentPage - 1) * itemsPerPage;
-            const to = from + itemsPerPage - 1;
-            query = query.range(from, to).order('created_at', { ascending: false });
+            // Pagination logic
+            let from = (equipmentPage - 1) * itemsPerPage;
+            let to = from + itemsPerPage - 1;
+
+            // If Laboratory, we fetch ALL first, then filter, then paginate in JS
+            // This prevents "holes" in the page caused by filtering after pagination
+            if (!isLaboratory) {
+                query = query.range(from, to);
+            }
+
+            query = query.order('created_at', { ascending: false });
 
             const { data, count, error } = await query;
+
+            console.log('========== QUERY RESULT ==========');
+            console.log('Count (from DB):', count);
+
             if (error) throw error;
-            setEquipment(data || []);
-            setTotalEquipment(count || 0);
+
+            let finalData = data || [];
+
+            // IN-MEMORY FILTER & PAGINATION FOR LABORAN
+            if (isLaboratory && profile?.study_program_id) {
+                const laborProdiId = profile.study_program_id;
+                const originalCount = finalData.length;
+
+                finalData = finalData.filter((item: any) => {
+                    // Include if item belongs to general dept (prodi is null) OR matches user prodi
+                    return item.study_program_id === null || item.study_program_id === laborProdiId;
+                });
+
+                console.log(`Filtered in-memory: ${originalCount} -> ${finalData.length} items`);
+
+                // Update total count based on valid items
+                setTotalEquipment(finalData.length);
+
+                // Manual Javascript Pagination
+                // Re-calculate from/to because we are slicing the array locally
+                const startIndex = (equipmentPage - 1) * itemsPerPage;
+                const endIndex = startIndex + itemsPerPage;
+                finalData = finalData.slice(startIndex, endIndex);
+
+            } else {
+                // For non-laboran, count from DB is accurate
+                setTotalEquipment(count || 0);
+            }
+
+            setEquipment(finalData);
 
         } catch (error) {
             console.error('Error fetching equipment:', error);
@@ -707,9 +806,15 @@ const ToolAdministration: React.FC = () => {
         } finally {
             setLoadingEquipment(false);
         }
-    }, [debouncedEquipmentSearch, equipmentCategoryFilter, roomFilter, equipmentPage, hasAccess, itemsPerPage, isLaboratory, isDepartmentAdmin, rooms]);
+    }, [debouncedEquipmentSearch, equipmentCategoryFilter, roomFilter, equipmentPage, hasAccess, itemsPerPage, isLaboratory, isDepartmentAdmin, profile?.department_id, profile?.study_program_id]);
 
-    // Update useEffect to trigger fetches
+    // Force sync activeTab for Laboran to ensure they land on Equipment tab
+    useEffect(() => {
+        if (profile?.role === 'laboratory' && activeTab === 'stock') {
+            setActiveTab('equipment');
+        }
+    }, [profile, activeTab]);
+
     useEffect(() => {
         if (activeTab === 'stock') {
             fetchStocks();
@@ -717,17 +822,172 @@ const ToolAdministration: React.FC = () => {
     }, [fetchStocks, activeTab]);
 
     useEffect(() => {
-        if (activeTab === 'equipment' && rooms.length > 0) {
-            // Only fetch if rooms are loaded (for lab/dept admin safety)
-            // For super admin, rooms might be empty if there are no rooms, but they should still see equipment?
-            // Actually, equipment usually belongs to a room.
-            // Let's rely on fetchEquipment logic to handle it.
-            fetchEquipment();
-        } else if (activeTab === 'equipment' && !isLaboratory && !isDepartmentAdmin) {
-            // Super admin / others might fetch even if rooms logic is different
+        if (activeTab === 'equipment') {
             fetchEquipment();
         }
-    }, [fetchEquipment, activeTab, rooms.length]); // specialized dependency to wait for rooms
+    }, [fetchEquipment, activeTab]);
+
+    // ==================== DETAIL EQUIPMENT CRUD ====================
+    // Fetch detail equipment items for a specific equipment
+    const fetchDetailEquipments = async (equipmentId: string) => {
+        try {
+            setLoadingDetailEquipments(true);
+            const { data, error } = await supabase
+                .from('detail_equipment')
+                .select('*')
+                .eq('equipment_id', equipmentId)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            setDetailEquipments(data || []);
+        } catch (error) {
+            console.error('Error fetching detail equipment:', error);
+            toast.error(getText('Failed to load detail equipment', 'Gagal memuat detail peralatan'));
+            setDetailEquipments([]);
+        } finally {
+            setLoadingDetailEquipments(false);
+        }
+    };
+
+    // Add new detail equipment
+    const handleAddDetailEquipment = async () => {
+        if (!selectedEquipment) return;
+        try {
+            setLoadingDetailEquipments(true);
+            const { error } = await supabase.from('detail_equipment').insert({
+                id: crypto.randomUUID(),
+                equipment_id: selectedEquipment.id,
+                name: detailEquipmentForm.name,
+                code: detailEquipmentForm.code,
+                quantity: detailEquipmentForm.quantity,
+                unit: detailEquipmentForm.unit,
+                condition: detailEquipmentForm.condition,
+                notes: detailEquipmentForm.notes,
+                attachments: detailImagePreview || null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            });
+
+            if (error) throw error;
+            toast.success(getText('Detail equipment added successfully', 'Detail peralatan berhasil ditambahkan'));
+            setShowDetailEquipmentModal(false);
+            setDetailEquipmentForm({ name: '', code: '', quantity: 1, unit: 'pcs', condition: 'GOOD', notes: '', attachments: '' });
+            setDetailImagePreview('');
+            await fetchDetailEquipments(selectedEquipment.id);
+        } catch (error: any) {
+            console.error('Error adding detail equipment:', error);
+            toast.error(error.message || getText('Failed to add detail equipment', 'Gagal menambah detail peralatan'));
+        } finally {
+            setLoadingDetailEquipments(false);
+        }
+    };
+
+    // Edit detail equipment
+    const handleEditDetailEquipment = async () => {
+        if (!editingDetailEquipment || !selectedEquipment) return;
+        try {
+            setLoadingDetailEquipments(true);
+            const { error } = await supabase
+                .from('detail_equipment')
+                .update({
+                    name: detailEquipmentForm.name,
+                    code: detailEquipmentForm.code,
+                    quantity: detailEquipmentForm.quantity,
+                    unit: detailEquipmentForm.unit,
+                    condition: detailEquipmentForm.condition,
+                    notes: detailEquipmentForm.notes,
+                    attachments: detailImagePreview || editingDetailEquipment.attachments || null,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', editingDetailEquipment.id);
+
+            if (error) throw error;
+            toast.success(getText('Detail equipment updated successfully', 'Detail peralatan berhasil diperbarui'));
+            setShowDetailEquipmentModal(false);
+            setEditingDetailEquipment(null);
+            setDetailEquipmentForm({ name: '', code: '', quantity: 1, unit: 'pcs', condition: 'GOOD', notes: '', attachments: '' });
+            setDetailImagePreview('');
+            await fetchDetailEquipments(selectedEquipment.id);
+        } catch (error: any) {
+            console.error('Error editing detail equipment:', error);
+            toast.error(error.message || getText('Failed to update detail equipment', 'Gagal memperbarui detail peralatan'));
+        } finally {
+            setLoadingDetailEquipments(false);
+        }
+    };
+
+    // Delete detail equipment
+    const handleDeleteDetailEquipment = async (detailId: string) => {
+        if (!selectedEquipment) return;
+        const result = await Swal.fire({
+            title: getText('Delete Detail?', 'Hapus Detail?'),
+            text: getText('This action cannot be undone!', 'Aksi ini tidak dapat dibatalkan!'),
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            confirmButtonText: getText('Yes, Delete', 'Ya, Hapus'),
+            cancelButtonText: getText('Cancel', 'Batal')
+        });
+        if (!result.isConfirmed) return;
+
+        try {
+            setLoadingDetailEquipments(true);
+            const { error } = await supabase.from('detail_equipment').delete().eq('id', detailId);
+            if (error) throw error;
+            toast.success(getText('Detail equipment deleted successfully', 'Detail peralatan berhasil dihapus'));
+            await fetchDetailEquipments(selectedEquipment.id);
+        } catch (error: any) {
+            console.error('Error deleting detail equipment:', error);
+            toast.error(error.message || getText('Failed to delete detail equipment', 'Gagal menghapus detail peralatan'));
+        } finally {
+            setLoadingDetailEquipments(false);
+        }
+    };
+
+    // Open detail equipment modal for add
+    const handleOpenAddDetailModal = () => {
+        setEditingDetailEquipment(null);
+        setDetailEquipmentForm({ name: '', code: '', quantity: 1, unit: 'pcs', condition: 'GOOD', notes: '', attachments: '' });
+        setDetailImagePreview('');
+        setShowDetailEquipmentModal(true);
+    };
+
+    // Open detail equipment modal for edit
+    const handleOpenEditDetailModal = (detail: DetailEquipment) => {
+        setEditingDetailEquipment(detail);
+        setDetailEquipmentForm({
+            name: detail.name,
+            code: detail.code,
+            quantity: detail.quantity,
+            unit: detail.unit,
+            condition: detail.condition,
+            notes: detail.notes || '',
+            attachments: detail.attachments || ''
+        });
+        setDetailImagePreview(detail.attachments || '');
+        setShowDetailEquipmentModal(true);
+    };
+
+    // Handle detail equipment image upload
+    const handleDetailImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            if (!file.type.startsWith('image/')) {
+                toast.error(getText('Please select an image file', 'Pilih file gambar'));
+                return;
+            }
+            try {
+                setLoadingDetailImage(true);
+                const compressed = await compressImage(file);
+                setDetailImagePreview(compressed);
+            } catch (error) {
+                console.error('Error compressing image:', error);
+                toast.error(getText('Failed to process image', 'Gagal memproses gambar'));
+            } finally {
+                setLoadingDetailImage(false);
+            }
+        }
+    };
 
     // Replaces the huge initial data loader logic for stocks/equipment
     // We still need loadInitialData for Rooms, Tables, Racks, Boxes within the main useEffect
@@ -980,9 +1240,12 @@ const ToolAdministration: React.FC = () => {
         setSelectedEquipment(eq);
         setShowDetailModal(true);
         setLoadingDetailModal(true);
+        setDetailEquipments([]); // Reset detail equipments
         try {
             const { data } = await supabase.from('equipment').select(`attachments, table_id, rack_id, box_id, is_mandatory, is_available, Spesification, rooms_id, rooms:rooms_id(id, name, code, department_id, study_program_id, floor, department:departments(id, name, code), building:building_id(name, campus:campus_id(name)))`).eq('id', eq.id).single();
             if (data) setSelectedEquipment(prev => (prev?.id === eq.id ? { ...prev, ...data } : prev));
+            // Fetch detail equipment items
+            await fetchDetailEquipments(eq.id);
         } catch (e) { console.error('Error loading details:', e); }
         finally { setLoadingDetailModal(false); }
     };
@@ -1374,132 +1637,273 @@ const ToolAdministration: React.FC = () => {
     }, [hasAccess, isSuperAdmin, isDepartmentAdmin, isLaboratory, availableStocks, availableRooms]);
 
     // ==================== EXPORT PDF FUNCTION ====================
-    const handleExportEquipmentPDF = () => {
-        if (filteredEquipment.length === 0) {
-            toast.error(getText('No equipment to export', 'Tidak ada peralatan untuk diekspor'));
-            return;
-        }
-
-        const doc = new jsPDF();
-        const today = format(new Date(), 'yyyy-MM-dd');
-
-        // Header
-        doc.setFontSize(18);
-        doc.setFont('helvetica', 'bold');
-        doc.text(getText('Equipment List', 'Daftar Peralatan'), 14, 20);
-
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`${getText('Generated', 'Dibuat')}: ${format(new Date(), 'dd MMM yyyy HH:mm')}`, 14, 28);
-        doc.text(`${getText('Total', 'Total')}: ${filteredEquipment.length} ${getText('items', 'item')}`, 14, 34);
-
-        // Filter info
-        if (equipmentSearchTerm || equipmentCategoryFilter !== 'all' || roomFilter !== 'all') {
-            let filterText = `${getText('Filter', 'Filter')}: `;
-            const filters = [];
-            if (equipmentSearchTerm) filters.push(`"${equipmentSearchTerm}"`);
-            if (equipmentCategoryFilter !== 'all') filters.push(`${getText('Category', 'Kategori')}: ${equipmentCategoryFilter}`);
-            if (roomFilter !== 'all') {
-                const room = rooms.find(r => r.id === roomFilter);
-                if (room) filters.push(`${getText('Room', 'Ruangan')}: ${room.name}`);
+    // ==================== EXPORT PDF FUNCTION (ENHANCED) ====================
+    const handleExportEquipmentPDF = async () => {
+        try {
+            if (filteredEquipment.length === 0) {
+                toast.error(getText('No equipment to export', 'Tidak ada peralatan untuk diekspor'));
+                return;
             }
-            doc.text(filterText + filters.join(', '), 14, 40);
-        }
 
-        // Table data
-        const tableData = filteredEquipment.map((eq, index) => [
-            index + 1,
-            eq.name,
-            eq.code,
-            eq.category,
-            eq.rooms?.name || '-',
-            eq.quantity || 0,
-            eq.unit || '-',
-            eq.condition || '-'
-        ]);
+            const doc = new jsPDF('landscape', 'mm', 'a4');
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const today = format(new Date(), 'dd MMM yyyy');
+            const currentYear = new Date().getFullYear();
 
-        // Generate table
-        autoTable(doc, {
-            startY: equipmentSearchTerm || equipmentCategoryFilter !== 'all' || roomFilter !== 'all' ? 45 : 40,
-            head: [[
+            // Load Logo
+            const logoDataUrl = await getImageDataUrl(logoUNY);
+            doc.addImage(logoDataUrl, 'PNG', 15, 15, 30, 30);
+
+            // Letterhead
+            let currentY = 20;
+            const headerTextX = pageWidth / 2;
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(14);
+            doc.text("KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI", headerTextX, currentY, { align: 'center' });
+            currentY += 5;
+            doc.text("UNIVERSITAS NEGERI YOGYAKARTA", headerTextX, currentY, { align: 'center' });
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            currentY += 5;
+            doc.text("FAKULTAS VOKASI", headerTextX, currentY, { align: 'center' });
+
+            currentY += 5;
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.text("Kampus I: Jalan Mandung No. 1 Pengasih, Kulon Progo Telp.(0274)774625", headerTextX, currentY, { align: 'center' });
+            currentY += 4;
+            doc.text("Kampus II: Pacarejo, Semanu, Gunungkidul Telp. (0274)5042222/(0274)5042255", headerTextX, currentY, { align: 'center' });
+            currentY += 4;
+            doc.text("Laman: https://fv.uny.ac.id E-mail: fv@uny.ac.id", headerTextX, currentY, { align: 'center' });
+            currentY += 8;
+
+            doc.setLineWidth(1);
+            doc.line(10, currentY, pageWidth - 10, currentY);
+            currentY += 10;
+
+            // Title
+            const title = `DAFTAR PERALATAN / EQUIPMENT LIST`;
+            const subtitle = `Generated: ${today}`;
+
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.text(title, headerTextX, currentY, { align: 'center' });
+            currentY += 6;
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.text(subtitle, headerTextX, currentY, { align: 'center' });
+            currentY += 10;
+
+            // Filter info if any
+            if (equipmentSearchTerm || equipmentCategoryFilter !== 'all' || roomFilter !== 'all') {
+                doc.setFontSize(9);
+                let filterText = `${getText('Filter', 'Filter')}: `;
+                const filters = [];
+                if (equipmentSearchTerm) filters.push(`"${equipmentSearchTerm}"`);
+                if (equipmentCategoryFilter !== 'all') filters.push(`${getText('Category', 'Kategori')}: ${equipmentCategoryFilter}`);
+                if (roomFilter !== 'all') {
+                    const room = rooms.find(r => r.id === roomFilter);
+                    if (room) filters.push(`${getText('Room', 'Ruangan')}: ${room.name}`);
+                }
+                doc.text(filterText + filters.join(', '), 14, currentY);
+                currentY += 6;
+            }
+
+            // Table Data
+            const tableColumn = [
                 'No',
                 getText('Name', 'Nama'),
                 getText('Code', 'Kode'),
                 getText('Category', 'Kategori'),
                 getText('Room', 'Ruangan'),
+                getText('Condition', 'Kondisi'),
                 getText('Qty', 'Jml'),
-                getText('Unit', 'Satuan'),
-                getText('Condition', 'Kondisi')
-            ]],
-            body: tableData,
-            styles: { fontSize: 8 },
-            headStyles: { fillColor: [79, 70, 229] },
-            alternateRowStyles: { fillColor: [245, 247, 250] },
-        });
+                getText('Unit', 'Satuan')
+            ];
 
-        // Save
-        doc.save(`equipment_list_${today}.pdf`);
-        toast.success(getText('PDF exported successfully', 'PDF berhasil diekspor'));
+            const tableRows = filteredEquipment.map((eq, index) => [
+                index + 1,
+                eq.name,
+                eq.code,
+                eq.category,
+                eq.rooms?.name || '-',
+                eq.condition || '-',
+                eq.quantity || 0,
+                eq.unit || '-'
+            ]);
+
+            // Generate Table
+            autoTable(doc, {
+                startY: currentY,
+                head: [tableColumn],
+                body: tableRows,
+                theme: 'grid',
+                styles: {
+                    fontSize: 8,
+                    cellPadding: 2,
+                    valign: 'middle',
+                    lineColor: [0, 0, 0],
+                    lineWidth: 0.1
+                },
+                headStyles: {
+                    fillColor: [220, 220, 220],
+                    textColor: [0, 0, 0],
+                    fontStyle: 'bold',
+                    halign: 'center',
+                    fontSize: 9
+                },
+                columnStyles: {
+                    0: { halign: 'center', cellWidth: 10 },
+                    1: { halign: 'left', cellWidth: 'auto' },
+                    2: { halign: 'left', cellWidth: 35 },
+                    3: { halign: 'left', cellWidth: 30 },
+                    4: { halign: 'left', cellWidth: 40 },
+                    5: { halign: 'center', cellWidth: 25 },
+                    6: { halign: 'center', cellWidth: 15 },
+                    7: { halign: 'center', cellWidth: 20 }
+                },
+                margin: { left: 14, right: 14 }
+            });
+
+            // Save
+            const filenameDate = format(new Date(), 'yyyy-MM-dd');
+            doc.save(`equipment_list_${filenameDate}.pdf`);
+
+            toast.success(getText('PDF exported successfully', 'PDF berhasil diekspor'));
+        } catch (error) {
+            console.error('PDF Export Error:', error);
+            toast.error('Gagal mengekspor PDF');
+        }
     };
 
     // ==================== EXPORT STOCK TRACK RECORD PDF ====================
-    const handleExportStockTrackPDF = () => {
-        if (!selectedStock || stockTrackRecords.length === 0) {
-            toast.error(getText('No data to export', 'Tidak ada data untuk diekspor'));
-            return;
-        }
+    // ==================== EXPORT STOCK TRACK RECORD PDF (ENHANCED) ====================
+    const handleExportStockTrackPDF = async () => {
+        try {
+            if (!selectedStock || stockTrackRecords.length === 0) {
+                toast.error(getText('No data to export', 'Tidak ada data untuk diekspor'));
+                return;
+            }
 
-        const doc = new jsPDF();
-        const today = format(new Date(), 'yyyy-MM-dd');
-        const totalClaimed = stockTrackRecords.reduce((sum, r) => sum + r.quantity_claimed, 0);
+            const doc = new jsPDF('landscape', 'mm', 'a4');
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const today = format(new Date(), 'dd MMM yyyy');
+            const totalClaimed = stockTrackRecords.reduce((sum, r) => sum + r.quantity_claimed, 0);
 
-        // Header
-        doc.setFontSize(18);
-        doc.setFont('helvetica', 'bold');
-        doc.text(`Stock Track Record: ${selectedStock.nama}`, 14, 20);
+            // Load Logo
+            const logoDataUrl = await getImageDataUrl(logoUNY);
+            doc.addImage(logoDataUrl, 'PNG', 15, 15, 30, 30);
 
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`${getText('Code', 'Kode')}: ${selectedStock.code}`, 14, 28);
-        doc.text(`${getText('Generated', 'Dibuat')}: ${format(new Date(), 'dd MMM yyyy HH:mm')}`, 14, 34);
-        doc.text(`${getText('Total Claimed', 'Total Diklaim')}: ${totalClaimed} ${selectedStock.unit}`, 14, 40);
-        doc.text(`${getText('Remaining Stock', 'Sisa Stok')}: ${selectedStock.quantity} ${selectedStock.unit}`, 14, 46);
+            // Letterhead
+            let currentY = 20;
+            const headerTextX = pageWidth / 2;
 
-        // Table data
-        const tableData = stockTrackRecords.map((record, index) => [
-            index + 1,
-            record.equipment_name,
-            record.equipment_code,
-            record.room_name || '-',
-            record.quantity_claimed,
-            record.condition
-        ]);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(14);
+            doc.text("KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI", headerTextX, currentY, { align: 'center' });
+            currentY += 5;
+            doc.text("UNIVERSITAS NEGERI YOGYAKARTA", headerTextX, currentY, { align: 'center' });
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            currentY += 5;
+            doc.text("FAKULTAS VOKASI", headerTextX, currentY, { align: 'center' });
 
-        // Generate table
-        autoTable(doc, {
-            startY: 52,
-            head: [[
+            currentY += 5;
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.text("Kampus I: Jalan Mandung No. 1 Pengasih, Kulon Progo Telp.(0274)774625", headerTextX, currentY, { align: 'center' });
+            currentY += 4;
+            doc.text("Kampus II: Pacarejo, Semanu, Gunungkidul Telp. (0274)5042222/(0274)5042255", headerTextX, currentY, { align: 'center' });
+            currentY += 4;
+            doc.text("Laman: https://fv.uny.ac.id E-mail: fv@uny.ac.id", headerTextX, currentY, { align: 'center' });
+            currentY += 8;
+
+            doc.setLineWidth(1);
+            doc.line(10, currentY, pageWidth - 10, currentY);
+            currentY += 10;
+
+            // Title and Info
+            const title = `REKAM JEJAK STOK / STOCK TRACK RECORD`;
+            const subtitle = `Generated: ${today}`;
+
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.text(title, headerTextX, currentY, { align: 'center' });
+            currentY += 6;
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.text(subtitle, headerTextX, currentY, { align: 'center' });
+            currentY += 10;
+
+            // Stock Details Block
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.text(`${getText('Stock Name', 'Nama Stok')}: ${selectedStock.nama}`, 14, currentY);
+            doc.text(`${getText('Code', 'Kode')}: ${selectedStock.code}`, 14, currentY + 5);
+            doc.text(`${getText('Total Claimed', 'Total Diklaim')}: ${totalClaimed} ${selectedStock.unit}`, pageWidth / 2, currentY);
+            doc.text(`${getText('Remaining Stock', 'Sisa Stok')}: ${selectedStock.quantity} ${selectedStock.unit}`, pageWidth / 2, currentY + 5);
+            currentY += 12;
+
+            // Table Data
+            const tableColumn = [
                 'No',
                 getText('Equipment Name', 'Nama Peralatan'),
-                getText('Code', 'Kode'),
+                getText('Equipment Code', 'Kode Peralatan'),
                 getText('Room', 'Ruangan'),
-                getText('Qty', 'Jml'),
-                getText('Condition', 'Kondisi')
-            ]],
-            body: tableData,
-            styles: { fontSize: 8 },
-            headStyles: { fillColor: [129, 90, 213] },
-            alternateRowStyles: { fillColor: [245, 247, 250] },
-            columnStyles: {
-                0: { cellWidth: 12 },
-                4: { cellWidth: 15 },
-                5: { cellWidth: 25 }
-            }
-        });
+                getText('Condition', 'Kondisi'),
+                getText('Qty', 'Jml')
+            ];
 
-        // Save
-        doc.save(`stock_track_${selectedStock.code}_${today}.pdf`);
-        toast.success(getText('PDF exported successfully', 'PDF berhasil diekspor'));
+            const tableRows = stockTrackRecords.map((record, index) => [
+                index + 1,
+                record.equipment_name,
+                record.equipment_code,
+                record.room_name || '-',
+                record.condition,
+                record.quantity_claimed
+            ]);
+
+            // Generate Table
+            autoTable(doc, {
+                startY: currentY,
+                head: [tableColumn],
+                body: tableRows,
+                theme: 'grid',
+                styles: {
+                    fontSize: 8,
+                    cellPadding: 2,
+                    valign: 'middle',
+                    lineColor: [0, 0, 0],
+                    lineWidth: 0.1
+                },
+                headStyles: {
+                    fillColor: [129, 90, 213], // Purple for Stock
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold',
+                    halign: 'center',
+                    fontSize: 9
+                },
+                columnStyles: {
+                    0: { halign: 'center', cellWidth: 10 },
+                    1: { halign: 'left', cellWidth: 'auto' },
+                    2: { halign: 'left', cellWidth: 35 },
+                    3: { halign: 'left', cellWidth: 40 },
+                    4: { halign: 'center', cellWidth: 25 },
+                    5: { halign: 'center', cellWidth: 15 }
+                },
+                margin: { left: 14, right: 14 }
+            });
+
+            // Save
+            const filenameDate = format(new Date(), 'yyyy-MM-dd');
+            doc.save(`stock_track_${selectedStock.code}_${filenameDate}.pdf`);
+
+            toast.success(getText('PDF exported successfully', 'PDF berhasil diekspor'));
+        } catch (error) {
+            console.error('PDF Export Error:', error);
+            toast.error('Gagal mengekspor PDF');
+        }
     };
 
     // ==================== HELPER FUNCTIONS ====================
@@ -2471,7 +2875,31 @@ const ToolAdministration: React.FC = () => {
                                 <h3 className="text-2xl font-bold">{selectedEquipment?.name}</h3>
                                 <p className="text-sm opacity-90 mt-1">{getText('Complete Equipment Information', 'Informasi Lengkap Peralatan')}</p>
                             </div>
-                            <button onClick={() => setShowDetailModal(false)} className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"><X className="h-6 w-6" /></button>
+                            <div className="flex items-center gap-2">
+                                {/* Delete Button in Header */}
+                                <button
+                                    onClick={async () => {
+                                        const result = await Swal.fire({
+                                            title: getText('Delete Equipment?', 'Hapus Peralatan?'),
+                                            text: getText('This action cannot be undone!', 'Aksi ini tidak dapat dibatalkan!'),
+                                            icon: 'warning',
+                                            showCancelButton: true,
+                                            confirmButtonColor: '#ef4444',
+                                            confirmButtonText: getText('Yes, Delete', 'Ya, Hapus'),
+                                            cancelButtonText: getText('Cancel', 'Batal')
+                                        });
+                                        if (result.isConfirmed) {
+                                            setShowDetailModal(false);
+                                            handleDeleteEquipment(selectedEquipment!.id);
+                                        }
+                                    }}
+                                    className="p-2 hover:bg-red-500 hover:bg-opacity-30 rounded-lg transition-colors"
+                                    title={getText('Delete Equipment', 'Hapus Peralatan')}
+                                >
+                                    <Trash2 className="h-5 w-5" />
+                                </button>
+                                <button onClick={() => setShowDetailModal(false)} className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"><X className="h-6 w-6" /></button>
+                            </div>
                         </div>
                     </div>
                     <div className="p-6 overflow-y-auto flex-1 space-y-6">
@@ -2506,6 +2934,125 @@ const ToolAdministration: React.FC = () => {
                             </div>
                         )}
 
+                        {/* Detail Equipment Section - CRUD for detail_equipment table */}
+                        <div className="bg-gradient-to-r from-violet-50 to-purple-50 p-4 rounded-xl border border-violet-200">
+                            <div className="flex items-center justify-between mb-4">
+                                <h4 className="font-bold text-violet-900 flex items-center gap-2">
+                                    <Package className="h-5 w-5" />
+                                    {getText('Detail Equipment', 'Detail Peralatan')}
+                                    <span className="text-xs bg-violet-200 text-violet-700 px-2 py-0.5 rounded-full">
+                                        {detailEquipments.length} {getText('items', 'item')}
+                                    </span>
+                                </h4>
+                                <button
+                                    onClick={handleOpenAddDetailModal}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 transition-colors shadow-sm"
+                                >
+                                    <Plus className="h-4 w-4" />
+                                    {getText('Add Detail', 'Tambah Detail')}
+                                </button>
+                            </div>
+
+                            {loadingDetailEquipments ? (
+                                <div className="flex items-center justify-center py-8">
+                                    <Loader2 className="h-6 w-6 text-violet-500 animate-spin" />
+                                    <span className="ml-2 text-violet-600">{getText('Loading...', 'Memuat...')}</span>
+                                </div>
+                            ) : detailEquipments.length === 0 ? (
+                                <div className="text-center py-8 bg-white rounded-xl border-2 border-dashed border-violet-200">
+                                    <div className="w-14 h-14 mx-auto bg-violet-100 rounded-full flex items-center justify-center mb-3">
+                                        <Package className="h-7 w-7 text-violet-400" />
+                                    </div>
+                                    <p className="text-gray-500 text-sm">{getText('No detail equipment yet', 'Belum ada detail peralatan')}</p>
+                                    <p className="text-gray-400 text-xs mt-1">{getText('Click "Add Detail" to add sub-items', 'Klik "Tambah Detail" untuk menambah sub-item')}</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2 max-h-64 overflow-y-auto">
+                                    {detailEquipments.map((detail, index) => {
+                                        const conditionBadge = getConditionBadge(detail.condition);
+                                        const ConditionIcon = conditionBadge.icon;
+                                        const hasImage = detail.attachments && detail.attachments.length > 10;
+
+                                        return (
+                                            <div
+                                                key={detail.id}
+                                                className="bg-white rounded-xl border border-gray-200 p-3 hover:border-violet-300 hover:shadow-sm transition-all group"
+                                                style={{
+                                                    animationDelay: `${index * 50}ms`,
+                                                    animation: 'fadeIn 0.3s ease-out forwards'
+                                                }}
+                                            >
+                                                <div className="flex items-start justify-between">
+                                                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                                                        {/* Image Preview or Package Icon */}
+                                                        <div
+                                                            className={`w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden border border-gray-200 bg-violet-50 transition-all ${hasImage ? 'cursor-pointer hover:opacity-80 hover:scale-105' : ''}`}
+                                                            onClick={() => {
+                                                                if (hasImage) {
+                                                                    setDetailFullscreenImage(detail.attachments || '');
+                                                                    setShowDetailImageFullscreen(true);
+                                                                }
+                                                            }}
+                                                        >
+                                                            {hasImage ? (
+                                                                <img
+                                                                    src={detail.attachments}
+                                                                    alt={detail.name}
+                                                                    loading="lazy"
+                                                                    className="w-full h-full object-cover"
+                                                                    onError={(e) => {
+                                                                        // Fallback to icon on error
+                                                                        (e.target as HTMLImageElement).style.display = 'none';
+                                                                        (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                                                                    }}
+                                                                />
+                                                            ) : null}
+                                                            <Package className={`h-5 w-5 text-violet-600 ${hasImage ? 'hidden' : ''}`} />
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <h5 className="font-bold text-gray-900 truncate">{detail.name}</h5>
+                                                                <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs font-mono rounded">{detail.code}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                                                                <span className="flex items-center gap-1">
+                                                                    <Hash className="h-3 w-3" />
+                                                                    {detail.quantity} {detail.unit}
+                                                                </span>
+                                                                <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded ${conditionBadge.bg} ${conditionBadge.text}`}>
+                                                                    <ConditionIcon className="h-3 w-3" />
+                                                                    <span className="text-xs font-medium">{conditionBadge.label}</span>
+                                                                </div>
+                                                            </div>
+                                                            {detail.notes && (
+                                                                <p className="text-xs text-gray-400 mt-1 line-clamp-1">{detail.notes}</p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
+                                                        <button
+                                                            onClick={() => handleOpenEditDetailModal(detail)}
+                                                            className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                                            title={getText('Edit', 'Edit')}
+                                                        >
+                                                            <Edit className="h-4 w-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteDetailEquipment(detail.id)}
+                                                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                            title={getText('Delete', 'Hapus')}
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div className="space-y-4">
                                 <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-xl border border-blue-200">
@@ -2532,14 +3079,6 @@ const ToolAdministration: React.FC = () => {
                                         <div><p className="text-xs text-green-700 mb-1">{getText('Room', 'Ruangan')}</p><p className="font-bold text-gray-900">{selectedEquipment?.rooms?.name || getText('No room assigned', 'Tidak ada ruangan')}</p></div>
                                         {selectedEquipment?.rooms?.code && <div><p className="text-xs text-green-700 mb-1">{getText('Room Code', 'Kode Ruangan')}</p><p className="font-mono font-bold text-gray-900">{selectedEquipment.rooms.code}</p></div>}
                                         {selectedEquipment?.rooms?.department && <div><p className="text-xs text-green-700 mb-1">{getText('Department', 'Departemen')}</p><p className="font-bold text-blue-900">{selectedEquipment.rooms.department.name}</p></div>}
-                                        {(() => {
-                                            const box = boxes.find(b => b.id === selectedEquipment?.box_id);
-                                            const rackId = selectedEquipment?.rack_id || box?.rack_id;
-                                            const rack = racks.find(r => r.id === rackId);
-                                            const tableId = selectedEquipment?.table_id || rack?.table_id;
-                                            const table = tables.find(t => t.id === tableId);
-                                            return (<>{table && <div><p className="text-xs text-green-700 mb-1">{getText('Cabinet/Table', 'Lemari/Meja')}</p><p className="font-bold text-gray-900">{table.description}</p></div>}{rack && <div><p className="text-xs text-green-700 mb-1">{getText('Rack', 'Rak')}</p><p className="font-bold text-gray-900">{rack.name}</p></div>}{box && <div><p className="text-xs text-green-700 mb-1">Box</p><p className="font-bold text-gray-900">{box.name}</p></div>}</>);
-                                        })()}
                                     </div>
                                 </div>
                             </div>
@@ -2580,13 +3119,34 @@ const ToolAdministration: React.FC = () => {
                         </div>
                     </div>
                     <div className="p-6 border-t border-gray-200 bg-gray-50 flex-shrink-0">
-                        <div className="flex flex-wrap gap-3 justify-end">
-                            <button onClick={() => setShowDetailModal(false)} className="px-5 py-2 border-2 border-gray-300 rounded-xl font-medium hover:bg-white transition-colors">{getText('Close', 'Tutup')}</button>
-                            <button onClick={() => { setShowDetailModal(false); handleOpenEditModal(selectedEquipment!); }} className="px-5 py-2 bg-amber-500 text-white rounded-xl font-medium hover:bg-amber-600 transition-colors">{getText('Edit Equipment', 'Edit Peralatan')}</button>
+                        <div className="flex flex-wrap gap-3 justify-between">
+                            {/* Left side - Track Record */}
+                            <button
+                                onClick={() => {
+                                    setShowDetailModal(false);
+                                    handleOpenTrackRecordModal(selectedEquipment!);
+                                }}
+                                className="flex items-center gap-2 px-4 py-2 border-2 border-blue-300 text-blue-600 rounded-xl font-medium hover:bg-blue-50 transition-colors"
+                            >
+                                <History className="h-4 w-4" />
+                                {getText('Track Record', 'Riwayat')}
+                            </button>
+
+                            {/* Right side - Action Buttons */}
+                            <div className="flex flex-wrap gap-3">
+                                <button onClick={() => setShowDetailModal(false)} className="px-5 py-2 border-2 border-gray-300 rounded-xl font-medium hover:bg-white transition-colors">{getText('Close', 'Tutup')}</button>
+                                <button
+                                    onClick={() => { setShowDetailModal(false); handleOpenEditModal(selectedEquipment!); }}
+                                    className="flex items-center gap-2 px-5 py-2 bg-amber-500 text-white rounded-xl font-medium hover:bg-amber-600 transition-colors"
+                                >
+                                    <Edit className="h-4 w-4" />
+                                    {getText('Edit Equipment', 'Edit Peralatan')}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            </div >
         );
     };
 
@@ -2990,28 +3550,62 @@ const ToolAdministration: React.FC = () => {
                                     const Icon = categoryConfig.icon;
                                     const conditionBadge = getConditionBadge(eq.condition);
                                     const ConditionIcon = conditionBadge.icon;
+
                                     return (
-                                        <div key={eq.id} className="bg-white border-2 border-gray-200 rounded-xl p-4 hover:shadow-lg transition-all">
+                                        <div key={eq.id} className="bg-white border-2 border-gray-200 rounded-xl p-4 hover:shadow-lg hover:border-purple-300 transition-all group">
+                                            {/* Header */}
                                             <div className="flex items-start justify-between mb-3">
                                                 <div className={`p-2 rounded-lg ${categoryConfig.color === 'violet' ? 'bg-violet-100 text-violet-600' : categoryConfig.color === 'blue' ? 'bg-blue-100 text-blue-600' : categoryConfig.color === 'emerald' ? 'bg-emerald-100 text-emerald-600' : categoryConfig.color === 'amber' ? 'bg-amber-100 text-amber-600' : categoryConfig.color === 'rose' ? 'bg-rose-100 text-rose-600' : categoryConfig.color === 'slate' ? 'bg-slate-100 text-slate-600' : 'bg-orange-100 text-orange-600'}`}>
                                                     <Icon className="h-6 w-6" />
+                                                </div>
+                                                {/* Action buttons in header */}
+                                                <div className="flex items-center gap-1">
+                                                    <button onClick={() => handleOpenDetailModal(eq)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title={getText('View Details', 'Lihat Detail')}><Eye className="h-4 w-4" /></button>
+                                                    <button onClick={() => handleOpenEditModal(eq)} className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title={getText('Edit', 'Edit')}><Edit className="h-4 w-4" /></button>
+                                                    <button onClick={() => handleDeleteEquipment(eq.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title={getText('Delete', 'Hapus')}><Trash2 className="h-4 w-4" /></button>
+                                                </div>
+                                            </div>
+
+                                            {/* Title and Code */}
+                                            <h3 className="font-bold text-lg mb-1 line-clamp-1">{eq.name}</h3>
+                                            <div className="bg-gray-100 px-2 py-1 rounded-md inline-block mb-2">
+                                                <p className="text-xs text-gray-600 font-mono">{eq.code}</p>
+                                            </div>
+
+                                            {/* Room & ID Info */}
+                                            <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
+                                                <MapPin className="h-3 w-3" />
+                                                <span className="truncate">{eq.rooms?.name || getText('No room', 'Tidak ada ruangan')}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 text-xs text-gray-400 mb-3">
+                                                <Hash className="h-3 w-3" />
+                                                <span className="font-mono">{eq.id.substring(0, 8)}</span>
+                                            </div>
+
+                                            {/* Quantity & Condition Badge */}
+                                            <div className="flex items-center justify-between mb-3">
+                                                <div className="flex items-center gap-2">
+                                                    <Users className="h-4 w-4 text-gray-400" />
+                                                    <span className="text-sm font-bold text-gray-700">{eq.quantity} {eq.unit}</span>
                                                 </div>
                                                 <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold ${conditionBadge.bg} ${conditionBadge.text}`}>
                                                     <ConditionIcon className="h-3 w-3" />{conditionBadge.label}
                                                 </div>
                                             </div>
-                                            <h3 className="font-bold text-lg mb-1">{eq.name}</h3>
-                                            <p className="text-sm text-gray-600 font-mono mb-2">{eq.code}</p>
-                                            <p className="text-sm text-gray-500 mb-3">{eq.rooms?.name || 'No room'}</p>
+
+                                            {/* Footer - Track Record & Open Button */}
                                             <div className="flex items-center justify-between pt-3 border-t border-gray-200">
-                                                <div className="flex gap-2">
-                                                    <button onClick={() => handleOpenDetailModal(eq)} className="flex items-center gap-1 text-indigo-600 hover:bg-indigo-50 rounded-lg px-2 py-1 transition-colors" title="View Details"><Eye className="h-4 w-4" /></button>
-                                                    <button onClick={() => handleOpenTrackRecordModal(eq)} className="flex items-center gap-1 text-blue-600 hover:bg-blue-50 rounded-lg px-2 py-1 transition-colors" title="Track Record"><History className="h-4 w-4" /></button>
-                                                </div>
-                                                <div className="flex gap-1">
-                                                    <button onClick={() => handleOpenEditModal(eq)} className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"><Edit className="h-4 w-4" /></button>
-                                                    <button onClick={() => handleDeleteEquipment(eq.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="h-4 w-4" /></button>
-                                                </div>
+                                                <button onClick={() => handleOpenTrackRecordModal(eq)} className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                                                    <History className="h-3.5 w-3.5" />
+                                                    {getText('Track', 'Riwayat')}
+                                                </button>
+                                                <button
+                                                    onClick={() => handleOpenDetailModal(eq)}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-100 text-purple-700 text-xs font-bold rounded-lg hover:bg-purple-200 transition-colors"
+                                                >
+                                                    <FolderOpen className="h-3.5 w-3.5" />
+                                                    {getText('Open', 'Buka')}
+                                                </button>
                                             </div>
                                         </div>
                                     );
@@ -3061,6 +3655,185 @@ const ToolAdministration: React.FC = () => {
             {showTrackRecordModal && selectedEquipment && <TrackRecordModal />}
             {showDirectAddModal && <DirectAddModal />}
 
+            {/* Detail Equipment Add/Edit Modal */}
+            {showDetailEquipmentModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[55] p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col">
+                        <div className="bg-gradient-to-r from-violet-500 to-purple-600 p-6 text-white flex-shrink-0">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-xl font-bold">
+                                        {editingDetailEquipment
+                                            ? getText('Edit Detail Equipment', 'Edit Detail Peralatan')
+                                            : getText('Add Detail Equipment', 'Tambah Detail Peralatan')
+                                        }
+                                    </h3>
+                                    <p className="text-sm opacity-90 mt-1">
+                                        {selectedEquipment?.name}
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => { setShowDetailEquipmentModal(false); setEditingDetailEquipment(null); }}
+                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                                >
+                                    <X className="h-6 w-6" />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="p-6 overflow-y-auto flex-1 space-y-4">
+                            {/* Name */}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">{getText('Name', 'Nama')} *</label>
+                                <input
+                                    type="text"
+                                    value={detailEquipmentForm.name}
+                                    onChange={(e) => setDetailEquipmentForm(prev => ({ ...prev, name: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-violet-500 focus:outline-none transition-colors"
+                                    placeholder={getText('Enter detail equipment name', 'Masukkan nama detail peralatan')}
+                                />
+                            </div>
+                            {/* Code */}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">{getText('Code', 'Kode')} *</label>
+                                <input
+                                    type="text"
+                                    value={detailEquipmentForm.code}
+                                    onChange={(e) => setDetailEquipmentForm(prev => ({ ...prev, code: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-violet-500 focus:outline-none font-mono transition-colors"
+                                    placeholder={getText('Enter unique code', 'Masukkan kode unik')}
+                                />
+                            </div>
+                            {/* Quantity & Unit */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-bold mb-2">{getText('Quantity', 'Jumlah')} *</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={detailEquipmentForm.quantity}
+                                        onChange={(e) => setDetailEquipmentForm(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
+                                        className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-violet-500 focus:outline-none transition-colors"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold mb-2">{getText('Unit', 'Satuan')} *</label>
+                                    <input
+                                        type="text"
+                                        value={detailEquipmentForm.unit}
+                                        onChange={(e) => setDetailEquipmentForm(prev => ({ ...prev, unit: e.target.value }))}
+                                        className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-violet-500 focus:outline-none transition-colors"
+                                        placeholder="pcs"
+                                    />
+                                </div>
+                            </div>
+                            {/* Condition */}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">{getText('Condition', 'Kondisi')}</label>
+                                <select
+                                    value={detailEquipmentForm.condition}
+                                    onChange={(e) => setDetailEquipmentForm(prev => ({ ...prev, condition: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-violet-500 focus:outline-none transition-colors"
+                                >
+                                    <option value="GOOD">{getText('Good', 'Baik')}</option>
+                                    <option value="BROKEN">{getText('Broken', 'Rusak')}</option>
+                                    <option value="MAINTENANCE">{getText('Maintenance', 'Perbaikan')}</option>
+                                </select>
+                            </div>
+                            {/* Notes */}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">{getText('Notes', 'Catatan')}</label>
+                                <textarea
+                                    value={detailEquipmentForm.notes}
+                                    onChange={(e) => setDetailEquipmentForm(prev => ({ ...prev, notes: e.target.value }))}
+                                    rows={3}
+                                    className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-violet-500 focus:outline-none transition-colors resize-none"
+                                    placeholder={getText('Optional notes...', 'Catatan opsional...')}
+                                />
+                            </div>
+                            {/* Image Upload */}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">{getText('Photo', 'Foto')}</label>
+                                <input
+                                    type="file"
+                                    ref={detailFileInputRef}
+                                    accept="image/*"
+                                    onChange={handleDetailImageChange}
+                                    className="hidden"
+                                />
+                                {detailImagePreview ? (
+                                    <div className="relative rounded-xl overflow-hidden border-2 border-violet-200 bg-violet-50">
+                                        <img
+                                            src={detailImagePreview}
+                                            alt="Preview"
+                                            className="w-full h-40 object-cover"
+                                        />
+                                        <div className="absolute top-2 right-2 flex gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => detailFileInputRef.current?.click()}
+                                                className="p-2 bg-white/90 rounded-lg hover:bg-white shadow-sm transition-colors"
+                                                title={getText('Change Photo', 'Ganti Foto')}
+                                            >
+                                                <Camera className="h-4 w-4 text-gray-600" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setDetailImagePreview('')}
+                                                className="p-2 bg-red-500/90 rounded-lg hover:bg-red-500 shadow-sm transition-colors"
+                                                title={getText('Remove Photo', 'Hapus Foto')}
+                                            >
+                                                <X className="h-4 w-4 text-white" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => detailFileInputRef.current?.click()}
+                                        disabled={loadingDetailImage}
+                                        className="w-full py-6 border-2 border-dashed border-violet-300 rounded-xl bg-violet-50 hover:bg-violet-100 hover:border-violet-400 transition-colors flex flex-col items-center justify-center gap-2 disabled:opacity-50"
+                                    >
+                                        {loadingDetailImage ? (
+                                            <>
+                                                <Loader2 className="h-8 w-8 text-violet-500 animate-spin" />
+                                                <span className="text-sm text-violet-600 font-medium">{getText('Processing...', 'Memproses...')}</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Camera className="h-8 w-8 text-violet-400" />
+                                                <span className="text-sm text-violet-600 font-medium">{getText('Click to upload photo', 'Klik untuk upload foto')}</span>
+                                                <span className="text-xs text-violet-400">{getText('JPG, PNG, WebP (max 5MB)', 'JPG, PNG, WebP (maks 5MB)')}</span>
+                                            </>
+                                        )}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                        <div className="p-6 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+                            <div className="flex flex-wrap gap-3 justify-end">
+                                <button
+                                    onClick={() => { setShowDetailEquipmentModal(false); setEditingDetailEquipment(null); }}
+                                    className="px-5 py-2 border-2 border-gray-300 rounded-xl font-medium hover:bg-white transition-colors"
+                                >
+                                    {getText('Cancel', 'Batal')}
+                                </button>
+                                <button
+                                    onClick={editingDetailEquipment ? handleEditDetailEquipment : handleAddDetailEquipment}
+                                    disabled={!detailEquipmentForm.name || !detailEquipmentForm.code || loadingDetailEquipments}
+                                    className="flex items-center gap-2 px-5 py-2 bg-violet-600 text-white rounded-xl font-medium hover:bg-violet-700 transition-colors disabled:opacity-50"
+                                >
+                                    {loadingDetailEquipments && <Loader2 className="h-4 w-4 animate-spin" />}
+                                    {editingDetailEquipment
+                                        ? getText('Update', 'Perbarui')
+                                        : getText('Add', 'Tambah')
+                                    }
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Equipment Import Modal */}
             <EquipmentImportModal
                 isOpen={showImportModal}
@@ -3082,6 +3855,27 @@ const ToolAdministration: React.FC = () => {
                 <div className="fixed inset-0 z-[60] bg-black bg-opacity-90 flex items-center justify-center p-4 cursor-pointer" onClick={() => setShowEquipmentImageFullscreen(false)}>
                     <button className="absolute top-4 right-4 p-2 bg-white/10 text-white rounded-full hover:bg-white/20 transition-colors" onClick={() => setShowEquipmentImageFullscreen(false)}><X className="h-6 w-6" /></button>
                     <img src={equipmentImagePreview} alt="Fullscreen Preview" className="max-w-full max-h-screen object-contain" />
+                </div>
+            )}
+
+            {/* Detail Image Fullscreen Modal */}
+            {showDetailImageFullscreen && detailFullscreenImage && (
+                <div className="fixed inset-0 z-[70] bg-black bg-opacity-95 flex items-center justify-center p-4 cursor-pointer backdrop-blur-sm"
+                    onClick={() => setShowDetailImageFullscreen(false)}>
+                    <div className="relative max-w-4xl w-full max-h-screen flex flex-col items-center justify-center">
+                        <button
+                            className="absolute -top-12 right-0 p-2 text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors"
+                            onClick={(e) => { e.stopPropagation(); setShowDetailImageFullscreen(false); }}
+                        >
+                            <X className="h-6 w-6" />
+                        </button>
+                        <img
+                            src={detailFullscreenImage}
+                            alt="Detail Fullscreen"
+                            className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                    </div>
                 </div>
             )}
         </div>

@@ -1118,13 +1118,13 @@ const UserManagement: React.FC = () => {
                   <td colSpan={5} className="px-6 py-12 text-center">
                     <Users className="h-16 w-16 text-blue-500 mx-auto mb-4" />
                     <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                      {filteredUsers.length === 0 && users.length > 0
+                      {totalUsers === 0 && (searchTerm || roleFilter !== 'all' || departmentFilter !== 'all')
                         ? getText('No users match your filters', 'Tidak ada pengguna yang cocok dengan filter')
                         : getText('No users found', 'Tidak ada pengguna ditemukan')
                       }
                     </h3>
                     <p className="text-gray-600">
-                      {filteredUsers.length === 0 && users.length > 0
+                      {totalUsers === 0 && (searchTerm || roleFilter !== 'all' || departmentFilter !== 'all')
                         ? getText('Try adjusting your search criteria', 'Coba sesuaikan kriteria pencarian')
                         : getText('Add your first user to get started', 'Tambahkan pengguna pertama untuk memulai')
                       }

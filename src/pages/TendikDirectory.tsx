@@ -44,7 +44,7 @@ const StaffCard: React.FC<{ staff: Staff }> = ({ staff }) => {
   const hasPhoto = staff.attachments && !imageError;
 
   return (
-    <div className="group text-center bg-white rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col overflow-hidden h-full">
+    <div className="group text-center bg-white rounded-xl border border-gray-300 shadow-lg hover:shadow-2xl transition-all duration-300 flex flex-col overflow-hidden h-full">
       {/* Profile Photo - 3:4 Aspect Ratio, No rounded corners */}
       <div className="relative w-full aspect-[3/4] overflow-hidden bg-gray-100">
         {hasPhoto ? (

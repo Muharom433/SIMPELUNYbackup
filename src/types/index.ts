@@ -29,6 +29,7 @@ export interface Room {
   code: string;
   capacity: number;
   department_id: string;
+  study_program_id?: string | null;
   equipment: string[];
   is_available: boolean;
   created_at: string;
@@ -59,6 +60,7 @@ export interface Equipment {
   is_mandatory: boolean;
   is_available: boolean;
   department_id: string | null;
+  study_program_id: string | null;
   quantity: number | null;
   original_quantity: number | null;
   unit: string | null;

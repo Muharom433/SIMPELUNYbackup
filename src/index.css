@@ -16,3 +16,14 @@
   /* This tells the element to use the animation defined above */
   animation: fadeInScale 0.2s ease-out forwards;
 }
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

@@ -27,9 +27,9 @@ export const useEquipmentData = () => {
     const fetchLocations = useCallback(async () => {
         try {
             const [tablesRes, racksRes, boxesRes] = await Promise.all([
-                supabase.from('table').select('id, room_id, description, rack').limit(200),
-                supabase.from('rack').select('id, name, table_id').limit(200),
-                supabase.from('box').select('id, name, description, rack_id').limit(200)
+                supabase.from('table').select('id, room_id, description, rack').limit(1000),
+                supabase.from('rack').select('id, name, table_id').limit(1000),
+                supabase.from('box').select('id, name, description, rack_id').limit(1000)
             ]);
 
             setLocations({
@@ -73,27 +73,50 @@ export const useEquipmentData = () => {
 
             // Fetch equipment WITH ROOMS - TANPA attachments untuk menghindari timeout
             // Filter is_available dan quantity di client untuk query lebih cepat
-            const equipmentRes = await supabase
-                .from('equipment')
-                .select(`
-                    id, name, code, category, quantity, unit, condition, is_available,
-                    rooms_id, table_id, rack_id, box_id,
-                    rooms:rooms_id (
-                        id, name, code, department_id, study_program_id
-                    )
-                `)
-                .order('name');
+            // Fetch equipment WITH ROOMS - Chunked Strategy
+            // We fetch in batches of 1000 to bypass the default row limit
+            const BATCH_SIZE = 1000;
+            let allEquipment: any[] = [];
+            let from = 0;
+            let hasMore = true;
 
+            while (hasMore) {
+                const { data, error } = await supabase
+                    .from('equipment')
+                    .select(`
+                        id, name, code, category, quantity, unit, condition, is_available,
+                        rooms_id, table_id, rack_id, box_id,
+                        rooms:rooms_id (
+                            id, name, code, department_id, study_program_id
+                        )
+                    `)
+                    .order('name')
+                    .range(from, from + BATCH_SIZE - 1);
 
+                if (error) {
+                    console.error('Equipment fetch error:', error);
+                    if (from === 0) {
+                        setEquipment([]);
+                        setLoading(false);
+                        return [];
+                    } else {
+                        break;
+                    }
+                }
 
-            if (equipmentRes.error) {
-                console.error('Equipment fetch error:', equipmentRes.error);
-                setEquipment([]);
-                setLoading(false);
-                return [];
+                if (data && data.length > 0) {
+                    allEquipment = [...allEquipment, ...data];
+                    if (data.length < BATCH_SIZE) {
+                        hasMore = false;
+                    } else {
+                        from += BATCH_SIZE;
+                    }
+                } else {
+                    hasMore = false;
+                }
             }
 
-            const rawEquipment = equipmentRes.data || [];
+            const rawEquipment = allEquipment;
             const rawRooms = (roomsRes.data || []) as EquipmentRoom[];
 
 
