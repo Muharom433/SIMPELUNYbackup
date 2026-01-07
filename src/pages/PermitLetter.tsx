@@ -120,6 +120,27 @@ interface LendingToolWithDetails {
 
 type CombinedRecord = BookingWithDetails | LendingToolWithDetails;
 
+// ===== INDONESIAN DATE FORMATTER =====
+const formatDateIndonesian = (date: Date): string => {
+  const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+  const dayName = days[date.getDay()];
+  const day = date.getDate().toString().padStart(2, '0');
+  const month = months[date.getMonth()];
+  const year = date.getFullYear();
+
+  return `${dayName}, ${day} ${month} ${year}`;
+};
+
+const formatDateOnlyIndonesian = (date: Date): string => {
+  const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const day = date.getDate().toString().padStart(2, '0');
+  const month = months[date.getMonth()];
+  const year = date.getFullYear();
+  return `${day} ${month} ${year}`;
+};
+
 const PermitLetter: React.FC = () => {
   const { isSubmitting: isThrottling, throttledSubmit } = useThrottledSubmit(3000);
   const { getText } = useLanguage();
@@ -770,7 +791,7 @@ const PermitLetter: React.FC = () => {
     }
 
     const currentDate = new Date();
-    const formattedDate = format(currentDate, 'dd MMMM yyyy');
+    const formattedDate = formatDateOnlyIndonesian(currentDate);
 
     // Get first selected record for details
     const firstRecord = selectedRecords[0];
@@ -778,15 +799,18 @@ const PermitLetter: React.FC = () => {
     const booking = isBooking ? (firstRecord as BookingWithDetails) : null;
     const lending = !isBooking ? (firstRecord as LendingToolWithDetails) : null;
 
-    // Format activity date and time
+    // Format activity date and time - INDONESIAN FORMAT
     let activityDate = '';
     let activityTime = '';
     if (booking) {
-      activityDate = format(new Date(booking.start_time), 'EEEE, dd MMMM yyyy');
+      activityDate = formatDateIndonesian(new Date(booking.start_time));
       activityTime = `${format(new Date(booking.start_time), 'HH:mm')} - ${format(new Date(booking.end_time), 'HH:mm')} WIB`;
     } else if (lending) {
-      activityDate = format(new Date(lending.date), 'EEEE, dd MMMM yyyy');
-      activityTime = 'Sesuai jadwal peminjaman';
+      activityDate = formatDateIndonesian(new Date(lending.date));
+      // Get time from database lending.date
+      const lendingDateTime = new Date(lending.date);
+      const lendingHour = format(lendingDateTime, 'HH:mm');
+      activityTime = `${lendingHour} WIB`;
     }
 
     // Get recipient info - use dropdown label for role, not database role
@@ -826,7 +850,7 @@ const PermitLetter: React.FC = () => {
       const recLending = record.record_type === 'lending_tool' ? (record as LendingToolWithDetails) : null;
 
       if (recBooking) {
-        const recDate = format(new Date(recBooking.start_time), 'EEEE, dd MMMM yyyy');
+        const recDate = formatDateIndonesian(new Date(recBooking.start_time));
         const recTime = `${format(new Date(recBooking.start_time), 'HH:mm')} - ${format(new Date(recBooking.end_time), 'HH:mm')} WIB`;
         detailsTableRows += `
           <tr>
@@ -838,14 +862,15 @@ const PermitLetter: React.FC = () => {
           </tr>
         `;
       } else if (recLending) {
-        const recDate = format(new Date(recLending.date), 'EEEE, dd MMMM yyyy');
+        const recDate = formatDateIndonesian(new Date(recLending.date));
+        const recLendingTime = format(new Date(recLending.date), 'HH:mm') + ' WIB';
         const equipmentList = recLending.equipment_details?.map(e => e.name).join(', ') || '-';
         detailsTableRows += `
           <tr>
             <td style="text-align:center">${index + 1}</td>
             <td>${equipmentList}</td>
             <td>${recDate}</td>
-            <td>Sesuai jadwal</td>
+            <td>${recLendingTime}</td>
             <td>${letterData.activity || 'Peminjaman alat'}</td>
           </tr>
         `;
@@ -938,20 +963,22 @@ const PermitLetter: React.FC = () => {
 
         <div class="signature">
           <div class="signature-box">
-            <p>Pemohon,</p>
-            <div class="sign-area">
-              ${applicantSignature ? `<img src="${applicantSignature}" alt="Tanda Tangan" />` : '<p style="color: #ccc; font-style: italic;">(Tanda Tangan)</p>'}
-            </div>
-            <p class="name">${applicantName}</p>
-            <p class="identity">${applicantUser?.identity_number || firstRecord.user?.identity_number || '-'}</p>
-          </div>
-          <div class="signature-box">
-            <p>Penerima,</p>
+            <p>Mengetahui,</p>
+            <p style="margin-top: 5px;">${recipientTitle}</p>
             <div class="sign-area">
               
             </div>
             <p class="name">${recipientName}</p>
             <p class="identity">${selectedRecipient?.identity_number || '-'}</p>
+          </div>
+          <div class="signature-box">
+            <p>Pemohon,</p>
+            <p style="font-size: 10pt;">${applicantStudyProgram ? `Mahasiswa Program Studi ${applicantStudyProgram}` : applicantRole}</p>
+            <div class="sign-area">
+              ${applicantSignature ? `<img src="${applicantSignature}" alt="Tanda Tangan" />` : '<p style="color: #ccc; font-style: italic;">(Tanda Tangan)</p>'}
+            </div>
+            <p class="name">${applicantName}</p>
+            <p class="identity">${applicantUser?.identity_number || firstRecord.user?.identity_number || '-'}</p>
           </div>
         </div>
 

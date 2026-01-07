@@ -768,7 +768,9 @@ const CheckOut: React.FC = () => {
         throw checkoutError;
       }
 
-
+      // ⭐⭐ CRITICAL FIX: Assign checkoutId from the result
+      checkoutId = checkoutResult.id;
+      console.log('✅ Checkout created with ID:', checkoutId);
 
       // ===== STEP 4: CREATE CHECKOUT ITEMS =====
       await createCheckoutItems(checkoutId, selectedRecord);
