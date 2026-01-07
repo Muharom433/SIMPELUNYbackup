@@ -997,19 +997,26 @@ const ToolAdministration: React.FC = () => {
             setLoadingTrack(true);
             const allRecords: LendingDetail[] = [];
 
-            const { data: checkoutsData, error: checkoutsError } = await supabase
-                .from('checkouts')
-                .select(`id, user_id, booking_id, lendingTool_id, checkout_date, expected_return_date, actual_return_date, status, type, checkout_items!inner (checkout_id, equipment_requested, equipment_quantities, equipment_back, quantities_back, status)`)
-                .contains('checkout_items.equipment_requested', [equipmentId])
-                .order('created_at', { ascending: false });
+            // Fix 400 error: Query checkout_items directly instead of filtering via joined table
+            const { data: checkoutItemsData, error: checkoutsError } = await supabase
+                .from('checkout_items')
+                .select(`
+                    checkout_id, equipment_requested, equipment_quantities, equipment_back, quantities_back, status,
+                    checkout:checkouts!inner (
+                        id, user_id, booking_id, lendingTool_id, checkout_date, expected_return_date, actual_return_date, status, type, created_at
+                    )
+                `)
+                .contains('equipment_requested', [equipmentId]);
 
             if (checkoutsError) console.error('Error fetching checkouts:', checkoutsError);
 
-            if (checkoutsData && checkoutsData.length > 0) {
+            if (checkoutItemsData && checkoutItemsData.length > 0) {
                 const checkoutRecords = await Promise.all(
-                    checkoutsData.map(async (checkout) => {
-                        const checkoutItem = checkout.checkout_items[0];
-                        if (!checkoutItem) return null;
+                    checkoutItemsData.map(async (item) => {
+                        const checkout = item.checkout as any;
+                        const checkoutItem = item;
+
+                        if (!checkout) return null;
 
                         const eqIndex = checkoutItem.equipment_requested.findIndex((id: string) => id === equipmentId);
                         if (eqIndex === -1) return null;
@@ -1053,12 +1060,14 @@ const ToolAdministration: React.FC = () => {
                 allRecords.push(...checkoutRecords.filter((r): r is LendingDetail => r !== null));
             }
 
-            const { data: borrowedBookings } = await supabase
+            const { data: borrowedBookings, error: borrowedBookingsError } = await supabase
                 .from('bookings')
                 .select(`id, user_id, start_time, end_time, purpose, status, equipment_requested, equipment_quantities, created_at, user:users!user_id(id, full_name, identity_number, email)`)
-                .eq('status', 'borrowed')
+                .in('status', ['borrow', 'borrowed', 'active'])
                 .contains('equipment_requested', [equipmentId])
                 .order('created_at', { ascending: false });
+
+            if (borrowedBookingsError) console.error('Error fetching borrowed bookings:', borrowedBookingsError);
 
             if (borrowedBookings && borrowedBookings.length > 0) {
                 for (const booking of borrowedBookings) {
@@ -1077,21 +1086,33 @@ const ToolAdministration: React.FC = () => {
                 }
             }
 
-            const { data: borrowedLendings } = await supabase
+            const { data: borrowedLendings, error: borrowedLendingsError } = await supabase
                 .from('lending_tool')
-                .select(`id, user_id, date, return_date, purpose, status, equipment_requested, equipment_quantities, created_at, user:users!user_id(id, full_name, identity_number, email)`)
-                .eq('status', 'borrowed')
-                .contains('equipment_requested', [equipmentId])
+                .select('*')
+                .in('status', ['borrow', 'borrowed', 'active'])
+                .contains('id_equipment', [equipmentId])
                 .order('created_at', { ascending: false });
+
+            if (borrowedLendingsError) console.error('Error fetching borrowed lendings:', borrowedLendingsError);
 
             if (borrowedLendings && borrowedLendings.length > 0) {
                 for (const lending of borrowedLendings) {
                     const alreadyExists = allRecords.some(r => r.source === 'lending_tool' && r.id === lending.id);
                     if (alreadyExists) continue;
-                    const eqIndex = lending.equipment_requested?.findIndex((id: string) => id === equipmentId) ?? -1;
+                    const eqIndex = lending.id_equipment?.findIndex((id: string) => id === equipmentId) ?? -1;
                     if (eqIndex === -1) continue;
-                    const borrowedQty = lending.equipment_quantities?.[eqIndex] || 1;
-                    const user = lending.user as any;
+                    const borrowedQty = lending.qty?.[eqIndex] || 1;
+
+                    // Manually fetch user since FK might not exist
+                    let user: any = null;
+                    // Check id_user first (standard for lending_tool), fallback to user_id
+                    const userIdToFetch = lending.id_user || lending.user_id;
+
+                    if (userIdToFetch) {
+                        const { data: userData } = await supabase.from('users').select('id, full_name, identity_number, email').eq('id', userIdToFetch).single();
+                        user = userData;
+                    }
+
                     allRecords.push({
                         id: lending.id, date: lending.date, borrowed_quantity: borrowedQty, returned_quantity: 0,
                         missing_quantity: borrowedQty, status: 'borrow' as any, created_at: lending.created_at, source: 'lending_tool',
