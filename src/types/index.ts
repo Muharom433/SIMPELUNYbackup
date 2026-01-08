@@ -29,7 +29,7 @@ export interface Room {
   code: string;
   capacity: number;
   department_id: string;
-  study_program_id?: string | null;
+  study_program_ids?: string[] | null;  // Array of study program IDs
   equipment: string[];
   is_available: boolean;
   created_at: string;

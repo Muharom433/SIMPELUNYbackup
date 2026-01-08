@@ -546,7 +546,7 @@ const ToolAdministration: React.FC = () => {
                 setLoadingStocks(true); // Initial loading state
                 setLoadingEquipment(true); // Initial loading state
 
-                let roomsQuery = supabase.from('rooms').select('id, name, code, department_id, study_program_id, department:departments(id, name, code)');
+                let roomsQuery = supabase.from('rooms').select('id, name, code, department_id, study_program_ids, department:departments(id, name, code)');
                 if (isDepartmentAdmin && profile?.department_id) {
                     roomsQuery = roomsQuery.eq('department_id', profile.department_id);
                 }
@@ -585,15 +585,21 @@ const ToolAdministration: React.FC = () => {
 
                     if (laborDeptId) {
                         filteredRooms = filteredRooms.filter((room: any) => {
-                            // Room must have department_id and match user's department
-                            if (!room.department_id || room.department_id !== laborDeptId) {
-                                return false;
+                            const roomDeptId = room.department_id;
+                            const roomProdiIds = room.study_program_ids || [];
+
+                            // Case 1: Department exists and matches user's department -> SHOW
+                            if (roomDeptId && roomDeptId === laborDeptId) {
+                                return true;
                             }
-                            // If room has study_program_id, it must match user's study_program_id
-                            if (room.study_program_id && room.study_program_id !== laborStudyProgramId) {
-                                return false;
+
+                            // Case 2: Department is null/general BUT study_program_ids includes user's prodi -> SHOW
+                            if (!roomDeptId && laborStudyProgramId && roomProdiIds.includes(laborStudyProgramId)) {
+                                return true;
                             }
-                            return true;
+
+                            // Otherwise -> HIDE
+                            return false;
                         });
                     } else {
                         // No department_id on user = no rooms
@@ -706,7 +712,7 @@ const ToolAdministration: React.FC = () => {
             // Base query - include department_id and study_program_id from equipment table
             let query = supabase
                 .from('equipment')
-                .select(`id, name, code, category, quantity, unit, condition, created_at, table_id, rack_id, box_id, is_mandatory, is_available, Spesification, rooms_id, department_id, study_program_id, rooms:rooms_id(id, name, code, department_id, study_program_id, floor, department:departments(id, name, code)), stock:stock_id(id, nama, code, category, quantity, unit)`, { count: 'exact' });
+                .select(`id, name, code, category, quantity, unit, condition, created_at, table_id, rack_id, box_id, is_mandatory, is_available, Spesification, rooms_id, department_id, study_program_id, rooms:rooms_id(id, name, code, department_id, study_program_ids, floor, department:departments(id, name, code)), stock:stock_id(id, nama, code, category, quantity, unit)`, { count: 'exact' });
 
             // Search
             if (debouncedEquipmentSearch) {
@@ -1263,7 +1269,7 @@ const ToolAdministration: React.FC = () => {
         setLoadingDetailModal(true);
         setDetailEquipments([]); // Reset detail equipments
         try {
-            const { data } = await supabase.from('equipment').select(`attachments, table_id, rack_id, box_id, is_mandatory, is_available, Spesification, rooms_id, rooms:rooms_id(id, name, code, department_id, study_program_id, floor, department:departments(id, name, code), building:building_id(name, campus:campus_id(name)))`).eq('id', eq.id).single();
+            const { data } = await supabase.from('equipment').select(`attachments, table_id, rack_id, box_id, is_mandatory, is_available, Spesification, rooms_id, rooms:rooms_id(id, name, code, department_id, study_program_ids, floor, department:departments(id, name, code), building:building_id(name, campus:campus_id(name)))`).eq('id', eq.id).single();
             if (data) setSelectedEquipment(prev => (prev?.id === eq.id ? { ...prev, ...data } : prev));
             // Fetch detail equipment items
             await fetchDetailEquipments(eq.id);

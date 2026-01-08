@@ -108,14 +108,15 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 setNewReportsCount(reportsCount || 0);
             }
 
-            // Fetch for bookings (filter by room's study_program_id for laboratory)
+            // Fetch for bookings (filter by room's study_program_ids for laboratory)
             let bookingsQuery = supabase
                 .from('bookings')
-                .select('id, room:rooms!inner(study_program_id)', { count: 'exact', head: true })
+                .select('id, room:rooms!inner(study_program_ids)', { count: 'exact', head: true })
                 .eq('status', 'pending');
 
             if (user?.role === 'laboratory' && user?.study_program_id) {
-                bookingsQuery = bookingsQuery.eq('room.study_program_id', user.study_program_id);
+                // Use contains filter for array - room.study_program_ids should contain user's study_program_id
+                bookingsQuery = bookingsQuery.contains('room.study_program_ids', [user.study_program_id]);
             }
 
             const { count: bookingsCount } = await bookingsQuery;

@@ -38,7 +38,7 @@ const roomSchema = z.object({
     code: z.string().min(2, 'Room code must be at least 2 characters'),
     capacity: z.number().min(1, 'Capacity must be at least 1'),
     department_id: z.string().optional().nullable(),
-    study_program_id: z.string().optional().nullable(),
+    study_program_ids: z.array(z.string()).optional().nullable(),  // Changed to array
 });
 type RoomForm = z.infer<typeof roomSchema>;
 
@@ -271,15 +271,20 @@ const RoomManagement: React.FC = () => {
                 const laborStudyProgramId = profile.study_program_id;
 
                 roomsToDisplay = optimizedRooms.filter((room: any) => {
-                    // Department must match
-                    if (room.department?.id !== laborDeptId) return false;
+                    const roomDeptId = room.department?.id;
+                    const roomProdiIds = room.study_program_ids || [];
 
-                    // Study program check: null OR same as laboran
-                    if (room.study_program_id === null || room.study_program_id === undefined || room.study_program_id === laborStudyProgramId) {
+                    // Case 1: Department exists and matches user's department -> SHOW
+                    if (roomDeptId && roomDeptId === laborDeptId) {
                         return true;
                     }
 
-                    // Study program is different from laboran → don't show
+                    // Case 2: Department is null/general BUT study_program_ids includes user's prodi -> SHOW
+                    if (!roomDeptId && laborStudyProgramId && roomProdiIds.includes(laborStudyProgramId)) {
+                        return true;
+                    }
+
+                    // Otherwise -> HIDE
                     return false;
                 });
 
@@ -942,7 +947,7 @@ const RoomManagement: React.FC = () => {
                 code: data.code,
                 capacity: data.capacity,
                 department_id: data.department_id || null,
-                study_program_id: data.study_program_id || null,
+                study_program_ids: (data.study_program_ids && data.study_program_ids.length > 0) ? data.study_program_ids : null,  // Changed to array
             };
             if (editingRoom) {
                 const { error } = await supabase.from('rooms').update(roomData).eq('id', editingRoom.id);
@@ -974,7 +979,7 @@ const RoomManagement: React.FC = () => {
             code: room.code,
             capacity: room.capacity,
             department_id: room.department?.id,
-            study_program_id: room.study_program_id || null,
+            study_program_ids: (room as any).study_program_ids || [],  // Changed to array
         });
         setShowForm(true);
     };
@@ -982,16 +987,33 @@ const RoomManagement: React.FC = () => {
     const handleAddNewRoom = () => {
         setEditingRoom(null);
         setRoomNameInput('');
-        form.reset();
 
-        // Auto-set study_program_id for laboratory role
-        if (profile?.role === 'laboratory' && profile?.study_program_id) {
-            form.setValue('study_program_id', profile.study_program_id);
+        // Prepare default values based on user role
+        const defaultValues: Partial<RoomForm> = {
+            name: '',
+            code: '',
+            capacity: undefined,
+            department_id: null,
+            study_program_ids: [],
+        };
+
+        // Auto-set for laboratory role
+        if (profile?.role === 'laboratory') {
+            if (profile?.study_program_id) {
+                defaultValues.study_program_ids = [profile.study_program_id];
+            }
+            if (profile?.department_id) {
+                defaultValues.department_id = profile.department_id;
+            }
         }
+
         // Auto-set department for department_admin role
         if (profile?.role === 'department_admin' && profile?.department_id) {
-            form.setValue('department_id', profile.department_id);
+            defaultValues.department_id = profile.department_id;
         }
+
+        // Reset form with default values
+        form.reset(defaultValues);
 
         setShowForm(true);
     };
@@ -1356,9 +1378,17 @@ const RoomManagement: React.FC = () => {
                                                 <span>{room.capacity} {getText('seats', 'kursi')}</span>
                                             </div>
                                             <div className="flex items-center text-sm text-gray-600">
-                                                <MapPin className="h-4 w-4 mr-1" />
-                                                <span>{room.department?.name || getText('General', 'Umum')}</span>
+                                                <MapPin className="h-4 w-4 mr-1 flex-shrink-0" />
+                                                <span className="truncate">{room.department?.name || getText('General', 'Umum')}</span>
                                             </div>
+                                            {room.study_program_ids && room.study_program_ids.length > 0 && (
+                                                <div className="flex items-start text-xs text-gray-500 mt-1">
+                                                    <GraduationCap className="h-3 w-3 mr-1 mt-0.5 flex-shrink-0" />
+                                                    <span className="line-clamp-2">
+                                                        {room.study_program_ids.map(id => studyPrograms.find(sp => sp.id === id)?.name || '').filter(Boolean).join(', ')}
+                                                    </span>
+                                                </div>
+                                            )}
 
                                             {roomStatus.status === 'Conflict' && (
                                                 <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded text-xs text-orange-700">
@@ -1419,7 +1449,17 @@ const RoomManagement: React.FC = () => {
                                         <div className={`w-3 h-12 rounded-full ${roomStatus.color.split(' ')[0]}`}></div>
                                         <div>
                                             <h3 className="font-semibold text-gray-900">{room.name}</h3>
-                                            <p className="text-sm text-gray-600">{room.code} • {room.department?.name || getText('General', 'Umum')}</p>
+                                            <p className="text-sm text-gray-600">
+                                                {room.code} • {room.department?.name || getText('General', 'Umum')}
+                                                {room.study_program_ids && room.study_program_ids.length > 0 && (
+                                                    <>
+                                                        <span className="mx-1">•</span>
+                                                        <span className="text-xs text-gray-500">
+                                                            {room.study_program_ids.map(id => studyPrograms.find(sp => sp.id === id)?.name || '').filter(Boolean).join(', ')}
+                                                        </span>
+                                                    </>
+                                                )}
+                                            </p>
                                             {roomStatus.reason && (
                                                 <p className="text-xs text-gray-500 mt-1">{roomStatus.reason}</p>
                                             )}
@@ -1486,10 +1526,10 @@ const RoomManagement: React.FC = () => {
 
             {/* Enhanced Add/Edit Room Form Modal with Autocomplete */}
             {showForm && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9998] p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-lg w-full">
-                        <div className="p-6">
-                            <div className="flex items-center justify-between mb-6">
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9998] p-4 overflow-y-auto">
+                    <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col my-4">
+                        <div className="p-6 border-b border-gray-200 flex-shrink-0">
+                            <div className="flex items-center justify-between">
                                 <h3 className="text-lg font-semibold text-gray-900">
                                     {editingRoom ? getText('Edit Room', 'Edit Ruangan') : getText('Add New Room', 'Tambah Ruangan Baru')}
                                 </h3>
@@ -1503,6 +1543,8 @@ const RoomManagement: React.FC = () => {
                                     <X className="h-6 w-6" />
                                 </button>
                             </div>
+                        </div>
+                        <div className="p-6 overflow-y-auto flex-grow">
                             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                                 {/* Enhanced Room Name Input with Autocomplete */}
                                 <div className="relative">
@@ -1604,20 +1646,57 @@ const RoomManagement: React.FC = () => {
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">{getText('Study Program', 'Program Studi')}</label>
-                                    <select
-                                        {...form.register('study_program_id')}
-                                        disabled={profile?.role === 'laboratory'}
-                                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:text-gray-500"
-                                    >
-                                        <option value="">{getText('No Study Program / General', 'Tidak Ada Program Studi / Umum')}</option>
-                                        {studyPrograms.map(sp => (
-                                            <option key={sp.id} value={sp.id}>{sp.name} ({sp.code})</option>
-                                        ))}
-                                    </select>
-                                    <p className="text-xs text-gray-500 mt-1">
-                                        {getText('Study program is used for filtering equipment access by lab assistants', 'Program studi digunakan untuk filter akses peralatan oleh laboran')}
-                                    </p>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">{getText('Study Programs (max 3)', 'Program Studi (maks 3)')}</label>
+                                    <div className="border border-gray-300 rounded-md p-3 max-h-48 overflow-y-auto bg-gray-50">
+                                        {studyPrograms.length === 0 ? (
+                                            <p className="text-sm text-gray-500">{getText('No study programs available', 'Tidak ada program studi tersedia')}</p>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {studyPrograms.map(sp => {
+                                                    const currentIds = form.watch('study_program_ids') || [];
+                                                    const isChecked = currentIds.includes(sp.id);
+                                                    const isDisabled = profile?.role === 'laboratory' || (!isChecked && currentIds.length >= 3);
+
+                                                    return (
+                                                        <label
+                                                            key={sp.id}
+                                                            className={`flex items-center space-x-3 p-2 rounded-lg cursor-pointer transition-colors ${isChecked ? 'bg-indigo-50 border border-indigo-200' : 'hover:bg-gray-100'
+                                                                } ${isDisabled && !isChecked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isChecked}
+                                                                disabled={isDisabled}
+                                                                onChange={(e) => {
+                                                                    const current = form.getValues('study_program_ids') || [];
+                                                                    if (e.target.checked) {
+                                                                        if (current.length < 3) {
+                                                                            form.setValue('study_program_ids', [...current, sp.id]);
+                                                                        }
+                                                                    } else {
+                                                                        form.setValue('study_program_ids', current.filter(id => id !== sp.id));
+                                                                    }
+                                                                }}
+                                                                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                                                            />
+                                                            <div className="flex-1 min-w-0">
+                                                                <span className="text-sm font-medium text-gray-900">{sp.name}</span>
+                                                                <span className="text-xs text-gray-500 ml-2">({sp.code})</span>
+                                                            </div>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center justify-between mt-2">
+                                        <p className="text-xs text-gray-500">
+                                            {getText('Select study programs that can access this room (leave empty for general access)', 'Pilih program studi yang dapat mengakses ruangan ini (kosongkan untuk akses umum)')}
+                                        </p>
+                                        <span className={`text-xs font-medium ${(form.watch('study_program_ids') || []).length >= 3 ? 'text-orange-600' : 'text-gray-400'}`}>
+                                            {(form.watch('study_program_ids') || []).length}/3
+                                        </span>
+                                    </div>
                                 </div>
 
                                 <div className="flex justify-end space-x-3 pt-4">

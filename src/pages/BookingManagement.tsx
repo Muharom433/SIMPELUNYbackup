@@ -423,7 +423,7 @@ const BookingManagement: React.FC = () => {
                         id, full_name, identity_number, phone_number, email, study_program_id
                     ),
                     room:rooms!bookings_room_id_fkey(
-                        id, name, code, capacity, study_program_id, department_id,
+                        id, name, code, capacity, study_program_ids, department_id,
                         department:departments(name)
                     )
                 `)
@@ -457,15 +457,20 @@ const BookingManagement: React.FC = () => {
                     const room = booking.room;
                     if (!room) return false;
 
-                    // Department must match
-                    if (room.department_id !== laborDeptId) return false;
+                    const roomDeptId = room.department_id;
+                    const roomProdiIds = room.study_program_ids || [];
 
-                    // Study program check: null OR same as laboran
-                    if (room.study_program_id === null || room.study_program_id === laborStudyProgramId) {
+                    // Case 1: Department exists and matches user's department -> SHOW
+                    if (roomDeptId && roomDeptId === laborDeptId) {
                         return true;
                     }
 
-                    // Study program is different from laboran → don't show
+                    // Case 2: Department is null/general BUT study_program_ids includes user's prodi -> SHOW
+                    if (!roomDeptId && laborStudyProgramId && roomProdiIds.includes(laborStudyProgramId)) {
+                        return true;
+                    }
+
+                    // Otherwise -> HIDE
                     return false;
                 });
 
@@ -513,7 +518,7 @@ const BookingManagement: React.FC = () => {
             let query = supabase
                 .from('rooms')
                 .select(`
-                    id, name, code, capacity, department_id, study_program_id,
+                    id, name, code, capacity, department_id, study_program_ids,
                     department:departments(name)
                 `)
                 .order('name');
@@ -538,15 +543,20 @@ const BookingManagement: React.FC = () => {
                 const laborStudyProgramId = profile.study_program_id;
 
                 filteredData = filteredData.filter((room: any) => {
-                    // Department must match
-                    if (room.department_id !== laborDeptId) return false;
+                    const roomDeptId = (room as any).department_id;
+                    const roomProdiIds = (room as any).study_program_ids || [];
 
-                    // Study program check: null OR same as laboran
-                    if (room.study_program_id === null || room.study_program_id === laborStudyProgramId) {
+                    // Case 1: Department exists and matches user's department -> SHOW
+                    if (roomDeptId && roomDeptId === laborDeptId) {
                         return true;
                     }
 
-                    // Study program is different from laboran → don't show
+                    // Case 2: Department is null/general BUT study_program_ids includes user's prodi -> SHOW
+                    if (!roomDeptId && laborStudyProgramId && roomProdiIds.includes(laborStudyProgramId)) {
+                        return true;
+                    }
+
+                    // Otherwise -> HIDE
                     return false;
                 });
 

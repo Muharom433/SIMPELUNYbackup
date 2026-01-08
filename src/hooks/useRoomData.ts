@@ -57,7 +57,7 @@ export const useRoomData = (targetDate: string) => {
           capacity,
           is_available,
           equipment,
-          study_program_id,
+          study_program_ids,
           department:departments(id, name)
         `)
         .order('name');
@@ -310,7 +310,7 @@ export const useRoomData = (targetDate: string) => {
           department: room.department,
           equipment: room.equipment || [],
           is_available: room.is_available,
-          study_program_id: room.study_program_id, // Added for laboran filter
+          study_program_ids: room.study_program_ids,
 
           todayStatus,
           targetDateStatus,

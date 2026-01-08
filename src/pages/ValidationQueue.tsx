@@ -455,7 +455,7 @@ const ValidationQueue: React.FC = () => {
                         booking:bookings!checkouts_booking_id_fkey(
                             id, purpose, room_id,
                             room:rooms(
-                                id, name, code, capacity, study_program_id, department_id,
+                                id, name, code, capacity, study_program_ids, department_id,
                                 department:departments(name)
                             )
                         ),
@@ -495,15 +495,20 @@ const ValidationQueue: React.FC = () => {
                         const room = checkout.booking?.room;
                         if (!room) return false;
 
-                        // Department must match
-                        if (room.department_id !== laborDeptId) return false;
+                        const roomDeptId = room.department_id;
+                        const roomProdiIds = room.study_program_ids || [];
 
-                        // Study program check: null OR same as laboran
-                        if (room.study_program_id === null || room.study_program_id === laborStudyProgramId) {
+                        // Case 1: Department exists and matches user's department -> SHOW
+                        if (roomDeptId && roomDeptId === laborDeptId) {
                             return true;
                         }
 
-                        // Study program is different from laboran → don't show
+                        // Case 2: Department is null/general BUT study_program_ids includes user's prodi -> SHOW
+                        if (!roomDeptId && laborStudyProgramId && roomProdiIds.includes(laborStudyProgramId)) {
+                            return true;
+                        }
+
+                        // Otherwise -> HIDE
                         return false;
                     });
                     console.log(`🔬 Filtered to ${filteredData.length} checkouts for laboran`);

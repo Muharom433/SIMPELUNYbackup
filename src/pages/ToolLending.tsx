@@ -821,19 +821,21 @@ const ToolLending: React.FC = () => {
                     const room = eq.rooms;
                     if (!room) return false;
 
-                    const deptId = room.department_id;
-                    const spId = room.study_program_id;
+                    const roomDeptId = room.department_id;
+                    const roomProdiIds = (room as any).study_program_ids || [];
 
-                    // Skip general equipment (no dept) - they're in the other tab
-                    if (!deptId) return false;
+                    // Case 1: Department exists and matches user's department -> SHOW
+                    if (roomDeptId && roomDeptId === userDeptId) {
+                        return true;
+                    }
 
-                    // Must match user's department
-                    if (deptId !== userDeptId) return false;
+                    // Case 2: Department is null/general BUT study_program_ids includes user's prodi -> SHOW
+                    if (!roomDeptId && selectedStudyProgramId && roomProdiIds.includes(selectedStudyProgramId)) {
+                        return true;
+                    }
 
-                    // If room has study_program_id, must match user's
-                    if (spId && spId !== selectedStudyProgramId) return false;
-
-                    return true;
+                    // Otherwise -> HIDE
+                    return false;
                 });
             } else {
                 // No study program selected - show nothing in lab tab

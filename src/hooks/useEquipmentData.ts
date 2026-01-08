@@ -64,7 +64,7 @@ export const useEquipmentData = () => {
             // Fetch rooms (for other uses)
             const roomsRes = await supabase
                 .from('rooms')
-                .select('id, name, code, department_id, study_program_id')
+                .select('id, name, code, department_id, study_program_ids')
                 .order('name');
 
             if (roomsRes.error) {
@@ -87,7 +87,7 @@ export const useEquipmentData = () => {
                         id, name, code, category, quantity, unit, condition, is_available,
                         rooms_id, table_id, rack_id, box_id,
                         rooms:rooms_id (
-                            id, name, code, department_id, study_program_id
+                            id, name, code, department_id, study_program_ids
                         )
                     `)
                     .order('name')
@@ -166,18 +166,15 @@ export const useEquipmentData = () => {
             const room = eq.rooms;
             if (!room) return false;
 
-            // General room (no specifics) - accessible by all
-            if (!room.department_id && !room.study_program_id) {
+            const roomProdiIds = (room as any).study_program_ids || [];
+
+            // Case 1: Department exists and matches -> SHOW
+            if (room.department_id && room.department_id === departmentId) {
                 return true;
             }
 
-            // Match by study program first
-            if (studyProgramId && room.study_program_id === studyProgramId) {
-                return true;
-            }
-
-            // Match by department
-            if (departmentId && room.department_id === departmentId) {
+            // Case 2: Department is null but study_program_ids includes user's prodi -> SHOW
+            if (!room.department_id && studyProgramId && roomProdiIds.includes(studyProgramId)) {
                 return true;
             }
 

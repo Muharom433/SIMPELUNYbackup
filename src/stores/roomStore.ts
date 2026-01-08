@@ -79,7 +79,7 @@ export interface EnhancedRoomStatus {
   department: any;
   equipment: string[];
   is_available: boolean;
-  study_program_id?: string; // Added for laboran filter
+  study_program_ids?: string[]; // Changed to array for multi-prodi support
 
   // 2-LAYER STATUS
   todayStatus: 'In Use' | 'Scheduled' | 'Available';

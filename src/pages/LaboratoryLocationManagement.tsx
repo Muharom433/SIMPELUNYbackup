@@ -18,9 +18,15 @@ interface Room {
     building_id: string;
     floor: string;
     department_id?: string;
-    study_program_id?: string;
+    study_program_ids?: string[]; // Updated to array
     is_available: boolean;
     cabinets?: Cabinet[];
+}
+
+interface StudyProgram {
+    id: string;
+    name: string;
+    code: string;
 }
 
 interface Cabinet {
@@ -62,6 +68,7 @@ const LaboratoryLocationManagement: React.FC = () => {
 
     // Data States
     const [rooms, setRooms] = useState<Room[]>([]);
+    const [studyPrograms, setStudyPrograms] = useState<StudyProgram[]>([]); // Added state
     const [loading, setLoading] = useState(true);
 
     // Expanded States
@@ -128,29 +135,48 @@ const LaboratoryLocationManagement: React.FC = () => {
     useEffect(() => {
         if (isLaboratory && laborDepartmentId) {
             fetchRooms();
+            fetchStudyPrograms(); // Fetch study programs
         }
     }, [isLaboratory, laborDepartmentId, laborStudyProgramId]);
+
+    // Fetch study programs
+    const fetchStudyPrograms = async () => {
+        const { data } = await supabase.from('study_programs').select('id, name, code');
+        setStudyPrograms(data || []);
+    };
 
     // Fetch rooms filtered by laboran's department and study program
     const fetchRooms = async () => {
         try {
             setLoading(true);
 
-            // Fetch rooms that belong to laboran's department
-            // Study program filter: NULL or same as laboran
+            // Fetch all rooms - filtering by dept/prodi is done client-side
             let query = supabase
                 .from('rooms')
-                .select('id, name, code, capacity, building_id, floor, department_id, study_program_id, is_available')
-                .eq('department_id', laborDepartmentId)
+                .select('id, name, code, capacity, building_id, floor, department_id, study_program_ids, is_available')
                 .order('name');
 
             const { data: roomsData, error: roomsError } = await query;
             if (roomsError) throw roomsError;
 
-            // Filter by study program: null OR same as laboran
-            let filteredRooms = (roomsData || []).filter(room =>
-                room.study_program_id === null || room.study_program_id === laborStudyProgramId
-            );
+            // Filter rooms: dept matches OR (dept null but prodi matches)
+            let filteredRooms = (roomsData || []).filter(room => {
+                const roomDeptId = (room as any).department_id;
+                const roomProdiIds = (room as any).study_program_ids || [];
+
+                // Case 1: Department exists and matches user's department -> SHOW
+                if (roomDeptId && roomDeptId === laborDepartmentId) {
+                    return true;
+                }
+
+                // Case 2: Department is null/general BUT study_program_ids includes user's prodi -> SHOW
+                if (!roomDeptId && laborStudyProgramId && roomProdiIds.includes(laborStudyProgramId)) {
+                    return true;
+                }
+
+                // Otherwise -> HIDE
+                return false;
+            });
 
             // Fetch cabinets, racks, boxes
             const roomIds = filteredRooms.map(r => r.id);
@@ -566,6 +592,14 @@ const LaboratoryLocationManagement: React.FC = () => {
                                     <div>
                                         <div className="flex items-center gap-2"><h3 className="font-bold text-gray-900">{room.name}</h3><span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs rounded-md font-mono font-bold">{room.code}</span></div>
                                         <p className="text-sm text-gray-500">{room.floor} • {room.cabinets?.length || 0} {getText('Cabinets', 'Kabinet')}</p>
+                                        {room.study_program_ids && room.study_program_ids.length > 0 && (
+                                            <div className="flex items-start text-xs text-blue-600 mt-1">
+                                                <GraduationCap className="h-3 w-3 mr-1 mt-0.5 flex-shrink-0" />
+                                                <span className="line-clamp-1">
+                                                    {room.study_program_ids.map(id => studyPrograms.find(sp => sp.id === id)?.name || '').filter(Boolean).join(', ')}
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">

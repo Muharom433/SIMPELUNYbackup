@@ -7,7 +7,7 @@ export interface EquipmentRoom {
     name: string;
     code: string;
     department_id?: string;
-    study_program_id?: string;
+    study_program_ids?: string[];
     floor?: number;
 }
 
@@ -27,7 +27,7 @@ export interface EquipmentItem {
     box_id?: string;
     // Direct department and study program IDs for faster filtering
     department_id?: string;
-    study_program_id?: string;
+    study_program_ids?: string[];
     // Mapped room data (from JS mapping, not DB join)
     rooms?: EquipmentRoom | null;
 }
