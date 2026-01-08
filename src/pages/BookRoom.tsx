@@ -581,6 +581,19 @@ const EquipmentSelectionSection: React.FC<{
   getText,
 }) => {
     const [showOptionalSection, setShowOptionalSection] = useState(false);
+    const [equipmentSearchQuery, setEquipmentSearchQuery] = useState("");
+
+    // Filter optional equipment based on search query (by name and code)
+    const filteredOptionalEquipment = useMemo(() => {
+      if (!equipmentSearchQuery.trim()) {
+        return optionalEquipment;
+      }
+      const query = equipmentSearchQuery.toLowerCase().trim();
+      return optionalEquipment.filter((equipment) =>
+        equipment.name.toLowerCase().includes(query) ||
+        equipment.code.toLowerCase().includes(query)
+      );
+    }, [optionalEquipment, equipmentSearchQuery]);
 
     return (
       <div className="border-t border-gray-200/50 pt-6">
@@ -669,98 +682,135 @@ const EquipmentSelectionSection: React.FC<{
                 </div>
               ) : (
                 <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-64 overflow-y-auto">
-                    {optionalEquipment.map((equipment) => {
-                      const isSelected = selectedOptionalEquipment.has(equipment.id);
-                      const selectedQty = selectedOptionalEquipment.get(equipment.id) || 0;
-
-                      return (
-                        <div
-                          key={equipment.id}
-                          className={`p-3 rounded-lg border-2 transition-all ${isSelected
-                            ? 'border-emerald-500 bg-emerald-100'
-                            : 'border-gray-200 bg-white hover:border-emerald-300'
-                            }`}
+                  {/* Search Input for Optional Equipment */}
+                  <div className="mb-4">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        value={equipmentSearchQuery}
+                        onChange={(e) => setEquipmentSearchQuery(e.target.value)}
+                        placeholder={getText('Search by name or code...', 'Cari berdasarkan nama atau kode...')}
+                        className="w-full pl-10 pr-10 py-2 border border-emerald-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white transition-all"
+                      />
+                      {equipmentSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setEquipmentSearchQuery("")}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
                         >
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="flex items-center space-x-2">
-                              <div className={`p-1.5 rounded ${isSelected ? 'bg-emerald-200' : 'bg-gray-100'}`}>
-                                <Package className={`h-3 w-3 ${isSelected ? 'text-emerald-700' : 'text-gray-500'}`} />
-                              </div>
-                              <div>
-                                <p className="font-medium text-gray-900 text-sm">{equipment.name}</p>
-                                <p className="text-xs text-gray-500">{equipment.code}</p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-xs text-gray-500">
-                                {getText('Available', 'Tersedia')}: {equipment.quantity} {equipment.unit}
-                              </span>
-                            </div>
-                          </div>
-
-                          {equipment.rooms?.name && (
-                            <p className="text-xs text-gray-500 mb-2">
-                              📍 {equipment.rooms.name}
-                            </p>
-                          )}
-
-                          <div className="flex items-center justify-between">
-                            {isSelected ? (
-                              <div className="flex items-center space-x-2">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (selectedQty > 1) {
-                                      onOptionalEquipmentChange(equipment.id, selectedQty - 1);
-                                    } else {
-                                      onOptionalEquipmentChange(equipment.id, 0);
-                                    }
-                                  }}
-                                  className="p-1 bg-emerald-200 hover:bg-emerald-300 rounded transition-colors"
-                                >
-                                  <Minus className="h-3 w-3 text-emerald-700" />
-                                </button>
-                                <span className="font-bold text-emerald-700 min-w-[24px] text-center">
-                                  {selectedQty}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (selectedQty < equipment.quantity) {
-                                      onOptionalEquipmentChange(equipment.id, selectedQty + 1);
-                                    }
-                                  }}
-                                  disabled={selectedQty >= equipment.quantity}
-                                  className="p-1 bg-emerald-200 hover:bg-emerald-300 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                  <Plus className="h-3 w-3 text-emerald-700" />
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => onOptionalEquipmentChange(equipment.id, 1)}
-                                className="px-3 py-1 bg-emerald-600 text-white text-xs font-medium rounded hover:bg-emerald-700 transition-colors"
-                              >
-                                + {getText('Add', 'Tambah')}
-                              </button>
-                            )}
-
-                            {isSelected && (
-                              <button
-                                type="button"
-                                onClick={() => onOptionalEquipmentChange(equipment.id, 0)}
-                                className="text-red-500 hover:text-red-700 transition-colors"
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                    {equipmentSearchQuery && (
+                      <p className="text-xs text-emerald-600 mt-1">
+                        {getText('Found', 'Ditemukan')} {filteredOptionalEquipment.length} {getText('equipment', 'peralatan')}
+                      </p>
+                    )}
                   </div>
+
+                  {filteredOptionalEquipment.length === 0 ? (
+                    <div className="text-center py-6 text-gray-500">
+                      <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">
+                        {getText('No equipment found matching', 'Tidak ada peralatan yang cocok dengan')} "{equipmentSearchQuery}"
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-64 overflow-y-auto">
+                      {filteredOptionalEquipment.map((equipment) => {
+                        const isSelected = selectedOptionalEquipment.has(equipment.id);
+                        const selectedQty = selectedOptionalEquipment.get(equipment.id) || 0;
+
+                        return (
+                          <div
+                            key={equipment.id}
+                            className={`p-3 rounded-lg border-2 transition-all ${isSelected
+                              ? 'border-emerald-500 bg-emerald-100'
+                              : 'border-gray-200 bg-white hover:border-emerald-300'
+                              }`}
+                          >
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-center space-x-2">
+                                <div className={`p-1.5 rounded ${isSelected ? 'bg-emerald-200' : 'bg-gray-100'}`}>
+                                  <Package className={`h-3 w-3 ${isSelected ? 'text-emerald-700' : 'text-gray-500'}`} />
+                                </div>
+                                <div>
+                                  <p className="font-medium text-gray-900 text-sm">{equipment.name}</p>
+                                  <p className="text-xs text-gray-500">{equipment.code}</p>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-xs text-gray-500">
+                                  {getText('Available', 'Tersedia')}: {equipment.quantity} {equipment.unit}
+                                </span>
+                              </div>
+                            </div>
+
+                            {equipment.rooms?.name && (
+                              <p className="text-xs text-gray-500 mb-2">
+                                📍 {equipment.rooms.name}
+                              </p>
+                            )}
+
+                            <div className="flex items-center justify-between">
+                              {isSelected ? (
+                                <div className="flex items-center space-x-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (selectedQty > 1) {
+                                        onOptionalEquipmentChange(equipment.id, selectedQty - 1);
+                                      } else {
+                                        onOptionalEquipmentChange(equipment.id, 0);
+                                      }
+                                    }}
+                                    className="p-1 bg-emerald-200 hover:bg-emerald-300 rounded transition-colors"
+                                  >
+                                    <Minus className="h-3 w-3 text-emerald-700" />
+                                  </button>
+                                  <span className="font-bold text-emerald-700 min-w-[24px] text-center">
+                                    {selectedQty}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (selectedQty < equipment.quantity) {
+                                        onOptionalEquipmentChange(equipment.id, selectedQty + 1);
+                                      }
+                                    }}
+                                    disabled={selectedQty >= equipment.quantity}
+                                    className="p-1 bg-emerald-200 hover:bg-emerald-300 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    <Plus className="h-3 w-3 text-emerald-700" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => onOptionalEquipmentChange(equipment.id, 1)}
+                                  className="px-3 py-1 bg-emerald-600 text-white text-xs font-medium rounded hover:bg-emerald-700 transition-colors"
+                                >
+                                  + {getText('Add', 'Tambah')}
+                                </button>
+                              )}
+
+                              {isSelected && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOptionalEquipmentChange(equipment.id, 0)}
+                                  className="text-red-500 hover:text-red-700 transition-colors"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   <div className="mt-3 flex items-center space-x-2 text-xs text-emerald-700">
                     <Info className="h-3 w-3" />
