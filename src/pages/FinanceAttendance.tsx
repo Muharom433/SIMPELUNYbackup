@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
     ClipboardCheck, BarChart3, FileText, Search, CheckCircle, XCircle,
     AlertCircle, User, Clock, Download, RefreshCw, ChevronLeft, ChevronRight,
-    Eye, X, Building, Loader2, FileSpreadsheet, Users, TrendingUp, PieChart, Trash2, ChevronDown, ChevronUp
+    Eye, X, Building, Loader2, FileSpreadsheet, Users, TrendingUp, PieChart, Trash2, ChevronDown, ChevronUp,
+    BookOpen, GraduationCap
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -12,6 +13,30 @@ import { id as localeId } from 'date-fns/locale';
 import toast from 'react-hot-toast';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart as RechartsPie, Pie, LineChart, Line } from 'recharts';
 import jsPDF from 'jspdf';
+
+// Interface for attendance details (from lecturer_attendance_details table)
+interface AttendanceDetail {
+    id: string;
+    attendance_id: string;
+    activity_type: 'mengajar' | 'sidang' | 'lainnya';
+    // Lecture fields
+    course_name?: string;
+    course_code?: string;
+    study_program_name?: string;
+    class_group?: string;
+    semester?: string;
+    // Session fields
+    session_schedule_id?: string;
+    student_name?: string;
+    student_nim?: string;
+    session_type?: string;
+    role_in_session?: string;
+    // Common fields
+    scheduled_date?: string;
+    start_time?: string;
+    end_time?: string;
+    room_name?: string;
+}
 
 interface AttendanceRecord {
     id: string;
@@ -32,6 +57,8 @@ interface AttendanceRecord {
     study_program_id?: string;
     study_program?: { id: string; name: string } | null;
     created_at: string;
+    // Extended: attendance details
+    details?: AttendanceDetail[];
 }
 
 interface StudyProgram {
@@ -75,6 +102,8 @@ const FinanceAttendance: React.FC = () => {
 
     // Modal states
     const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null);
+    const [selectedRecordDetails, setSelectedRecordDetails] = useState<AttendanceDetail[]>([]);
+    const [loadingDetails, setLoadingDetails] = useState(false);
     const [showImageModal, setShowImageModal] = useState(false);
     const [verificationNotes, setVerificationNotes] = useState('');
     const [processing, setProcessing] = useState(false);
@@ -252,6 +281,40 @@ const FinanceAttendance: React.FC = () => {
             }))
             .sort((a, b) => b.count - a.count);
     }, [recapSelectedProdi, attendanceRecords, allLecturers]);
+
+    // Fetch attendance details when a record is selected
+    const fetchAttendanceDetails = async (attendanceId: string) => {
+        try {
+            setLoadingDetails(true);
+            setSelectedRecordDetails([]);
+
+            const { data, error } = await supabase
+                .from('lecturer_attendance_details')
+                .select('*')
+                .eq('attendance_id', attendanceId)
+                .order('start_time', { ascending: true });
+
+            if (error) {
+                console.warn('Error fetching attendance details:', error);
+                // Table might not exist yet, don't show error
+                return;
+            }
+
+            setSelectedRecordDetails(data || []);
+        } catch (error) {
+            console.warn('Error fetching attendance details:', error);
+        } finally {
+            setLoadingDetails(false);
+        }
+    };
+
+    // Handle selecting a record (fetch details too)
+    const handleSelectRecord = async (record: AttendanceRecord) => {
+        setSelectedRecord(record);
+        setVerificationNotes('');
+        // Fetch details for this record
+        await fetchAttendanceDetails(record.id);
+    };
 
     const handleVerify = async (status: 'verified' | 'rejected') => {
         if (!selectedRecord) return;
@@ -682,7 +745,7 @@ const FinanceAttendance: React.FC = () => {
                                                 <td className="px-4 py-3">
                                                     <div className="flex items-center gap-1">
                                                         <button
-                                                            onClick={() => setSelectedRecord(record)}
+                                                            onClick={() => handleSelectRecord(record)}
                                                             className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                                                             title={record.verification_status === 'pending' ? "Verifikasi" : "Lihat Detail"}
                                                         >
@@ -1070,6 +1133,94 @@ const FinanceAttendance: React.FC = () => {
                                         <p className="mt-1 font-medium text-gray-900">{selectedRecord.purpose_description}</p>
                                     </div>
                                 )}
+
+                                {/* Attendance Details Section - Multi-jadwal */}
+                                {loadingDetails ? (
+                                    <div className="flex items-center justify-center py-4">
+                                        <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                                        <span className="ml-2 text-sm text-gray-500">Memuat detail kegiatan...</span>
+                                    </div>
+                                ) : selectedRecordDetails.length > 0 && (
+                                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <BookOpen className="w-4 h-4 text-blue-600" />
+                                            <label className="text-blue-800 text-sm font-semibold">
+                                                Detail Kegiatan ({selectedRecordDetails.length})
+                                            </label>
+                                        </div>
+                                        <div className="space-y-3 max-h-60 overflow-y-auto">
+                                            {selectedRecordDetails.map((detail, idx) => (
+                                                <div key={detail.id || idx} className="bg-white rounded-lg p-3 border border-blue-100 shadow-sm">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${detail.activity_type === 'mengajar'
+                                                                ? 'bg-blue-100 text-blue-700'
+                                                                : detail.activity_type === 'sidang'
+                                                                    ? 'bg-purple-100 text-purple-700'
+                                                                    : 'bg-amber-100 text-amber-700'
+                                                            }`}>
+                                                            {detail.activity_type === 'mengajar' ? 'Mengajar' :
+                                                                detail.activity_type === 'sidang' ? 'Sidang' : 'Lainnya'}
+                                                        </span>
+                                                        {detail.start_time && detail.end_time && (
+                                                            <span className="text-xs text-gray-500 flex items-center gap-1">
+                                                                <Clock className="w-3 h-3" />
+                                                                {detail.start_time?.substring(0, 5)} - {detail.end_time?.substring(0, 5)}
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    {detail.activity_type === 'mengajar' ? (
+                                                        <div className="space-y-1">
+                                                            <p className="font-medium text-gray-900">{detail.course_name || 'Mata Kuliah'}</p>
+                                                            <div className="flex flex-wrap gap-2 text-xs text-gray-600">
+                                                                {detail.study_program_name && (
+                                                                    <span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded">
+                                                                        <GraduationCap className="w-3 h-3" /> {detail.study_program_name}
+                                                                    </span>
+                                                                )}
+                                                                {detail.class_group && (
+                                                                    <span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded">
+                                                                        <Users className="w-3 h-3" /> Rombel {detail.class_group}
+                                                                    </span>
+                                                                )}
+                                                                {detail.semester && (
+                                                                    <span className="bg-gray-100 px-2 py-0.5 rounded">{detail.semester}</span>
+                                                                )}
+                                                                {detail.room_name && (
+                                                                    <span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded">
+                                                                        <Building className="w-3 h-3" /> {detail.room_name}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ) : detail.activity_type === 'sidang' ? (
+                                                        <div className="space-y-1">
+                                                            <p className="font-medium text-gray-900">
+                                                                {detail.session_type || 'Sidang'} - {detail.student_name || 'Mahasiswa'}
+                                                            </p>
+                                                            <div className="flex flex-wrap gap-2 text-xs text-gray-600">
+                                                                {detail.role_in_session && (
+                                                                    <span className="flex items-center gap-1 bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-medium">
+                                                                        <User className="w-3 h-3" /> {detail.role_in_session}
+                                                                    </span>
+                                                                )}
+                                                                {detail.student_nim && (
+                                                                    <span className="bg-gray-100 px-2 py-0.5 rounded">NIM: {detail.student_nim}</span>
+                                                                )}
+                                                                {detail.room_name && (
+                                                                    <span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded">
+                                                                        <Building className="w-3 h-3" /> {detail.room_name}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">{getText('Notes', 'Catatan')}</label>
                                     <textarea

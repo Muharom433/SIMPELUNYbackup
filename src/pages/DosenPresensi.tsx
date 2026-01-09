@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Camera, User, Clock, BookOpen, Users, CheckCircle, AlertCircle, X, ChevronDown, Calendar, Loader2, ExternalLink, PartyPopper } from 'lucide-react';
+import { Search, Camera, User, Clock, BookOpen, Users, CheckCircle, AlertCircle, ChevronDown, Loader2, ExternalLink, PartyPopper, GraduationCap } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
@@ -13,13 +13,27 @@ interface Lecturer {
     study_program?: { id: string; name: string } | null;
 }
 
-interface DetectedSchedule {
-    type: 'lecture' | 'session';
+// Extended schedule interface with full details for denormalization
+interface ScheduleItem {
     id: string;
-    title: string;
-    room: string;
-    time: string;
-    details?: string;
+    type: 'lecture' | 'session';
+    // Lecture details
+    course_name?: string;
+    course_code?: string;
+    study_program_name?: string;
+    class_group?: string; // Rombel
+    semester?: string;
+    // Session details
+    student_name?: string;
+    student_nim?: string;
+    session_type?: string;
+    role_in_session?: string; // supervisor/examiner/secretary
+    session_schedule_id?: string;
+    // Common
+    room_name?: string;
+    start_time?: string;
+    end_time?: string;
+    scheduled_date?: string;
 }
 
 interface SubmitSuccessData {
@@ -28,6 +42,7 @@ interface SubmitSuccessData {
     purpose: string;
     time: string;
     photo: string;
+    scheduleCount: number;
 }
 
 // Searchable Dropdown Component
@@ -163,8 +178,9 @@ const DosenPresensi: React.FC = () => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
-    // Schedule detection
-    const [detectedSchedule, setDetectedSchedule] = useState<DetectedSchedule | null>(null);
+    // Schedule detection - now supports MULTIPLE schedules
+    const [availableSchedules, setAvailableSchedules] = useState<ScheduleItem[]>([]);
+    const [selectedSchedules, setSelectedSchedules] = useState<ScheduleItem[]>([]);
     const [checkingSchedule, setCheckingSchedule] = useState(false);
 
     // Custom purpose for non-scheduled attendance
@@ -213,8 +229,9 @@ const DosenPresensi: React.FC = () => {
                 if (data && data.length > 0) {
                     setHasAttendedToday(true);
                     setLastAttendanceTime(data[0].attendance_time?.substring(0, 5) || null);
-                    // Clear auto-detected schedule if already attended
-                    setDetectedSchedule(null);
+                    // Clear schedules if already attended
+                    setAvailableSchedules([]);
+                    setSelectedSchedules([]);
                     setCustomPurpose('');
                 } else {
                     setHasAttendedToday(false);
@@ -230,15 +247,16 @@ const DosenPresensi: React.FC = () => {
         checkAttendance();
     }, [selectedLecturerId]);
 
-    // Check schedule when lecturer is selected or attendance status changes
+    // Detect ALL schedules when lecturer is selected
     useEffect(() => {
         if (selectedLecturerId && !hasAttendedToday) {
             const lecturer = lecturers.find(l => l.id === selectedLecturerId);
             if (lecturer) {
-                detectSchedule(lecturer.full_name);
+                detectAllSchedules(lecturer.full_name);
             }
         } else {
-            setDetectedSchedule(null);
+            setAvailableSchedules([]);
+            setSelectedSchedules([]);
         }
     }, [selectedLecturerId, lecturers, hasAttendedToday]);
 
@@ -305,81 +323,131 @@ const DosenPresensi: React.FC = () => {
         return null;
     };
 
-    const detectSchedule = async (lecturerName: string) => {
+    // Detect ALL schedules for today (lectures + sessions)
+    const detectAllSchedules = async (lecturerName: string) => {
+        setCheckingSchedule(true);
+        setAvailableSchedules([]);
+
+        const today = new Date();
+        const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+        const currentDay = dayNames[today.getDay()];
+        const todayStr = format(today, 'yyyy-MM-dd');
+
+        console.log('[detectAllSchedules] Checking for:', lecturerName, 'on day:', currentDay);
+
+        const allSchedules: ScheduleItem[] = [];
+
+        // 1. Fetch ALL lecture schedules for today (in separate try-catch)
         try {
-            setCheckingSchedule(true);
-            setDetectedSchedule(null);
-
-            const today = new Date();
-            const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-            const currentDay = dayNames[today.getDay()];
-            const currentTime = format(today, 'HH:mm');
-
-            // Check lecture_schedules
-            const { data: lectureData } = await supabase
+            const { data: lectureData, error: lectureError } = await supabase
                 .from('lecture_schedules')
-                .select('id, course_name, room, start_time, end_time, class')
+                .select('id, course_name, course_code, room, start_time, end_time, class, subject_study, semester, academics_year')
                 .ilike('lecturer', `%${lecturerName}%`)
                 .ilike('day', currentDay);
 
-            if (lectureData && lectureData.length > 0) {
-                // Find schedule that matches current time (with 30 min buffer)
-                const matchingSchedule = lectureData.find(schedule => {
-                    if (!schedule.start_time || !schedule.end_time) return false;
-                    const startParts = schedule.start_time.split(':');
-                    const endParts = schedule.end_time.split(':');
-                    const startMinutes = parseInt(startParts[0]) * 60 + parseInt(startParts[1]) - 30; // 30 min early buffer
-                    const endMinutes = parseInt(endParts[0]) * 60 + parseInt(endParts[1]) + 15; // 15 min late buffer
-                    const currentParts = currentTime.split(':');
-                    const currentMinutes = parseInt(currentParts[0]) * 60 + parseInt(currentParts[1]);
-                    return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
-                });
+            console.log('[detectAllSchedules] Lecture query result:', { lectureData, lectureError });
 
-                if (matchingSchedule) {
-                    setDetectedSchedule({
+            if (lectureError) {
+                console.error('Error fetching lecture schedules:', lectureError);
+            } else if (lectureData && lectureData.length > 0) {
+                lectureData.forEach(schedule => {
+                    allSchedules.push({
+                        id: `lecture-${schedule.id}`,
                         type: 'lecture',
-                        id: matchingSchedule.id,
-                        title: matchingSchedule.course_name || 'Mata Kuliah',
-                        room: matchingSchedule.room || '-',
-                        time: `${matchingSchedule.start_time} - ${matchingSchedule.end_time}`,
-                        details: matchingSchedule.class || undefined
+                        course_name: schedule.course_name || 'Mata Kuliah',
+                        course_code: schedule.course_code || undefined,
+                        study_program_name: schedule.subject_study || undefined,
+                        class_group: schedule.class || undefined,
+                        semester: schedule.semester ? `Semester ${schedule.semester}` : undefined,
+                        room_name: schedule.room || '-',
+                        start_time: schedule.start_time || undefined,
+                        end_time: schedule.end_time || undefined,
+                        scheduled_date: todayStr
                     });
-                    return;
-                }
+                });
+                console.log('[detectAllSchedules] Added', lectureData.length, 'lecture schedules');
             }
+        } catch (error) {
+            console.error('[detectAllSchedules] Error in lecture query:', error);
+        }
 
-            // Check session_schedules (sidang)
-            const todayStr = format(today, 'yyyy-MM-dd');
-            const { data: sessionData } = await supabase
-                .from('session_schedules')
-                .select('id, student:users!session_schedules_student_id_fkey(full_name), room:rooms(name), start_time, end_time, supervisor, examiner, secretary')
+        // 2. Fetch ALL final sessions (sidang) for today (in separate try-catch)
+        try {
+            const { data: sessionData, error: sessionError } = await supabase
+                .from('final_sessions')
+                .select(`
+                    id, 
+                    student:users!final_sessions_student_id_fkey(full_name, identity_number), 
+                    room:rooms!final_sessions_room_id_fkey(name), 
+                    start_time, 
+                    end_time, 
+                    supervisor, 
+                    examiner, 
+                    secretary,
+                    title
+                `)
                 .eq('date', todayStr)
                 .or(`supervisor.ilike.%${lecturerName}%,examiner.ilike.%${lecturerName}%,secretary.ilike.%${lecturerName}%`);
 
-            if (sessionData && sessionData.length > 0) {
-                const session = sessionData[0] as any;
-                let role = 'Dosen';
-                if (session.supervisor?.toLowerCase().includes(lecturerName.toLowerCase())) role = 'Pembimbing';
-                else if (session.examiner?.toLowerCase().includes(lecturerName.toLowerCase())) role = 'Penguji';
-                else if (session.secretary?.toLowerCase().includes(lecturerName.toLowerCase())) role = 'Sekretaris';
+            console.log('[detectAllSchedules] Final sessions query result:', { sessionData, sessionError });
 
-                const studentData = Array.isArray(session.student) ? session.student[0] : session.student;
-                const roomData = Array.isArray(session.room) ? session.room[0] : session.room;
+            if (sessionError) {
+                console.warn('[detectAllSchedules] Final sessions query error:', sessionError.message);
+            } else if (sessionData && sessionData.length > 0) {
+                sessionData.forEach((session: any) => {
+                    let role = 'Dosen';
+                    if (session.supervisor?.toLowerCase().includes(lecturerName.toLowerCase())) role = 'Pembimbing';
+                    else if (session.examiner?.toLowerCase().includes(lecturerName.toLowerCase())) role = 'Penguji';
+                    else if (session.secretary?.toLowerCase().includes(lecturerName.toLowerCase())) role = 'Sekretaris';
 
-                setDetectedSchedule({
-                    type: 'session',
-                    id: session.id,
-                    title: `Sidang - ${studentData?.full_name || 'Mahasiswa'}`,
-                    room: roomData?.name || '-',
-                    time: `${session.start_time} - ${session.end_time}`,
-                    details: role
+                    const studentData = Array.isArray(session.student) ? session.student[0] : session.student;
+                    const roomData = Array.isArray(session.room) ? session.room[0] : session.room;
+
+                    allSchedules.push({
+                        id: `session-${session.id}`,
+                        type: 'session',
+                        session_schedule_id: session.id,
+                        student_name: studentData?.full_name || 'Mahasiswa',
+                        student_nim: studentData?.identity_number || undefined,
+                        session_type: session.title || 'Sidang',
+                        role_in_session: role,
+                        room_name: roomData?.name || '-',
+                        start_time: session.start_time || undefined,
+                        end_time: session.end_time || undefined,
+                        scheduled_date: todayStr
+                    });
                 });
+                console.log('[detectAllSchedules] Added', sessionData.length, 'final sessions');
             }
         } catch (error) {
-            console.error('Error detecting schedule:', error);
-        } finally {
-            setCheckingSchedule(false);
+            console.warn('[detectAllSchedules] Session schedules query failed (table may not exist):', error);
         }
+
+        console.log('[detectAllSchedules] Total schedules found:', allSchedules.length);
+        setAvailableSchedules(allSchedules);
+        setCheckingSchedule(false);
+    };
+
+    // Toggle schedule selection
+    const toggleScheduleSelection = (schedule: ScheduleItem) => {
+        setSelectedSchedules(prev => {
+            const exists = prev.find(s => s.id === schedule.id);
+            if (exists) {
+                return prev.filter(s => s.id !== schedule.id);
+            } else {
+                return [...prev, schedule];
+            }
+        });
+    };
+
+    // Select all schedules
+    const selectAllSchedules = () => {
+        setSelectedSchedules([...availableSchedules]);
+    };
+
+    // Clear all selections
+    const clearAllSelections = () => {
+        setSelectedSchedules([]);
     };
 
     const handleSubmit = async () => {
@@ -387,8 +455,8 @@ const DosenPresensi: React.FC = () => {
             toast.error('Silakan pilih nama dosen');
             return;
         }
-        if (!detectedSchedule && !customPurpose.trim()) {
-            toast.error('Silakan masukkan tujuan kehadiran');
+        if (selectedSchedules.length === 0 && !customPurpose.trim()) {
+            toast.error('Silakan pilih jadwal atau masukkan tujuan kehadiran');
             return;
         }
         if (!cameraStream) {
@@ -431,17 +499,27 @@ const DosenPresensi: React.FC = () => {
 
             const currentTime = new Date().toISOString();
 
-            // Determine purpose and description
+            // Determine primary purpose based on selected schedules
             let purposeValue = 'lainnya';
             let purposeDesc = customPurpose;
 
-            if (detectedSchedule) {
-                if (detectedSchedule.type === 'lecture') {
+            if (selectedSchedules.length > 0) {
+                const hasLecture = selectedSchedules.some(s => s.type === 'lecture');
+                const hasSession = selectedSchedules.some(s => s.type === 'session');
+
+                if (hasLecture && hasSession) {
+                    purposeValue = 'mengajar'; // Default to mengajar if mixed
+                    purposeDesc = `${selectedSchedules.length} kegiatan (Mengajar & Sidang)`;
+                } else if (hasLecture) {
                     purposeValue = 'mengajar';
-                    purposeDesc = detectedSchedule.title; // Simpan nama matkul sbg deskripsi
-                } else if (detectedSchedule.type === 'session') {
+                    purposeDesc = selectedSchedules.length === 1
+                        ? selectedSchedules[0].course_name || 'Mengajar'
+                        : `${selectedSchedules.length} mata kuliah`;
+                } else if (hasSession) {
                     purposeValue = 'sidang';
-                    purposeDesc = detectedSchedule.title;
+                    purposeDesc = selectedSchedules.length === 1
+                        ? `Sidang - ${selectedSchedules[0].student_name}`
+                        : `${selectedSchedules.length} sidang`;
                 }
             } else if (customPurpose.toLowerCase().includes('mengajar') || customPurpose.toLowerCase().includes('kuliah')) {
                 purposeValue = 'mengajar';
@@ -449,6 +527,7 @@ const DosenPresensi: React.FC = () => {
                 purposeValue = 'sidang';
             }
 
+            // 1. Insert main attendance record
             const attendanceData = {
                 lecturer_user_id: selectedLecturerId,
                 lecturer_name: lecturer.full_name,
@@ -457,25 +536,62 @@ const DosenPresensi: React.FC = () => {
                 photo_capture: photoData,
                 purpose: purposeValue,
                 purpose_description: purposeDesc,
-                schedule_id: detectedSchedule?.id || null,
                 verification_status: 'pending',
                 study_program_id: lecturer.study_program?.id || null
             };
 
-            const { error } = await supabase
+            const { data: insertedAttendance, error: attendanceError } = await supabase
                 .from('lecturer_attendance')
-                .insert(attendanceData);
+                .insert(attendanceData)
+                .select('id')
+                .single();
 
-            if (error) throw error;
+            if (attendanceError) throw attendanceError;
+
+            // 2. Insert attendance details for each selected schedule
+            if (selectedSchedules.length > 0 && insertedAttendance?.id) {
+                const detailsToInsert = selectedSchedules.map(schedule => ({
+                    attendance_id: insertedAttendance.id,
+                    activity_type: schedule.type === 'lecture' ? 'mengajar' : 'sidang',
+                    // Lecture fields (denormalized - won't be affected by lecture_schedule deletion)
+                    course_name: schedule.course_name || null,
+                    course_code: schedule.course_code || null,
+                    study_program_name: schedule.study_program_name || null,
+                    class_group: schedule.class_group || null,
+                    semester: schedule.semester || null,
+                    // Session fields
+                    session_schedule_id: schedule.session_schedule_id || null,
+                    student_name: schedule.student_name || null,
+                    student_nim: schedule.student_nim || null,
+                    session_type: schedule.session_type || null,
+                    role_in_session: schedule.role_in_session || null,
+                    // Common fields
+                    scheduled_date: schedule.scheduled_date || todayStr,
+                    start_time: schedule.start_time || null,
+                    end_time: schedule.end_time || null,
+                    room_name: schedule.room_name || null
+                }));
+
+                const { error: detailsError } = await supabase
+                    .from('lecturer_attendance_details')
+                    .insert(detailsToInsert);
+
+                if (detailsError) {
+                    console.error('Error inserting attendance details:', detailsError);
+                    // Don't fail the whole operation, just log
+                }
+            }
 
             // Prepare success data
             let scheduleInfo = '';
-            if (detectedSchedule) {
-                if (detectedSchedule.type === 'lecture') {
-                    scheduleInfo = `📚 ${detectedSchedule.title}\n🏫 Ruang: ${detectedSchedule.room}\n⏰ Waktu: ${detectedSchedule.time}${detectedSchedule.details ? `\n👥 Kelas: ${detectedSchedule.details}` : ''}`;
-                } else {
-                    scheduleInfo = `🎓 ${detectedSchedule.title}\n🏫 Ruang: ${detectedSchedule.room}\n⏰ Waktu: ${detectedSchedule.time}${detectedSchedule.details ? `\n👤 Sebagai: ${detectedSchedule.details}` : ''}`;
-                }
+            if (selectedSchedules.length > 0) {
+                scheduleInfo = selectedSchedules.map(s => {
+                    if (s.type === 'lecture') {
+                        return `📚 ${s.course_name}${s.class_group ? ` (${s.class_group})` : ''}\n   🏫 ${s.room_name} | ⏰ ${s.start_time} - ${s.end_time}`;
+                    } else {
+                        return `🎓 Sidang - ${s.student_name}\n   👤 Sebagai: ${s.role_in_session} | 🏫 ${s.room_name}`;
+                    }
+                }).join('\n\n');
             } else {
                 scheduleInfo = `📝 Tujuan: ${customPurpose}`;
             }
@@ -484,15 +600,17 @@ const DosenPresensi: React.FC = () => {
                 lecturerName: lecturer.full_name,
                 scheduleInfo,
                 purpose: purposeValue === 'mengajar' ? 'Mengajar' : purposeValue === 'sidang' ? 'Sidang' : 'Lainnya',
-                time: currentTime.substring(0, 5),
-                photo: photoData
+                time: format(new Date(), 'HH:mm'),
+                photo: photoData,
+                scheduleCount: selectedSchedules.length
             });
             setShowSuccessModal(true);
 
             // Reset form
             setSelectedLecturerId('');
             setCustomPurpose('');
-            setDetectedSchedule(null);
+            setAvailableSchedules([]);
+            setSelectedSchedules([]);
 
         } catch (error: any) {
             console.error('Error submitting attendance:', error);
@@ -588,59 +706,161 @@ const DosenPresensi: React.FC = () => {
                                     </div>
                                 </div>
                             )}
+                        </div>
 
-                            {/* Schedule Detection */}
-                            {selectedLecturerId && !hasAttendedToday && (
-                                <div className="mt-4">
-                                    {checkingSchedule ? (
-                                        <div className="flex items-center gap-2 text-gray-500 text-sm">
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                            Memeriksa jadwal hari ini...
+                        {/* Step 1.5: Schedule Selection (Multiple) */}
+                        {selectedLecturerId && !hasAttendedToday && (
+                            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 font-bold">
+                                            <BookOpen className="w-4 h-4" />
                                         </div>
-                                    ) : detectedSchedule ? (
-                                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-                                            <div className="flex items-start gap-3">
-                                                <CheckCircle className="w-5 h-5 text-emerald-600 mt-0.5" />
-                                                <div className="flex-1">
-                                                    <p className="font-medium text-emerald-800">Jadwal Ditemukan</p>
-                                                    <p className="text-sm text-emerald-700 mt-1">{detectedSchedule.title}</p>
-                                                    <div className="flex flex-wrap gap-3 mt-2 text-xs text-emerald-600">
-                                                        <span className="flex items-center gap-1">
-                                                            <Clock className="w-3 h-3" /> {detectedSchedule.time}
-                                                        </span>
-                                                        <span className="flex items-center gap-1">
-                                                            <BookOpen className="w-3 h-3" /> {detectedSchedule.room}
-                                                        </span>
-                                                        {detectedSchedule.details && (
-                                                            <span className="flex items-center gap-1">
-                                                                <Users className="w-3 h-3" /> {detectedSchedule.details}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                                            <div className="flex items-start gap-3">
-                                                <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
-                                                <div className="flex-1">
-                                                    <p className="font-medium text-amber-800">Tidak Ada Jadwal</p>
-                                                    <p className="text-sm text-amber-700 mt-1">Silakan masukkan tujuan kehadiran Anda</p>
-                                                    <input
-                                                        type="text"
-                                                        value={customPurpose}
-                                                        onChange={(e) => setCustomPurpose(e.target.value)}
-                                                        placeholder="Contoh: Rapat, Bimbingan, Konsultasi..."
-                                                        className="mt-3 w-full px-4 py-2.5 border border-amber-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
+                                        <h2 className="text-lg font-semibold text-gray-900">Pilih Kegiatan Hari Ini</h2>
+                                    </div>
+                                    {selectedSchedules.length > 0 && (
+                                        <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                                            {selectedSchedules.length} dipilih
+                                        </span>
                                     )}
                                 </div>
-                            )}
-                        </div>
+
+                                {checkingSchedule ? (
+                                    <div className="flex items-center gap-2 text-gray-500 text-sm py-4">
+                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                        Memeriksa jadwal hari ini...
+                                    </div>
+                                ) : availableSchedules.length > 0 ? (
+                                    <div className="space-y-3">
+                                        {/* Quick actions */}
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <button
+                                                onClick={selectAllSchedules}
+                                                className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                                            >
+                                                Pilih Semua
+                                            </button>
+                                            <span className="text-gray-300">|</span>
+                                            <button
+                                                onClick={clearAllSelections}
+                                                className="text-sm text-gray-500 hover:text-gray-700"
+                                            >
+                                                Hapus Pilihan
+                                            </button>
+                                        </div>
+
+                                        {/* Schedule list */}
+                                        <div className="space-y-2 max-h-80 overflow-y-auto">
+                                            {availableSchedules.map(schedule => {
+                                                const isSelected = selectedSchedules.some(s => s.id === schedule.id);
+                                                return (
+                                                    <div
+                                                        key={schedule.id}
+                                                        onClick={() => toggleScheduleSelection(schedule)}
+                                                        className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${isSelected
+                                                            ? 'border-blue-500 bg-blue-50'
+                                                            : 'border-gray-200 hover:border-gray-300 bg-white'
+                                                            }`}
+                                                    >
+                                                        <div className="flex items-start gap-3">
+                                                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
+                                                                }`}>
+                                                                {isSelected && <CheckCircle className="w-4 h-4 text-white" />}
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-2 mb-1">
+                                                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${schedule.type === 'lecture'
+                                                                        ? 'bg-blue-100 text-blue-700'
+                                                                        : 'bg-purple-100 text-purple-700'
+                                                                        }`}>
+                                                                        {schedule.type === 'lecture' ? 'Mengajar' : 'Sidang'}
+                                                                    </span>
+                                                                    <span className="text-xs text-gray-500">
+                                                                        {schedule.start_time} - {schedule.end_time}
+                                                                    </span>
+                                                                </div>
+
+                                                                {schedule.type === 'lecture' ? (
+                                                                    <>
+                                                                        <p className="font-medium text-gray-900">{schedule.course_name}</p>
+                                                                        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-gray-600">
+                                                                            {schedule.study_program_name && (
+                                                                                <span className="flex items-center gap-1">
+                                                                                    <GraduationCap className="w-3 h-3" /> {schedule.study_program_name}
+                                                                                </span>
+                                                                            )}
+                                                                            {schedule.class_group && (
+                                                                                <span className="flex items-center gap-1">
+                                                                                    <Users className="w-3 h-3" /> Rombel {schedule.class_group}
+                                                                                </span>
+                                                                            )}
+                                                                            {schedule.semester && (
+                                                                                <span>{schedule.semester}</span>
+                                                                            )}
+                                                                            <span className="flex items-center gap-1">
+                                                                                <BookOpen className="w-3 h-3" /> {schedule.room_name}
+                                                                            </span>
+                                                                        </div>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <p className="font-medium text-gray-900">
+                                                                            {schedule.session_type} - {schedule.student_name}
+                                                                        </p>
+                                                                        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-gray-600">
+                                                                            <span className="flex items-center gap-1 font-medium text-purple-600">
+                                                                                <User className="w-3 h-3" /> {schedule.role_in_session}
+                                                                            </span>
+                                                                            {schedule.student_nim && (
+                                                                                <span>NIM: {schedule.student_nim}</span>
+                                                                            )}
+                                                                            <span className="flex items-center gap-1">
+                                                                                <BookOpen className="w-3 h-3" /> {schedule.room_name}
+                                                                            </span>
+                                                                        </div>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                                        <div className="flex items-start gap-3">
+                                            <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
+                                            <div className="flex-1">
+                                                <p className="font-medium text-amber-800">Tidak Ada Jadwal Ditemukan</p>
+                                                <p className="text-sm text-amber-700 mt-1">Silakan masukkan tujuan kehadiran Anda</p>
+                                                <input
+                                                    type="text"
+                                                    value={customPurpose}
+                                                    onChange={(e) => setCustomPurpose(e.target.value)}
+                                                    placeholder="Contoh: Rapat, Bimbingan, Konsultasi..."
+                                                    className="mt-3 w-full px-4 py-2.5 border border-amber-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Custom purpose when schedules exist but want to add other purpose */}
+                                {availableSchedules.length > 0 && (
+                                    <div className="mt-4 pt-4 border-t border-gray-200">
+                                        <p className="text-sm text-gray-600 mb-2">Atau tambahkan tujuan lain:</p>
+                                        <input
+                                            type="text"
+                                            value={customPurpose}
+                                            onChange={(e) => setCustomPurpose(e.target.value)}
+                                            placeholder="Contoh: Rapat, Bimbingan, Konsultasi... (opsional)"
+                                            className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* Step 2: Camera Preview */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
@@ -685,7 +905,7 @@ const DosenPresensi: React.FC = () => {
                         {/* Step 3: Submit */}
                         <button
                             onClick={handleSubmit}
-                            disabled={submitting || !selectedLecturerId || (!detectedSchedule && !customPurpose.trim()) || !cameraStream || hasAttendedToday}
+                            disabled={submitting || !selectedLecturerId || (selectedSchedules.length === 0 && !customPurpose.trim()) || !cameraStream || hasAttendedToday}
                             className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl shadow-lg hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
                             {submitting ? (
@@ -696,7 +916,7 @@ const DosenPresensi: React.FC = () => {
                             ) : (
                                 <>
                                     <Camera className="w-5 h-5" />
-                                    Submit Presensi
+                                    Submit Presensi {selectedSchedules.length > 0 && `(${selectedSchedules.length} kegiatan)`}
                                 </>
                             )}
                         </button>
@@ -777,8 +997,13 @@ const DosenPresensi: React.FC = () => {
                                         }`}>
                                         {successData.purpose}
                                     </span>
+                                    {successData.scheduleCount > 0 && (
+                                        <span className="text-xs text-gray-500">
+                                            {successData.scheduleCount} kegiatan tercatat
+                                        </span>
+                                    )}
                                 </div>
-                                <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans">
+                                <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans max-h-40 overflow-y-auto">
                                     {successData.scheduleInfo}
                                 </pre>
                             </div>
