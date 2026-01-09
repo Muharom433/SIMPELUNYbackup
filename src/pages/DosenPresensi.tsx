@@ -833,7 +833,7 @@ const DosenPresensi: React.FC = () => {
                                             <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
                                             <div className="flex-1">
                                                 <p className="font-medium text-amber-800">Tidak Ada Jadwal Ditemukan</p>
-                                                <p className="text-sm text-amber-700 mt-1">Silakan masukkan tujuan kehadiran Anda</p>
+                                                <p className="text-sm text-amber-700 mt-1">Deskripsikan kegiatan Anda contoh : "Mengajar Kelas Susulan Matakuliah Matematika A1 program studi Manajemen semester 3"</p>
                                                 <input
                                                     type="text"
                                                     value={customPurpose}
