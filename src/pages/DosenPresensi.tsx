@@ -867,7 +867,7 @@ const DosenPresensi: React.FC = () => {
                             <div className="flex items-center gap-3 mb-4">
                                 <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">2</div>
                                 <h2 className="text-lg font-semibold text-gray-900">Preview Kamera</h2>
-                                <span className="text-sm text-gray-500">(Foto akan diambil otomatis saat submit)</span>
+
                             </div>
 
                             <div className="relative aspect-[4/3] bg-gray-900 rounded-xl overflow-hidden">
