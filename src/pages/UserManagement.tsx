@@ -47,6 +47,7 @@ import {
   Camera,
   ImageIcon,
   Trash,
+  DollarSign,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -61,7 +62,7 @@ const userSchema = z.object({
   full_name: z.string().min(2, 'Full name is required'),
   identity_number: z.string().min(1, 'Identity number is required'),
   phone_number: z.string().optional().or(z.literal('')),
-  role: z.enum(['super_admin', 'department_admin', 'lecturer', 'student', 'laboratory', 'staffing', 'purchasing', 'technician', 'frontdesk', 'staff']),
+  role: z.enum(['super_admin', 'department_admin', 'lecturer', 'student', 'laboratory', 'staffing', 'purchasing', 'technician', 'frontdesk', 'staff', 'finance']),
   department_id: z.string().optional().nullable(),
   study_program_id: z.string().optional().nullable(),
   // Password: optional, but if provided must be at least 6 characters
@@ -69,6 +70,7 @@ const userSchema = z.object({
     (val) => !val || val.length === 0 || val.length >= 6,
     { message: 'Password must be at least 6 characters' }
   ),
+  is_homebase: z.boolean().default(true), // Default true
 });
 
 type UserForm = z.infer<typeof userSchema>;
@@ -83,6 +85,7 @@ interface User {
   role: string;
   department_id?: string;
   study_program_id?: string;
+  is_homebase?: boolean;
   attachments?: string | null;
   created_at: string;
   updated_at?: string;
@@ -435,6 +438,7 @@ const UserManagement: React.FC = () => {
       case 'technician': return Settings;
       case 'frontdesk': return Calendar;
       case 'staff': return User;
+      case 'finance': return DollarSign;
       default: return User;
     }
   }, []);
@@ -451,6 +455,7 @@ const UserManagement: React.FC = () => {
       case 'technician': return getText('Technician', 'Teknisi');
       case 'frontdesk': return getText('Front Desk', 'Front Desk');
       case 'staff': return getText('Staff', 'Tenaga Kependidikan');
+      case 'finance': return getText('Finance', 'Keuangan');
       default: return role;
     }
   }, [getText]);
@@ -467,6 +472,7 @@ const UserManagement: React.FC = () => {
       case 'technician': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'frontdesk': return 'bg-pink-100 text-pink-800 border-pink-200';
       case 'staff': return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+      case 'finance': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
       default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   }, []);
@@ -712,6 +718,7 @@ const UserManagement: React.FC = () => {
         role: data.role,
         department_id: data.department_id || null,
         study_program_id: data.study_program_id || null,
+        is_homebase: data.is_homebase,
       };
 
       // Add photo if provided
@@ -788,6 +795,7 @@ const UserManagement: React.FC = () => {
       department_id: user.department_id || '',
       study_program_id: user.study_program_id || '',
       password: '',
+      is_homebase: user.is_homebase ?? true,
     });
 
     // Set photo preview if user has attachments (photo)
@@ -991,6 +999,8 @@ const UserManagement: React.FC = () => {
               <option value="purchasing">{getText('Purchasing', 'Pengadaan')}</option>
               <option value="technician">{getText('Technician', 'Teknisi')}</option>
               <option value="frontdesk">{getText('Front Desk', 'Front Desk')}</option>
+              <option value="staff">{getText('Staff', 'Tenaga Kependidikan')}</option>
+              <option value="finance">{getText('Finance', 'Keuangan')}</option>
               {profile?.role === 'super_admin' && (
                 <option value="super_admin">{getText('Super Admins', 'Super Admin')}</option>
               )}
@@ -1819,6 +1829,7 @@ const UserManagement: React.FC = () => {
                           <option value="technician">{getText('Technician', 'Teknisi')}</option>
                           <option value="frontdesk">{getText('Front Desk', 'Front Desk')}</option>
                           <option value="staff">{getText('Staff', 'Tenaga Kependidikan')}</option>
+                          <option value="finance">{getText('Finance', 'Keuangan')}</option>
                         </>
                       )}
                       {profile?.role === 'super_admin' && (
@@ -1832,6 +1843,28 @@ const UserManagement: React.FC = () => {
                       </p>
                     )}
                   </div>
+
+                  {/* Homebase Toggle for Lecturer */}
+                  {watchRole === 'lecturer' && (
+                    <div className="mb-4 flex items-center p-3 bg-white rounded-lg border border-purple-100 shadow-sm">
+                      <div className="flex items-center h-5">
+                        <input
+                          type="checkbox"
+                          {...form.register('is_homebase')}
+                          id="is_homebase"
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                      </div>
+                      <div className="ml-3 text-sm">
+                        <label htmlFor="is_homebase" className="font-medium text-gray-700">
+                          {getText('Homebase Lecturer?', 'Dosen Homebase?')}
+                        </label>
+                        <p className="text-gray-500 text-xs">
+                          {getText('Uncheck if this is an external lecturer without department/study program.', 'Hapus centang jika ini adalah dosen luar biasa tanpa departemen/program studi.')}
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Role Description */}
                   <div className="bg-white rounded-lg p-3 border border-purple-200">
@@ -1849,6 +1882,7 @@ const UserManagement: React.FC = () => {
                       {watchRole === 'technician' && getText('View reports and maintenance tasks', 'Melihat laporan dan tugas pemeliharaan')}
                       {watchRole === 'frontdesk' && getText('View schedules and room booking', 'Melihat jadwal dan pemesanan ruangan')}
                       {watchRole === 'staff' && getText('Profile access only', 'Hanya akses profil')}
+                      {watchRole === 'finance' && getText('Attendance verification and reporting', 'Verifikasi presensi dan pelaporan')}
                     </div>
                   </div>
                 </div>
@@ -1861,90 +1895,100 @@ const UserManagement: React.FC = () => {
                   </h4>
 
                   <div className="space-y-4">
-                    {/* Department Selection */}
-                    {profile?.role === 'super_admin' ? (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {getText('Department', 'Departemen')}
-                        </label>
-                        <SearchableDropdown
-                          options={departments.map(dept => ({ id: dept.id, name: dept.name, code: dept.code }))}
-                          value={form.watch('department_id') || ''}
-                          onChange={(value) => {
-                            form.setValue('department_id', value);
-                            form.setValue('study_program_id', '');
-                          }}
-                          placeholder={getText('Select Department (Optional)', 'Pilih Departemen (Opsional)')}
-                          searchPlaceholder={getText('Search departments...', 'Cari departemen...')}
-                          emptyMessage={getText('No departments found', 'Tidak ada departemen ditemukan')}
-                          disabled={submitting}
-                        />
-                        {form.formState.errors.department_id && (
-                          <p className="mt-1 text-sm text-red-600 flex items-center">
-                            <AlertCircle className="h-4 w-4 mr-1" />
-                            {form.formState.errors.department_id.message}
-                          </p>
+                    {(watchRole !== 'lecturer' || form.watch('is_homebase')) ? (
+                      <>
+                        {/* Department Selection */}
+                        {profile?.role === 'super_admin' ? (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              {getText('Department', 'Departemen')}
+                            </label>
+                            <SearchableDropdown
+                              options={departments.map(dept => ({ id: dept.id, name: dept.name, code: dept.code }))}
+                              value={form.watch('department_id') || ''}
+                              onChange={(value) => {
+                                form.setValue('department_id', value);
+                                form.setValue('study_program_id', '');
+                              }}
+                              placeholder={getText('Select Department (Optional)', 'Pilih Departemen (Opsional)')}
+                              searchPlaceholder={getText('Search departments...', 'Cari departemen...')}
+                              emptyMessage={getText('No departments found', 'Tidak ada departemen ditemukan')}
+                              disabled={submitting}
+                            />
+                            {form.formState.errors.department_id && (
+                              <p className="mt-1 text-sm text-red-600 flex items-center">
+                                <AlertCircle className="h-4 w-4 mr-1" />
+                                {form.formState.errors.department_id.message}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              {getText('Department', 'Departemen')}
+                            </label>
+                            <input
+                              type="text"
+                              value={departments.find(d => d.id === profile?.department_id)?.name || getText('Your Department', 'Departemen Anda')}
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 transition-all duration-200"
+                              disabled
+                            />
+                            <p className="mt-1 text-sm text-gray-500 flex items-center">
+                              <Info className="h-4 w-4 mr-1" />
+                              {getText('Department is automatically set based on your role', 'Departemen diatur otomatis berdasarkan peran Anda')}
+                            </p>
+                          </div>
                         )}
-                      </div>
+
+                        {/* Study Program Selection */}
+                        {((profile?.role === 'super_admin' && watchDepartmentId) || profile?.role === 'department_admin') && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              {getText('Study Program', 'Program Studi')}
+                            </label>
+                            <SearchableDropdown
+                              options={studyPrograms.filter(sp =>
+                                profile?.role === 'department_admin'
+                                  ? sp.department_id === profile.department_id
+                                  : sp.department_id === watchDepartmentId
+                              ).map(program => ({
+                                id: program.id,
+                                name: program.name,
+                                code: program.code
+                              }))}
+                              value={form.watch('study_program_id') || ''}
+                              onChange={(value) => form.setValue('study_program_id', value)}
+                              placeholder={getText('Select Study Program (Optional)', 'Pilih Program Studi (Opsional)')}
+                              searchPlaceholder={getText('Search study programs...', 'Cari program studi...')}
+                              emptyMessage={getText('No study programs found', 'Tidak ada program studi ditemukan')}
+                              disabled={submitting}
+                            />
+                            {form.formState.errors.study_program_id && (
+                              <p className="mt-1 text-sm text-red-600 flex items-center">
+                                <AlertCircle className="h-4 w-4 mr-1" />
+                                {form.formState.errors.study_program_id.message}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Info Message for Super Admin */}
+                        {profile?.role === 'super_admin' && !watchDepartmentId && (
+                          <div className="bg-blue-100 border border-blue-300 rounded-lg p-3">
+                            <div className="flex items-center">
+                              <Info className="h-5 w-5 text-blue-600 mr-2" />
+                              <p className="text-sm text-blue-700">
+                                {getText('Select a department to see available study programs, or leave empty for general users', 'Pilih departemen untuk melihat program studi yang tersedia, atau biarkan kosong untuk pengguna umum')}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                      </>
                     ) : (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {getText('Department', 'Departemen')}
-                        </label>
-                        <input
-                          type="text"
-                          value={departments.find(d => d.id === profile?.department_id)?.name || getText('Your Department', 'Departemen Anda')}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 transition-all duration-200"
-                          disabled
-                        />
-                        <p className="mt-1 text-sm text-gray-500 flex items-center">
-                          <Info className="h-4 w-4 mr-1" />
-                          {getText('Department is automatically set based on your role', 'Departemen diatur otomatis berdasarkan peran Anda')}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Study Program Selection */}
-                    {((profile?.role === 'super_admin' && watchDepartmentId) || profile?.role === 'department_admin') && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {getText('Study Program', 'Program Studi')}
-                        </label>
-                        <SearchableDropdown
-                          options={studyPrograms.filter(sp =>
-                            profile?.role === 'department_admin'
-                              ? sp.department_id === profile.department_id
-                              : sp.department_id === watchDepartmentId
-                          ).map(program => ({
-                            id: program.id,
-                            name: program.name,
-                            code: program.code
-                          }))}
-                          value={form.watch('study_program_id') || ''}
-                          onChange={(value) => form.setValue('study_program_id', value)}
-                          placeholder={getText('Select Study Program (Optional)', 'Pilih Program Studi (Opsional)')}
-                          searchPlaceholder={getText('Search study programs...', 'Cari program studi...')}
-                          emptyMessage={getText('No study programs found', 'Tidak ada program studi ditemukan')}
-                          disabled={submitting}
-                        />
-                        {form.formState.errors.study_program_id && (
-                          <p className="mt-1 text-sm text-red-600 flex items-center">
-                            <AlertCircle className="h-4 w-4 mr-1" />
-                            {form.formState.errors.study_program_id.message}
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Info Message for Super Admin */}
-                    {profile?.role === 'super_admin' && !watchDepartmentId && (
-                      <div className="bg-blue-100 border border-blue-300 rounded-lg p-3">
-                        <div className="flex items-center">
-                          <Info className="h-5 w-5 text-blue-600 mr-2" />
-                          <p className="text-sm text-blue-700">
-                            {getText('Select a department to see available study programs, or leave empty for general users', 'Pilih departemen untuk melihat program studi yang tersedia, atau biarkan kosong untuk pengguna umum')}
-                          </p>
-                        </div>
+                      <div className="text-sm text-gray-500 italic p-3 bg-white/50 rounded-lg border border-green-100 flex items-center gap-2">
+                        <Info className="w-4 h-4 text-green-600" />
+                        {getText('Non-homebase lecturers do not require department/study program assignment.', 'Dosen non-homebase tidak memerlukan penugasan departemen/program studi.')}
                       </div>
                     )}
                   </div>

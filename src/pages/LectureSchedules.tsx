@@ -42,6 +42,113 @@ import ExcelUploadModal from '../components/ExcelUpload/ExcelUploadModal';
 import { useLanguage } from '../contexts/LanguageContext';
 import jsPDF from 'jspdf';
 
+// Reusable Searchable Dropdown Component
+const SearchableDropdown = ({
+  options,
+  value,
+  onChange,
+  placeholder = 'Select option',
+  searchPlaceholder = 'Search...',
+  emptyMessage = 'No results found',
+  disabled = false
+}: {
+  options: { id: string; name: string; code?: string }[];
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  searchPlaceholder?: string;
+  emptyMessage?: string;
+  disabled?: boolean;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  const selectedOption = useMemo(() => {
+    return options.find(option => option.name === value); // Match by name because value is lecturer name string
+  }, [options, value]);
+
+  const filteredOptions = useMemo(() => {
+    if (!searchTerm.trim()) return options;
+    const searchLower = searchTerm.toLowerCase().trim();
+    return options.filter(option =>
+      (option.name?.toLowerCase() || '').includes(searchLower)
+    );
+  }, [options, searchTerm]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+        setSearchTerm('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSelect = (optionName: string) => {
+    onChange(optionName); // Pass name back
+    setIsOpen(false);
+    setSearchTerm('');
+  };
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={`w-full px-4 py-3 border-2 border-gray-200 rounded-lg text-left flex items-center justify-between transition-colors ${disabled ? 'bg-gray-100 cursor-not-allowed text-gray-500' : 'hover:border-teal-500 focus:border-teal-500 bg-white'
+          }`}
+      >
+        <span className={selectedOption ? 'text-gray-900' : 'text-gray-500'}>
+          {selectedOption ? selectedOption.name : placeholder}
+        </span>
+        <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && !disabled && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-hidden">
+          <div className="p-3 border-b border-gray-200">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder={searchPlaceholder}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-500"
+                autoFocus
+              />
+            </div>
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            {filteredOptions.length === 0 ? (
+              <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                {searchTerm ? emptyMessage : 'No options'}
+              </div>
+            ) : (
+              filteredOptions.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => handleSelect(option.name)}
+                  className={`w-full px-4 py-3 text-left text-sm hover:bg-teal-50 hover:text-teal-900 transition-colors ${option.name === value ? 'bg-teal-100 text-teal-900' : 'text-gray-900'
+                    }`}
+                >
+                  <div className="font-medium">{option.name}</div>
+                  {option.code && <div className="text-xs text-gray-500">{option.code}</div>}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ✅ Update schema validation
 const scheduleSchema = z.object({
   course_name: z.string().min(2, 'Course name is required'),
@@ -115,6 +222,29 @@ interface RescheduleRequest {
 const LectureSchedules: React.FC = () => {
   const { profile } = useAuth();
   const { getText } = useLanguage();
+
+  // Lecturers State for Dropdown
+  const [lecturers, setLecturers] = useState<{ id: string; full_name: string; identity_number?: string }[]>([]);
+
+  useEffect(() => {
+    const fetchLecturers = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('id, full_name, identity_number')
+          .eq('role', 'lecturer')
+          .order('full_name');
+
+        if (error) throw error;
+        setLecturers(data || []);
+      } catch (err) {
+        console.error('Error fetching lecturers:', err);
+      }
+    };
+
+    // Fetch once on mount or when modal opens
+    fetchLecturers();
+  }, []);
   const [schedules, setSchedules] = useState<LectureSchedule[]>([]);
   const [totalSchedules, setTotalSchedules] = useState(0); // Server-side pagination
   const [statsMap, setStatsMap] = useState<Record<string, number>>({}); // For chart
@@ -1178,12 +1308,13 @@ const LectureSchedules: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">{getText('Lecturer', 'Dosen')} *</label>
-                  <input
-                    {...form.register('lecturer')}
-                    type="text"
-                    autoComplete="name"
-                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-teal-500 focus:ring-0 transition-colors"
-                    placeholder={getText('Enter lecturer name', 'Masukkan nama dosen')}
+                  <SearchableDropdown
+                    options={lecturers.map(l => ({ id: l.id, name: l.full_name, code: l.identity_number }))}
+                    value={form.watch('lecturer')}
+                    onChange={(val) => form.setValue('lecturer', val)}
+                    placeholder={getText('Select lecturer', 'Pilih dosen')}
+                    searchPlaceholder={getText('Search lecturer...', 'Cari dosen...')}
+                    emptyMessage={getText('No lecturer found', 'Dosen tidak ditemukan')}
                   />
                   {form.formState.errors.lecturer && (
                     <p className="text-red-500 text-sm">{form.formState.errors.lecturer.message}</p>

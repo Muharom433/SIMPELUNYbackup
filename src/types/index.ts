@@ -4,7 +4,7 @@ export interface User {
   username: string;
   full_name: string;
   identity_number: string;
-  role: 'student' | 'department_admin' | 'super_admin' | 'lecturer' | 'laboratory' | 'staffing' | 'purchasing' | 'technician' | 'frontdesk' | 'staff';
+  role: 'student' | 'department_admin' | 'super_admin' | 'lecturer' | 'laboratory' | 'staffing' | 'purchasing' | 'technician' | 'frontdesk' | 'staff' | 'finance';
   department_id: string | null;
   study_program_id?: string | null;
   phone_number?: string | null;

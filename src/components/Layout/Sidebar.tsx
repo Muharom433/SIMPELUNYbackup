@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { NavLink } from 'react-router-dom';
 import {
-    LayoutDashboard, Calendar, Package, CheckCircle, BookOpen, Users, Building, Settings, User, FileText,
+    Calendar, Package, CheckCircle, Users, Building, Settings, User, FileText,
     BarChart3, Clock, GraduationCap, Wrench, ClipboardCheck, MapPin, CalendarCheck, CheckSquare, X,
-    ChevronRight, Sparkles, Home, PieChart, Zap, HandHelping, UserCheck, Map, ZoomIn, ZoomOut, AlertTriangle
+    ChevronRight, Sparkles, Home, PieChart, Zap, HandHelping, UserCheck, Map, ZoomIn, ZoomOut, AlertTriangle, Camera
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -265,6 +265,15 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
             ];
         }
 
+        // Jika user adalah finance (Keuangan)
+        if (user.role === 'finance') {
+            return [
+                { icon: ClipboardCheck, label: getText('Attendance Verification', 'Verifikasi Presensi'), path: '/attendance-verification' },
+                { icon: Camera, label: getText('Attendance', 'Presensi'), path: '/presensi-dosen' },
+                { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
+            ];
+        }
+
         // Jika user adalah student atau lecturer (atau role lainnya)
         return [
             ...publicItems, // Semua public items
@@ -318,7 +327,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                                 <div className="h-full w-full bg-emerald-400 rounded-full animate-pulse"></div>
                             </div>
                         </div>
-                        <div className="flex-1 min-w-0"><p className="text-base sm:text-lg font-bold text-gray-900 truncate">{user.full_name}</p><p className="text-xs sm:text-sm text-gray-600 capitalize truncate">{getText(user.role === 'super_admin' ? 'Super Admin' : user.role === 'department_admin' ? 'Department Admin' : user.role === 'student' ? 'Student' : user.role === 'lecturer' ? 'Lecturer' : user.role === 'laboratory' ? 'Laboratory' : user.role === 'staffing' ? 'Staffing' : user.role === 'purchasing' ? 'Purchasing' : user.role === 'technician' ? 'Technician' : user.role === 'frontdesk' ? 'Front Desk' : user.role === 'staff' ? 'Staff' : user.role, user.role === 'super_admin' ? 'Super Admin' : user.role === 'department_admin' ? 'Admin Departemen' : user.role === 'student' ? 'Mahasiswa' : user.role === 'lecturer' ? 'Dosen' : user.role === 'laboratory' ? 'Laboran' : user.role === 'staffing' ? 'Kepegawaian' : user.role === 'purchasing' ? 'Pengadaan' : user.role === 'technician' ? 'Teknisi' : user.role === 'frontdesk' ? 'Front Desk' : user.role === 'staff' ? 'Tenaga Kependidikan' : user.role)}</p><div className="flex items-center mt-1"><div className="h-2 w-2 bg-emerald-400 rounded-full mr-2 flex-shrink-0"></div><span className="text-xs text-emerald-600 font-medium">{getText('Online', 'Online')}</span></div></div>
+                        <div className="flex-1 min-w-0"><p className="text-base sm:text-lg font-bold text-gray-900 truncate">{user.full_name}</p><p className="text-xs sm:text-sm text-gray-600 capitalize truncate">{getText(user.role === 'super_admin' ? 'Super Admin' : user.role === 'department_admin' ? 'Department Admin' : user.role === 'student' ? 'Student' : user.role === 'lecturer' ? 'Lecturer' : user.role === 'laboratory' ? 'Laboratory' : user.role === 'staffing' ? 'Staffing' : user.role === 'purchasing' ? 'Purchasing' : user.role === 'technician' ? 'Technician' : user.role === 'frontdesk' ? 'Front Desk' : user.role === 'staff' ? 'Staff' : user.role === 'finance' ? 'Finance' : user.role, user.role === 'super_admin' ? 'Super Admin' : user.role === 'department_admin' ? 'Admin Departemen' : user.role === 'student' ? 'Mahasiswa' : user.role === 'lecturer' ? 'Dosen' : user.role === 'laboratory' ? 'Laboran' : user.role === 'staffing' ? 'Kepegawaian' : user.role === 'purchasing' ? 'Pengadaan' : user.role === 'technician' ? 'Teknisi' : user.role === 'frontdesk' ? 'Front Desk' : user.role === 'staff' ? 'Tenaga Kependidikan' : user.role === 'finance' ? 'Keuangan' : user.role)}</p><div className="flex items-center mt-1"><div className="h-2 w-2 bg-emerald-400 rounded-full mr-2 flex-shrink-0"></div><span className="text-xs text-emerald-600 font-medium">{getText('Online', 'Online')}</span></div></div>
                     </div>
                     {user.attachments && showProfileModal && createPortal(
                         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-90 transition-opacity duration-300">

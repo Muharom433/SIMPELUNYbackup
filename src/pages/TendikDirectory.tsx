@@ -24,6 +24,7 @@ const getRoleDisplayName = (role: string): string => {
     technician: 'Teknisi',
     frontdesk: 'Front Desk',
     staff: 'Tenaga Kependidikan',
+    finance: 'Keuangan',
   };
   return roleMap[role] || role;
 };
@@ -106,7 +107,7 @@ const TendikDirectory: React.FC = () => {
         const { data, error } = await supabase
           .from('users')
           .select('id, full_name, identity_number, attachments, role, department:departments(name)')
-          .in('role', ['staff', 'laboratory', 'technician', 'staffing', 'purchasing', 'frontdesk'])
+          .in('role', ['staff', 'laboratory', 'technician', 'staffing', 'purchasing', 'frontdesk', 'finance'])
           .order('full_name');
 
         if (error) throw error;

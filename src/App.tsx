@@ -41,6 +41,10 @@ const FormBuilder = React.lazy(() => import('./pages/FormBuilder'));
 const FormView = React.lazy(() => import('./pages/FormView'));
 const FormResponses = React.lazy(() => import('./pages/FormResponses'));
 
+// Lazy loaded components for Finance/Attendance feature
+const DosenPresensi = React.lazy(() => import('./pages/DosenPresensi'));
+const FinanceAttendance = React.lazy(() => import('./pages/FinanceAttendance'));
+
 // Loading component for Suspense fallback
 const LazyLoadingFallback = () => (
   <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
@@ -116,11 +120,16 @@ const AppContent = () => {
           <Route path="form-builder" element={<Suspense fallback={<LazyLoadingFallback />}><FormBuilder /></Suspense>} />
           <Route path="form-builder/:id" element={<Suspense fallback={<LazyLoadingFallback />}><FormBuilder /></Suspense>} />
           <Route path="form-responses/:id" element={<Suspense fallback={<LazyLoadingFallback />}><FormResponses /></Suspense>} />
+
+          {/* Finance Routes */}
+          <Route path="attendance-verification" element={<Suspense fallback={<LazyLoadingFallback />}><FinanceAttendance /></Suspense>} />
+          <Route path="attendance-recap" element={<Suspense fallback={<LazyLoadingFallback />}><FinanceAttendance /></Suspense>} />
         </Route>
 
         {/* Public Form View - Standalone without Layout */}
         <Route path="form/:id" element={<Suspense fallback={<LazyLoadingFallback />}><FormView /></Suspense>} />
         <Route path="tendik" element={<Suspense fallback={<LazyLoadingFallback />}><TendikDirectory /></Suspense>} />
+        <Route path="presensi-dosen" element={<Suspense fallback={<LazyLoadingFallback />}><DosenPresensi /></Suspense>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
