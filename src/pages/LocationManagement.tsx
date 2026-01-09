@@ -12,7 +12,7 @@ import Swal from 'sweetalert2';
 import { format } from 'date-fns';
 
 // Types
-interface Campus { id: string; name: string; location: string; description: string; }
+interface Campus { id: string; name: string; location: string; description: string; latitude?: number | null; longitude?: number | null; radius_meters?: number | null; }
 interface Building { id: string; name: string; code: string; description: string; campus_id: string; attachments?: string; rooms?: Room[]; }
 interface Room {
   id: string; name: string; code: string; capacity: number; building_id: string;
@@ -95,7 +95,7 @@ const LocationManagement: React.FC = () => {
   const [targetFloor, setTargetFloor] = useState<string>('');
 
   // Form Data
-  const [campusForm, setCampusForm] = useState({ name: '', location: '', description: '' });
+  const [campusForm, setCampusForm] = useState({ name: '', location: '', description: '', latitude: '' as string | number, longitude: '' as string | number, radius_meters: 1000 as number });
   const [buildingForm, setBuildingForm] = useState({ name: '', code: '', description: '', campus_id: '', attachments: '' });
   const [buildingImagePreview, setBuildingImagePreview] = useState<string>(''); // Preview for image upload
   const [roomForm, setRoomForm] = useState({ name: '', code: '', capacity: 0, floor: '', building_id: '', department_id: '', attachments: '' });
@@ -216,7 +216,7 @@ const LocationManagement: React.FC = () => {
         boxesResult
       ] = await Promise.all([
         // Fetch Campuses
-        supabase.from('campus').select('id, name, location, description').order('name'),
+        supabase.from('campus').select('id, name, location, description, latitude, longitude, radius_meters').order('name'),
         // Fetch Buildings - exclude large attachments field initially
         supabase.from('building').select('id, name, code, description, campus_id').order('name'),
         // Fetch Rooms - exclude large attachments field initially
@@ -1170,7 +1170,7 @@ const LocationManagement: React.FC = () => {
             </h2>
             <div className="flex items-center gap-1">
               <button
-                onClick={() => { setEditingCampus(null); setCampusForm({ name: '', location: '', description: '' }); setShowCampusModal(true); }}
+                onClick={() => { setEditingCampus(null); setCampusForm({ name: '', location: '', description: '', latitude: '', longitude: '', radius_meters: 1000 }); setShowCampusModal(true); }}
                 className="p-1.5 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
                 title={getText('Add Campus', 'Tambah Kampus')}
               >
@@ -1205,7 +1205,7 @@ const LocationManagement: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={(e) => { e.stopPropagation(); setEditingCampus(campus); setCampusForm(campus); setShowCampusModal(true); }} className="p-1 hover:bg-blue-50 text-gray-400 hover:text-blue-600 rounded"><Edit2 className="h-3.5 w-3.5" /></button>
+                  <button onClick={(e) => { e.stopPropagation(); setEditingCampus(campus); setCampusForm({ name: campus.name, location: campus.location, description: campus.description, latitude: campus.latitude || '', longitude: campus.longitude || '', radius_meters: campus.radius_meters || 1000 }); setShowCampusModal(true); }} className="p-1 hover:bg-blue-50 text-gray-400 hover:text-blue-600 rounded"><Edit2 className="h-3.5 w-3.5" /></button>
                   {selectedCampusId === campus.id ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
                 </div>
               </div>
@@ -1304,7 +1304,7 @@ const LocationManagement: React.FC = () => {
               <h3 className="font-medium text-gray-600 mb-1">{getText('No Campuses Yet', 'Belum Ada Kampus')}</h3>
               <p className="text-xs text-gray-400 mb-4">{getText('Create your first campus to get started', 'Buat kampus pertama untuk memulai')}</p>
               <button
-                onClick={() => { setEditingCampus(null); setCampusForm({ name: '', location: '', description: '' }); setShowCampusModal(true); }}
+                onClick={() => { setEditingCampus(null); setCampusForm({ name: '', location: '', description: '', latitude: '', longitude: '', radius_meters: 1000 }); setShowCampusModal(true); }}
                 className="px-4 py-2 bg-slate-700 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-1.5"
               >
                 <Plus className="h-4 w-4" /> {getText('Add Campus', 'Tambah Kampus')}
@@ -1715,7 +1715,7 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                 <h3 className="font-bold text-lg">{editingCampus ? getText('Edit Campus', 'Edit Kampus') : getText('New Campus', 'Kampus Baru')}</h3>
                 <button onClick={() => setShowCampusModal(false)} className="text-white/70 hover:text-white p-1 hover:bg-white/10 rounded"><X className="h-5 w-5" /></button>
               </div>
-              <div className="p-6 space-y-4">
+              <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">{getText('Name', 'Nama')} <span className="text-red-500">*</span></label>
                   <input type="text" value={campusForm.name} onChange={e => setCampusForm({ ...campusForm, name: e.target.value })} placeholder="e.g. Main Campus" className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-gray-50 focus:bg-white" />
@@ -1727,6 +1727,56 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">{getText('Description', 'Deskripsi')}</label>
                   <textarea value={campusForm.description} onChange={e => setCampusForm({ ...campusForm, description: e.target.value })} placeholder="Optional description..." className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white resize-none" rows={3} />
+                </div>
+
+                {/* GPS Coordinates Section */}
+                <div className="border-t border-gray-200 pt-4 mt-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <MapPin className="h-4 w-4 text-green-600" />
+                    <label className="text-sm font-semibold text-gray-700">{getText('GPS Coordinates', 'Koordinat GPS')}</label>
+                    <span className="text-xs text-gray-400">({getText('for attendance validation', 'untuk validasi presensi')})</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-3">{getText('Get coordinates from Google Maps: Right-click on location → Copy coordinates', 'Dapatkan koordinat dari Google Maps: Klik kanan lokasi → Salin koordinat')}</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">{getText('Latitude', 'Latitude')}</label>
+                      <input
+                        type="number"
+                        step="0.000001"
+                        value={campusForm.latitude}
+                        onChange={e => setCampusForm({ ...campusForm, latitude: e.target.value ? parseFloat(e.target.value) : '' })}
+                        placeholder="-7.852950"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-green-500 bg-gray-50 focus:bg-white text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">{getText('Longitude', 'Longitude')}</label>
+                      <input
+                        type="number"
+                        step="0.000001"
+                        value={campusForm.longitude}
+                        onChange={e => setCampusForm({ ...campusForm, longitude: e.target.value ? parseFloat(e.target.value) : '' })}
+                        placeholder="110.164950"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-green-500 bg-gray-50 focus:bg-white text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{getText('Allowed Radius (meters)', 'Radius Diizinkan (meter)')}</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="100"
+                        max="5000"
+                        value={campusForm.radius_meters}
+                        onChange={e => setCampusForm({ ...campusForm, radius_meters: parseInt(e.target.value) || 1000 })}
+                        placeholder="1000"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-green-500 bg-gray-50 focus:bg-white text-sm pr-16"
+                      />
+                      <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-gray-400">{getText('meters', 'meter')}</span>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">{getText('Default 1000m (1km). Attendance allowed within this radius.', 'Default 1000m (1km). Presensi diizinkan dalam radius ini.')}</p>
+                  </div>
                 </div>
               </div>
               <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
@@ -1748,8 +1798,17 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                   <button onClick={async () => {
                     if (!campusForm.name || !campusForm.location) { Swal.fire('Warning', getText('Please fill required fields', 'Isi field yang wajib'), 'warning'); return; }
                     try {
-                      if (editingCampus) await supabase.from('campus').update(campusForm).eq('id', editingCampus.id);
-                      else await supabase.from('campus').insert([campusForm]);
+                      // Prepare data - convert empty strings to null for numeric fields
+                      const dataToSave = {
+                        name: campusForm.name,
+                        location: campusForm.location,
+                        description: campusForm.description,
+                        latitude: campusForm.latitude === '' ? null : campusForm.latitude,
+                        longitude: campusForm.longitude === '' ? null : campusForm.longitude,
+                        radius_meters: campusForm.radius_meters || 1000
+                      };
+                      if (editingCampus) await supabase.from('campus').update(dataToSave).eq('id', editingCampus.id);
+                      else await supabase.from('campus').insert([dataToSave]);
                       setShowCampusModal(false); fetchData();
                       Swal.fire({ icon: 'success', title: getText('Saved!', 'Tersimpan!'), timer: 1500, showConfirmButton: false });
                     } catch (e) { console.error(e); Swal.fire('Error', getText('Failed to save', 'Gagal menyimpan'), 'error'); }

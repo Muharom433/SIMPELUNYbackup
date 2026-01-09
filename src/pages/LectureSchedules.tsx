@@ -775,31 +775,44 @@ const LectureSchedules: React.FC = () => {
   const dayIntensityStats = useMemo(() => {
     if (profile?.role !== 'super_admin') return [];
 
+    // Calculate total schedules across all days
+    const totalSchedules = dayNames.reduce((sum, day) => {
+      return sum + (statsMap[day.toLowerCase()] || 0);
+    }, 0);
+
     const stats = dayNames.map(day => {
       // Use the statsMap fetched separately
       const count = statsMap[day.toLowerCase()] || 0;
 
+      // Calculate percentage
+      const percentage = totalSchedules > 0 ? (count / totalSchedules) * 100 : 0;
+
+      // Determine intensity based on percentage
       let intensity, color;
-      if (count === 0) {
-        intensity = 'Empty';
+      if (percentage === 0) {
+        intensity = 'Kosong';
         color = '#9CA3AF';
-      } else if (count <= 3) {
-        intensity = 'Light';
+      } else if (percentage < 10) {
+        intensity = 'Sangat Sepi';
         color = '#10B981';
-      } else if (count <= 6) {
-        intensity = 'Moderate';
+      } else if (percentage < 15) {
+        intensity = 'Sepi';
+        color = '#22C55E';
+      } else if (percentage < 20) {
+        intensity = 'Normal';
         color = '#3B82F6';
-      } else if (count <= 9) {
-        intensity = 'Busy';
+      } else if (percentage < 25) {
+        intensity = 'Ramai';
         color = '#F59E0B';
       } else {
-        intensity = 'Very Busy';
+        intensity = 'Sangat Padat';
         color = '#EF4444';
       }
 
       return {
         day,
         count,
+        percentage: Math.round(percentage * 10) / 10, // Round to 1 decimal
         intensity,
         color,
         fullDay: day
@@ -814,8 +827,9 @@ const LectureSchedules: React.FC = () => {
       return (
         <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
           <p className="font-semibold text-gray-900">{`${data.fullDay}`}</p>
-          <p className="text-sm text-gray-600">{`Schedules: ${data.count}`}</p>
-          <p className="text-sm" style={{ color: data.color }}>{`Status: ${data.intensity}`}</p>
+          <p className="text-lg font-bold" style={{ color: data.color }}>{`${data.percentage}%`}</p>
+          <p className="text-sm text-gray-600">{`${data.count} jadwal`}</p>
+          <p className="text-xs mt-1" style={{ color: data.color }}>{`${data.intensity}`}</p>
         </div>
       );
     }
@@ -938,11 +952,13 @@ const LectureSchedules: React.FC = () => {
                 <YAxis
                   tick={{ fontSize: 12 }}
                   stroke="#64748b"
+                  tickFormatter={(value) => `${value}%`}
+                  domain={[0, 'auto']}
                 />
                 <Tooltip content={<CustomTooltip />} />
                 <Line
                   type="monotone"
-                  dataKey="count"
+                  dataKey="percentage"
                   stroke="#0d9488"
                   strokeWidth={3}
                   dot={{ fill: '#0d9488', strokeWidth: 2, r: 6 }}
@@ -955,23 +971,27 @@ const LectureSchedules: React.FC = () => {
           <div className="flex flex-wrap items-center justify-center gap-4 mt-4 pt-4 border-t border-gray-100">
             <div className="flex items-center gap-2 text-xs">
               <div className="w-3 h-3 rounded bg-gray-400"></div>
-              <span className="text-gray-600">Empty (0)</span>
+              <span className="text-gray-600">Kosong (0%)</span>
             </div>
             <div className="flex items-center gap-2 text-xs">
               <div className="w-3 h-3 rounded bg-green-500"></div>
-              <span className="text-gray-600">Light (1-3)</span>
+              <span className="text-gray-600">Sangat Sepi (&lt;10%)</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <div className="w-3 h-3 rounded bg-emerald-500"></div>
+              <span className="text-gray-600">Sepi (10-15%)</span>
             </div>
             <div className="flex items-center gap-2 text-xs">
               <div className="w-3 h-3 rounded bg-blue-500"></div>
-              <span className="text-gray-600">Moderate (4-6)</span>
+              <span className="text-gray-600">Normal (15-20%)</span>
             </div>
             <div className="flex items-center gap-2 text-xs">
               <div className="w-3 h-3 rounded bg-yellow-500"></div>
-              <span className="text-gray-600">Busy (7-9)</span>
+              <span className="text-gray-600">Ramai (20-25%)</span>
             </div>
             <div className="flex items-center gap-2 text-xs">
               <div className="w-3 h-3 rounded bg-red-500"></div>
-              <span className="text-gray-600">Very Busy (10+)</span>
+              <span className="text-gray-600">Sangat Padat (&gt;25%)</span>
             </div>
           </div>
         </div>

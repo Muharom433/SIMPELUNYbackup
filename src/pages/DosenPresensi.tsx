@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 // ==================== KONFIGURASI PRESENSI ====================
 // Jika true, presensi tetap bisa dilakukan meski di luar lokasi (hanya warning)
 // Jika false, presensi akan diblokir jika di luar lokasi
-const ALLOW_OUTSIDE_LOCATION = true;
+const ALLOW_OUTSIDE_LOCATION = false;
 
 // Default radius jika tidak diset di database (dalam meter)
 const DEFAULT_RADIUS_METERS = 1000; // 1km
@@ -224,6 +224,9 @@ const DosenPresensi: React.FC = () => {
     const [fetchingLocation, setFetchingLocation] = useState(false);
     const [campusLocations, setCampusLocations] = useState<CampusLocation[]>([]);
 
+    // Realtime clock state
+    const [currentTime, setCurrentTime] = useState(new Date());
+
     // Calculate distance between two coordinates using Haversine formula
     const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
         const R = 6371e3; // Earth's radius in meters
@@ -359,6 +362,15 @@ const DosenPresensi: React.FC = () => {
         fetchGeolocation();
     }, []);
 
+    // Realtime clock update every second
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setCurrentTime(new Date());
+        }, 1000); // Update every second
+
+        return () => clearInterval(timer);
+    }, []);
+
     // Initialize camera when tab is presensi
     useEffect(() => {
         if (activeTab === 'presensi') {
@@ -416,7 +428,8 @@ const DosenPresensi: React.FC = () => {
         if (selectedLecturerId && !hasAttendedToday) {
             const lecturer = lecturers.find(l => l.id === selectedLecturerId);
             if (lecturer) {
-                detectAllSchedules(lecturer.full_name);
+                // Pass both ID and name for flexible matching
+                detectAllSchedules(selectedLecturerId, lecturer.full_name);
             }
         } else {
             setAvailableSchedules([]);
@@ -487,8 +500,16 @@ const DosenPresensi: React.FC = () => {
         return null;
     };
 
+    // Handle lecturer selection change - reset related states
+    const handleLecturerChange = (lecturerId: string) => {
+        setSelectedLecturerId(lecturerId);
+        // Reset selected schedules and custom purpose when changing lecturer
+        setSelectedSchedules([]);
+        setCustomPurpose('');
+    };
+
     // Detect ALL schedules for today (lectures + sessions)
-    const detectAllSchedules = async (lecturerName: string) => {
+    const detectAllSchedules = async (lecturerId: string, lecturerName: string) => {
         setCheckingSchedule(true);
         setAvailableSchedules([]);
 
@@ -497,23 +518,57 @@ const DosenPresensi: React.FC = () => {
         const currentDay = dayNames[today.getDay()];
         const todayStr = format(today, 'yyyy-MM-dd');
 
-        console.log('[detectAllSchedules] Checking for:', lecturerName, 'on day:', currentDay);
+        console.log('[detectAllSchedules] Checking for:', lecturerName, '(ID:', lecturerId, ') on day:', currentDay);
 
         const allSchedules: ScheduleItem[] = [];
 
-        // 1. Fetch ALL lecture schedules for today (in separate try-catch)
+        // 1. Fetch lecture schedules using EXACT lecturer_user_id match (more accurate than name)
         try {
             const { data: lectureData, error: lectureError } = await supabase
                 .from('lecture_schedules')
                 .select('id, course_name, course_code, room, start_time, end_time, class, subject_study, semester, academics_year')
-                .ilike('lecturer', `%${lecturerName}%`)
+                .eq('lecturer_user_id', lecturerId)  // Use exact ID match, not name
                 .ilike('day', currentDay);
 
-            console.log('[detectAllSchedules] Lecture query result:', { lectureData, lectureError });
+            console.log('[detectAllSchedules] Lecture query (by ID) result:', { lectureData, lectureError });
 
-            if (lectureError) {
-                console.error('Error fetching lecture schedules:', lectureError);
-            } else if (lectureData && lectureData.length > 0) {
+            // If query by ID fails OR returns empty, fallback to name-based search
+            if (lectureError || !lectureData || lectureData.length === 0) {
+                if (lectureError) {
+                    console.error('Error fetching lecture schedules by ID:', lectureError);
+                } else {
+                    console.log('[detectAllSchedules] No results by ID, trying name-based search...');
+                }
+
+                // Fallback to name-based search
+                const { data: lectureDataByName, error: lectureErrorByName } = await supabase
+                    .from('lecture_schedules')
+                    .select('id, course_name, course_code, room, start_time, end_time, class, subject_study, semester, academics_year')
+                    .ilike('lecturer', `%${lecturerName}%`)
+                    .ilike('day', currentDay);
+
+                console.log('[detectAllSchedules] Lecture query (by name fallback) result:', { lectureDataByName, lectureErrorByName });
+
+                if (lectureDataByName && lectureDataByName.length > 0) {
+                    lectureDataByName.forEach(schedule => {
+                        allSchedules.push({
+                            id: `lecture-${schedule.id}`,
+                            type: 'lecture',
+                            course_name: schedule.course_name || 'Mata Kuliah',
+                            course_code: schedule.course_code || undefined,
+                            study_program_name: schedule.subject_study || undefined,
+                            class_group: schedule.class || undefined,
+                            semester: schedule.semester ? `Semester ${schedule.semester}` : undefined,
+                            room_name: schedule.room || '-',
+                            start_time: schedule.start_time || undefined,
+                            end_time: schedule.end_time || undefined,
+                            scheduled_date: todayStr
+                        });
+                    });
+                    console.log('[detectAllSchedules] Added', lectureDataByName.length, 'lecture schedules (by name)');
+                }
+            } else {
+                // Query by ID succeeded with results
                 lectureData.forEach(schedule => {
                     allSchedules.push({
                         id: `lecture-${schedule.id}`,
@@ -529,7 +584,7 @@ const DosenPresensi: React.FC = () => {
                         scheduled_date: todayStr
                     });
                 });
-                console.log('[detectAllSchedules] Added', lectureData.length, 'lecture schedules');
+                console.log('[detectAllSchedules] Added', lectureData.length, 'lecture schedules (by ID)');
             }
         } catch (error) {
             console.error('[detectAllSchedules] Error in lecture query:', error);
@@ -710,15 +765,9 @@ const DosenPresensi: React.FC = () => {
                 purpose: purposeValue,
                 purpose_description: purposeDesc,
                 verification_status: 'pending',
-                study_program_id: lecturer.study_program?.id || null,
-                // Geolocation data (will be null if columns don't exist yet)
-                ...(geolocation && {
-                    location_latitude: geolocation.latitude,
-                    location_longitude: geolocation.longitude,
-                    location_accuracy: geolocation.accuracy,
-                    location_name: geolocation.nearestLocation,
-                    is_within_allowed_location: geolocation.isWithinAllowedLocation
-                })
+                study_program_id: lecturer.study_program?.id || null
+                // Note: Geolocation columns will be added later via migration
+                // location_latitude, location_longitude, location_accuracy, location_name, is_within_allowed_location
             };
 
             const { data: insertedAttendance, error: attendanceError } = await supabase
@@ -829,11 +878,11 @@ const DosenPresensi: React.FC = () => {
                             </div>
                             <div>
                                 <h1 className="text-xl font-bold text-gray-900">Presensi Dosen</h1>
-                                <p className="text-sm text-gray-500">{format(new Date(), 'EEEE, d MMMM yyyy', { locale: localeId })}</p>
+                                <p className="text-sm text-gray-500">{format(currentTime, 'EEEE, d MMMM yyyy', { locale: localeId })}</p>
                             </div>
                         </div>
                         <div className="text-right">
-                            <div className="text-2xl font-bold text-blue-600">{format(new Date(), 'HH:mm')}</div>
+                            <div className="text-2xl font-bold text-blue-600">{format(currentTime, 'HH:mm')}</div>
                             <div className="text-xs text-gray-500">WIB</div>
                         </div>
                     </div>
@@ -879,7 +928,7 @@ const DosenPresensi: React.FC = () => {
                                 <SearchableDropdown
                                     options={lecturers}
                                     value={selectedLecturerId}
-                                    onChange={setSelectedLecturerId}
+                                    onChange={handleLecturerChange}
                                     placeholder="Cari dan pilih nama dosen..."
                                 />
                             )}
@@ -1181,15 +1230,43 @@ const DosenPresensi: React.FC = () => {
                         </div>
 
                         {/* Step 3: Submit */}
+                        {/* Show location warning if outside allowed area */}
+                        {geolocation && !geolocation.isWithinAllowedLocation && !ALLOW_OUTSIDE_LOCATION && (
+                            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 flex items-center gap-3">
+                                <AlertCircle className="w-6 h-6 text-red-500 flex-shrink-0" />
+                                <div>
+                                    <p className="font-medium text-red-800">Lokasi Tidak Valid</p>
+                                    <p className="text-sm text-red-600">Anda berada di luar area kampus yang diizinkan. Presensi hanya dapat dilakukan dari lokasi kampus.</p>
+                                </div>
+                            </div>
+                        )}
                         <button
                             onClick={handleSubmit}
-                            disabled={submitting || !selectedLecturerId || (selectedSchedules.length === 0 && !customPurpose.trim()) || !cameraStream || hasAttendedToday}
+                            disabled={
+                                submitting ||
+                                !selectedLecturerId ||
+                                (selectedSchedules.length === 0 && !customPurpose.trim()) ||
+                                !cameraStream ||
+                                hasAttendedToday ||
+                                (!ALLOW_OUTSIDE_LOCATION && geolocation && !geolocation.isWithinAllowedLocation) ||
+                                (!ALLOW_OUTSIDE_LOCATION && !geolocation)
+                            }
                             className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl shadow-lg hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
                             {submitting ? (
                                 <>
                                     <Loader2 className="w-5 h-5 animate-spin" />
                                     Mengambil foto & menyimpan...
+                                </>
+                            ) : !geolocation && !ALLOW_OUTSIDE_LOCATION ? (
+                                <>
+                                    <MapPin className="w-5 h-5" />
+                                    Menunggu Lokasi GPS...
+                                </>
+                            ) : geolocation && !geolocation.isWithinAllowedLocation && !ALLOW_OUTSIDE_LOCATION ? (
+                                <>
+                                    <AlertCircle className="w-5 h-5" />
+                                    Lokasi Di Luar Area Kampus
                                 </>
                             ) : (
                                 <>

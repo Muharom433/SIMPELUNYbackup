@@ -59,6 +59,8 @@ interface AttendanceRecord {
     created_at: string;
     // Extended: attendance details
     details?: AttendanceDetail[];
+    // Homebase status from user
+    is_homebase?: boolean;
 }
 
 interface StudyProgram {
@@ -153,7 +155,7 @@ const FinanceAttendance: React.FC = () => {
                 .order('attendance_date', { ascending: false })
                 .order('attendance_time', { ascending: false });
 
-            if (studyProgramFilter !== 'all') {
+            if (studyProgramFilter !== 'all' && studyProgramFilter !== 'non_homebase') {
                 query = query.eq('study_program_id', studyProgramFilter);
             }
 
@@ -163,7 +165,36 @@ const FinanceAttendance: React.FC = () => {
 
             const { data, error } = await query;
             if (error) throw error;
-            setAttendanceRecords(data || []);
+
+            // Fetch is_homebase status for each lecturer
+            const lecturerIds = [...new Set((data || []).map(r => r.lecturer_user_id).filter(Boolean))];
+            let homebaseMap: Record<string, boolean> = {};
+
+            if (lecturerIds.length > 0) {
+                const { data: usersData } = await supabase
+                    .from('users')
+                    .select('id, is_homebase')
+                    .in('id', lecturerIds);
+
+                if (usersData) {
+                    usersData.forEach(u => {
+                        homebaseMap[u.id] = u.is_homebase ?? true; // Default to true if null
+                    });
+                }
+            }
+
+            // Enrich records with homebase status
+            let enrichedData = (data || []).map(r => ({
+                ...r,
+                is_homebase: homebaseMap[r.lecturer_user_id] ?? true
+            }));
+
+            // Filter for non-homebase if selected
+            if (studyProgramFilter === 'non_homebase') {
+                enrichedData = enrichedData.filter(r => r.is_homebase === false);
+            }
+
+            setAttendanceRecords(enrichedData);
         } catch (error: any) {
             console.error('Error fetching attendance:', error);
             toast.error('Gagal memuat data presensi');
@@ -176,7 +207,7 @@ const FinanceAttendance: React.FC = () => {
         try {
             const { data, error } = await supabase
                 .from('users')
-                .select('id, full_name, study_program_id')
+                .select('id, full_name, study_program_id, is_homebase')
                 .eq('role', 'lecturer')
                 .order('full_name');
 
@@ -209,15 +240,27 @@ const FinanceAttendance: React.FC = () => {
         }));
 
         // By study program with per-lecturer breakdown
-        const spData: Record<string, { count: number; lecturers: Record<string, number> }> = {};
+        // Non-homebase lecturers are grouped separately as "Dosen Non Homebase"
+        const spData: Record<string, { count: number; lecturers: Record<string, number>; isNonHomebase?: boolean }> = {};
         validRecords.forEach(r => {
-            const spName = r.study_program?.name || 'Tidak Diketahui';
-            if (!spData[spName]) {
-                spData[spName] = { count: 0, lecturers: {} };
+            // Check if lecturer is non-homebase
+            if (r.is_homebase === false) {
+                const key = '🏠 Dosen Non Homebase';
+                if (!spData[key]) {
+                    spData[key] = { count: 0, lecturers: {}, isNonHomebase: true };
+                }
+                spData[key].count += 1;
+                const lecturerName = r.lecturer_name || 'Tidak Diketahui';
+                spData[key].lecturers[lecturerName] = (spData[key].lecturers[lecturerName] || 0) + 1;
+            } else {
+                const spName = r.study_program?.name || 'Tidak Diketahui';
+                if (!spData[spName]) {
+                    spData[spName] = { count: 0, lecturers: {} };
+                }
+                spData[spName].count += 1;
+                const lecturerName = r.lecturer_name || 'Tidak Diketahui';
+                spData[spName].lecturers[lecturerName] = (spData[spName].lecturers[lecturerName] || 0) + 1;
             }
-            spData[spName].count += 1;
-            const lecturerName = r.lecturer_name || 'Tidak Diketahui';
-            spData[spName].lecturers[lecturerName] = (spData[spName].lecturers[lecturerName] || 0) + 1;
         });
 
         const byStudyProgram = Object.entries(spData)
@@ -259,6 +302,29 @@ const FinanceAttendance: React.FC = () => {
                 .map(([name, count]) => ({ name, count }))
                 .sort((a, b) => b.count - a.count)
                 .slice(0, 10);
+        }
+
+        // Handle non-homebase filter
+        if (recapSelectedProdi === 'non_homebase') {
+            // Get all non-homebase lecturers
+            const nonHomebaseLecturers = allLecturers.filter((l: any) => l.is_homebase === false);
+
+            // Count attendance for non-homebase lecturers
+            const lecturerCounts: Record<string, number> = {};
+            validRecords
+                .filter(r => r.is_homebase === false)
+                .forEach(r => {
+                    const name = r.lecturer_name || 'Tidak Diketahui';
+                    lecturerCounts[name] = (lecturerCounts[name] || 0) + 1;
+                });
+
+            // Create data with ALL non-homebase lecturers (including those with 0 attendance)
+            return nonHomebaseLecturers
+                .map(l => ({
+                    name: l.full_name,
+                    count: lecturerCounts[l.full_name] || 0
+                }))
+                .sort((a, b) => b.count - a.count);
         }
 
         // Get all lecturers from selected prodi
@@ -607,6 +673,7 @@ const FinanceAttendance: React.FC = () => {
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         >
                             <option value="all">{getText('All Study Programs', 'Semua Program Studi')}</option>
+                            <option value="non_homebase" className="bg-orange-100 text-orange-800">🏠 {getText('Non Homebase Lecturers', 'Dosen Non Homebase')}</option>
                             {studyPrograms.map(sp => (
                                 <option key={sp.id} value={sp.id}>{sp.name}</option>
                             ))}
@@ -700,7 +767,7 @@ const FinanceAttendance: React.FC = () => {
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
                                         {paginatedRecords.map((record) => (
-                                            <tr key={record.id} className="hover:bg-gray-50">
+                                            <tr key={record.id} className={`hover:bg-gray-50 ${record.is_homebase === false ? 'bg-orange-50/50' : ''}`}>
                                                 <td className="px-4 py-3">
                                                     {record.photo_capture ? (
                                                         <img
@@ -716,8 +783,14 @@ const FinanceAttendance: React.FC = () => {
                                                     )}
                                                 </td>
                                                 <td className="px-4 py-3">
-                                                    <div className="font-medium text-gray-900">{record.lecturer_name}</div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-medium text-gray-900">{record.lecturer_name}</span>
+                                                        {record.is_homebase === false && (
+                                                            <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-semibold rounded-full border border-orange-200">Non HB</span>
+                                                        )}
+                                                    </div>
                                                     <div className="text-xs text-gray-500">{record.study_program?.name || '-'}</div>
+                                                    <div className="text-xs text-gray-400 font-mono">ID: #{record.id.substring(0, 8)}</div>
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-gray-600">
                                                     {format(new Date(record.attendance_date), 'dd MMM yyyy', { locale: localeId })}
@@ -860,6 +933,7 @@ const FinanceAttendance: React.FC = () => {
                                     className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                 >
                                     <option value="">Semua (Top 10)</option>
+                                    <option value="non_homebase">🏠 Dosen Non Homebase</option>
                                     {studyPrograms.map(sp => (
                                         <option key={sp.id} value={sp.id}>{sp.name}</option>
                                     ))}
@@ -995,11 +1069,11 @@ const FinanceAttendance: React.FC = () => {
                                         {/* Study Program Header */}
                                         <button
                                             onClick={toggleExpand}
-                                            className="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                                            className={`w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors ${sp.name.includes('Non Homebase') ? 'bg-orange-50/50' : ''}`}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <div className="p-2 bg-blue-100 rounded-lg">
-                                                    <Building className="w-5 h-5 text-blue-600" />
+                                                <div className={`p-2 rounded-lg ${sp.name.includes('Non Homebase') ? 'bg-orange-100' : 'bg-blue-100'}`}>
+                                                    <Building className={`w-5 h-5 ${sp.name.includes('Non Homebase') ? 'text-orange-600' : 'text-blue-600'}`} />
                                                 </div>
                                                 <div className="text-left">
                                                     <div className="font-semibold text-gray-900">{sp.name}</div>
@@ -1008,13 +1082,13 @@ const FinanceAttendance: React.FC = () => {
                                             </div>
                                             <div className="flex items-center gap-4">
                                                 <div className="text-right">
-                                                    <div className="text-lg font-bold text-blue-600">{sp.count}</div>
+                                                    <div className={`text-lg font-bold ${sp.name.includes('Non Homebase') ? 'text-orange-600' : 'text-blue-600'}`}>{sp.count}</div>
                                                     <div className="text-xs text-gray-500">kehadiran</div>
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     <div className="w-24 bg-gray-200 rounded-full h-2">
                                                         <div
-                                                            className="bg-blue-600 h-2 rounded-full"
+                                                            className={`h-2 rounded-full ${sp.name.includes('Non Homebase') ? 'bg-orange-500' : 'bg-blue-600'}`}
                                                             style={{ width: `${(sp.count / stats.total) * 100}%` }}
                                                         />
                                                     </div>
@@ -1142,21 +1216,26 @@ const FinanceAttendance: React.FC = () => {
                                     </div>
                                 ) : selectedRecordDetails.length > 0 && (
                                     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
-                                        <div className="flex items-center gap-2 mb-3">
-                                            <BookOpen className="w-4 h-4 text-blue-600" />
-                                            <label className="text-blue-800 text-sm font-semibold">
-                                                Detail Kegiatan ({selectedRecordDetails.length})
-                                            </label>
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="flex items-center gap-2">
+                                                <BookOpen className="w-4 h-4 text-blue-600" />
+                                                <label className="text-blue-800 text-sm font-semibold">
+                                                    Detail Kegiatan ({selectedRecordDetails.length})
+                                                </label>
+                                            </div>
+                                            <span className="text-xs text-gray-400" title={`ID Presensi: ${selectedRecord.id}`}>
+                                                #{selectedRecord.id.substring(0, 8)}
+                                            </span>
                                         </div>
                                         <div className="space-y-3 max-h-60 overflow-y-auto">
                                             {selectedRecordDetails.map((detail, idx) => (
                                                 <div key={detail.id || idx} className="bg-white rounded-lg p-3 border border-blue-100 shadow-sm">
                                                     <div className="flex items-center gap-2 mb-2">
                                                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${detail.activity_type === 'mengajar'
-                                                                ? 'bg-blue-100 text-blue-700'
-                                                                : detail.activity_type === 'sidang'
-                                                                    ? 'bg-purple-100 text-purple-700'
-                                                                    : 'bg-amber-100 text-amber-700'
+                                                            ? 'bg-blue-100 text-blue-700'
+                                                            : detail.activity_type === 'sidang'
+                                                                ? 'bg-purple-100 text-purple-700'
+                                                                : 'bg-amber-100 text-amber-700'
                                                             }`}>
                                                             {detail.activity_type === 'mengajar' ? 'Mengajar' :
                                                                 detail.activity_type === 'sidang' ? 'Sidang' : 'Lainnya'}

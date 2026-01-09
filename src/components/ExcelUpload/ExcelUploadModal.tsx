@@ -165,6 +165,7 @@ const ExcelUploadModal: React.FC<ExcelUploadModalProps> = ({ isOpen, onClose, on
 
       const { data: newUser, error } = await supabase.from('users').insert({
         full_name: newUserForm.name,
+        identity_number: newUserForm.nip, // Required field - NIP/NIDN
         username: username, // Identity Number as Username
         email: email,
         password: password,
