@@ -1,9 +1,36 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Camera, User, Clock, BookOpen, Users, CheckCircle, AlertCircle, ChevronDown, Loader2, ExternalLink, PartyPopper, GraduationCap } from 'lucide-react';
+import { Search, Camera, User, Clock, BookOpen, Users, CheckCircle, AlertCircle, ChevronDown, Loader2, ExternalLink, PartyPopper, GraduationCap, MapPin, Navigation } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import toast from 'react-hot-toast';
+
+// ==================== KONFIGURASI PRESENSI ====================
+// Jika true, presensi tetap bisa dilakukan meski di luar lokasi (hanya warning)
+// Jika false, presensi akan diblokir jika di luar lokasi
+const ALLOW_OUTSIDE_LOCATION = true;
+
+// Default radius jika tidak diset di database (dalam meter)
+const DEFAULT_RADIUS_METERS = 1000; // 1km
+// ============================================================
+
+// Interface untuk lokasi kampus dari database
+interface CampusLocation {
+    id: string;
+    name: string;
+    latitude: number | null;
+    longitude: number | null;
+    radius_meters: number | null;
+}
+
+interface GeolocationData {
+    latitude: number;
+    longitude: number;
+    accuracy: number;
+    isWithinAllowedLocation: boolean;
+    nearestLocation?: string;
+    distanceToNearest?: number;
+}
 
 interface Lecturer {
     id: string;
@@ -43,6 +70,7 @@ interface SubmitSuccessData {
     time: string;
     photo: string;
     scheduleCount: number;
+    locationInfo?: string;
 }
 
 // Searchable Dropdown Component
@@ -190,9 +218,145 @@ const DosenPresensi: React.FC = () => {
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [successData, setSuccessData] = useState<SubmitSuccessData | null>(null);
 
-    // Fetch lecturers on mount
+    // Geolocation states
+    const [geolocation, setGeolocation] = useState<GeolocationData | null>(null);
+    const [geolocationError, setGeolocationError] = useState<string | null>(null);
+    const [fetchingLocation, setFetchingLocation] = useState(false);
+    const [campusLocations, setCampusLocations] = useState<CampusLocation[]>([]);
+
+    // Calculate distance between two coordinates using Haversine formula
+    const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+        const R = 6371e3; // Earth's radius in meters
+        const φ1 = (lat1 * Math.PI) / 180;
+        const φ2 = (lat2 * Math.PI) / 180;
+        const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+        const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+        const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        return R * c; // Distance in meters
+    };
+
+    // Fetch campus locations from database
+    const fetchCampusLocations = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('campus')
+                .select('id, name, latitude, longitude, radius_meters')
+                .not('latitude', 'is', null)
+                .not('longitude', 'is', null);
+
+            if (error) {
+                console.error('[Campus] Error fetching locations:', error);
+                return [];
+            }
+
+            console.log('[Campus] Fetched locations:', data);
+            setCampusLocations(data || []);
+            return data || [];
+        } catch (error) {
+            console.error('[Campus] Error:', error);
+            return [];
+        }
+    };
+
+    // Get current geolocation and compare with campus locations
+    const fetchGeolocation = async () => {
+        if (!navigator.geolocation) {
+            setGeolocationError('Browser tidak mendukung geolokasi');
+            return;
+        }
+
+        setFetchingLocation(true);
+        setGeolocationError(null);
+
+        try {
+            // Fetch campus locations if not already loaded
+            let locations = campusLocations;
+            if (locations.length === 0) {
+                locations = await fetchCampusLocations();
+            }
+
+            // Get user's position
+            const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: true,
+                    timeout: 15000,
+                    maximumAge: 0
+                });
+            });
+
+            const { latitude, longitude, accuracy } = position.coords;
+            console.log('[Geolocation] Got position:', { latitude, longitude, accuracy });
+
+            // Check if there are any campus locations configured
+            if (locations.length === 0) {
+                console.warn('[Geolocation] No campus locations configured in database');
+                setGeolocation({
+                    latitude,
+                    longitude,
+                    accuracy,
+                    isWithinAllowedLocation: true, // Allow if no locations configured
+                    nearestLocation: 'Belum dikonfigurasi',
+                    distanceToNearest: 0
+                });
+                return;
+            }
+
+            // Check distance to all campus locations from database
+            let nearestLocation = locations[0]?.name || 'Unknown';
+            let minDistance = Infinity;
+            let isWithinAny = false;
+
+            for (const campus of locations) {
+                if (campus.latitude && campus.longitude) {
+                    const distance = calculateDistance(latitude, longitude, campus.latitude, campus.longitude);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        nearestLocation = campus.name;
+                    }
+                    // Use campus-specific radius or default 1km
+                    const radius = campus.radius_meters || DEFAULT_RADIUS_METERS;
+                    if (distance <= radius) {
+                        isWithinAny = true;
+                    }
+                }
+            }
+
+            setGeolocation({
+                latitude,
+                longitude,
+                accuracy,
+                isWithinAllowedLocation: isWithinAny,
+                nearestLocation,
+                distanceToNearest: Math.round(minDistance)
+            });
+
+        } catch (error: any) {
+            console.error('[Geolocation] Error:', error);
+            if (error.code === 1) {
+                setGeolocationError('Izin lokasi ditolak. Aktifkan GPS dan izinkan akses lokasi.');
+            } else if (error.code === 2) {
+                setGeolocationError('Lokasi tidak tersedia. Pastikan GPS aktif.');
+            } else if (error.code === 3) {
+                setGeolocationError('Timeout saat mengambil lokasi. Coba lagi.');
+            } else {
+                setGeolocationError('Gagal mengambil lokasi: ' + error.message);
+            }
+        } finally {
+            setFetchingLocation(false);
+        }
+    };
+
+    // Fetch lecturers and campus locations on mount
     useEffect(() => {
         fetchLecturers();
+        fetchCampusLocations();
+        // Also fetch geolocation on mount
+        fetchGeolocation();
     }, []);
 
     // Initialize camera when tab is presensi
@@ -476,8 +640,19 @@ const DosenPresensi: React.FC = () => {
             return;
         }
 
+        // Check geolocation if required
+        if (!ALLOW_OUTSIDE_LOCATION && geolocation && !geolocation.isWithinAllowedLocation) {
+            toast.error(`Anda berada di luar area yang diizinkan. Jarak ke ${geolocation.nearestLocation}: ${geolocation.distanceToNearest}m`);
+            return;
+        }
+
         try {
             setSubmitting(true);
+
+            // Refresh geolocation before submit
+            if (!geolocation) {
+                await fetchGeolocation();
+            }
 
             // DOUBLE CHECK: Validate against database to ensure no duplicate entry exists for today
             const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -496,8 +671,6 @@ const DosenPresensi: React.FC = () => {
 
             const lecturer = lecturers.find(l => l.id === selectedLecturerId);
             if (!lecturer) throw new Error('Dosen tidak ditemukan');
-
-            const currentTime = new Date().toISOString();
 
             // Determine primary purpose based on selected schedules
             let purposeValue = 'lainnya';
@@ -528,7 +701,7 @@ const DosenPresensi: React.FC = () => {
             }
 
             // 1. Insert main attendance record
-            const attendanceData = {
+            const attendanceData: any = {
                 lecturer_user_id: selectedLecturerId,
                 lecturer_name: lecturer.full_name,
                 attendance_date: todayStr,
@@ -537,7 +710,15 @@ const DosenPresensi: React.FC = () => {
                 purpose: purposeValue,
                 purpose_description: purposeDesc,
                 verification_status: 'pending',
-                study_program_id: lecturer.study_program?.id || null
+                study_program_id: lecturer.study_program?.id || null,
+                // Geolocation data (will be null if columns don't exist yet)
+                ...(geolocation && {
+                    location_latitude: geolocation.latitude,
+                    location_longitude: geolocation.longitude,
+                    location_accuracy: geolocation.accuracy,
+                    location_name: geolocation.nearestLocation,
+                    is_within_allowed_location: geolocation.isWithinAllowedLocation
+                })
             };
 
             const { data: insertedAttendance, error: attendanceError } = await supabase
@@ -596,13 +777,24 @@ const DosenPresensi: React.FC = () => {
                 scheduleInfo = `📝 Tujuan: ${customPurpose}`;
             }
 
+            // Build location info for success modal
+            let locationInfo = '';
+            if (geolocation) {
+                if (geolocation.isWithinAllowedLocation) {
+                    locationInfo = `📍 ${geolocation.nearestLocation} (${geolocation.distanceToNearest}m)`;
+                } else {
+                    locationInfo = `⚠️ Di luar area: ${geolocation.distanceToNearest}m dari ${geolocation.nearestLocation}`;
+                }
+            }
+
             setSuccessData({
                 lecturerName: lecturer.full_name,
                 scheduleInfo,
                 purpose: purposeValue === 'mengajar' ? 'Mengajar' : purposeValue === 'sidang' ? 'Sidang' : 'Lainnya',
                 time: format(new Date(), 'HH:mm'),
                 photo: photoData,
-                scheduleCount: selectedSchedules.length
+                scheduleCount: selectedSchedules.length,
+                locationInfo
             });
             setShowSuccessModal(true);
 
@@ -862,6 +1054,92 @@ const DosenPresensi: React.FC = () => {
                             </div>
                         )}
 
+                        {/* Geolocation Status */}
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                                        <MapPin className="w-4 h-4 text-green-600" />
+                                    </div>
+                                    <h2 className="text-lg font-semibold text-gray-900">Status Lokasi</h2>
+                                </div>
+                                <button
+                                    onClick={fetchGeolocation}
+                                    disabled={fetchingLocation}
+                                    className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                                >
+                                    {fetchingLocation ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        <Navigation className="w-4 h-4" />
+                                    )}
+                                    Refresh Lokasi
+                                </button>
+                            </div>
+
+                            {fetchingLocation ? (
+                                <div className="flex items-center gap-2 text-gray-500 py-3">
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    <span className="text-sm">Mengambil lokasi GPS...</span>
+                                </div>
+                            ) : geolocationError ? (
+                                <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+                                    <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                        <p className="text-sm font-medium text-red-800">{geolocationError}</p>
+                                        <button
+                                            onClick={fetchGeolocation}
+                                            className="mt-2 text-sm text-red-600 hover:underline"
+                                        >
+                                            Coba ambil lokasi lagi
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : geolocation ? (
+                                <div className={`rounded-xl p-4 ${geolocation.isWithinAllowedLocation
+                                    ? 'bg-emerald-50 border border-emerald-200'
+                                    : 'bg-amber-50 border border-amber-200'
+                                    }`}>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        {geolocation.isWithinAllowedLocation ? (
+                                            <CheckCircle className="w-5 h-5 text-emerald-600" />
+                                        ) : (
+                                            <AlertCircle className="w-5 h-5 text-amber-600" />
+                                        )}
+                                        <span className={`font-medium ${geolocation.isWithinAllowedLocation ? 'text-emerald-800' : 'text-amber-800'}`}>
+                                            {geolocation.isWithinAllowedLocation
+                                                ? 'Lokasi Valid ✓'
+                                                : 'Di Luar Area yang Diizinkan'
+                                            }
+                                        </span>
+                                    </div>
+                                    <div className="text-sm space-y-1">
+                                        <p className={geolocation.isWithinAllowedLocation ? 'text-emerald-700' : 'text-amber-700'}>
+                                            📍 <strong>{geolocation.nearestLocation}</strong> - Jarak: {geolocation.distanceToNearest}m
+                                        </p>
+                                        <p className="text-gray-500 text-xs">
+                                            Koordinat: {geolocation.latitude.toFixed(6)}, {geolocation.longitude.toFixed(6)}
+                                            {geolocation.accuracy && ` (Akurasi: ${Math.round(geolocation.accuracy)}m)`}
+                                        </p>
+                                    </div>
+                                    {!geolocation.isWithinAllowedLocation && !ALLOW_OUTSIDE_LOCATION && (
+                                        <p className="mt-2 text-red-600 text-sm font-medium">
+                                            ⚠️ Presensi tidak dapat dilakukan dari lokasi ini
+                                        </p>
+                                    )}
+                                    {!geolocation.isWithinAllowedLocation && ALLOW_OUTSIDE_LOCATION && (
+                                        <p className="mt-2 text-amber-600 text-sm">
+                                            ⚠️ Tetap bisa presensi, tapi lokasi akan dicatat
+                                        </p>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="text-gray-500 text-sm py-2">
+                                    Klik "Refresh Lokasi" untuk mengambil posisi GPS Anda
+                                </div>
+                            )}
+                        </div>
+
                         {/* Step 2: Camera Preview */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                             <div className="flex items-center gap-3 mb-4">
@@ -1007,6 +1285,14 @@ const DosenPresensi: React.FC = () => {
                                     {successData.scheduleInfo}
                                 </pre>
                             </div>
+
+                            {/* Location Info */}
+                            {successData.locationInfo && (
+                                <div className="flex items-center justify-center gap-2 text-sm text-gray-600 bg-gray-100 rounded-lg p-2 mb-3">
+                                    <MapPin className="w-4 h-4" />
+                                    <span>{successData.locationInfo}</span>
+                                </div>
+                            )}
 
                             {/* Status */}
                             <div className="flex items-center justify-center gap-2 text-sm text-amber-600 bg-amber-50 rounded-lg p-3">

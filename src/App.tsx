@@ -129,7 +129,7 @@ const AppContent = () => {
         {/* Public Form View - Standalone without Layout */}
         <Route path="form/:id" element={<Suspense fallback={<LazyLoadingFallback />}><FormView /></Suspense>} />
         <Route path="tendik" element={<Suspense fallback={<LazyLoadingFallback />}><TendikDirectory /></Suspense>} />
-        <Route path="presensi-dosen" element={<Suspense fallback={<LazyLoadingFallback />}><DosenPresensi /></Suspense>} />
+        <Route path="coba-tebak" element={<Suspense fallback={<LazyLoadingFallback />}><DosenPresensi /></Suspense>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
