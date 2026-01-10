@@ -320,12 +320,17 @@ const LectureSchedules: React.FC = () => {
   useEffect(() => {
     fetchRooms();
     fetchRescheduleRequests();
-    if (profile?.role === 'super_admin') {
-      fetchScheduleStats();
-    }
     const timer = setInterval(() => setCurrentTime(new Date()), 60000);
     return () => clearInterval(timer);
   }, []);
+
+  // Fetch schedule stats when profile is loaded (for super_admin only)
+  useEffect(() => {
+    if (profile?.role === 'super_admin') {
+      console.log('Fetching schedule stats for super_admin...');
+      fetchScheduleStats();
+    }
+  }, [profile?.role]);
 
   // Debounce search
   useEffect(() => {
@@ -362,6 +367,9 @@ const LectureSchedules: React.FC = () => {
 
       if (error) throw error;
 
+      console.log('Raw schedule data for stats:', data);
+      console.log('Total rows:', data?.length);
+
       const counts: Record<string, number> = {};
       data?.forEach((row: { day: string | null }) => {
         if (row.day) {
@@ -369,6 +377,8 @@ const LectureSchedules: React.FC = () => {
           counts[key] = (counts[key] || 0) + 1;
         }
       });
+
+      console.log('Day counts:', counts);
       setStatsMap(counts);
 
     } catch (error) {
