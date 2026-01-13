@@ -4,8 +4,8 @@ import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import toast from 'react-hot-toast';
-import { Html5QrcodeScanner } from 'html5-qrcode';
-import SignatureCanvas from 'react-signature-canvas';
+import { Html5Qrcode } from 'html5-qrcode';
+import SignatureCanvas from '../components/SignatureCanvas';
 
 // ==================== KONFIGURASI PRESENSI ====================
 // Jika true, presensi tetap bisa dilakukan meski di luar lokasi (hanya warning)
@@ -594,8 +594,6 @@ const DosenPresensi: React.FC = () => {
     useEffect(() => {
         if (activeTab === 'presensi' && !scannedRoomId && !showSpecialDateModal && !showNoActiveWeekModal && !showGlobalDisableModal) {
 
-            // Use Html5Qrcode directly for programmatic control without the default UI
-            const { Html5Qrcode } = require("html5-qrcode");
             const html5QrCode = new Html5Qrcode("qr-reader");
 
             const startScanning = async () => {
@@ -1115,31 +1113,31 @@ const DosenPresensi: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50">
+        <div className="min-h-screen bg-gray-50 pb-20">
             {/* Header */}
-            <div className="bg-white/80 backdrop-blur-md border-b border-gray-100 sticky top-0 z-10">
-                <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4">
+            <div className="bg-white/95 backdrop-blur-md border-b border-gray-100 sticky top-0 z-20">
+                <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                            <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl">
+                            <div className="p-2 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl shadow-lg shadow-blue-500/20">
                                 <Clock className="h-6 w-6 text-white" />
                             </div>
                             <div>
-                                <h1 className="text-xl font-bold text-gray-900">Presensi Dosen</h1>
-                                <p className="text-sm text-gray-500">{format(currentTime, 'EEEE, d MMMM yyyy', { locale: localeId })}</p>
+                                <h1 className="text-xl font-bold text-gray-900 tracking-tight">Presensi Dosen</h1>
+                                <p className="text-xs font-medium text-gray-500">{format(currentTime, 'EEEE, d MMMM yyyy', { locale: localeId })}</p>
                             </div>
                         </div>
                         <div className="text-right">
-                            <div className="text-2xl font-bold text-blue-600">{format(currentTime, 'HH:mm')}</div>
-                            <div className="text-xs text-gray-500">WIB</div>
+                            <div className="text-2xl font-bold text-blue-600 tracking-tight">{format(currentTime, 'HH:mm')}</div>
+                            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">WIB</div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* Tabs */}
-            <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-4">
-                <div className="flex bg-white rounded-xl p-1 shadow-sm border border-gray-100">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+                {/* Tabs */}
+                <div className="flex bg-white rounded-xl p-1 shadow-sm border border-gray-100 mb-6 max-w-md mx-auto sm:max-w-none sm:justify-start">
                     <button
                         onClick={() => setActiveTab('presensi')}
                         className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'presensi' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-50'}`}
@@ -1158,7 +1156,7 @@ const DosenPresensi: React.FC = () => {
             </div>
 
             {/* Content */}
-            <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
                 {activeTab === 'presensi' && !scannedRoomId ? (
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center animate-fadeIn">
                         <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -1176,424 +1174,430 @@ const DosenPresensi: React.FC = () => {
                         </div>
                     </div>
                 ) : activeTab === 'presensi' ? (
-                    <div className="space-y-6">
-                        {/* Scanned Room Indicator */}
-                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-emerald-100 rounded-lg">
-                                    <MapPin className="w-5 h-5 text-emerald-600" />
-                                </div>
-                                <div>
-                                    <h3 className="font-semibold text-emerald-900">Terverifikasi di Ruangan</h3>
-                                    <p className="text-sm text-emerald-700">{scannedRoomName || 'Ruangan Valid'} (ID: {scannedRoomId?.substring(0, 8)}...)</p>
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => setScannedRoomId(null)}
-                                className="text-xs text-emerald-600 hover:text-emerald-700 underline"
-                            >
-                                Scan Ulang
-                            </button>
-                        </div>
-                        {/* Step 1: Select Lecturer */}
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">1</div>
-                                <h2 className="text-lg font-semibold text-gray-900">Pilih Nama Dosen</h2>
-                            </div>
-
-                            {loading ? (
-                                <div className="flex items-center justify-center py-8">
-                                    <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-                                </div>
-                            ) : (
-                                <SearchableDropdown
-                                    options={lecturers}
-                                    value={selectedLecturerId}
-                                    onChange={handleLecturerChange}
-                                    placeholder="Cari dan pilih nama dosen..."
-                                />
-                            )}
-
-                            {/* Attendance Warning */}
-                            {hasAttendedToday && (
-                                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 animate-fadeIn">
-                                    <div className="p-2 bg-amber-100 rounded-lg">
-                                        <Clock className="w-6 h-6 text-amber-600" />
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div className="space-y-6">
+                            {/* Scanned Room Indicator */}
+                            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-emerald-100 rounded-lg">
+                                        <MapPin className="w-5 h-5 text-emerald-600" />
                                     </div>
                                     <div>
-                                        <h3 className="font-semibold text-amber-900">Anda sudah presensi hari ini</h3>
-                                        <p className="text-sm text-amber-700">
-                                            Tercatat pada pukul <span className="font-bold">{lastAttendanceTime} WIB</span>. Presensi Transport Dosen hanya dapat dilakukan 1 kali sehari.
-                                        </p>
+                                        <h3 className="font-semibold text-emerald-900">Terverifikasi di Ruangan</h3>
+                                        <p className="text-sm text-emerald-700">{scannedRoomName || 'Ruangan Valid'} (ID: {scannedRoomId?.substring(0, 8)}...)</p>
                                     </div>
                                 </div>
-                            )}
-                        </div>
+                                <button
+                                    onClick={() => setScannedRoomId(null)}
+                                    className="text-xs text-emerald-600 hover:text-emerald-700 underline"
+                                >
+                                    Scan Ulang
+                                </button>
+                            </div>
+                            {/* Step 1: Select Lecturer */}
+                            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">1</div>
+                                    <h2 className="text-lg font-semibold text-gray-900">Pilih Nama Dosen</h2>
+                                </div>
 
-                        {/* Step 1.5: Schedule Selection (Multiple) */}
-                        {selectedLecturerId && !hasAttendedToday && (
+                                {loading ? (
+                                    <div className="flex items-center justify-center py-8">
+                                        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                                    </div>
+                                ) : (
+                                    <SearchableDropdown
+                                        options={lecturers}
+                                        value={selectedLecturerId}
+                                        onChange={handleLecturerChange}
+                                        placeholder="Cari dan pilih nama dosen..."
+                                    />
+                                )}
+
+                                {/* Attendance Warning */}
+                                {checkingAttendance ? (
+                                    <div className="mt-4 flex items-center justify-center p-4 text-gray-500 gap-2">
+                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                        <span className="text-sm">Memeriksa status presensi...</span>
+                                    </div>
+                                ) : hasAttendedToday && (
+                                    <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 animate-fadeIn">
+                                        <div className="p-2 bg-amber-100 rounded-lg">
+                                            <Clock className="w-6 h-6 text-amber-600" />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-semibold text-amber-900">Anda sudah presensi hari ini</h3>
+                                            <p className="text-sm text-amber-700">
+                                                Tercatat pada pukul <span className="font-bold">{lastAttendanceTime} WIB</span>. Presensi Transport Dosen hanya dapat dilakukan 1 kali sehari.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Step 1.5: Schedule Selection (Multiple) */}
+                            {selectedLecturerId && !hasAttendedToday && (
+                                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 font-bold">
+                                                <BookOpen className="w-4 h-4" />
+                                            </div>
+                                            <h2 className="text-lg font-semibold text-gray-900">Pilih Kegiatan Hari Ini</h2>
+                                        </div>
+                                        {selectedSchedules.length > 0 && (
+                                            <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                                                {selectedSchedules.length} dipilih
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {checkingSchedule ? (
+                                        <div className="flex items-center gap-2 text-gray-500 text-sm py-4">
+                                            <Loader2 className="w-5 h-5 animate-spin" />
+                                            Memeriksa jadwal hari ini...
+                                        </div>
+                                    ) : availableSchedules.length > 0 ? (
+                                        <div className="space-y-3">
+                                            {/* Quick actions */}
+                                            <div className="flex items-center gap-2 mb-3">
+                                                <button
+                                                    onClick={selectAllSchedules}
+                                                    className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                                                >
+                                                    Pilih Semua
+                                                </button>
+                                                <span className="text-gray-300">|</span>
+                                                <button
+                                                    onClick={clearAllSelections}
+                                                    className="text-sm text-gray-500 hover:text-gray-700"
+                                                >
+                                                    Hapus Pilihan
+                                                </button>
+                                            </div>
+
+                                            {/* Schedule list */}
+                                            <div className="space-y-2 max-h-80 overflow-y-auto">
+                                                {availableSchedules.map(schedule => {
+                                                    const isSelected = selectedSchedules.some(s => s.id === schedule.id);
+                                                    return (
+                                                        <div
+                                                            key={schedule.id}
+                                                            onClick={() => toggleScheduleSelection(schedule)}
+                                                            className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${isSelected
+                                                                ? 'border-blue-500 bg-blue-50'
+                                                                : 'border-gray-200 hover:border-gray-300 bg-white'
+                                                                }`}
+                                                        >
+                                                            <div className="flex items-start gap-3">
+                                                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
+                                                                    }`}>
+                                                                    {isSelected && <CheckCircle className="w-4 h-4 text-white" />}
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="flex items-center gap-2 mb-1">
+                                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${schedule.type === 'lecture'
+                                                                            ? 'bg-blue-100 text-blue-700'
+                                                                            : 'bg-purple-100 text-purple-700'
+                                                                            }`}>
+                                                                            {schedule.type === 'lecture' ? 'Mengajar' : 'Sidang'}
+                                                                        </span>
+                                                                        <span className="text-xs text-gray-500">
+                                                                            {schedule.start_time} - {schedule.end_time}
+                                                                        </span>
+                                                                    </div>
+
+                                                                    {schedule.type === 'lecture' ? (
+                                                                        <>
+                                                                            <p className="font-medium text-gray-900">{schedule.course_name}</p>
+                                                                            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-gray-600">
+                                                                                {schedule.study_program_name && (
+                                                                                    <span className="flex items-center gap-1">
+                                                                                        <GraduationCap className="w-3 h-3" /> {schedule.study_program_name}
+                                                                                    </span>
+                                                                                )}
+                                                                                {schedule.class_group && (
+                                                                                    <span className="flex items-center gap-1">
+                                                                                        <Users className="w-3 h-3" /> Rombel {schedule.class_group}
+                                                                                    </span>
+                                                                                )}
+                                                                                {schedule.semester && (
+                                                                                    <span>{schedule.semester}</span>
+                                                                                )}
+                                                                                <span className="flex items-center gap-1">
+                                                                                    <BookOpen className="w-3 h-3" /> {schedule.room_name}
+                                                                                </span>
+                                                                            </div>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <p className="font-medium text-gray-900">
+                                                                                {schedule.session_type} - {schedule.student_name}
+                                                                            </p>
+                                                                            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-gray-600">
+                                                                                <span className="flex items-center gap-1 font-medium text-purple-600">
+                                                                                    <User className="w-3 h-3" /> {schedule.role_in_session}
+                                                                                </span>
+                                                                                {schedule.student_nim && (
+                                                                                    <span>NIM: {schedule.student_nim}</span>
+                                                                                )}
+                                                                                <span className="flex items-center gap-1">
+                                                                                    <BookOpen className="w-3 h-3" /> {schedule.room_name}
+                                                                                </span>
+                                                                            </div>
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                                            <div className="flex items-start gap-3">
+                                                <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
+                                                <div className="flex-1">
+                                                    <p className="font-medium text-amber-800">Tidak Ada Jadwal Ditemukan</p>
+                                                    <p className="text-sm text-amber-700 mt-1">Deskripsikan kegiatan Anda contoh : "Mengajar Kelas Susulan Matakuliah Matematika A1 program studi Manajemen semester 3"</p>
+                                                    <input
+                                                        type="text"
+                                                        value={customPurpose}
+                                                        onChange={(e) => setCustomPurpose(e.target.value)}
+                                                        placeholder="Contoh: Rapat, Bimbingan, Konsultasi..."
+                                                        className="mt-3 w-full px-4 py-2.5 border border-amber-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Custom purpose when schedules exist but want to add other purpose */}
+                                    {availableSchedules.length > 0 && (
+                                        <div className="mt-4 pt-4 border-t border-gray-200">
+                                            <p className="text-sm text-gray-600 mb-2">Atau tambahkan tujuan lain:</p>
+                                            <input
+                                                type="text"
+                                                value={customPurpose}
+                                                onChange={(e) => setCustomPurpose(e.target.value)}
+                                                placeholder="Contoh: Rapat, Bimbingan, Konsultasi... (opsional)"
+                                                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Geolocation Status */}
                             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 font-bold">
-                                            <BookOpen className="w-4 h-4" />
+                                        <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                                            <MapPin className="w-4 h-4 text-green-600" />
                                         </div>
-                                        <h2 className="text-lg font-semibold text-gray-900">Pilih Kegiatan Hari Ini</h2>
+                                        <h2 className="text-lg font-semibold text-gray-900">Status Lokasi</h2>
                                     </div>
-                                    {selectedSchedules.length > 0 && (
-                                        <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
-                                            {selectedSchedules.length} dipilih
-                                        </span>
-                                    )}
+                                    <button
+                                        onClick={fetchGeolocation}
+                                        disabled={fetchingLocation}
+                                        className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                                    >
+                                        {fetchingLocation ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                        ) : (
+                                            <Navigation className="w-4 h-4" />
+                                        )}
+                                        Refresh Lokasi
+                                    </button>
                                 </div>
 
-                                {checkingSchedule ? (
-                                    <div className="flex items-center gap-2 text-gray-500 text-sm py-4">
+                                {fetchingLocation ? (
+                                    <div className="flex items-center gap-2 text-gray-500 py-3">
                                         <Loader2 className="w-5 h-5 animate-spin" />
-                                        Memeriksa jadwal hari ini...
+                                        <span className="text-sm">Mengambil lokasi GPS...</span>
                                     </div>
-                                ) : availableSchedules.length > 0 ? (
-                                    <div className="space-y-3">
-                                        {/* Quick actions */}
-                                        <div className="flex items-center gap-2 mb-3">
+                                ) : geolocationError ? (
+                                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+                                        <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                                        <div>
+                                            <p className="text-sm font-medium text-red-800">{geolocationError}</p>
                                             <button
-                                                onClick={selectAllSchedules}
-                                                className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                                                onClick={fetchGeolocation}
+                                                className="mt-2 text-sm text-red-600 hover:underline"
                                             >
-                                                Pilih Semua
-                                            </button>
-                                            <span className="text-gray-300">|</span>
-                                            <button
-                                                onClick={clearAllSelections}
-                                                className="text-sm text-gray-500 hover:text-gray-700"
-                                            >
-                                                Hapus Pilihan
+                                                Coba ambil lokasi lagi
                                             </button>
                                         </div>
-
-                                        {/* Schedule list */}
-                                        <div className="space-y-2 max-h-80 overflow-y-auto">
-                                            {availableSchedules.map(schedule => {
-                                                const isSelected = selectedSchedules.some(s => s.id === schedule.id);
-                                                return (
-                                                    <div
-                                                        key={schedule.id}
-                                                        onClick={() => toggleScheduleSelection(schedule)}
-                                                        className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${isSelected
-                                                            ? 'border-blue-500 bg-blue-50'
-                                                            : 'border-gray-200 hover:border-gray-300 bg-white'
-                                                            }`}
-                                                    >
-                                                        <div className="flex items-start gap-3">
-                                                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
-                                                                }`}>
-                                                                {isSelected && <CheckCircle className="w-4 h-4 text-white" />}
-                                                            </div>
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center gap-2 mb-1">
-                                                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${schedule.type === 'lecture'
-                                                                        ? 'bg-blue-100 text-blue-700'
-                                                                        : 'bg-purple-100 text-purple-700'
-                                                                        }`}>
-                                                                        {schedule.type === 'lecture' ? 'Mengajar' : 'Sidang'}
-                                                                    </span>
-                                                                    <span className="text-xs text-gray-500">
-                                                                        {schedule.start_time} - {schedule.end_time}
-                                                                    </span>
-                                                                </div>
-
-                                                                {schedule.type === 'lecture' ? (
-                                                                    <>
-                                                                        <p className="font-medium text-gray-900">{schedule.course_name}</p>
-                                                                        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-gray-600">
-                                                                            {schedule.study_program_name && (
-                                                                                <span className="flex items-center gap-1">
-                                                                                    <GraduationCap className="w-3 h-3" /> {schedule.study_program_name}
-                                                                                </span>
-                                                                            )}
-                                                                            {schedule.class_group && (
-                                                                                <span className="flex items-center gap-1">
-                                                                                    <Users className="w-3 h-3" /> Rombel {schedule.class_group}
-                                                                                </span>
-                                                                            )}
-                                                                            {schedule.semester && (
-                                                                                <span>{schedule.semester}</span>
-                                                                            )}
-                                                                            <span className="flex items-center gap-1">
-                                                                                <BookOpen className="w-3 h-3" /> {schedule.room_name}
-                                                                            </span>
-                                                                        </div>
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        <p className="font-medium text-gray-900">
-                                                                            {schedule.session_type} - {schedule.student_name}
-                                                                        </p>
-                                                                        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-gray-600">
-                                                                            <span className="flex items-center gap-1 font-medium text-purple-600">
-                                                                                <User className="w-3 h-3" /> {schedule.role_in_session}
-                                                                            </span>
-                                                                            {schedule.student_nim && (
-                                                                                <span>NIM: {schedule.student_nim}</span>
-                                                                            )}
-                                                                            <span className="flex items-center gap-1">
-                                                                                <BookOpen className="w-3 h-3" /> {schedule.room_name}
-                                                                            </span>
-                                                                        </div>
-                                                                    </>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
+                                    </div>
+                                ) : geolocation ? (
+                                    <div className={`rounded-xl p-4 ${geolocation.isWithinAllowedLocation
+                                        ? 'bg-emerald-50 border border-emerald-200'
+                                        : 'bg-amber-50 border border-amber-200'
+                                        }`}>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            {geolocation.isWithinAllowedLocation ? (
+                                                <CheckCircle className="w-5 h-5 text-emerald-600" />
+                                            ) : (
+                                                <AlertCircle className="w-5 h-5 text-amber-600" />
+                                            )}
+                                            <span className={`font-medium ${geolocation.isWithinAllowedLocation ? 'text-emerald-800' : 'text-amber-800'}`}>
+                                                {geolocation.isWithinAllowedLocation
+                                                    ? 'Lokasi Valid ✓'
+                                                    : 'Di Luar Area yang Diizinkan'
+                                                }
+                                            </span>
                                         </div>
+                                        <div className="text-sm space-y-1">
+                                            <p className={geolocation.isWithinAllowedLocation ? 'text-emerald-700' : 'text-amber-700'}>
+                                                📍 <strong>{geolocation.nearestLocation}</strong> - Jarak: {geolocation.distanceToNearest}m
+                                            </p>
+                                            <p className="text-gray-500 text-xs">
+                                                Koordinat: {geolocation.latitude.toFixed(6)}, {geolocation.longitude.toFixed(6)}
+                                                {geolocation.accuracy && ` (Akurasi: ${Math.round(geolocation.accuracy)}m)`}
+                                            </p>
+                                        </div>
+                                        {!geolocation.isWithinAllowedLocation && !ALLOW_OUTSIDE_LOCATION && (
+                                            <p className="mt-2 text-red-600 text-sm font-medium">
+                                                ⚠️ Presensi tidak dapat dilakukan dari lokasi ini
+                                            </p>
+                                        )}
+                                        {!geolocation.isWithinAllowedLocation && ALLOW_OUTSIDE_LOCATION && (
+                                            <p className="mt-2 text-amber-600 text-sm">
+                                                ⚠️ Tetap bisa presensi, tapi lokasi akan dicatat
+                                            </p>
+                                        )}
                                     </div>
                                 ) : (
-                                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                                        <div className="flex items-start gap-3">
-                                            <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
-                                            <div className="flex-1">
-                                                <p className="font-medium text-amber-800">Tidak Ada Jadwal Ditemukan</p>
-                                                <p className="text-sm text-amber-700 mt-1">Deskripsikan kegiatan Anda contoh : "Mengajar Kelas Susulan Matakuliah Matematika A1 program studi Manajemen semester 3"</p>
-                                                <input
-                                                    type="text"
-                                                    value={customPurpose}
-                                                    onChange={(e) => setCustomPurpose(e.target.value)}
-                                                    placeholder="Contoh: Rapat, Bimbingan, Konsultasi..."
-                                                    className="mt-3 w-full px-4 py-2.5 border border-amber-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                                />
-                                            </div>
+                                    <div className="text-gray-500 text-sm py-2">
+                                        Klik "Refresh Lokasi" untuk mengambil posisi GPS Anda
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Step 2: Camera Preview */}
+                            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">2</div>
+                                    <h2 className="text-lg font-semibold text-gray-900">Preview Kamera</h2>
+
+                                </div>
+
+                                <div className="relative aspect-[4/3] bg-gray-900 rounded-xl overflow-hidden">
+                                    {cameraError ? (
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center text-white p-4">
+                                            <AlertCircle className="w-12 h-12 text-red-400 mb-3" />
+                                            <p className="text-center text-sm">{cameraError}</p>
+                                            <button
+                                                onClick={initCamera}
+                                                className="mt-4 px-4 py-2 bg-blue-600 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                                            >
+                                                Coba Lagi
+                                            </button>
                                         </div>
-                                    </div>
-                                )}
-
-                                {/* Custom purpose when schedules exist but want to add other purpose */}
-                                {availableSchedules.length > 0 && (
-                                    <div className="mt-4 pt-4 border-t border-gray-200">
-                                        <p className="text-sm text-gray-600 mb-2">Atau tambahkan tujuan lain:</p>
-                                        <input
-                                            type="text"
-                                            value={customPurpose}
-                                            onChange={(e) => setCustomPurpose(e.target.value)}
-                                            placeholder="Contoh: Rapat, Bimbingan, Konsultasi... (opsional)"
-                                            className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        />
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Geolocation Status */}
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                                        <MapPin className="w-4 h-4 text-green-600" />
-                                    </div>
-                                    <h2 className="text-lg font-semibold text-gray-900">Status Lokasi</h2>
-                                </div>
-                                <button
-                                    onClick={fetchGeolocation}
-                                    disabled={fetchingLocation}
-                                    className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                                >
-                                    {fetchingLocation ? (
-                                        <Loader2 className="w-4 h-4 animate-spin" />
                                     ) : (
-                                        <Navigation className="w-4 h-4" />
+                                        <>
+                                            <video
+                                                ref={videoRef}
+                                                autoPlay
+                                                playsInline
+                                                muted
+                                                className="w-full h-full object-cover"
+                                            />
+                                            {/* Live indicator */}
+                                            <div className="absolute top-4 left-4 flex items-center gap-2 bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-full">
+                                                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                                                <span className="text-white text-xs font-medium">LIVE</span>
+                                            </div>
+                                        </>
                                     )}
-                                    Refresh Lokasi
-                                </button>
+                                </div>
+                                <canvas ref={canvasRef} className="hidden" />
                             </div>
-
-                            {fetchingLocation ? (
-                                <div className="flex items-center gap-2 text-gray-500 py-3">
-                                    <Loader2 className="w-5 h-5 animate-spin" />
-                                    <span className="text-sm">Mengambil lokasi GPS...</span>
-                                </div>
-                            ) : geolocationError ? (
-                                <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
-                                    <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                        <p className="text-sm font-medium text-red-800">{geolocationError}</p>
-                                        <button
-                                            onClick={fetchGeolocation}
-                                            className="mt-2 text-sm text-red-600 hover:underline"
-                                        >
-                                            Coba ambil lokasi lagi
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : geolocation ? (
-                                <div className={`rounded-xl p-4 ${geolocation.isWithinAllowedLocation
-                                    ? 'bg-emerald-50 border border-emerald-200'
-                                    : 'bg-amber-50 border border-amber-200'
-                                    }`}>
-                                    <div className="flex items-center gap-2 mb-2">
-                                        {geolocation.isWithinAllowedLocation ? (
-                                            <CheckCircle className="w-5 h-5 text-emerald-600" />
-                                        ) : (
-                                            <AlertCircle className="w-5 h-5 text-amber-600" />
-                                        )}
-                                        <span className={`font-medium ${geolocation.isWithinAllowedLocation ? 'text-emerald-800' : 'text-amber-800'}`}>
-                                            {geolocation.isWithinAllowedLocation
-                                                ? 'Lokasi Valid ✓'
-                                                : 'Di Luar Area yang Diizinkan'
-                                            }
-                                        </span>
-                                    </div>
-                                    <div className="text-sm space-y-1">
-                                        <p className={geolocation.isWithinAllowedLocation ? 'text-emerald-700' : 'text-amber-700'}>
-                                            📍 <strong>{geolocation.nearestLocation}</strong> - Jarak: {geolocation.distanceToNearest}m
-                                        </p>
-                                        <p className="text-gray-500 text-xs">
-                                            Koordinat: {geolocation.latitude.toFixed(6)}, {geolocation.longitude.toFixed(6)}
-                                            {geolocation.accuracy && ` (Akurasi: ${Math.round(geolocation.accuracy)}m)`}
-                                        </p>
-                                    </div>
-                                    {!geolocation.isWithinAllowedLocation && !ALLOW_OUTSIDE_LOCATION && (
-                                        <p className="mt-2 text-red-600 text-sm font-medium">
-                                            ⚠️ Presensi tidak dapat dilakukan dari lokasi ini
-                                        </p>
-                                    )}
-                                    {!geolocation.isWithinAllowedLocation && ALLOW_OUTSIDE_LOCATION && (
-                                        <p className="mt-2 text-amber-600 text-sm">
-                                            ⚠️ Tetap bisa presensi, tapi lokasi akan dicatat
-                                        </p>
-                                    )}
-                                </div>
-                            ) : (
-                                <div className="text-gray-500 text-sm py-2">
-                                    Klik "Refresh Lokasi" untuk mengambil posisi GPS Anda
-                                </div>
-                            )}
                         </div>
 
-                        {/* Step 2: Camera Preview */}
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">2</div>
-                                <h2 className="text-lg font-semibold text-gray-900">Preview Kamera</h2>
+                        <div className="space-y-6">
+                            {/* Step 3: Submit */}
+                            {/* Show location warning if outside allowed area */}
+                            {geolocation && !geolocation.isWithinAllowedLocation && !ALLOW_OUTSIDE_LOCATION && (
+                                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 flex items-center gap-3">
+                                    <AlertCircle className="w-6 h-6 text-red-500 flex-shrink-0" />
+                                    <div>
+                                        <p className="font-medium text-red-800">Lokasi Tidak Valid</p>
+                                        <p className="text-sm text-red-600">Anda berada di luar area kampus yang diizinkan. Presensi hanya dapat dilakukan dari lokasi kampus.</p>
+                                    </div>
+                                </div>
+                            )}
 
+
+                            {/* Signature Section */}
+                            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                                <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                    <PenTool className="w-5 h-5 text-blue-600" />
+                                    Tanda Tangan Digital
+                                </h2>
+                                <div className={`border-2 rounded-xl overflow-hidden ${signatureError ? 'border-red-300' : 'border-gray-200 border-dashed'}`}>
+                                    <SignatureCanvas
+                                        ref={signatureRef}
+                                        penColor="#000000"
+                                        backgroundColor="white"
+                                        onChange={() => setSignatureError(null)}
+                                    />
+                                </div>
+                                <div className="flex justify-between items-center mt-2">
+                                    <p className="text-xs text-gray-500">Tanda tangan pada area di atas</p>
+                                    <button
+                                        onClick={() => signatureRef.current?.clear()}
+                                        className="text-xs text-red-600 hover:text-red-700 font-medium"
+                                    >
+                                        Hapus & Ulangi
+                                    </button>
+                                </div>
+                                {signatureError && (
+                                    <p className="text-sm text-red-600 mt-2 flex items-center gap-1">
+                                        <AlertCircle className="w-4 h-4" />
+                                        {signatureError}
+                                    </p>
+                                )}
                             </div>
 
-                            <div className="relative aspect-[4/3] bg-gray-900 rounded-xl overflow-hidden">
-                                {cameraError ? (
-                                    <div className="absolute inset-0 flex flex-col items-center justify-center text-white p-4">
-                                        <AlertCircle className="w-12 h-12 text-red-400 mb-3" />
-                                        <p className="text-center text-sm">{cameraError}</p>
-                                        <button
-                                            onClick={initCamera}
-                                            className="mt-4 px-4 py-2 bg-blue-600 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-                                        >
-                                            Coba Lagi
-                                        </button>
-                                    </div>
+                            <button
+                                onClick={handleSubmit}
+                                disabled={
+                                    submitting ||
+                                    !selectedLecturerId ||
+                                    (selectedSchedules.length === 0 && !customPurpose.trim()) ||
+                                    !cameraStream ||
+                                    hasAttendedToday ||
+                                    (!ALLOW_OUTSIDE_LOCATION && geolocation && !geolocation.isWithinAllowedLocation) ||
+                                    (!ALLOW_OUTSIDE_LOCATION && !geolocation)
+                                }
+                                className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl shadow-lg hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                                {submitting ? (
+                                    <>
+                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                        Mengambil foto & menyimpan...
+                                    </>
+                                ) : !geolocation && !ALLOW_OUTSIDE_LOCATION ? (
+                                    <>
+                                        <MapPin className="w-5 h-5" />
+                                        Menunggu Lokasi GPS...
+                                    </>
+                                ) : geolocation && !geolocation.isWithinAllowedLocation && !ALLOW_OUTSIDE_LOCATION ? (
+                                    <>
+                                        <AlertCircle className="w-5 h-5" />
+                                        Lokasi Di Luar Area Kampus
+                                    </>
                                 ) : (
                                     <>
-                                        <video
-                                            ref={videoRef}
-                                            autoPlay
-                                            playsInline
-                                            muted
-                                            className="w-full h-full object-cover"
-                                        />
-                                        {/* Live indicator */}
-                                        <div className="absolute top-4 left-4 flex items-center gap-2 bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-full">
-                                            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                                            <span className="text-white text-xs font-medium">LIVE</span>
-                                        </div>
+                                        <Camera className="w-5 h-5" />
+                                        Submit Presensi {selectedSchedules.length > 0 && `(${selectedSchedules.length} kegiatan)`}
                                     </>
                                 )}
-                            </div>
-                            <canvas ref={canvasRef} className="hidden" />
+                            </button>
+
                         </div>
-
-                        {/* Step 3: Submit */}
-                        {/* Show location warning if outside allowed area */}
-                        {geolocation && !geolocation.isWithinAllowedLocation && !ALLOW_OUTSIDE_LOCATION && (
-                            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 flex items-center gap-3">
-                                <AlertCircle className="w-6 h-6 text-red-500 flex-shrink-0" />
-                                <div>
-                                    <p className="font-medium text-red-800">Lokasi Tidak Valid</p>
-                                    <p className="text-sm text-red-600">Anda berada di luar area kampus yang diizinkan. Presensi hanya dapat dilakukan dari lokasi kampus.</p>
-                                </div>
-                            </div>
-                        )}
-
-
-                        {/* Signature Section */}
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                                <PenTool className="w-5 h-5 text-blue-600" />
-                                Tanda Tangan Digital
-                            </h2>
-                            <div className={`border-2 rounded-xl overflow-hidden mx-auto max-w-full ${signatureError ? 'border-red-300' : 'border-gray-200 border-dashed'}`}>
-                                <SignatureCanvas
-                                    ref={signatureRef}
-                                    canvasProps={{
-                                        className: 'w-full h-40 bg-gray-50 cursor-crosshair block',
-                                        height: 160
-                                    }}
-                                    onBegin={() => setSignatureError(null)}
-                                />
-                            </div>
-                            <div className="flex justify-between items-center mt-2">
-                                <p className="text-xs text-gray-500">Tanda tangan pada area di atas</p>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        signatureRef.current?.clear();
-                                        setSignatureError(null);
-                                    }}
-                                    className="text-xs text-red-600 hover:text-red-700 font-medium"
-                                >
-                                    Hapus & Ulangi
-                                </button>
-                            </div>
-                            {signatureError && (
-                                <p className="text-xs text-red-500 mt-1">{signatureError}</p>
-                            )}
-                        </div>
-
-                        <button
-                            onClick={handleSubmit}
-                            disabled={
-                                submitting ||
-                                !selectedLecturerId ||
-                                (selectedSchedules.length === 0 && !customPurpose.trim()) ||
-                                !cameraStream ||
-                                hasAttendedToday ||
-                                (!ALLOW_OUTSIDE_LOCATION && geolocation && !geolocation.isWithinAllowedLocation) ||
-                                (!ALLOW_OUTSIDE_LOCATION && !geolocation)
-                            }
-                            className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl shadow-lg hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                        >
-                            {submitting ? (
-                                <>
-                                    <Loader2 className="w-5 h-5 animate-spin" />
-                                    Mengambil foto & menyimpan...
-                                </>
-                            ) : !geolocation && !ALLOW_OUTSIDE_LOCATION ? (
-                                <>
-                                    <MapPin className="w-5 h-5" />
-                                    Menunggu Lokasi GPS...
-                                </>
-                            ) : geolocation && !geolocation.isWithinAllowedLocation && !ALLOW_OUTSIDE_LOCATION ? (
-                                <>
-                                    <AlertCircle className="w-5 h-5" />
-                                    Lokasi Di Luar Area Kampus
-                                </>
-                            ) : (
-                                <>
-                                    <Camera className="w-5 h-5" />
-                                    Submit Presensi {selectedSchedules.length > 0 && `(${selectedSchedules.length} kegiatan)`}
-                                </>
-                            )}
-                        </button>
-
                     </div>
                 ) : (
                     /* UNY Presensi Tab - Full Frame iFrame */
@@ -1622,192 +1626,239 @@ const DosenPresensi: React.FC = () => {
                         </div>
                     </div>
                 )}
-            </div>
+            </div >
 
             {/* Footer */}
-            <div className="py-8 text-center text-sm text-gray-400">
+            < div className="py-8 text-center text-sm text-gray-400" >
                 SIMPEL Kuliah © {new Date().getFullYear()}
-
-                {/* Lecturer Info */}
-                <div className="text-center mb-4">
-                    <h4 className="text-xl font-bold text-gray-900 mb-1">{successData.lecturerName}</h4>
-                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
-                        <Clock className="w-4 h-4" />
-                        {successData.time} WIB
-                    </div>
-                </div>
-
-                {/* Location Info */}
-                {successData.locationInfo && (
-                    <div className="flex items-center justify-center gap-2 text-sm text-gray-600 bg-gray-100 rounded-lg p-2 mb-3">
-                        <MapPin className="w-4 h-4" />
-                        <span>{successData.locationInfo}</span>
-                    </div>
-                )}
-
-                {/* Status */}
-                <div className="flex items-center justify-center gap-2 text-sm text-amber-600 bg-amber-50 rounded-lg p-3">
-                    <AlertCircle className="w-4 h-4" />
-                    <span>Status: Menunggu Verifikasi</span>
-                </div>
-            </div>
-
-            {/* Close Button */}
-            <div className="px-6 pb-6">
-                <button
-                    onClick={closeSuccessModal}
-                    className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all flex items-center justify-center gap-2"
-                >
-                    <CheckCircle className="w-5 h-5" />
-                    Selesai
-                </button>
-            </div>
-        </div>
             </div >
-        )}
 
-{/* Special Date Warning Modal */ }
-{
-    showSpecialDateModal && todaySpecialDate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowSpecialDateModal(false)} />
-            <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-                {/* Header */}
-                <div className="bg-gradient-to-r from-red-500 to-orange-500 p-6 text-center">
-                    <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <CalendarX className="w-8 h-8 text-white" />
-                    </div>
-                    <h2 className="text-xl font-bold text-white">Tanggal Libur</h2>
-                    <p className="text-white/80 text-sm mt-1">
-                        {format(new Date(todaySpecialDate.date), 'EEEE, d MMMM yyyy', { locale: localeId })}
-                    </p>
-                </div>
-                {/* Content */}
-                <div className="p-6">
-                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
-                        <p className="text-red-800 font-medium text-center">{todaySpecialDate.reason}</p>
-                    </div>
-                    <p className="text-gray-600 text-center text-sm">
-                        Presensi tidak dapat dilakukan pada tanggal ini. Silakan hubungi bagian Keuangan jika ada pertanyaan.
-                    </p>
-                </div>
-                {/* Footer */}
-                <div className="px-6 pb-6">
-                    <button
-                        onClick={() => setShowSpecialDateModal(false)}
-                        className="w-full py-3 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all flex items-center justify-center gap-2"
-                    >
-                        <X className="w-5 h-5" />
-                        Tutup
-                    </button>
-                </div>
-            </div>
-        </div>
-    )
-}
+            {/* Success Modal */}
+            {
+                showSuccessModal && successData && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                        <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-300">
+                            {/* Success Header */}
+                            <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 text-center">
+                                <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <PartyPopper className="w-10 h-10 text-white" />
+                                </div>
+                                <h3 className="text-2xl font-bold text-white mb-1">Presensi Berhasil!</h3>
+                                <p className="text-emerald-100 text-sm">Data kehadiran Anda telah tercatat</p>
+                            </div>
 
-{/* No Active Week Modal */ }
-{
-    showNoActiveWeekModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowNoActiveWeekModal(false)} />
-            <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-                {/* Header */}
-                <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-6 text-center">
-                    <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <CalendarX className="w-8 h-8 text-white" />
-                    </div>
-                    <h2 className="text-xl font-bold text-white">Di Luar Minggu Kuliah</h2>
-                    <p className="text-white/80 text-sm mt-1">
-                        {format(new Date(), 'EEEE, d MMMM yyyy', { locale: localeId })}
-                    </p>
-                </div>
-                {/* Content */}
-                <div className="p-6">
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
-                        <p className="text-amber-800 font-medium text-center">
-                            Periode Minggu Kuliah belum aktif atau sudah berakhir
-                        </p>
-                    </div>
-                    <p className="text-gray-600 text-center text-sm">
-                        Presensi hanya dapat dilakukan pada periode minggu kuliah yang sudah diaktifkan oleh bagian Keuangan.
-                        Hubungi bagian Keuangan jika Anda yakin periode kuliah seharusnya masih aktif.
-                    </p>
-                    {activeWeekInfo && (
-                        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                            <p className="text-sm text-green-700 text-center">
-                                Minggu aktif terakhir: <br />
-                                <span className="font-semibold">Minggu Ke-{activeWeekInfo.week_number}</span>
-                                <br />
-                                ({format(new Date(activeWeekInfo.start_date), 'd MMM', { locale: localeId })} - {format(new Date(activeWeekInfo.end_date), 'd MMM yyyy', { locale: localeId })})
-                            </p>
+                            {/* Photo & Info */}
+                            <div className="p-6">
+                                {/* Captured Photo */}
+                                <div className="mb-4">
+                                    <img
+                                        src={successData.photo}
+                                        alt="Foto Presensi"
+                                        className="w-32 h-32 rounded-2xl object-cover mx-auto border-4 border-emerald-100 shadow-lg"
+                                    />
+                                </div>
+
+                                {/* Lecturer Info */}
+                                <div className="text-center mb-4">
+                                    <h4 className="text-xl font-bold text-gray-900 mb-1">{successData.lecturerName}</h4>
+                                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                                        <Clock className="w-4 h-4" />
+                                        {successData.time} WIB
+                                    </div>
+                                </div>
+
+                                {/* Schedule/Purpose Info */}
+                                <div className="bg-gray-50 rounded-xl p-4 mb-4">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${successData.purpose === 'Mengajar' ? 'bg-blue-100 text-blue-700' :
+                                            successData.purpose === 'Sidang' ? 'bg-purple-100 text-purple-700' :
+                                                'bg-amber-100 text-amber-700'
+                                            }`}>
+                                            {successData.purpose}
+                                        </span>
+                                        {successData.scheduleCount > 0 && (
+                                            <span className="text-xs text-gray-500">
+                                                {successData.scheduleCount} kegiatan tercatat
+                                            </span>
+                                        )}
+                                    </div>
+                                    <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans max-h-40 overflow-y-auto">
+                                        {successData.scheduleInfo}
+                                    </pre>
+                                </div>
+
+                                {/* Location Info */}
+                                {successData.locationInfo && (
+                                    <div className="flex items-center justify-center gap-2 text-sm text-gray-600 bg-gray-100 rounded-lg p-2 mb-3">
+                                        <MapPin className="w-4 h-4" />
+                                        <span>{successData.locationInfo}</span>
+                                    </div>
+                                )}
+
+                                {/* Status */}
+                                <div className="flex items-center justify-center gap-2 text-sm text-amber-600 bg-amber-50 rounded-lg p-3">
+                                    <AlertCircle className="w-4 h-4" />
+                                    <span>Status: Menunggu Verifikasi</span>
+                                </div>
+                            </div>
+
+                            {/* Close Button */}
+                            <div className="px-6 pb-6">
+                                <button
+                                    onClick={closeSuccessModal}
+                                    className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all flex items-center justify-center gap-2"
+                                >
+                                    <CheckCircle className="w-5 h-5" />
+                                    Selesai
+                                </button>
+                            </div>
                         </div>
-                    )}
-                </div>
-                {/* Footer */}
-                <div className="px-6 pb-6">
-                    <button
-                        onClick={() => setShowNoActiveWeekModal(false)}
-                        className="w-full py-3 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all flex items-center justify-center gap-2"
-                    >
-                        <X className="w-5 h-5" />
-                        Tutup
-                    </button>
-                </div>
-            </div>
-        </div>
-    )
-}
+                    </div>
+                )
+            }
 
-{/* Global Disable Attendance Modal */ }
-{
-    showGlobalDisableModal && isAttendanceDisabledGlobally && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowGlobalDisableModal(false)} />
-            <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-                {/* Header */}
-                <div className="bg-gradient-to-r from-red-600 to-pink-600 p-6 text-center">
-                    <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <CalendarX className="w-8 h-8 text-white" />
+            {/* Special Date Warning Modal */}
+            {
+                showSpecialDateModal && todaySpecialDate && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowSpecialDateModal(false)} />
+                        <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+                            {/* Header */}
+                            <div className="bg-gradient-to-r from-red-500 to-orange-500 p-6 text-center">
+                                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <CalendarX className="w-8 h-8 text-white" />
+                                </div>
+                                <h2 className="text-xl font-bold text-white">Tanggal Libur</h2>
+                                <p className="text-white/80 text-sm mt-1">
+                                    {format(new Date(todaySpecialDate.date), 'EEEE, d MMMM yyyy', { locale: localeId })}
+                                </p>
+                            </div>
+                            {/* Content */}
+                            <div className="p-6">
+                                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                                    <p className="text-red-800 font-medium text-center">{todaySpecialDate.reason}</p>
+                                </div>
+                                <p className="text-gray-600 text-center text-sm">
+                                    Presensi tidak dapat dilakukan pada tanggal ini. Silakan hubungi bagian Keuangan jika ada pertanyaan.
+                                </p>
+                            </div>
+                            {/* Footer */}
+                            <div className="px-6 pb-6">
+                                <button
+                                    onClick={() => setShowSpecialDateModal(false)}
+                                    className="w-full py-3 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all flex items-center justify-center gap-2"
+                                >
+                                    <X className="w-5 h-5" />
+                                    Tutup
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                    <h2 className="text-xl font-bold text-white">Presensi Ditutup</h2>
-                    <p className="text-white/80 text-sm mt-1">
-                        Akses presensi dinonaktifkan sementara
-                    </p>
-                </div>
-                {/* Content */}
-                <div className="p-6">
-                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
-                        <p className="text-red-800 font-medium text-center">
-                            Mohon Maaf, Presensi Dosen Saat Ini Tidak Dapat Diakses.
-                        </p>
+                )
+            }
+
+            {/* No Active Week Modal */}
+            {
+                showNoActiveWeekModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowNoActiveWeekModal(false)} />
+                        <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+                            {/* Header */}
+                            <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-6 text-center">
+                                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <CalendarX className="w-8 h-8 text-white" />
+                                </div>
+                                <h2 className="text-xl font-bold text-white">Di Luar Minggu Kuliah</h2>
+                                <p className="text-white/80 text-sm mt-1">
+                                    {format(new Date(), 'EEEE, d MMMM yyyy', { locale: localeId })}
+                                </p>
+                            </div>
+                            {/* Content */}
+                            <div className="p-6">
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+                                    <p className="text-amber-800 font-medium text-center">
+                                        Periode Minggu Kuliah belum aktif atau sudah berakhir
+                                    </p>
+                                </div>
+                                <p className="text-gray-600 text-center text-sm">
+                                    Presensi hanya dapat dilakukan pada periode minggu kuliah yang sudah diaktifkan oleh bagian Keuangan.
+                                    Hubungi bagian Keuangan jika Anda yakin periode kuliah seharusnya masih aktif.
+                                </p>
+                                {activeWeekInfo && (
+                                    <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                                        <p className="text-sm text-green-700 text-center">
+                                            Minggu aktif terakhir: <br />
+                                            <span className="font-semibold">Minggu Ke-{activeWeekInfo.week_number}</span>
+                                            <br />
+                                            ({format(new Date(activeWeekInfo.start_date), 'd MMM', { locale: localeId })} - {format(new Date(activeWeekInfo.end_date), 'd MMM yyyy', { locale: localeId })})
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                            {/* Footer */}
+                            <div className="px-6 pb-6">
+                                <button
+                                    onClick={() => setShowNoActiveWeekModal(false)}
+                                    className="w-full py-3 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all flex items-center justify-center gap-2"
+                                >
+                                    <X className="w-5 h-5" />
+                                    Tutup
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                    <p className="text-gray-600 text-center text-sm">
-                        Sistem sedang dalam pemeliharaan atau ditutup oleh administrator.
-                        Silakan hubungi bagian Admin/Keuangan untuk informasi lebih lanjut.
-                    </p>
-                    {isAttendanceDisabledGlobally.fromDate && (
-                        <p className="text-gray-500 text-center text-xs mt-4">
-                            Ditutup sejak: {format(new Date(isAttendanceDisabledGlobally.fromDate), 'd MMMM yyyy', { locale: localeId })}
-                        </p>
-                    )}
-                </div>
-                {/* Footer */}
-                <div className="px-6 pb-6">
-                    <button
-                        onClick={() => setShowGlobalDisableModal(false)}
-                        className="w-full py-3 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all flex items-center justify-center gap-2"
-                    >
-                        <X className="w-5 h-5" />
-                        Tutup
-                    </button>
-                </div>
-            </div>
+                )
+            }
+
+            {/* Global Disable Attendance Modal */}
+            {
+                showGlobalDisableModal && isAttendanceDisabledGlobally && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowGlobalDisableModal(false)} />
+                        <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+                            {/* Header */}
+                            <div className="bg-gradient-to-r from-red-600 to-pink-600 p-6 text-center">
+                                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <CalendarX className="w-8 h-8 text-white" />
+                                </div>
+                                <h2 className="text-xl font-bold text-white">Presensi Ditutup</h2>
+                                <p className="text-white/80 text-sm mt-1">
+                                    Akses presensi dinonaktifkan sementara
+                                </p>
+                            </div>
+                            {/* Content */}
+                            <div className="p-6">
+                                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                                    <p className="text-red-800 font-medium text-center">
+                                        Mohon Maaf, Presensi Dosen Saat Ini Tidak Dapat Diakses.
+                                    </p>
+                                </div>
+                                <p className="text-gray-600 text-center text-sm">
+                                    Sistem sedang dalam pemeliharaan atau ditutup oleh administrator.
+                                    Silakan hubungi bagian Admin/Keuangan untuk informasi lebih lanjut.
+                                </p>
+                                {isAttendanceDisabledGlobally.fromDate && (
+                                    <p className="text-gray-500 text-center text-xs mt-4">
+                                        Ditutup sejak: {format(new Date(isAttendanceDisabledGlobally.fromDate), 'd MMMM yyyy', { locale: localeId })}
+                                    </p>
+                                )}
+                            </div>
+                            {/* Footer */}
+                            <div className="px-6 pb-6">
+                                <button
+                                    onClick={() => setShowGlobalDisableModal(false)}
+                                    className="w-full py-3 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all flex items-center justify-center gap-2"
+                                >
+                                    <X className="w-5 h-5" />
+                                    Tutup
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
         </div>
-    )
-}
-            </div >
-            );
+    );
 };
 
 export default DosenPresensi;
