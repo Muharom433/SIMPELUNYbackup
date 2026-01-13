@@ -822,16 +822,21 @@ const ToolLending: React.FC = () => {
                     if (!room) return false;
 
                     const roomDeptId = room.department_id;
-                    const roomProdiIds = (room as any).study_program_ids || [];
+                    const roomProdiIds: string[] = (room as any).study_program_ids || [];
 
-                    // Case 1: Department exists and matches user's department -> SHOW
-                    if (roomDeptId && roomDeptId === userDeptId) {
-                        return true;
-                    }
+                    // Check if room has specific study_program_ids restrictions
+                    const hasProdiRestrictions = roomProdiIds.length > 0;
 
-                    // Case 2: Department is null/general BUT study_program_ids includes user's prodi -> SHOW
-                    if (!roomDeptId && selectedStudyProgramId && roomProdiIds.includes(selectedStudyProgramId)) {
-                        return true;
+                    if (hasProdiRestrictions) {
+                        // Room has specific study program restrictions
+                        // User's study program MUST be in the array to access this equipment
+                        return roomProdiIds.includes(selectedStudyProgramId);
+                    } else {
+                        // Room has no study program restrictions (study_program_ids is empty)
+                        // Allow if department matches
+                        if (roomDeptId && roomDeptId === userDeptId) {
+                            return true;
+                        }
                     }
 
                     // Otherwise -> HIDE
