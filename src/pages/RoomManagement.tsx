@@ -136,6 +136,7 @@ const RoomManagement: React.FC = () => {
     // QR Code State
     const [showQRModal, setShowQRModal] = useState(false);
     const [selectedRoomForQR, setSelectedRoomForQR] = useState<EnhancedRoomStatus | null>(null);
+    const [isDownloadingQR, setIsDownloadingQR] = useState(false);
 
 
     // Refs untuk dropdown manual DOM manipulation
@@ -722,22 +723,32 @@ const RoomManagement: React.FC = () => {
         const element = document.getElementById('qr-card-element');
         if (!element || !selectedRoomForQR) return;
 
-        try {
-            const canvas = await html2canvas(element, {
-                backgroundColor: '#ffffff',
-                scale: 2 // Higher resolution
-            });
+        // Set loading immediately
+        setIsDownloadingQR(true);
 
-            const link = document.createElement('a');
-            link.download = `QR-${selectedRoomForQR.name.replace(/\s+/g, '-')}.png`;
-            link.href = canvas.toDataURL('image/png');
-            link.click();
+        // Give a small delay (500ms) to ensure the UI repaints and the user 
+        // clearly sees the "Processing..." state and animation BEFORE
+        // the heavy html2canvas operation blocks the main thread.
+        setTimeout(async () => {
+            try {
+                const canvas = await html2canvas(element, {
+                    backgroundColor: '#ffffff',
+                    scale: 2 // Higher resolution
+                });
 
-            alert.success(getText('QR Code downloaded successfully', 'QR Code berhasil diunduh'));
-        } catch (error) {
-            console.error('Error downloading QR:', error);
-            alert.error(getText('Failed to download QR Code', 'Gagal mengunduh QR Code'));
-        }
+                const link = document.createElement('a');
+                link.download = `QR-${selectedRoomForQR.name.replace(/\s+/g, '-')}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+
+                alert.success(getText('QR Code downloaded successfully', 'QR Code berhasil diunduh'));
+            } catch (error) {
+                console.error('Error downloading QR:', error);
+                alert.error(getText('Failed to download QR Code', 'Gagal mengunduh QR Code'));
+            } finally {
+                setIsDownloadingQR(false);
+            }
+        }, 500);
     };
 
     const getRoleColor = (role: string) => {
@@ -2157,10 +2168,23 @@ const RoomManagement: React.FC = () => {
                                 </button>
                                 <button
                                     onClick={downloadQR}
-                                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center justify-center gap-2"
+                                    disabled={isDownloadingQR}
+                                    className={`flex-1 px-4 py-2 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all duration-200 ${isDownloadingQR
+                                        ? 'bg-blue-400 cursor-wait opacity-80'
+                                        : 'bg-blue-600 hover:bg-blue-700 hover:shadow-md'
+                                        }`}
                                 >
-                                    <Download className="w-4 h-4" />
-                                    Download
+                                    {isDownloadingQR ? (
+                                        <>
+                                            <RefreshCw className="w-4 h-4 animate-spin" />
+                                            <span>{getText('Processing...', 'Memproses...')}</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Download className="w-4 h-4" />
+                                            <span>Download</span>
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         </div>

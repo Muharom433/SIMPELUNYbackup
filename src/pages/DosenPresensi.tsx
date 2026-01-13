@@ -524,15 +524,15 @@ const DosenPresensi: React.FC = () => {
         return () => clearInterval(timer);
     }, []);
 
-    // Initialize camera when tab is presensi
+    // Initialize camera when tab is presensi AND room is scanned
     useEffect(() => {
-        if (activeTab === 'presensi') {
+        if (activeTab === 'presensi' && scannedRoomId) {
             initCamera();
         }
         return () => {
             stopCamera();
         };
-    }, [activeTab]);
+    }, [activeTab, scannedRoomId]);
 
     // Check if lecturer already attended today
     useEffect(() => {
@@ -597,7 +597,13 @@ const DosenPresensi: React.FC = () => {
             const timeoutId = setTimeout(() => {
                 const scanner = new Html5QrcodeScanner(
                     "qr-reader",
-                    { fps: 10, qrbox: { width: 250, height: 250 } },
+                    {
+                        fps: 10,
+                        qrbox: { width: 250, height: 250 },
+                        videoConstraints: {
+                            facingMode: "environment"
+                        }
+                    },
                     /* verbose= */ false
                 );
 
@@ -797,7 +803,8 @@ const DosenPresensi: React.FC = () => {
                     title
                 `)
                 .eq('date', todayStr)
-                .or(`supervisor.ilike.%${lecturerName}%,examiner.ilike.%${lecturerName}%,secretary.ilike.%${lecturerName}%`);
+                // Use double quotes around the pattern to handle commas in names/titles
+                .or(`supervisor.ilike."%${lecturerName}%",examiner.ilike."%${lecturerName}%",secretary.ilike."%${lecturerName}%"`);
 
             console.log('[detectAllSchedules] Final sessions query result:', { sessionData, sessionError });
 
@@ -905,21 +912,9 @@ const DosenPresensi: React.FC = () => {
 
         try {
             // Upload Signature
-            const signatureUrlData = signatureRef.current.toDataURL();
-            const signatureBlob = await (await fetch(signatureUrlData)).blob();
-            const signatureFileName = `signature_${selectedLecturerId}_${Date.now()}.png`;
-
-            const { error: uploadError } = await supabase.storage
-                .from('attendance_signatures')
-                .upload(signatureFileName, signatureBlob);
-
-            if (uploadError) throw uploadError;
-
-            const { data: publicUrlData } = supabase.storage
-                .from('attendance_signatures')
-                .getPublicUrl(signatureFileName);
-
-            const signatureUrl = publicUrlData.publicUrl;
+            // Use Data URL directly for signature (stored as text in DB, consistent with photo_capture)
+            // This avoids "Bucket not found" error if the attendance_signatures bucket is missing
+            const signatureUrl = signatureRef.current.toDataURL();
 
             // Capture photo automatically
             const photoData = capturePhoto();

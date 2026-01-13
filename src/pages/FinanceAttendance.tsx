@@ -229,7 +229,7 @@ const FinanceAttendance: React.FC = () => {
 
             let query = supabase
                 .from('lecturer_attendance')
-                .select('*, study_program:study_programs(id, name)')
+                .select('*, study_program:study_programs(id, name), details:lecturer_attendance_details(*)')
                 .gte('attendance_date', dateRange.start)
                 .lte('attendance_date', dateRange.end)
                 .order('attendance_date', { ascending: false })
@@ -881,18 +881,35 @@ const FinanceAttendance: React.FC = () => {
                 const details = record.details || [];
 
                 let courses = details.map((d: any) => d?.course_name).filter(Boolean);
+                // Deduplicate courses immediately
+                courses = [...new Set(courses)];
+
                 // Fallback to purpose if no courses
                 if (courses.length === 0) {
                     const purpose = record.purpose_description || record.purpose;
                     if (purpose) courses = [purpose];
                 }
 
-                let classes = details.map((d: any) => d?.class_group).filter(Boolean);
+                let classesRaw = details.map((d: any) => d?.class_group).filter(Boolean);
+                // Format and Dedupe classes
+                let classes = [...new Set(classesRaw.map((c: string) => {
+                    const s = String(c);
+                    return s.toLowerCase().includes('rombel') ? s : `rombel ${s}`;
+                }))];
+
                 if (classes.length === 0) classes = ['-'];
 
                 let prodi = '';
-                if (!isHomebase && details.length > 0) {
-                    prodi = details[0]?.study_program_name || record.study_program?.name || '-';
+                if (details.length > 0) {
+                    // Extract unique prodis from details
+                    const prodis = details.map((d: any) => d?.study_program_name).filter(Boolean);
+                    const uniqueProdis = [...new Set(prodis)];
+
+                    if (uniqueProdis.length > 0) {
+                        prodi = uniqueProdis.join(', ');
+                    } else {
+                        prodi = record.study_program?.name || '-';
+                    }
                 } else {
                     prodi = record.study_program?.name || '-';
                 }
@@ -937,8 +954,8 @@ const FinanceAttendance: React.FC = () => {
 
             // Table Config
             const tableStartY = 50;
-            const colWidths = [10, 40, 30, 40, 20, 20, 25];
-            const headers = ['NO', 'NAMA', 'PRODI', 'MATA KULIAH', 'KELAS', 'QR DETAIL', 'TTD'];
+            const colWidths = [10, 40, 30, 40, 20, 25, 20];
+            const headers = ['NO', 'NAMA', 'PRODI', 'MATA KULIAH', 'KELAS', 'TTD', 'QR DETAIL'];
 
             // Draw Header
             let x = 14;
@@ -981,15 +998,29 @@ const FinanceAttendance: React.FC = () => {
                 x += colWidths[0];
 
                 // NAME
-                const nameLines = doc.splitTextToSize(entry.lecturerName, colWidths[1] - 4);
-                if (nameLines.length > 4) doc.setFontSize(7);
+                let nameLines = doc.splitTextToSize(entry.lecturerName, colWidths[1] - 4);
+                if (nameLines.length > 4) {
+                    doc.setFontSize(6);
+                    nameLines = doc.splitTextToSize(entry.lecturerName, colWidths[1] - 4);
+                    if (nameLines.length > 6) {
+                        nameLines = nameLines.slice(0, 6);
+                        nameLines[5] += '...';
+                    }
+                }
                 doc.text(nameLines, x + 2, currentY + 5);
                 doc.setFontSize(8);
                 x += colWidths[1];
 
                 // PRODI
-                const prodiLines = doc.splitTextToSize(entry.prodi, colWidths[2] - 4);
-                if (prodiLines.length > 4) doc.setFontSize(7);
+                let prodiLines = doc.splitTextToSize(entry.prodi, colWidths[2] - 4);
+                if (prodiLines.length > 4) {
+                    doc.setFontSize(6);
+                    prodiLines = doc.splitTextToSize(entry.prodi, colWidths[2] - 4);
+                    if (prodiLines.length > 6) {
+                        prodiLines = prodiLines.slice(0, 6);
+                        prodiLines[5] += '...';
+                    }
+                }
                 doc.text(prodiLines, x + 2, currentY + 5);
                 doc.setFontSize(8);
                 x += colWidths[2];
@@ -1010,27 +1041,38 @@ const FinanceAttendance: React.FC = () => {
                 x += colWidths[3];
 
                 // KELAS
-                const kelasLines = doc.splitTextToSize(entry.classes.join(', '), colWidths[4] - 4);
+                const kelasText = entry.classes.join(', ');
+                let kelasLines = doc.splitTextToSize(kelasText, colWidths[4] - 4);
+                if (kelasLines.length > 4) {
+                    doc.setFontSize(6);
+                    kelasLines = doc.splitTextToSize(kelasText, colWidths[4] - 4);
+                    if (kelasLines.length > 6) {
+                        kelasLines = kelasLines.slice(0, 6);
+                        kelasLines[5] += '...';
+                    }
+                }
                 doc.text(kelasLines, x + 2, currentY + 5);
+                doc.setFontSize(8);
                 x += colWidths[4];
 
-                // QR
-                const detailUrl = `${window.location.origin}/#/presence-detail?lecturerId=${entry.lecturerId}&date=${selectedDate}`;
-                try {
-                    const qrDataUrl = await QRCode.toDataURL(detailUrl, { margin: 1, width: 50 });
-                    doc.addImage(qrDataUrl, 'PNG', x + 3, currentY + 1, 13, 13);
-                } catch (qrErr) {
-                    console.error('QR Error', qrErr);
-                }
-                x += colWidths[5];
-
-                // TTD
+                // TTD (Swapped to col 5)
                 if (entry.signatureUrl) {
                     try {
                         doc.addImage(entry.signatureUrl, 'PNG', x + 2, currentY + 2, 20, 10);
                     } catch (e) {
                         doc.text('-', x + 2, currentY + 5);
                     }
+                }
+                x += colWidths[5];
+
+                // QR (Swapped to col 6)
+                const detailUrl = `${window.location.origin}/#/presence-detail?lecturerId=${entry.lecturerId}&date=${selectedDate}`;
+                try {
+                    const qrDataUrl = await QRCode.toDataURL(detailUrl, { margin: 1, width: 50 });
+                    // Adjust width/height as this column is now 20 (was 13 sized img in 20 col)
+                    doc.addImage(qrDataUrl, 'PNG', x + 3, currentY + 1, 13, 13);
+                } catch (qrErr) {
+                    console.error('QR Error', qrErr);
                 }
                 x += colWidths[6];
 
