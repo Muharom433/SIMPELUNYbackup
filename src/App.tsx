@@ -44,6 +44,7 @@ const FormResponses = React.lazy(() => import('./pages/FormResponses'));
 // Lazy loaded components for Finance/Attendance feature
 const DosenPresensi = React.lazy(() => import('./pages/DosenPresensi'));
 const FinanceAttendance = React.lazy(() => import('./pages/FinanceAttendance'));
+const AttendanceDailyDetail = React.lazy(() => import('./pages/AttendanceDailyDetail'));
 
 // Loading component for Suspense fallback
 const LazyLoadingFallback = () => (
@@ -130,6 +131,7 @@ const AppContent = () => {
         <Route path="form/:id" element={<Suspense fallback={<LazyLoadingFallback />}><FormView /></Suspense>} />
         <Route path="tendik" element={<Suspense fallback={<LazyLoadingFallback />}><TendikDirectory /></Suspense>} />
         <Route path="presensi-dosen" element={<Suspense fallback={<LazyLoadingFallback />}><DosenPresensi /></Suspense>} />
+        <Route path="attendance-daily-detail" element={<Suspense fallback={<LazyLoadingFallback />}><AttendanceDailyDetail /></Suspense>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

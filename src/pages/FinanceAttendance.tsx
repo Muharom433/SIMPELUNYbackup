@@ -948,45 +948,60 @@ const FinanceAttendance: React.FC = () => {
             doc.text('SEMESTER GENAP TAHUN 2025/2026', 105, 22, { align: 'center' });
 
             doc.setFont('helvetica', 'normal');
-            doc.setFontSize(10);
+            doc.setFontSize(11);
             doc.text(`HARI         : ${format(dateObj, 'EEEE', { locale: localeId }).toUpperCase()}`, 14, 35);
             doc.text(`TANGGAL   : ${format(dateObj, 'd MMMM yyyy', { locale: localeId })}`, 14, 42);
 
-            // Table Config
+            // Table Config - Adjusted widths for font size 11
             const tableStartY = 50;
-            const colWidths = [10, 40, 30, 40, 20, 25, 20];
-            const headers = ['NO', 'NAMA', 'PRODI', 'MATA KULIAH', 'KELAS', 'TTD', 'QR DETAIL'];
+            // NO(10), NAMA(42), PRODI(32), MATA KULIAH(45), KELAS(25), TTD(28) = 182mm total
+            const colWidths = [10, 42, 32, 45, 25, 28];
+            const headers = ['NO', 'NAMA', 'PRODI', 'MATA KULIAH', 'KELAS', 'TTD'];
+            const tableWidth = colWidths.reduce((a, b) => a + b, 0);
 
             // Draw Header
             let x = 14;
             doc.setFillColor(240, 240, 240);
-            doc.rect(14, tableStartY, colWidths.reduce((a, b) => a + b, 0), 10, 'FD');
+            doc.rect(14, tableStartY, tableWidth, 10, 'FD');
             doc.setFont('helvetica', 'bold');
-            doc.setFontSize(8);
+            doc.setFontSize(11);
 
             headers.forEach((header, i) => {
-                doc.text(header, x + 2, tableStartY + 6);
+                doc.text(header, x + 2, tableStartY + 7);
                 x += colWidths[i];
             });
 
-            // Draw Rows
+            // Draw Rows with font size 11
             doc.setFont('helvetica', 'normal');
             let currentY = tableStartY + 10;
-            const maxRowHeight = 15; // 1.5 cm
+            const maxRowHeight = 14; // Increased for font size 11
 
             for (let i = 0; i < entries.length; i++) {
                 const entry = entries[i];
 
-                if (currentY + maxRowHeight > 280) {
+                // Check if we need a new page (leave space for potential QR)
+                if (currentY + maxRowHeight > 270) {
                     doc.addPage();
                     currentY = 20;
+
+                    // Redraw header on new page
+                    doc.setFillColor(240, 240, 240);
+                    doc.rect(14, currentY, tableWidth, 10, 'FD');
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(11);
                     x = 14;
+                    headers.forEach((header, idx) => {
+                        doc.text(header, x + 2, currentY + 7);
+                        x += colWidths[idx];
+                    });
+                    doc.setFont('helvetica', 'normal');
+                    currentY += 10;
                 }
 
                 x = 14;
-                doc.setFontSize(8);
+                doc.setFontSize(11);
 
-                // Borders
+                // Draw row borders
                 let tempX = x;
                 colWidths.forEach(width => {
                     doc.rect(tempX, currentY, width, maxRowHeight);
@@ -994,97 +1009,127 @@ const FinanceAttendance: React.FC = () => {
                 });
 
                 // NO
-                doc.text((i + 1).toString(), x + 2, currentY + 5);
+                doc.text((i + 1).toString(), x + 3, currentY + 9);
                 x += colWidths[0];
 
-                // NAME
+                // NAME - use smaller font if text is too long
+                doc.setFontSize(10);
                 let nameLines = doc.splitTextToSize(entry.lecturerName, colWidths[1] - 4);
-                if (nameLines.length > 4) {
-                    doc.setFontSize(6);
+                if (nameLines.length > 2) {
+                    doc.setFontSize(8);
                     nameLines = doc.splitTextToSize(entry.lecturerName, colWidths[1] - 4);
-                    if (nameLines.length > 6) {
-                        nameLines = nameLines.slice(0, 6);
-                        nameLines[5] += '...';
+                    if (nameLines.length > 2) {
+                        nameLines = nameLines.slice(0, 2);
+                        nameLines[1] = nameLines[1]?.substring(0, nameLines[1].length - 3) + '...';
                     }
                 }
-                doc.text(nameLines, x + 2, currentY + 5);
-                doc.setFontSize(8);
+                doc.text(nameLines, x + 2, currentY + 6);
+                doc.setFontSize(11);
                 x += colWidths[1];
 
                 // PRODI
+                doc.setFontSize(10);
                 let prodiLines = doc.splitTextToSize(entry.prodi, colWidths[2] - 4);
-                if (prodiLines.length > 4) {
-                    doc.setFontSize(6);
+                if (prodiLines.length > 2) {
+                    doc.setFontSize(8);
                     prodiLines = doc.splitTextToSize(entry.prodi, colWidths[2] - 4);
-                    if (prodiLines.length > 6) {
-                        prodiLines = prodiLines.slice(0, 6);
-                        prodiLines[5] += '...';
+                    if (prodiLines.length > 2) {
+                        prodiLines = prodiLines.slice(0, 2);
+                        prodiLines[1] = prodiLines[1]?.substring(0, prodiLines[1].length - 3) + '...';
                     }
                 }
-                doc.text(prodiLines, x + 2, currentY + 5);
-                doc.setFontSize(8);
+                doc.text(prodiLines, x + 2, currentY + 6);
+                doc.setFontSize(11);
                 x += colWidths[2];
 
-                // MK
+                // MATA KULIAH
+                doc.setFontSize(10);
                 let mkText = entry.courses.join(', ');
                 let mkLines = doc.splitTextToSize(mkText, colWidths[3] - 4);
-                if (mkLines.length > 4) {
-                    doc.setFontSize(6);
+                if (mkLines.length > 2) {
+                    doc.setFontSize(8);
                     mkLines = doc.splitTextToSize(mkText, colWidths[3] - 4);
-                    if (mkLines.length > 6) {
-                        mkLines = mkLines.slice(0, 6);
-                        mkLines[5] += '...';
+                    if (mkLines.length > 2) {
+                        mkLines = mkLines.slice(0, 2);
+                        mkLines[1] = mkLines[1]?.substring(0, mkLines[1].length - 3) + '...';
                     }
                 }
-                doc.text(mkLines, x + 2, currentY + 5);
-                doc.setFontSize(8);
+                doc.text(mkLines, x + 2, currentY + 6);
+                doc.setFontSize(11);
                 x += colWidths[3];
 
                 // KELAS
+                doc.setFontSize(10);
                 const kelasText = entry.classes.join(', ');
                 let kelasLines = doc.splitTextToSize(kelasText, colWidths[4] - 4);
-                if (kelasLines.length > 4) {
-                    doc.setFontSize(6);
+                if (kelasLines.length > 2) {
+                    doc.setFontSize(8);
                     kelasLines = doc.splitTextToSize(kelasText, colWidths[4] - 4);
-                    if (kelasLines.length > 6) {
-                        kelasLines = kelasLines.slice(0, 6);
-                        kelasLines[5] += '...';
+                    if (kelasLines.length > 2) {
+                        kelasLines = kelasLines.slice(0, 2);
+                        kelasLines[1] = kelasLines[1]?.substring(0, kelasLines[1].length - 3) + '...';
                     }
                 }
-                doc.text(kelasLines, x + 2, currentY + 5);
-                doc.setFontSize(8);
+                doc.text(kelasLines, x + 2, currentY + 6);
+                doc.setFontSize(11);
                 x += colWidths[4];
 
-                // TTD (Swapped to col 5)
+                // TTD (Signature)
                 if (entry.signatureUrl) {
                     try {
-                        doc.addImage(entry.signatureUrl, 'PNG', x + 2, currentY + 2, 20, 10);
+                        doc.addImage(entry.signatureUrl, 'PNG', x + 2, currentY + 2, 24, 10);
                     } catch (e) {
-                        doc.text('-', x + 2, currentY + 5);
+                        doc.text('-', x + colWidths[5] / 2, currentY + 9, { align: 'center' });
                     }
+                } else {
+                    doc.text('-', x + colWidths[5] / 2, currentY + 9, { align: 'center' });
                 }
-                x += colWidths[5];
-
-                // QR (Swapped to col 6)
-                const detailUrl = `${window.location.origin}/#/presence-detail?lecturerId=${entry.lecturerId}&date=${selectedDate}`;
-                try {
-                    const qrDataUrl = await QRCode.toDataURL(detailUrl, { margin: 1, width: 50 });
-                    // Adjust width/height as this column is now 20 (was 13 sized img in 20 col)
-                    doc.addImage(qrDataUrl, 'PNG', x + 3, currentY + 1, 13, 13);
-                } catch (qrErr) {
-                    console.error('QR Error', qrErr);
-                }
-                x += colWidths[6];
 
                 currentY += maxRowHeight;
+            }
+
+            // ============================================
+            // QR CODE POSITIONED BELOW TABLE (DYNAMIC)
+            // Following the table rows, right-aligned
+            // ============================================
+            const qrSize = 30; // QR code size (30mm x 30mm)
+            const qrX = 14 + tableWidth - qrSize; // Right side of table
+            let qrY = currentY + 10; // 10mm below the last row
+
+            // If QR would go off page, add new page
+            if (qrY + qrSize + 10 > 280) {
+                doc.addPage();
+                qrY = 30;
+            }
+
+            // QR code URL pointing to the new daily attendance detail page
+            const detailUrl = `${window.location.origin}/#/attendance-daily-detail?date=${selectedDate}&type=${type}`;
+
+            try {
+                const qrDataUrl = await QRCode.toDataURL(detailUrl, { margin: 1, width: 200, errorCorrectionLevel: 'M' });
+
+                // Draw label above QR
+                doc.setFontSize(9);
+                doc.setFont('helvetica', 'italic');
+                doc.text('Scan untuk verifikasi:', qrX, qrY - 3);
+
+                // Draw QR code
+                doc.addImage(qrDataUrl, 'PNG', qrX, qrY, qrSize, qrSize);
+
+                // Draw border around QR
+                doc.setDrawColor(180, 180, 180);
+                doc.rect(qrX - 1, qrY - 1, qrSize + 2, qrSize + 2);
+
+            } catch (qrErr) {
+                console.error('QR generation error:', qrErr);
             }
 
             // Page Numbers
             const pageCount = (doc as any).internal.getNumberOfPages();
             for (let i = 1; i <= pageCount; i++) {
                 doc.setPage(i);
-                doc.setFontSize(8);
-                doc.text(`Page ${i} of ${pageCount}`, 200, 290, { align: 'right' });
+                doc.setFontSize(10);
+                doc.text(`Halaman ${i} dari ${pageCount}`, 105, 290, { align: 'center' });
             }
 
             const typeLabel = type === 'homebase' ? 'Homebase' : 'Non_Homebase';
