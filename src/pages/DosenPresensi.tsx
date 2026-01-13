@@ -590,47 +590,61 @@ const DosenPresensi: React.FC = () => {
         }
     }, [selectedLecturerId, lecturers, hasAttendedToday]);
 
-    // QR Scanner Effect
+    // QR Scanner Effect - AUTO START, NO UI SELECTION
     useEffect(() => {
         if (activeTab === 'presensi' && !scannedRoomId && !showSpecialDateModal && !showNoActiveWeekModal && !showGlobalDisableModal) {
-            // Delay slightly to ensure DOM is ready
-            const timeoutId = setTimeout(() => {
-                const scanner = new Html5QrcodeScanner(
-                    "qr-reader",
-                    {
-                        fps: 10,
-                        qrbox: { width: 250, height: 250 },
-                        videoConstraints: {
-                            facingMode: "environment"
+
+            // Use Html5Qrcode directly for programmatic control without the default UI
+            const { Html5Qrcode } = require("html5-qrcode");
+            const html5QrCode = new Html5Qrcode("qr-reader");
+
+            const startScanning = async () => {
+                try {
+                    // Priority: Environment (Back) Camera
+                    const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+                    await html5QrCode.start(
+                        { facingMode: "environment" },
+                        config,
+                        (decodedText: string) => {
+                            // SUCCESS
+                            console.log("Scanned:", decodedText);
+
+                            // Stop scanning immediately after success
+                            html5QrCode.stop().then(() => {
+                                setScannedRoomId(decodedText);
+
+                                // Optional: Fetch room name
+                                supabase.from('rooms').select('name').eq('id', decodedText).single()
+                                    .then(({ data }) => {
+                                        if (data) setScannedRoomName(data.name);
+                                    });
+
+                                toast.success('Ruangan berhasil di-scan!');
+                            }).catch((err: any) => console.error("Failed to stop scanner", err));
+                        },
+                        (errorMessage: any) => {
+                            // parse error, ignore to avoid spamming console
                         }
-                    },
-                    /* verbose= */ false
-                );
+                    );
+                } catch (err) {
+                    console.error("Error starting QR scanner:", err);
+                    setCameraError("Gagal memulai kamera. Pastikan izin diberikan.");
+                }
+            };
 
-                scanner.render((decodedText) => {
-                    // Assuming QR code contains the ROOM ID
-                    console.log("Scanned:", decodedText);
-                    setScannedRoomId(decodedText);
-                    scanner.clear().catch(console.error);
-
-                    // Optional: Fetch room name
-                    supabase.from('rooms').select('name').eq('id', decodedText).single()
-                        .then(({ data }) => {
-                            if (data) setScannedRoomName(data.name);
-                        });
-
-                    toast.success('Ruangan berhasil di-scan!');
-                }, (errorMessage) => {
-                    // parse error, ignore
-                });
-
-                // Cleanup function inside the effect
-                return () => {
-                    scanner.clear().catch(() => { });
-                };
+            // Small delay to ensure DOM is ready
+            const timeoutId = setTimeout(() => {
+                startScanning();
             }, 500);
 
-            return () => clearTimeout(timeoutId);
+            // Cleanup
+            return () => {
+                clearTimeout(timeoutId);
+                if (html5QrCode && html5QrCode.isScanning) {
+                    html5QrCode.stop().catch((err: any) => console.error("Failed to stop on cleanup", err));
+                }
+            };
         }
     }, [activeTab, scannedRoomId, showSpecialDateModal, showNoActiveWeekModal, showGlobalDisableModal]);
 
@@ -1516,11 +1530,11 @@ const DosenPresensi: React.FC = () => {
                                 <PenTool className="w-5 h-5 text-blue-600" />
                                 Tanda Tangan Digital
                             </h2>
-                            <div className={`border-2 rounded-xl overflow-hidden ${signatureError ? 'border-red-300' : 'border-gray-200 border-dashed'}`}>
+                            <div className={`border-2 rounded-xl overflow-hidden mx-auto max-w-full ${signatureError ? 'border-red-300' : 'border-gray-200 border-dashed'}`}>
                                 <SignatureCanvas
                                     ref={signatureRef}
                                     canvasProps={{
-                                        className: 'w-full h-40 bg-gray-50 cursor-crosshair',
+                                        className: 'w-full h-40 bg-gray-50 cursor-crosshair block',
                                         height: 160
                                     }}
                                     onBegin={() => setSignatureError(null)}
@@ -1529,17 +1543,18 @@ const DosenPresensi: React.FC = () => {
                             <div className="flex justify-between items-center mt-2">
                                 <p className="text-xs text-gray-500">Tanda tangan pada area di atas</p>
                                 <button
-                                    onClick={() => signatureRef.current?.clear()}
+                                    type="button"
+                                    onClick={() => {
+                                        signatureRef.current?.clear();
+                                        setSignatureError(null);
+                                    }}
                                     className="text-xs text-red-600 hover:text-red-700 font-medium"
                                 >
                                     Hapus & Ulangi
                                 </button>
                             </div>
                             {signatureError && (
-                                <p className="text-sm text-red-600 mt-2 flex items-center gap-1">
-                                    <AlertCircle className="w-4 h-4" />
-                                    {signatureError}
-                                </p>
+                                <p className="text-xs text-red-500 mt-1">{signatureError}</p>
                             )}
                         </div>
 
@@ -1579,7 +1594,7 @@ const DosenPresensi: React.FC = () => {
                             )}
                         </button>
 
-                    </div >
+                    </div>
                 ) : (
                     /* UNY Presensi Tab - Full Frame iFrame */
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1607,239 +1622,192 @@ const DosenPresensi: React.FC = () => {
                         </div>
                     </div>
                 )}
-            </div >
+            </div>
 
             {/* Footer */}
-            < div className="py-8 text-center text-sm text-gray-400" >
+            <div className="py-8 text-center text-sm text-gray-400">
                 SIMPEL Kuliah © {new Date().getFullYear()}
+
+                {/* Lecturer Info */}
+                <div className="text-center mb-4">
+                    <h4 className="text-xl font-bold text-gray-900 mb-1">{successData.lecturerName}</h4>
+                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                        <Clock className="w-4 h-4" />
+                        {successData.time} WIB
+                    </div>
+                </div>
+
+                {/* Location Info */}
+                {successData.locationInfo && (
+                    <div className="flex items-center justify-center gap-2 text-sm text-gray-600 bg-gray-100 rounded-lg p-2 mb-3">
+                        <MapPin className="w-4 h-4" />
+                        <span>{successData.locationInfo}</span>
+                    </div>
+                )}
+
+                {/* Status */}
+                <div className="flex items-center justify-center gap-2 text-sm text-amber-600 bg-amber-50 rounded-lg p-3">
+                    <AlertCircle className="w-4 h-4" />
+                    <span>Status: Menunggu Verifikasi</span>
+                </div>
+            </div>
+
+            {/* Close Button */}
+            <div className="px-6 pb-6">
+                <button
+                    onClick={closeSuccessModal}
+                    className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all flex items-center justify-center gap-2"
+                >
+                    <CheckCircle className="w-5 h-5" />
+                    Selesai
+                </button>
+            </div>
+        </div>
             </div >
+        )}
 
-            {/* Success Modal */}
-            {
-                showSuccessModal && successData && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-                        <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-300">
-                            {/* Success Header */}
-                            <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 text-center">
-                                <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <PartyPopper className="w-10 h-10 text-white" />
-                                </div>
-                                <h3 className="text-2xl font-bold text-white mb-1">Presensi Berhasil!</h3>
-                                <p className="text-emerald-100 text-sm">Data kehadiran Anda telah tercatat</p>
-                            </div>
-
-                            {/* Photo & Info */}
-                            <div className="p-6">
-                                {/* Captured Photo */}
-                                <div className="mb-4">
-                                    <img
-                                        src={successData.photo}
-                                        alt="Foto Presensi"
-                                        className="w-32 h-32 rounded-2xl object-cover mx-auto border-4 border-emerald-100 shadow-lg"
-                                    />
-                                </div>
-
-                                {/* Lecturer Info */}
-                                <div className="text-center mb-4">
-                                    <h4 className="text-xl font-bold text-gray-900 mb-1">{successData.lecturerName}</h4>
-                                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
-                                        <Clock className="w-4 h-4" />
-                                        {successData.time} WIB
-                                    </div>
-                                </div>
-
-                                {/* Schedule/Purpose Info */}
-                                <div className="bg-gray-50 rounded-xl p-4 mb-4">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${successData.purpose === 'Mengajar' ? 'bg-blue-100 text-blue-700' :
-                                            successData.purpose === 'Sidang' ? 'bg-purple-100 text-purple-700' :
-                                                'bg-amber-100 text-amber-700'
-                                            }`}>
-                                            {successData.purpose}
-                                        </span>
-                                        {successData.scheduleCount > 0 && (
-                                            <span className="text-xs text-gray-500">
-                                                {successData.scheduleCount} kegiatan tercatat
-                                            </span>
-                                        )}
-                                    </div>
-                                    <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans max-h-40 overflow-y-auto">
-                                        {successData.scheduleInfo}
-                                    </pre>
-                                </div>
-
-                                {/* Location Info */}
-                                {successData.locationInfo && (
-                                    <div className="flex items-center justify-center gap-2 text-sm text-gray-600 bg-gray-100 rounded-lg p-2 mb-3">
-                                        <MapPin className="w-4 h-4" />
-                                        <span>{successData.locationInfo}</span>
-                                    </div>
-                                )}
-
-                                {/* Status */}
-                                <div className="flex items-center justify-center gap-2 text-sm text-amber-600 bg-amber-50 rounded-lg p-3">
-                                    <AlertCircle className="w-4 h-4" />
-                                    <span>Status: Menunggu Verifikasi</span>
-                                </div>
-                            </div>
-
-                            {/* Close Button */}
-                            <div className="px-6 pb-6">
-                                <button
-                                    onClick={closeSuccessModal}
-                                    className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all flex items-center justify-center gap-2"
-                                >
-                                    <CheckCircle className="w-5 h-5" />
-                                    Selesai
-                                </button>
-                            </div>
-                        </div>
+{/* Special Date Warning Modal */ }
+{
+    showSpecialDateModal && todaySpecialDate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowSpecialDateModal(false)} />
+            <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+                {/* Header */}
+                <div className="bg-gradient-to-r from-red-500 to-orange-500 p-6 text-center">
+                    <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <CalendarX className="w-8 h-8 text-white" />
                     </div>
-                )
-            }
-
-            {/* Special Date Warning Modal */}
-            {
-                showSpecialDateModal && todaySpecialDate && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                        <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowSpecialDateModal(false)} />
-                        <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-                            {/* Header */}
-                            <div className="bg-gradient-to-r from-red-500 to-orange-500 p-6 text-center">
-                                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <CalendarX className="w-8 h-8 text-white" />
-                                </div>
-                                <h2 className="text-xl font-bold text-white">Tanggal Libur</h2>
-                                <p className="text-white/80 text-sm mt-1">
-                                    {format(new Date(todaySpecialDate.date), 'EEEE, d MMMM yyyy', { locale: localeId })}
-                                </p>
-                            </div>
-                            {/* Content */}
-                            <div className="p-6">
-                                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
-                                    <p className="text-red-800 font-medium text-center">{todaySpecialDate.reason}</p>
-                                </div>
-                                <p className="text-gray-600 text-center text-sm">
-                                    Presensi tidak dapat dilakukan pada tanggal ini. Silakan hubungi bagian Keuangan jika ada pertanyaan.
-                                </p>
-                            </div>
-                            {/* Footer */}
-                            <div className="px-6 pb-6">
-                                <button
-                                    onClick={() => setShowSpecialDateModal(false)}
-                                    className="w-full py-3 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all flex items-center justify-center gap-2"
-                                >
-                                    <X className="w-5 h-5" />
-                                    Tutup
-                                </button>
-                            </div>
-                        </div>
+                    <h2 className="text-xl font-bold text-white">Tanggal Libur</h2>
+                    <p className="text-white/80 text-sm mt-1">
+                        {format(new Date(todaySpecialDate.date), 'EEEE, d MMMM yyyy', { locale: localeId })}
+                    </p>
+                </div>
+                {/* Content */}
+                <div className="p-6">
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                        <p className="text-red-800 font-medium text-center">{todaySpecialDate.reason}</p>
                     </div>
-                )
-            }
+                    <p className="text-gray-600 text-center text-sm">
+                        Presensi tidak dapat dilakukan pada tanggal ini. Silakan hubungi bagian Keuangan jika ada pertanyaan.
+                    </p>
+                </div>
+                {/* Footer */}
+                <div className="px-6 pb-6">
+                    <button
+                        onClick={() => setShowSpecialDateModal(false)}
+                        className="w-full py-3 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all flex items-center justify-center gap-2"
+                    >
+                        <X className="w-5 h-5" />
+                        Tutup
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
 
-            {/* No Active Week Modal */}
-            {
-                showNoActiveWeekModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                        <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowNoActiveWeekModal(false)} />
-                        <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-                            {/* Header */}
-                            <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-6 text-center">
-                                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <CalendarX className="w-8 h-8 text-white" />
-                                </div>
-                                <h2 className="text-xl font-bold text-white">Di Luar Minggu Kuliah</h2>
-                                <p className="text-white/80 text-sm mt-1">
-                                    {format(new Date(), 'EEEE, d MMMM yyyy', { locale: localeId })}
-                                </p>
-                            </div>
-                            {/* Content */}
-                            <div className="p-6">
-                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
-                                    <p className="text-amber-800 font-medium text-center">
-                                        Periode Minggu Kuliah belum aktif atau sudah berakhir
-                                    </p>
-                                </div>
-                                <p className="text-gray-600 text-center text-sm">
-                                    Presensi hanya dapat dilakukan pada periode minggu kuliah yang sudah diaktifkan oleh bagian Keuangan.
-                                    Hubungi bagian Keuangan jika Anda yakin periode kuliah seharusnya masih aktif.
-                                </p>
-                                {activeWeekInfo && (
-                                    <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                                        <p className="text-sm text-green-700 text-center">
-                                            Minggu aktif terakhir: <br />
-                                            <span className="font-semibold">Minggu Ke-{activeWeekInfo.week_number}</span>
-                                            <br />
-                                            ({format(new Date(activeWeekInfo.start_date), 'd MMM', { locale: localeId })} - {format(new Date(activeWeekInfo.end_date), 'd MMM yyyy', { locale: localeId })})
-                                        </p>
-                                    </div>
-                                )}
-                            </div>
-                            {/* Footer */}
-                            <div className="px-6 pb-6">
-                                <button
-                                    onClick={() => setShowNoActiveWeekModal(false)}
-                                    className="w-full py-3 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all flex items-center justify-center gap-2"
-                                >
-                                    <X className="w-5 h-5" />
-                                    Tutup
-                                </button>
-                            </div>
-                        </div>
+{/* No Active Week Modal */ }
+{
+    showNoActiveWeekModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowNoActiveWeekModal(false)} />
+            <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+                {/* Header */}
+                <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-6 text-center">
+                    <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <CalendarX className="w-8 h-8 text-white" />
                     </div>
-                )
-            }
+                    <h2 className="text-xl font-bold text-white">Di Luar Minggu Kuliah</h2>
+                    <p className="text-white/80 text-sm mt-1">
+                        {format(new Date(), 'EEEE, d MMMM yyyy', { locale: localeId })}
+                    </p>
+                </div>
+                {/* Content */}
+                <div className="p-6">
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+                        <p className="text-amber-800 font-medium text-center">
+                            Periode Minggu Kuliah belum aktif atau sudah berakhir
+                        </p>
+                    </div>
+                    <p className="text-gray-600 text-center text-sm">
+                        Presensi hanya dapat dilakukan pada periode minggu kuliah yang sudah diaktifkan oleh bagian Keuangan.
+                        Hubungi bagian Keuangan jika Anda yakin periode kuliah seharusnya masih aktif.
+                    </p>
+                    {activeWeekInfo && (
+                        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                            <p className="text-sm text-green-700 text-center">
+                                Minggu aktif terakhir: <br />
+                                <span className="font-semibold">Minggu Ke-{activeWeekInfo.week_number}</span>
+                                <br />
+                                ({format(new Date(activeWeekInfo.start_date), 'd MMM', { locale: localeId })} - {format(new Date(activeWeekInfo.end_date), 'd MMM yyyy', { locale: localeId })})
+                            </p>
+                        </div>
+                    )}
+                </div>
+                {/* Footer */}
+                <div className="px-6 pb-6">
+                    <button
+                        onClick={() => setShowNoActiveWeekModal(false)}
+                        className="w-full py-3 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all flex items-center justify-center gap-2"
+                    >
+                        <X className="w-5 h-5" />
+                        Tutup
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
 
-            {/* Global Disable Attendance Modal */}
-            {
-                showGlobalDisableModal && isAttendanceDisabledGlobally && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                        <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowGlobalDisableModal(false)} />
-                        <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-                            {/* Header */}
-                            <div className="bg-gradient-to-r from-red-600 to-pink-600 p-6 text-center">
-                                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <CalendarX className="w-8 h-8 text-white" />
-                                </div>
-                                <h2 className="text-xl font-bold text-white">Presensi Ditutup</h2>
-                                <p className="text-white/80 text-sm mt-1">
-                                    Akses presensi dinonaktifkan sementara
-                                </p>
-                            </div>
-                            {/* Content */}
-                            <div className="p-6">
-                                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
-                                    <p className="text-red-800 font-medium text-center">
-                                        Mohon Maaf, Presensi Dosen Saat Ini Tidak Dapat Diakses.
-                                    </p>
-                                </div>
-                                <p className="text-gray-600 text-center text-sm">
-                                    Sistem sedang dalam pemeliharaan atau ditutup oleh administrator.
-                                    Silakan hubungi bagian Admin/Keuangan untuk informasi lebih lanjut.
-                                </p>
-                                {isAttendanceDisabledGlobally.fromDate && (
-                                    <p className="text-gray-500 text-center text-xs mt-4">
-                                        Ditutup sejak: {format(new Date(isAttendanceDisabledGlobally.fromDate), 'd MMMM yyyy', { locale: localeId })}
-                                    </p>
-                                )}
-                            </div>
-                            {/* Footer */}
-                            <div className="px-6 pb-6">
-                                <button
-                                    onClick={() => setShowGlobalDisableModal(false)}
-                                    className="w-full py-3 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all flex items-center justify-center gap-2"
-                                >
-                                    <X className="w-5 h-5" />
-                                    Tutup
-                                </button>
-                            </div>
-                        </div>
+{/* Global Disable Attendance Modal */ }
+{
+    showGlobalDisableModal && isAttendanceDisabledGlobally && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowGlobalDisableModal(false)} />
+            <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+                {/* Header */}
+                <div className="bg-gradient-to-r from-red-600 to-pink-600 p-6 text-center">
+                    <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <CalendarX className="w-8 h-8 text-white" />
                     </div>
-                )
-            }
-        </div >
-    );
+                    <h2 className="text-xl font-bold text-white">Presensi Ditutup</h2>
+                    <p className="text-white/80 text-sm mt-1">
+                        Akses presensi dinonaktifkan sementara
+                    </p>
+                </div>
+                {/* Content */}
+                <div className="p-6">
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                        <p className="text-red-800 font-medium text-center">
+                            Mohon Maaf, Presensi Dosen Saat Ini Tidak Dapat Diakses.
+                        </p>
+                    </div>
+                    <p className="text-gray-600 text-center text-sm">
+                        Sistem sedang dalam pemeliharaan atau ditutup oleh administrator.
+                        Silakan hubungi bagian Admin/Keuangan untuk informasi lebih lanjut.
+                    </p>
+                    {isAttendanceDisabledGlobally.fromDate && (
+                        <p className="text-gray-500 text-center text-xs mt-4">
+                            Ditutup sejak: {format(new Date(isAttendanceDisabledGlobally.fromDate), 'd MMMM yyyy', { locale: localeId })}
+                        </p>
+                    )}
+                </div>
+                {/* Footer */}
+                <div className="px-6 pb-6">
+                    <button
+                        onClick={() => setShowGlobalDisableModal(false)}
+                        className="w-full py-3 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all flex items-center justify-center gap-2"
+                    >
+                        <X className="w-5 h-5" />
+                        Tutup
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+            </div >
+            );
 };
 
 export default DosenPresensi;
