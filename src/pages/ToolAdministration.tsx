@@ -3107,6 +3107,61 @@ const ToolAdministration: React.FC = () => {
                                         {selectedEquipment?.rooms?.code && <div><p className="text-xs text-green-700 mb-1">{getText('Room Code', 'Kode Ruangan')}</p><p className="font-mono font-bold text-gray-900">{selectedEquipment.rooms.code}</p></div>}
                                         {selectedEquipment?.rooms?.department && <div><p className="text-xs text-green-700 mb-1">{getText('Department', 'Departemen')}</p><p className="font-bold text-blue-900">{selectedEquipment.rooms.department.name}</p></div>}
                                     </div>
+
+                                    {/* Sub-Location Details: Cabinet/Table, Rack, Box */}
+                                    {((selectedEquipment as any)?.table_id || (selectedEquipment as any)?.rack_id || (selectedEquipment as any)?.box_id) && (
+                                        <div className="mt-4 pt-3 border-t border-green-200">
+                                            <h5 className="font-semibold text-green-800 mb-2 flex items-center gap-2 text-sm">
+                                                <Layers className="h-4 w-4" />
+                                                {getText('Storage Location', 'Lokasi Penyimpanan')}
+                                            </h5>
+                                            <div className="grid grid-cols-1 gap-2">
+                                                {(selectedEquipment as any)?.table_id && (() => {
+                                                    const table = tables.find(t => t.id === (selectedEquipment as any).table_id);
+                                                    return table ? (
+                                                        <div className="flex items-center gap-2 bg-white/60 px-3 py-2 rounded-lg">
+                                                            <div className="w-7 h-7 bg-indigo-100 rounded-lg flex items-center justify-center">
+                                                                <Archive className="h-4 w-4 text-indigo-600" />
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-xs text-green-600">{getText('Cabinet/Table', 'Kabinet/Meja')}</p>
+                                                                <p className="font-semibold text-gray-900 text-sm">{table.description || `Table ${table.id.slice(0, 8)}`}</p>
+                                                            </div>
+                                                        </div>
+                                                    ) : null;
+                                                })()}
+                                                {(selectedEquipment as any)?.rack_id && (() => {
+                                                    const rack = racks.find(r => r.id === (selectedEquipment as any).rack_id);
+                                                    return rack ? (
+                                                        <div className="flex items-center gap-2 bg-white/60 px-3 py-2 rounded-lg">
+                                                            <div className="w-7 h-7 bg-teal-100 rounded-lg flex items-center justify-center">
+                                                                <Layers className="h-4 w-4 text-teal-600" />
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-xs text-green-600">{getText('Rack', 'Rak')}</p>
+                                                                <p className="font-semibold text-gray-900 text-sm">{rack.name}</p>
+                                                            </div>
+                                                        </div>
+                                                    ) : null;
+                                                })()}
+                                                {(selectedEquipment as any)?.box_id && (() => {
+                                                    const box = boxes.find(b => b.id === (selectedEquipment as any).box_id);
+                                                    return box ? (
+                                                        <div className="flex items-center gap-2 bg-white/60 px-3 py-2 rounded-lg">
+                                                            <div className="w-7 h-7 bg-amber-100 rounded-lg flex items-center justify-center">
+                                                                <BoxIcon className="h-4 w-4 text-amber-600" />
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-xs text-green-600">{getText('Box', 'Kotak')}</p>
+                                                                <p className="font-semibold text-gray-900 text-sm">{box.name}</p>
+                                                                {box.description && <p className="text-xs text-gray-500">{box.description}</p>}
+                                                            </div>
+                                                        </div>
+                                                    ) : null;
+                                                })()}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                             <div className="space-y-4">

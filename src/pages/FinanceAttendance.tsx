@@ -3,7 +3,7 @@ import {
     ClipboardCheck, BarChart3, FileText, Search, CheckCircle, XCircle,
     AlertCircle, User, Clock, Download, RefreshCw, ChevronLeft, ChevronRight,
     Eye, X, Building, Loader2, FileSpreadsheet, Users, TrendingUp, PieChart, Trash2, ChevronDown, ChevronUp,
-    BookOpen, GraduationCap
+    BookOpen, GraduationCap, Settings, Calendar, DollarSign, Plus, Save, CalendarOff
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -13,6 +13,9 @@ import { id as localeId } from 'date-fns/locale';
 import toast from 'react-hot-toast';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart as RechartsPie, Pie, LineChart, Line } from 'recharts';
 import jsPDF from 'jspdf';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
+import QRCode from 'qrcode';
 
 // Interface for attendance details (from lecturer_attendance_details table)
 interface AttendanceDetail {
@@ -79,6 +82,42 @@ interface AttendanceStats {
     byLecturer: { name: string; count: number }[];
 }
 
+// Attendance Settings Interfaces
+interface WeekSetting {
+    id?: string;
+    month: number;
+    year: number;
+    week_number: number;
+    start_date: string;
+    end_date: string;
+    is_active: boolean;
+}
+
+interface SpecialDate {
+    id?: string;
+    date: string;
+    reason: string;
+    month: number;
+    year: number;
+}
+
+interface PaymentRate {
+    id?: string;
+    lecturer_type: 'HBV' | 'NHBV';
+    rate: number;
+    effective_month: number;
+    effective_year: number;
+}
+
+interface LectureSchedule {
+    id: string;
+    lecturer: string;
+    day: string;
+    course_name: string;
+    course_code: string;
+    subject_study: string;
+}
+
 const FinanceAttendance: React.FC = () => {
     const { profile } = useAuth();
     const { getText } = useLanguage();
@@ -115,13 +154,54 @@ const FinanceAttendance: React.FC = () => {
 
     // Recap chart filter
     const [recapSelectedProdi, setRecapSelectedProdi] = useState<string>('');
-    const [allLecturers, setAllLecturers] = useState<{ id: string; full_name: string; study_program_id: string | null }[]>([]);
+    const [allLecturers, setAllLecturers] = useState<{ id: string; full_name: string; study_program_id: string | null; is_homebase?: boolean }[]>([]);
+
+    // Attendance Settings States
+    const [showSettingsModal, setShowSettingsModal] = useState(false);
+    const [settingsTab, setSettingsTab] = useState<'weeks' | 'holidays' | 'rates'>('weeks');
+    const [weekSettings, setWeekSettings] = useState<WeekSetting[]>([]);
+    const [specialDates, setSpecialDates] = useState<SpecialDate[]>([]);
+    const [paymentRates, setPaymentRates] = useState<PaymentRate[]>([]);
+    const [lectureSchedules, setLectureSchedules] = useState<LectureSchedule[]>([]);
+    const [settingsMonth, setSettingsMonth] = useState(new Date().getMonth() + 1);
+    const [settingsYear, setSettingsYear] = useState(new Date().getFullYear());
+    const [savingSettings, setSavingSettings] = useState(false);
+
+    // New Special Date form
+    const [newSpecialDate, setNewSpecialDate] = useState({ date: '', reason: '' });
+
+    // LPJ Date Selection - for single day LPJ report
+    const [lpjDate, setLpjDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+
+    // New Week Setting form
+    const [newWeekSetting, setNewWeekSetting] = useState<WeekSetting>({
+        month: new Date().getMonth() + 1,
+        year: new Date().getFullYear(),
+        week_number: 1,
+        start_date: '',
+        end_date: '',
+        is_active: true
+    });
+
+    // Global settings for disable attendance
+    const [globalSettings, setGlobalSettings] = useState<{
+        is_attendance_disabled: boolean;
+        disabled_from_date: string | null;
+        disabled_message: string;
+    }>({
+        is_attendance_disabled: false,
+        disabled_from_date: null,
+        disabled_message: 'Presensi transport sedang ditutup'
+    });
 
     // Fetch data on mount and filter changes
     useEffect(() => {
         fetchAttendanceRecords();
         fetchStudyPrograms();
         fetchAllLecturers();
+        fetchLectureSchedules();
+        fetchWeekSettings();
+        fetchPaymentRates();
     }, [dateRange, studyProgramFilter, statusFilter]);
 
     useEffect(() => {
@@ -217,6 +297,255 @@ const FinanceAttendance: React.FC = () => {
             console.error('Error fetching lecturers:', error);
         }
     };
+
+    // Fetch Attendance Settings
+    const fetchWeekSettings = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('attendance_week_settings')
+                .select('*')
+                .eq('month', settingsMonth)
+                .eq('year', settingsYear)
+                .order('week_number');
+
+            if (error) throw error;
+            setWeekSettings(data || []);
+        } catch (error) {
+            console.error('Error fetching week settings:', error);
+        }
+    };
+
+    const fetchSpecialDates = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('attendance_special_dates')
+                .select('*')
+                .eq('month', settingsMonth)
+                .eq('year', settingsYear)
+                .order('date');
+
+            if (error) throw error;
+            setSpecialDates(data || []);
+        } catch (error) {
+            console.error('Error fetching special dates:', error);
+        }
+    };
+
+    const fetchPaymentRates = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('attendance_payment_rates')
+                .select('*')
+                .eq('effective_month', settingsMonth)
+                .eq('effective_year', settingsYear);
+
+            if (error) throw error;
+            setPaymentRates(data || []);
+        } catch (error) {
+            console.error('Error fetching payment rates:', error);
+        }
+    };
+
+    const fetchLectureSchedules = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('lecture_schedules')
+                .select('id, lecturer, day, course_name, course_code, subject_study');
+
+            if (error) throw error;
+            setLectureSchedules(data || []);
+        } catch (error) {
+            console.error('Error fetching lecture schedules:', error);
+        }
+    };
+
+    // Save Week Setting
+    const handleSaveWeekSetting = async () => {
+        if (!newWeekSetting.start_date || !newWeekSetting.end_date) {
+            toast.error('Tanggal mulai dan akhir harus diisi');
+            return;
+        }
+        try {
+            setSavingSettings(true);
+            const { error } = await supabase
+                .from('attendance_week_settings')
+                .upsert({
+                    ...newWeekSetting,
+                    month: settingsMonth,
+                    year: settingsYear,
+                    created_by: profile?.id
+                }, { onConflict: 'month,year,week_number' });
+
+            if (error) throw error;
+            toast.success('Pengaturan minggu berhasil disimpan');
+            fetchWeekSettings();
+            setNewWeekSetting({ ...newWeekSetting, start_date: '', end_date: '' });
+        } catch (error) {
+            console.error('Error saving week setting:', error);
+            toast.error('Gagal menyimpan pengaturan minggu');
+        } finally {
+            setSavingSettings(false);
+        }
+    };
+
+    // Save Special Date
+    const handleSaveSpecialDate = async () => {
+        if (!newSpecialDate.date || !newSpecialDate.reason) {
+            toast.error('Tanggal dan alasan harus diisi');
+            return;
+        }
+        try {
+            setSavingSettings(true);
+            const dateObj = new Date(newSpecialDate.date);
+            const { error } = await supabase
+                .from('attendance_special_dates')
+                .insert({
+                    date: newSpecialDate.date,
+                    reason: newSpecialDate.reason,
+                    month: dateObj.getMonth() + 1,
+                    year: dateObj.getFullYear(),
+                    created_by: profile?.id
+                });
+
+            if (error) throw error;
+            toast.success('Tanggal khusus berhasil ditambahkan');
+            fetchSpecialDates();
+            setNewSpecialDate({ date: '', reason: '' });
+        } catch (error) {
+            console.error('Error saving special date:', error);
+            toast.error('Gagal menyimpan tanggal khusus');
+        } finally {
+            setSavingSettings(false);
+        }
+    };
+
+    // Delete Special Date
+    const handleDeleteSpecialDate = async (id: string) => {
+        try {
+            const { error } = await supabase
+                .from('attendance_special_dates')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+            toast.success('Tanggal khusus berhasil dihapus');
+            fetchSpecialDates();
+        } catch (error) {
+            console.error('Error deleting special date:', error);
+            toast.error('Gagal menghapus tanggal khusus');
+        }
+    };
+
+    // Save Payment Rate
+    const handleSavePaymentRate = async (type: 'HBV' | 'NHBV', rate: number) => {
+        try {
+            setSavingSettings(true);
+            const { error } = await supabase
+                .from('attendance_payment_rates')
+                .upsert({
+                    lecturer_type: type,
+                    rate: rate,
+                    effective_month: settingsMonth,
+                    effective_year: settingsYear,
+                    created_by: profile?.id
+                }, { onConflict: 'lecturer_type,effective_month,effective_year' });
+
+            if (error) throw error;
+            toast.success(`Tarif ${type} berhasil disimpan`);
+            fetchPaymentRates();
+        } catch (error) {
+            console.error('Error saving payment rate:', error);
+            toast.error('Gagal menyimpan tarif');
+        } finally {
+            setSavingSettings(false);
+        }
+    };
+
+    // Fetch global settings
+    const fetchGlobalSettings = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('attendance_global_settings')
+                .select('*')
+                .limit(1)
+                .maybeSingle();
+
+            if (error) {
+                console.error('Error fetching global settings:', error);
+                return;
+            }
+
+            if (data) {
+                setGlobalSettings({
+                    is_attendance_disabled: data.is_attendance_disabled || false,
+                    disabled_from_date: data.disabled_from_date || null,
+                    disabled_message: data.disabled_message || 'Presensi transport sedang ditutup'
+                });
+            }
+        } catch (error) {
+            console.error('Error fetching global settings:', error);
+        }
+    };
+
+    // Save global settings (disable attendance)
+    const handleSaveGlobalSettings = async () => {
+        try {
+            setSavingSettings(true);
+
+            // Check if row exists
+            const { data: existing } = await supabase
+                .from('attendance_global_settings')
+                .select('id')
+                .limit(1)
+                .maybeSingle();
+
+            if (existing) {
+                // Update existing row
+                const { error } = await supabase
+                    .from('attendance_global_settings')
+                    .update({
+                        is_attendance_disabled: globalSettings.is_attendance_disabled,
+                        disabled_from_date: globalSettings.disabled_from_date,
+                        disabled_message: globalSettings.disabled_message,
+                        updated_by: profile?.id,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', existing.id);
+
+                if (error) throw error;
+            } else {
+                // Insert new row
+                const { error } = await supabase
+                    .from('attendance_global_settings')
+                    .insert({
+                        is_attendance_disabled: globalSettings.is_attendance_disabled,
+                        disabled_from_date: globalSettings.disabled_from_date,
+                        disabled_message: globalSettings.disabled_message,
+                        updated_by: profile?.id
+                    });
+
+                if (error) throw error;
+            }
+
+            toast.success('Pengaturan presensi berhasil disimpan');
+        } catch (error) {
+            console.error('Error saving global settings:', error);
+            toast.error('Gagal menyimpan pengaturan');
+        } finally {
+            setSavingSettings(false);
+        }
+    };
+
+    // Fetch settings when modal opens or month/year changes
+    useEffect(() => {
+        if (showSettingsModal) {
+            fetchWeekSettings();
+            fetchSpecialDates();
+            fetchPaymentRates();
+            fetchLectureSchedules();
+            fetchGlobalSettings();
+        }
+    }, [showSettingsModal, settingsMonth, settingsYear]);
 
     const calculateStats = () => {
         const total = attendanceRecords.length;
@@ -509,7 +838,226 @@ const FinanceAttendance: React.FC = () => {
         }
     };
 
-    const exportToExcel = () => {
+    // ==========================================
+    // LAMPIRAN LPJ PDF GENERATOR
+    // Format: DAFTAR HADIR DOSEN (HOME BASE / NON HOME BASE)
+    // Per-day report (single date)
+    // ==========================================
+    // ==========================================
+    // LAMPIRAN LPJ PDF GENERATOR (REFINED)
+    // ==========================================
+    const generateLPJPDF = async (type: 'homebase' | 'non_homebase', selectedDate: string) => {
+        console.log(`Starting generateLPJPDF for ${type} on ${selectedDate}`);
+        try {
+            const recordsForDate = attendanceRecords.filter(r =>
+                r.verification_status === 'verified' &&
+                r.attendance_date === selectedDate
+            );
+
+            console.log(`Found ${recordsForDate.length} verified records for date ${selectedDate}`);
+
+            if (recordsForDate.length === 0) {
+                toast.error(`Tidak ada data terverifikasi untuk tanggal ${format(new Date(selectedDate), 'd MMMM yyyy', { locale: localeId })}`);
+                return;
+            }
+
+            // Group records
+            const lecturerMap = new Map<string, {
+                lecturerId: string;
+                lecturerName: string;
+                prodi: string;
+                courses: string[];
+                classes: string[];
+                signatureUrl: string | null;
+                isHomebase: boolean;
+            }>();
+
+            recordsForDate.forEach(record => {
+                const isHomebase = record.is_homebase ?? true;
+                if (type === 'homebase' && !isHomebase) return;
+                if (type === 'non_homebase' && isHomebase) return;
+
+                const key = record.lecturer_user_id;
+                const details = record.details || [];
+
+                let courses = details.map((d: any) => d?.course_name).filter(Boolean);
+                // Fallback to purpose if no courses
+                if (courses.length === 0) {
+                    const purpose = record.purpose_description || record.purpose;
+                    if (purpose) courses = [purpose];
+                }
+
+                let classes = details.map((d: any) => d?.class_group).filter(Boolean);
+                if (classes.length === 0) classes = ['-'];
+
+                let prodi = '';
+                if (!isHomebase && details.length > 0) {
+                    prodi = details[0]?.study_program_name || record.study_program?.name || '-';
+                } else {
+                    prodi = record.study_program?.name || '-';
+                }
+
+                if (lecturerMap.has(key)) {
+                    const existing = lecturerMap.get(key)!;
+                    courses.forEach(c => { if (!existing.courses.includes(c)) existing.courses.push(c); });
+                    classes.forEach(c => { if (!existing.classes.includes(c)) existing.classes.push(c); });
+                } else {
+                    lecturerMap.set(key, {
+                        lecturerId: record.lecturer_user_id,
+                        lecturerName: record.lecturer_name || 'Unknown',
+                        prodi: prodi,
+                        courses: courses,
+                        classes: classes,
+                        signatureUrl: (record as any).signature_url || null,
+                        isHomebase: isHomebase
+                    });
+                }
+            });
+
+            const entries = Array.from(lecturerMap.values());
+            if (entries.length === 0) {
+                toast.error(`Tidak ada data dosen ${type === 'homebase' ? 'homebase' : 'non-homebase'} untuk tanggal tersebut`);
+                return;
+            }
+
+            const doc = new jsPDF();
+            const dateObj = new Date(selectedDate);
+
+            // Header
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
+            doc.text(`DAFTAR HADIR DOSEN (${type === 'homebase' ? 'HOME BASE' : 'NON HOME BASE'}) FAKULTAS VOKASI`, 105, 15, { align: 'center' });
+            doc.setFontSize(10);
+            doc.text('SEMESTER GENAP TAHUN 2025/2026', 105, 22, { align: 'center' });
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.text(`HARI         : ${format(dateObj, 'EEEE', { locale: localeId }).toUpperCase()}`, 14, 35);
+            doc.text(`TANGGAL   : ${format(dateObj, 'd MMMM yyyy', { locale: localeId })}`, 14, 42);
+
+            // Table Config
+            const tableStartY = 50;
+            const colWidths = [10, 40, 30, 40, 20, 20, 25];
+            const headers = ['NO', 'NAMA', 'PRODI', 'MATA KULIAH', 'KELAS', 'QR DETAIL', 'TTD'];
+
+            // Draw Header
+            let x = 14;
+            doc.setFillColor(240, 240, 240);
+            doc.rect(14, tableStartY, colWidths.reduce((a, b) => a + b, 0), 10, 'FD');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+
+            headers.forEach((header, i) => {
+                doc.text(header, x + 2, tableStartY + 6);
+                x += colWidths[i];
+            });
+
+            // Draw Rows
+            doc.setFont('helvetica', 'normal');
+            let currentY = tableStartY + 10;
+            const maxRowHeight = 15; // 1.5 cm
+
+            for (let i = 0; i < entries.length; i++) {
+                const entry = entries[i];
+
+                if (currentY + maxRowHeight > 280) {
+                    doc.addPage();
+                    currentY = 20;
+                    x = 14;
+                }
+
+                x = 14;
+                doc.setFontSize(8);
+
+                // Borders
+                let tempX = x;
+                colWidths.forEach(width => {
+                    doc.rect(tempX, currentY, width, maxRowHeight);
+                    tempX += width;
+                });
+
+                // NO
+                doc.text((i + 1).toString(), x + 2, currentY + 5);
+                x += colWidths[0];
+
+                // NAME
+                const nameLines = doc.splitTextToSize(entry.lecturerName, colWidths[1] - 4);
+                if (nameLines.length > 4) doc.setFontSize(7);
+                doc.text(nameLines, x + 2, currentY + 5);
+                doc.setFontSize(8);
+                x += colWidths[1];
+
+                // PRODI
+                const prodiLines = doc.splitTextToSize(entry.prodi, colWidths[2] - 4);
+                if (prodiLines.length > 4) doc.setFontSize(7);
+                doc.text(prodiLines, x + 2, currentY + 5);
+                doc.setFontSize(8);
+                x += colWidths[2];
+
+                // MK
+                let mkText = entry.courses.join(', ');
+                let mkLines = doc.splitTextToSize(mkText, colWidths[3] - 4);
+                if (mkLines.length > 4) {
+                    doc.setFontSize(6);
+                    mkLines = doc.splitTextToSize(mkText, colWidths[3] - 4);
+                    if (mkLines.length > 6) {
+                        mkLines = mkLines.slice(0, 6);
+                        mkLines[5] += '...';
+                    }
+                }
+                doc.text(mkLines, x + 2, currentY + 5);
+                doc.setFontSize(8);
+                x += colWidths[3];
+
+                // KELAS
+                const kelasLines = doc.splitTextToSize(entry.classes.join(', '), colWidths[4] - 4);
+                doc.text(kelasLines, x + 2, currentY + 5);
+                x += colWidths[4];
+
+                // QR
+                const detailUrl = `${window.location.origin}/#/presence-detail?lecturerId=${entry.lecturerId}&date=${selectedDate}`;
+                try {
+                    const qrDataUrl = await QRCode.toDataURL(detailUrl, { margin: 1, width: 50 });
+                    doc.addImage(qrDataUrl, 'PNG', x + 3, currentY + 1, 13, 13);
+                } catch (qrErr) {
+                    console.error('QR Error', qrErr);
+                }
+                x += colWidths[5];
+
+                // TTD
+                if (entry.signatureUrl) {
+                    try {
+                        doc.addImage(entry.signatureUrl, 'PNG', x + 2, currentY + 2, 20, 10);
+                    } catch (e) {
+                        doc.text('-', x + 2, currentY + 5);
+                    }
+                }
+                x += colWidths[6];
+
+                currentY += maxRowHeight;
+            }
+
+            // Page Numbers
+            const pageCount = (doc as any).internal.getNumberOfPages();
+            for (let i = 1; i <= pageCount; i++) {
+                doc.setPage(i);
+                doc.setFontSize(8);
+                doc.text(`Page ${i} of ${pageCount}`, 200, 290, { align: 'right' });
+            }
+
+            const typeLabel = type === 'homebase' ? 'Homebase' : 'Non_Homebase';
+            const filename = `Lampiran_LPJ_${typeLabel}_${format(new Date(selectedDate), 'yyyy-MM-dd')}.pdf`;
+            doc.save(filename);
+            toast.success(`Lampiran LPJ berhasil diunduh`);
+
+        } catch (error) {
+            console.error('Error generating LPJ PDF:', error);
+            if (error instanceof Error) console.error('Stack:', error.stack);
+            toast.error('Gagal membuat PDF');
+        }
+    };
+
+    const exportToExcel = async () => {
         try {
             const verifiedRecords = attendanceRecords.filter(r => r.verification_status === 'verified');
             if (verifiedRecords.length === 0) {
@@ -517,32 +1065,366 @@ const FinanceAttendance: React.FC = () => {
                 return;
             }
 
-            // Create CSV content
-            const headers = ['No', 'Nama Dosen', 'NIP', 'Program Studi', 'Tanggal', 'Waktu', 'Tujuan', 'Keterangan'];
-            const rows = verifiedRecords.map((r, i) => [
-                i + 1,
-                r.lecturer_name,
-                '-',
-                r.study_program?.name || '-',
-                format(new Date(r.attendance_date), 'dd/MM/yyyy'),
-                r.attendance_time?.substring(0, 5) || '-',
-                r.purpose === 'mengajar' ? 'Mengajar' : r.purpose === 'sidang' ? 'Sidang' : 'Lainnya',
-                r.purpose_description || '-'
-            ]);
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Rekap Kehadiran');
 
-            const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
-            const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `Rekap_Kehadiran_Dosen_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-            link.click();
-            URL.revokeObjectURL(url);
+            // --- DATA PREPARATION ---
+            // Helper to get day abbreviation
+            const getDayAbbr = (dayName: string): string => {
+                const abbrs: Record<string, string> = {
+                    'senin': 'SN', 'selasa': 'SL', 'rabu': 'R', 'kamis': 'K', 'jumat': 'J',
+                    'monday': 'SN', 'tuesday': 'SL', 'wednesday': 'R', 'thursday': 'K', 'friday': 'J'
+                };
+                return abbrs[dayName.toLowerCase()] || '';
+            };
 
-            toast.success('Excel (CSV) berhasil diunduh');
+            // Helper to get Roman numeral
+            const toRoman = (num: number): string => {
+                const romans = ['I', 'II', 'III', 'IV', 'V', 'VI'];
+                return romans[num - 1] || num.toString();
+            };
+
+            // Sort week settings
+            const sortedWeeks = [...weekSettings].sort((a, b) => a.week_number - b.week_number);
+
+            // If no weeks defined, create a default structure (not ideal but fallback)
+            // But user said "Based on Finance Settings", so we rely on sortedWeeks being populated.
+
+            const lecturerMap = new Map<string, {
+                name: string;
+                prodi: string;
+                is_homebase: boolean;
+                dates: string[];
+            }>();
+
+            verifiedRecords.forEach(r => {
+                const key = r.lecturer_name;
+                if (!lecturerMap.has(key)) {
+                    lecturerMap.set(key, {
+                        name: r.lecturer_name,
+                        prodi: r.study_program?.name || '-',
+                        is_homebase: r.is_homebase ?? true,
+                        dates: []
+                    });
+                }
+                lecturerMap.get(key)!.dates.push(r.attendance_date);
+            });
+
+            const hbvRate = paymentRates.find(r => r.lecturer_type === 'HBV')?.rate || 75000;
+            const nhbvRate = paymentRates.find(r => r.lecturer_type === 'NHBV')?.rate || 75000;
+
+            // --- HEADER CONSTRUCTION ---
+
+            // Row 1: Title
+            // Merge A1 to end column. Calculate end column index.
+            // Cols: NO(1) + NAMA(2) + PRODI(3) + (Weeks * 5) + KET + JML + SATUAN + JML + JADWAL(5)
+            // Fixed cols count = 3 (Start) + 4 (Stats) + 5 (Schedule) = 12
+            // Total width = 12 + (Weeks * 5)
+            const totalWidth = 12 + ((sortedWeeks.length || 3) * 5);
+            // Logic to convert col index to letter is complex for generic, but ExcelJS supports by index.
+
+            worksheet.mergeCells(1, 1, 1, totalWidth);
+            const titleCell = worksheet.getCell(1, 1);
+            titleCell.value = 'PENERIMAAN TRANSPORT MENGAJAR DOSEN FAKULTAS VOKASI UNY';
+            titleCell.font = { bold: true, size: 12 };
+            titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+            // Row 2: Period
+            worksheet.mergeCells(2, 1, 2, totalWidth);
+            const periodCell = worksheet.getCell(2, 1);
+            periodCell.value = `KEHADIRAN BULAN ${format(new Date(dateRange.start), 'MMMM yyyy', { locale: localeId }).toUpperCase()}`;
+            periodCell.font = { bold: true, size: 11 };
+            periodCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+            // Row 3 (Main Header) & Row 4 (Sub Header)
+            // Fixed Start Headers
+            worksheet.mergeCells('A3:A4'); worksheet.getCell('A3').value = 'NO';
+            worksheet.mergeCells('B3:B4'); worksheet.getCell('B3').value = 'NAMA DOSEN';
+            worksheet.mergeCells('C3:C4'); worksheet.getCell('C3').value = 'PROGRAM STUDI';
+
+            let colCursor = 4; // Start at D
+
+            // Dynamic Week Headers
+            // Track holiday columns
+            const holidayCols = new Set<number>();
+            sortedWeeks.forEach(week => {
+                // Merge 5 cells for Week Roman Numeral
+                worksheet.mergeCells(3, colCursor, 3, colCursor + 4);
+                const weekHeaderCell = worksheet.getCell(3, colCursor);
+                weekHeaderCell.value = toRoman(week.week_number);
+
+                // Sub-headers: Dates for Mon-Fri of this week
+                // We need to determine the date for Mon, Tue, Wed, Thu, Fri of this specific week
+                // week.start_date might satisfy "Thursday".
+                const weekStart = new Date(week.start_date);
+                const weekEnd = new Date(week.end_date);
+
+                // Find the Monday of this week block to calculate offsets
+                // But weekStart might be the actual start (e.g. Thursday 1st).
+                // We need to place '1st' in the Thursday column.
+                // Approach: specific dates map to specific day-of-week columns (0-4)
+
+                for (let dayOffset = 0; dayOffset < 5; dayOffset++) {
+                    // dayOffset 0 = Monday, 1 = Tuesday ...
+                    // We iterate dates in the range [weekStart, weekEnd]
+                    // If a date matches this day-of-week, putting it here.
+
+                    let dateForColumn = '';
+                    let isHoliday = false;
+
+                    // Simple search in the week range
+                    let d = new Date(weekStart);
+                    while (d <= weekEnd) {
+                        const dayOfWeek = d.getDay(); // 0Sun, 1Mon...
+                        const targetDay = dayOffset + 1; // 1Mon, 2Tue...
+
+                        // Fix javascript day: Sunday=0. We want Mon(1)-Fri(5).
+                        if (dayOfWeek === targetDay) {
+                            dateForColumn = d.getDate().toString();
+
+                            // Check holiday
+                            const dateStr = format(d, 'yyyy-MM-dd');
+                            if (specialDates.some(sd => sd.date === dateStr)) isHoliday = true;
+                            break;
+                        }
+                        d.setDate(d.getDate() + 1);
+                    }
+
+                    const cell = worksheet.getCell(4, colCursor + dayOffset);
+                    cell.value = dateForColumn;
+
+                    if (isHoliday) {
+                        holidayCols.add(colCursor + dayOffset);
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+                    }
+                }
+
+                colCursor += 5;
+            });
+
+            // Fallback if no weeks (show at least I, II, III empty)
+            if (sortedWeeks.length === 0) {
+                // ... handle if strictly needed, but Finance Settings usually exist.
+                // For now, if no settings, no week columns generated.
+            }
+
+            // Fixed End Headers
+            worksheet.mergeCells(3, colCursor, 4, colCursor); worksheet.getCell(3, colCursor).value = 'KET'; colCursor++;
+            worksheet.mergeCells(3, colCursor, 4, colCursor); worksheet.getCell(3, colCursor).value = 'JML HDR'; colCursor++;
+            worksheet.mergeCells(3, colCursor, 4, colCursor); worksheet.getCell(3, colCursor).value = 'SATUAN'; colCursor++;
+            worksheet.mergeCells(3, colCursor, 4, colCursor); worksheet.getCell(3, colCursor).value = 'JUMLAH'; colCursor++;
+
+            // JADWAL Schedule
+            worksheet.mergeCells(3, colCursor, 3, colCursor + 4);
+            worksheet.getCell(3, colCursor).value = 'JADWAL';
+
+            const scheduleAbbrs = ['SN', 'SL', 'R', 'K', 'J'];
+            scheduleAbbrs.forEach((abbr, idx) => {
+                worksheet.getCell(4, colCursor + idx).value = abbr;
+            });
+
+            // --- HEADER STYLING ---
+            const headerRow3 = worksheet.getRow(3);
+            const headerRow4 = worksheet.getRow(4);
+            [headerRow3, headerRow4].forEach(row => {
+                row.font = { bold: true };
+                row.alignment = { vertical: 'middle', horizontal: 'center' };
+                row.eachCell((cell) => {
+                    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
+                });
+            });
+
+            // --- DATA ROWS ---
+            let rowIndex = 5;
+            let counter = 1;
+
+            lecturerMap.forEach((lecturer) => {
+                const row = worksheet.getRow(rowIndex);
+
+                // Fixed start columns
+                row.getCell(1).value = counter++;
+                row.getCell(2).value = lecturer.name;
+                row.getCell(3).value = lecturer.prodi;
+
+                // Dynamic Week Columns
+                // We need to map each attendance date to the correct column.
+                // Col Index = 4 (Start) + (WeekIndex * 5) + (DayOfWeek 0-4)
+
+                lecturer.dates.forEach(dateStr => {
+                    const date = new Date(dateStr);
+                    const dayOfWeek = date.getDay(); // 0-6
+                    if (dayOfWeek === 0 || dayOfWeek === 6) return; // Skip weekends
+
+                    const dayIndex = dayOfWeek - 1; // 0=Mon, 4=Fri
+
+                    // Find which configured week this date belongs to
+                    const weekIdx = sortedWeeks.findIndex(w => {
+                        const start = new Date(w.start_date);
+                        const end = new Date(w.end_date);
+                        // Reset hours for comparison
+                        start.setHours(0, 0, 0, 0);
+                        end.setHours(23, 59, 59, 999);
+                        const d = new Date(date);
+                        d.setHours(12, 0, 0, 0);
+                        return d >= start && d <= end;
+                    });
+
+                    if (weekIdx !== -1 && dayIndex >= 0 && dayIndex <= 4) {
+                        const colIdx = 4 + (weekIdx * 5) + dayIndex;
+                        const dayAbbrs = ['SN', 'SL', 'R', 'K', 'J'];
+
+                        if (!holidayCols.has(colIdx)) {
+                            row.getCell(colIdx).value = dayAbbrs[dayIndex];
+                            row.getCell(colIdx).alignment = { horizontal: 'center' };
+                        }
+                    }
+                });
+
+                // Highlight Holiday Columns in this row
+                holidayCols.forEach(colIdx => {
+                    const cell = row.getCell(colIdx);
+                    cell.value = '';
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+                });
+
+                // End Stats Columns
+                // Current colCursor is at start of JADWAL (e.g. col 25 if 3 weeks)
+                // We need to find the column indices for KET, JML, etc.
+                // They are at: 4 + (Weeks*5) ...
+                const statsStartCol = 4 + (sortedWeeks.length * 5);
+
+                const ket = lecturer.is_homebase ? 'HBV' : 'NHBV';
+                row.getCell(statsStartCol).value = ket;
+
+                const totalAttendance = lecturer.dates.length;
+                row.getCell(statsStartCol + 1).value = totalAttendance;
+
+                const rate = lecturer.is_homebase ? hbvRate : nhbvRate;
+                row.getCell(statsStartCol + 2).value = rate;
+                row.getCell(statsStartCol + 2).numFmt = '#,##0';
+
+                const totalPayment = totalAttendance * rate;
+                row.getCell(statsStartCol + 3).value = totalPayment;
+                row.getCell(statsStartCol + 3).numFmt = '#,##0';
+
+                // JADWAL Columns
+                const scheduleStartCol = statsStartCol + 4;
+                const schedules = lectureSchedules.filter(s => s.lecturer?.toLowerCase() === lecturer.name.toLowerCase());
+                const scheduleDays = new Set(schedules.map(s => getDayAbbr(s.day || '')));
+
+                ['SN', 'SL', 'R', 'K', 'J'].forEach((day, idx) => {
+                    if (scheduleDays.has(day)) {
+                        row.getCell(scheduleStartCol + idx).value = day;
+                        row.getCell(scheduleStartCol + idx).alignment = { horizontal: 'center' };
+                    }
+                });
+
+                // Style the row
+                const totalCols = scheduleStartCol + 5;
+                for (let c = 1; c < totalCols; c++) {
+                    const cell = row.getCell(c);
+                    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                    if (c === 2 || c === 3) {
+                        // Name/Prodi
+                        cell.alignment = { vertical: 'middle', horizontal: 'left' };
+                    } else {
+                        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                    }
+                }
+
+                rowIndex++;
+            });
+
+            // --- FOOTER & SIGNATURE ---
+            const lastRowIdx = rowIndex;
+            const statsStartCol = 4 + (sortedWeeks.length * 5);
+
+            // Grand Total Row
+            worksheet.mergeCells(lastRowIdx, 1, lastRowIdx, statsStartCol + 2); // Merge from A to SATUAN column
+            const totalLabelCell = worksheet.getCell(lastRowIdx, 1);
+            totalLabelCell.value = 'JUMLAH';
+            totalLabelCell.font = { bold: true };
+            totalLabelCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+            // Calculate Grand Total Sum
+            let totalAmount = 0;
+            lecturerMap.forEach(l => {
+                const rate = l.is_homebase ? hbvRate : nhbvRate;
+                totalAmount += l.dates.length * rate;
+            });
+
+            const totalValueCell = worksheet.getCell(lastRowIdx, statsStartCol + 3);
+            totalValueCell.value = totalAmount;
+            totalValueCell.numFmt = '#,##0';
+            totalValueCell.font = { bold: true };
+            totalValueCell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+
+            // Apply border to the merged label cell too
+            // Note: In ExcelJS, styling a merged cell requires styling the top-left cell mainly, 
+            // but sometimes borders need careful handling. The mergeCells above works, 
+            // we just need to ensure the right border is drawn at the end of the merge? 
+            // ExcelJS handles borders on merged cells if set on the master cell usually.
+            totalLabelCell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+
+            // Signature Block
+            // Per screenshot: "Menyetujui:", "Dekan Fakultas Vokasi", Name "Prof. Dr. Komarudin, S.Pd., M.A.", "NIP..."
+            // Placed aligned to the right side, maybe 3-4 rows below Grand Total.
+
+            const signStartRow = lastRowIdx + 2;
+            // Align signature block to the right side of the sheet (near JUMLAH column)
+            // Let's use the stats columns area for the signature.
+            const signCol = statsStartCol + 1; // Roughly aligned with JML HDR / SATUAN / JUMLAH area
+
+            worksheet.getCell(signStartRow, signCol).value = 'Menyetujui:';
+            worksheet.getCell(signStartRow + 1, signCol).value = 'Dekan Fakultas Vokasi';
+            worksheet.getCell(signStartRow + 1, signCol).font = { bold: true };
+
+            const nameRow = signStartRow + 5; // Space for signature
+            worksheet.getCell(nameRow, signCol).value = 'Prof. Dr. Komarudin, S.Pd., M.A.';
+            worksheet.getCell(nameRow, signCol).font = { bold: true, underline: true };
+
+            worksheet.getCell(nameRow + 1, signCol).value = 'NIP. 197409282003121002'; // From screenshot
+
+            // Column Widths
+            worksheet.getColumn(1).width = 5;  // NO
+            worksheet.getColumn(2).width = 30; // NAMA
+            worksheet.getColumn(3).width = 20; // PRODI
+
+            // Week Cols
+            for (let i = 0; i < sortedWeeks.length * 5; i++) {
+                worksheet.getColumn(4 + i).width = 4;
+            }
+            // Stats Cols
+            // statsStartCol is already defined above
+            worksheet.getColumn(statsStartCol).width = 8;     // KET
+            worksheet.getColumn(statsStartCol + 1).width = 8; // JML HDR
+            worksheet.getColumn(statsStartCol + 2).width = 12; // SATUAN
+            worksheet.getColumn(statsStartCol + 3).width = 12; // JUMLAH
+            // Schedule Cols
+            for (let i = 0; i < 5; i++) {
+                worksheet.getColumn(statsStartCol + 4 + i).width = 4;
+            }
+
+            // Write File
+            console.log('Writing Excel buffer...');
+            const buffer = await workbook.xlsx.writeBuffer();
+            console.log('Buffer created, size:', buffer.byteLength);
+
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const filename = `Rekap_Kehadiran_Vokasi_${format(new Date(), 'yyyy-MM-dd')}.xlsx`;
+            console.log('Saving as:', filename);
+
+            saveAs(blob, filename);
+            console.log('SaveAs called');
+
+            toast.success('Excel berhasil dibuat dan diunduh');
         } catch (error) {
-            console.error('Error generating Excel:', error);
-            toast.error('Gagal membuat Excel');
+            console.error('Error exporting Excel:', error);
+            if (error instanceof Error) {
+                console.error('Stack:', error.stack);
+            }
+            toast.error('Gagal membuat file Excel');
         }
     };
 
@@ -637,6 +1519,13 @@ const FinanceAttendance: React.FC = () => {
                     >
                         <FileText className="w-4 h-4" />
                         {getText('Reports', 'Laporan')}
+                    </button>
+                    <button
+                        onClick={() => setShowSettingsModal(true)}
+                        className="py-3 px-4 rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-gray-600 hover:bg-gray-50"
+                    >
+                        <Settings className="w-4 h-4" />
+                        {getText('Settings', 'Pengaturan')}
                     </button>
                 </div>
             </div>
@@ -989,6 +1878,54 @@ const FinanceAttendance: React.FC = () => {
                             </p>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Lampiran LPJ Download Section - Shown in Reports tab regardless of stats */}
+            {activeTab === 'reports' && (
+                <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl shadow-sm p-6 text-white">
+                    <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+                        <FileText className="w-5 h-5" />
+                        Cetak Lampiran LPJ (Per Hari)
+                    </h3>
+                    <p className="text-blue-100 text-sm mb-4">
+                        Pilih tanggal kemudian download lampiran LPJ. Format: DAFTAR HADIR DOSEN untuk tanggal yang dipilih dengan tanda tangan.
+                    </p>
+
+                    <div className="flex flex-wrap items-end gap-4">
+                        {/* Date Picker */}
+                        <div className="flex-shrink-0">
+                            <label className="block text-sm font-medium text-blue-100 mb-1">
+                                Pilih Tanggal
+                            </label>
+                            <input
+                                type="date"
+                                value={lpjDate}
+                                onChange={(e) => setLpjDate(e.target.value)}
+                                className="px-4 py-2 rounded-lg border-0 text-gray-900 focus:ring-2 focus:ring-white"
+                            />
+                        </div>
+
+                        {/* Download Buttons */}
+                        <button
+                            onClick={() => generateLPJPDF('homebase', lpjDate)}
+                            className="px-4 py-2 bg-white text-blue-600 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center gap-2"
+                        >
+                            <Download className="w-4 h-4" />
+                            Download LPJ (Homebase)
+                        </button>
+                        <button
+                            onClick={() => generateLPJPDF('non_homebase', lpjDate)}
+                            className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition-colors flex items-center gap-2"
+                        >
+                            <Download className="w-4 h-4" />
+                            Download LPJ (Non Homebase)
+                        </button>
+                    </div>
+
+                    <p className="text-blue-200 text-xs mt-3">
+                        📅 Tanggal terpilih: {format(new Date(lpjDate), 'EEEE, d MMMM yyyy', { locale: localeId })}
+                    </p>
                 </div>
             )}
 
@@ -1345,6 +2282,369 @@ const FinanceAttendance: React.FC = () => {
                     </div>
                 )
             }
+
+            {/* Settings Modal */}
+            {showSettingsModal && (
+                <div className="fixed inset-0 z-50 overflow-y-auto">
+                    <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20">
+                        <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={() => setShowSettingsModal(false)} />
+                        <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+                            {/* Modal Header */}
+                            <div className="bg-gradient-to-r from-teal-500 to-emerald-500 px-6 py-4">
+                                <div className="flex items-center justify-between">
+                                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                                        <Settings className="w-6 h-6" />
+                                        {getText('Attendance Settings', 'Pengaturan Presensi')}
+                                    </h2>
+                                    <button onClick={() => setShowSettingsModal(false)} className="p-2 text-white hover:bg-white/20 rounded-full">
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                </div>
+                                {/* Month/Year Selector */}
+                                <div className="flex items-center gap-3 mt-3">
+                                    <select
+                                        value={settingsMonth}
+                                        onChange={(e) => setSettingsMonth(parseInt(e.target.value))}
+                                        className="px-3 py-1.5 rounded-lg bg-white/20 text-white border border-white/30 focus:outline-none"
+                                    >
+                                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => (
+                                            <option key={m} value={m} className="text-gray-900">
+                                                {format(new Date(2024, m - 1, 1), 'MMMM', { locale: localeId })}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <select
+                                        value={settingsYear}
+                                        onChange={(e) => setSettingsYear(parseInt(e.target.value))}
+                                        className="px-3 py-1.5 rounded-lg bg-white/20 text-white border border-white/30 focus:outline-none"
+                                    >
+                                        {[2024, 2025, 2026, 2027].map(y => (
+                                            <option key={y} value={y} className="text-gray-900">{y}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Tabs */}
+                            <div className="border-b border-gray-200">
+                                <div className="flex">
+                                    <button
+                                        onClick={() => setSettingsTab('weeks')}
+                                        className={`flex-1 py-3 px-4 font-medium text-sm border-b-2 transition-colors flex items-center justify-center gap-2 ${settingsTab === 'weeks' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                                    >
+                                        <Calendar className="w-4 h-4" />
+                                        {getText('Week Settings', 'Pengaturan Minggu')}
+                                    </button>
+                                    <button
+                                        onClick={() => setSettingsTab('holidays')}
+                                        className={`flex-1 py-3 px-4 font-medium text-sm border-b-2 transition-colors flex items-center justify-center gap-2 ${settingsTab === 'holidays' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                                    >
+                                        <CalendarOff className="w-4 h-4" />
+                                        {getText('Special Dates', 'Tanggal Libur')}
+                                    </button>
+                                    <button
+                                        onClick={() => setSettingsTab('rates')}
+                                        className={`flex-1 py-3 px-4 font-medium text-sm border-b-2 transition-colors flex items-center justify-center gap-2 ${settingsTab === 'rates' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                                    >
+                                        <DollarSign className="w-4 h-4" />
+                                        {getText('Payment Rates', 'Tarif Pembayaran')}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Modal Content */}
+                            <div className="p-6 overflow-y-auto max-h-[60vh]">
+                                {/* Week Settings Tab */}
+                                {settingsTab === 'weeks' && (
+                                    <div className="space-y-4">
+                                        {/* Disable Attendance Section */}
+                                        <div className={`p-4 rounded-xl border-2 ${globalSettings.is_attendance_disabled ? 'bg-red-50 border-red-300' : 'bg-green-50 border-green-300'}`}>
+                                            <div className="flex items-center justify-between mb-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${globalSettings.is_attendance_disabled ? 'bg-red-200' : 'bg-green-200'}`}>
+                                                        <CalendarOff className={`w-5 h-5 ${globalSettings.is_attendance_disabled ? 'text-red-600' : 'text-green-600'}`} />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="font-semibold text-gray-900">Status Presensi</h4>
+                                                        <p className={`text-sm ${globalSettings.is_attendance_disabled ? 'text-red-600' : 'text-green-600'}`}>
+                                                            {globalSettings.is_attendance_disabled ? 'Presensi DITUTUP' : 'Presensi AKTIF'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={globalSettings.is_attendance_disabled}
+                                                        onChange={(e) => setGlobalSettings({ ...globalSettings, is_attendance_disabled: e.target.checked })}
+                                                        className="sr-only peer"
+                                                    />
+                                                    <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-red-500"></div>
+                                                    <span className="ml-3 text-sm font-medium text-gray-700">Tutup</span>
+                                                </label>
+                                            </div>
+
+                                            {globalSettings.is_attendance_disabled && (
+                                                <div className="space-y-3 pt-3 border-t border-red-200">
+                                                    <div>
+                                                        <label className="block text-xs text-gray-600 mb-1">Mulai Tanggal (Opsional)</label>
+                                                        <input
+                                                            type="date"
+                                                            value={globalSettings.disabled_from_date || ''}
+                                                            onChange={(e) => setGlobalSettings({ ...globalSettings, disabled_from_date: e.target.value || null })}
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs text-gray-600 mb-1">Pesan untuk Dosen</label>
+                                                        <textarea
+                                                            value={globalSettings.disabled_message}
+                                                            onChange={(e) => setGlobalSettings({ ...globalSettings, disabled_message: e.target.value })}
+                                                            placeholder="Mohon maaf presensi transport ditutup karena..."
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
+                                                            rows={2}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <button
+                                                onClick={handleSaveGlobalSettings}
+                                                disabled={savingSettings}
+                                                className={`mt-4 w-full py-2 font-medium rounded-lg flex items-center justify-center gap-2 ${globalSettings.is_attendance_disabled ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-green-600 hover:bg-green-700 text-white'} disabled:opacity-50`}
+                                            >
+                                                <Save className="w-4 h-4" />
+                                                Simpan Pengaturan
+                                            </button>
+                                        </div>
+
+                                        <hr className="border-gray-200" />
+
+                                        <p className="text-sm text-gray-500">
+                                            {getText('Configure active weeks for the selected month. Saturdays and Sundays are always off.', 'Atur minggu aktif untuk bulan yang dipilih. Sabtu dan Minggu selalu libur.')}
+                                        </p>
+
+                                        {/* Add New Week */}
+                                        <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                                            <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                                                <Plus className="w-4 h-4" />
+                                                {getText('Add Week', 'Tambah Minggu')}
+                                            </h4>
+                                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                                <div>
+                                                    <label className="block text-xs text-gray-600 mb-1">{getText('Week Number', 'Minggu Ke')}</label>
+                                                    <select
+                                                        value={newWeekSetting.week_number}
+                                                        onChange={(e) => setNewWeekSetting({ ...newWeekSetting, week_number: parseInt(e.target.value) })}
+                                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                                    >
+                                                        {[1, 2, 3, 4, 5].map(w => (
+                                                            <option key={w} value={w}>Minggu {w}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs text-gray-600 mb-1">{getText('Start Date', 'Tanggal Mulai')}</label>
+                                                    <input
+                                                        type="date"
+                                                        value={newWeekSetting.start_date}
+                                                        onChange={(e) => setNewWeekSetting({ ...newWeekSetting, start_date: e.target.value })}
+                                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs text-gray-600 mb-1">{getText('End Date', 'Tanggal Akhir')}</label>
+                                                    <input
+                                                        type="date"
+                                                        value={newWeekSetting.end_date}
+                                                        onChange={(e) => setNewWeekSetting({ ...newWeekSetting, end_date: e.target.value })}
+                                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                                    />
+                                                </div>
+                                                <div className="flex items-end">
+                                                    <button
+                                                        onClick={handleSaveWeekSetting}
+                                                        disabled={savingSettings}
+                                                        className="w-full px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                                                    >
+                                                        <Save className="w-4 h-4" />
+                                                        {getText('Save', 'Simpan')}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Existing Week Settings */}
+                                        <div className="space-y-2">
+                                            {weekSettings.length === 0 ? (
+                                                <p className="text-center text-gray-500 py-4">{getText('No week settings for this month', 'Belum ada pengaturan minggu untuk bulan ini')}</p>
+                                            ) : (
+                                                weekSettings.map((week) => (
+                                                    <div key={week.id} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-10 h-10 bg-teal-100 rounded-lg flex items-center justify-center">
+                                                                <span className="font-bold text-teal-600">{week.week_number}</span>
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-medium text-gray-900">Minggu {week.week_number}</p>
+                                                                <p className="text-sm text-gray-500">
+                                                                    {format(new Date(week.start_date), 'd MMM', { locale: localeId })} - {format(new Date(week.end_date), 'd MMM yyyy', { locale: localeId })}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${week.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                                                            {week.is_active ? 'Aktif' : 'Non-Aktif'}
+                                                        </span>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Special Dates Tab */}
+                                {settingsTab === 'holidays' && (
+                                    <div className="space-y-4">
+                                        <p className="text-sm text-gray-500 mb-4">
+                                            {getText('Mark special dates when lecturers cannot submit attendance. Add a reason that will be shown to lecturers.', 'Tandai tanggal khusus dimana dosen tidak bisa melakukan presensi. Tambahkan alasan yang akan ditampilkan ke dosen.')}
+                                        </p>
+
+                                        {/* Add New Special Date */}
+                                        <div className="bg-red-50 p-4 rounded-xl border border-red-200">
+                                            <h4 className="font-medium text-red-900 mb-3 flex items-center gap-2">
+                                                <Plus className="w-4 h-4" />
+                                                {getText('Add Special Date', 'Tambah Tanggal Khusus')}
+                                            </h4>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                <div>
+                                                    <label className="block text-xs text-gray-600 mb-1">{getText('Date', 'Tanggal')}</label>
+                                                    <input
+                                                        type="date"
+                                                        value={newSpecialDate.date}
+                                                        onChange={(e) => setNewSpecialDate({ ...newSpecialDate, date: e.target.value })}
+                                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs text-gray-600 mb-1">{getText('Reason', 'Alasan')}</label>
+                                                    <input
+                                                        type="text"
+                                                        value={newSpecialDate.reason}
+                                                        onChange={(e) => setNewSpecialDate({ ...newSpecialDate, reason: e.target.value })}
+                                                        placeholder={getText('e.g. National Holiday', 'cth: Hari Libur Nasional')}
+                                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                                    />
+                                                </div>
+                                                <div className="flex items-end">
+                                                    <button
+                                                        onClick={handleSaveSpecialDate}
+                                                        disabled={savingSettings}
+                                                        className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                                                    >
+                                                        <Save className="w-4 h-4" />
+                                                        {getText('Save', 'Simpan')}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Existing Special Dates */}
+                                        <div className="space-y-2">
+                                            {specialDates.length === 0 ? (
+                                                <p className="text-center text-gray-500 py-4">{getText('No special dates for this month', 'Belum ada tanggal khusus untuk bulan ini')}</p>
+                                            ) : (
+                                                specialDates.map((sd) => (
+                                                    <div key={sd.id} className="flex items-center justify-between p-3 bg-white border border-red-200 rounded-lg">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                                                                <CalendarOff className="w-5 h-5 text-red-600" />
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-medium text-gray-900">
+                                                                    {format(new Date(sd.date), 'EEEE, d MMMM yyyy', { locale: localeId })}
+                                                                </p>
+                                                                <p className="text-sm text-red-600">{sd.reason}</p>
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleDeleteSpecialDate(sd.id!)}
+                                                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Payment Rates Tab */}
+                                {settingsTab === 'rates' && (
+                                    <div className="space-y-4">
+                                        <p className="text-sm text-gray-500 mb-4">
+                                            {getText('Set payment rates for HBV (Homebase Vokasi) and NHBV (Non Homebase Vokasi) lecturers.', 'Atur tarif pembayaran untuk dosen HBV (Homebase Vokasi) dan NHBV (Non Homebase Vokasi).')}
+                                        </p>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {/* HBV Rate */}
+                                            <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
+                                                <h4 className="font-medium text-blue-900 mb-3">HBV (Homebase Vokasi)</h4>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-gray-600">Rp</span>
+                                                    <input
+                                                        id="hbv-rate-input"
+                                                        type="number"
+                                                        defaultValue={paymentRates.find(r => r.lecturer_type === 'HBV')?.rate || 75000}
+                                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                                                    />
+                                                </div>
+                                                <p className="text-xs text-gray-500 mt-2">Per kehadiran terverifikasi</p>
+                                                <button
+                                                    onClick={() => {
+                                                        const input = document.getElementById('hbv-rate-input') as HTMLInputElement;
+                                                        handleSavePaymentRate('HBV', parseFloat(input.value));
+                                                    }}
+                                                    disabled={savingSettings}
+                                                    className="mt-3 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                                                >
+                                                    <Save className="w-4 h-4" />
+                                                    Simpan HBV
+                                                </button>
+                                            </div>
+
+                                            {/* NHBV Rate */}
+                                            <div className="bg-orange-50 p-4 rounded-xl border border-orange-200">
+                                                <h4 className="font-medium text-orange-900 mb-3">NHBV (Non Homebase Vokasi)</h4>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-gray-600">Rp</span>
+                                                    <input
+                                                        id="nhbv-rate-input"
+                                                        type="number"
+                                                        defaultValue={paymentRates.find(r => r.lecturer_type === 'NHBV')?.rate || 75000}
+                                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                                                    />
+                                                </div>
+                                                <p className="text-xs text-gray-500 mt-2">Per kehadiran terverifikasi</p>
+                                                <button
+                                                    onClick={() => {
+                                                        const input = document.getElementById('nhbv-rate-input') as HTMLInputElement;
+                                                        handleSavePaymentRate('NHBV', parseFloat(input.value));
+                                                    }}
+                                                    disabled={savingSettings}
+                                                    className="mt-3 w-full px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                                                >
+                                                    <Save className="w-4 h-4" />
+                                                    Simpan NHBV
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div >
     );
 };

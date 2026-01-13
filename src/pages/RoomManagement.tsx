@@ -3,8 +3,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-    Building, Plus, Search, Edit, Trash2, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench, ChevronDown, BookOpen, GraduationCap, UserCheck, UserPlus, UserMinus, AlertTriangle, Filter, ChevronUp, Maximize2
+    Building, Plus, Search, Edit, Trash2, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench, ChevronDown, BookOpen, GraduationCap, UserCheck, UserPlus, UserMinus, AlertTriangle, Filter, ChevronUp, Maximize2, QrCode, Download
 } from 'lucide-react';
+import QRCode from 'react-qr-code';
+import html2canvas from 'html2canvas';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { Room, Department, Equipment, StudyProgram } from '../types';
@@ -130,6 +132,10 @@ const RoomManagement: React.FC = () => {
         onCancel: () => void;
     } | null>(null);
     const confirmPromiseResolve = useRef<((value: boolean) => void) | null>(null);
+
+    // QR Code State
+    const [showQRModal, setShowQRModal] = useState(false);
+    const [selectedRoomForQR, setSelectedRoomForQR] = useState<EnhancedRoomStatus | null>(null);
 
 
     // Refs untuk dropdown manual DOM manipulation
@@ -704,6 +710,33 @@ const RoomManagement: React.FC = () => {
     const hideUserDropdown = () => {
         if (userDropdownRef.current) {
             userDropdownRef.current.style.display = 'none';
+        }
+    };
+
+    const handleShowQR = (room: EnhancedRoomStatus) => {
+        setSelectedRoomForQR(room);
+        setShowQRModal(true);
+    };
+
+    const downloadQR = async () => {
+        const element = document.getElementById('qr-card-element');
+        if (!element || !selectedRoomForQR) return;
+
+        try {
+            const canvas = await html2canvas(element, {
+                backgroundColor: '#ffffff',
+                scale: 2 // Higher resolution
+            });
+
+            const link = document.createElement('a');
+            link.download = `QR-${selectedRoomForQR.name.replace(/\s+/g, '-')}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+
+            alert.success(getText('QR Code downloaded successfully', 'QR Code berhasil diunduh'));
+        } catch (error) {
+            console.error('Error downloading QR:', error);
+            alert.error(getText('Failed to download QR Code', 'Gagal mengunduh QR Code'));
         }
     };
 
@@ -1413,6 +1446,13 @@ const RoomManagement: React.FC = () => {
                                         </div>
                                         <div className="flex items-center justify-end pt-4 mt-4 border-t border-gray-100 space-x-1">
                                             <button
+                                                onClick={() => handleShowQR(room)}
+                                                className="p-1 text-gray-500 hover:text-purple-600 transition-colors"
+                                                title={getText("View QR Code", "Lihat QR Code")}
+                                            >
+                                                <QrCode className="h-4 w-4" />
+                                            </button>
+                                            <button
                                                 onClick={() => setShowRoomDetail(room)}
                                                 className="p-1 text-gray-500 hover:text-indigo-600 transition-colors"
                                                 title={getText("View Details", "Lihat Detail")}
@@ -1474,6 +1514,13 @@ const RoomManagement: React.FC = () => {
                                             {getText(roomStatus.status, roomStatus.status)}
                                         </span>
                                         <div className="flex items-center space-x-2">
+                                            <button
+                                                onClick={() => handleShowQR(room)}
+                                                className="p-2 text-gray-600 hover:text-purple-600 transition-colors"
+                                                title={getText("View QR Code", "Lihat QR Code")}
+                                            >
+                                                <QrCode className="h-4 w-4" />
+                                            </button>
                                             <button
                                                 onClick={() => setShowRoomDetail(room)}
                                                 className="p-2 text-gray-600 hover:text-indigo-600 transition-colors"
@@ -2058,6 +2105,66 @@ const RoomManagement: React.FC = () => {
                         className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
                         onClick={(e) => e.stopPropagation()}
                     />
+                </div>
+            )}
+            {/* QR Code Modal */}
+            {showQRModal && selectedRoomForQR && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+                        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                            <h3 className="font-semibold text-lg">QR Code: {selectedRoomForQR.name}</h3>
+                            <button
+                                onClick={() => setShowQRModal(false)}
+                                className="text-gray-400 hover:text-gray-600"
+                            >
+                                <X className="h-6 w-6" />
+                            </button>
+                        </div>
+                        <div className="p-6 flex flex-col items-center">
+                            {/* The Card to be captured */}
+                            <div
+                                id="qr-card-element"
+                                className="bg-white p-6 border-2 border-gray-900 rounded-xl flex flex-col items-center gap-4 w-64 shadow-sm"
+                            >
+                                <div className="text-center">
+                                    <h2 className="font-bold text-xl uppercase text-gray-900">{selectedRoomForQR.name}</h2>
+                                    <p className="text-xs text-gray-500">{selectedRoomForQR.code}</p>
+                                </div>
+                                <div className="bg-white p-2 rounded">
+                                    <QRCode
+                                        value={selectedRoomForQR.id}
+                                        size={180}
+                                        viewBox={`0 0 256 256`}
+                                        style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                                    />
+                                </div>
+                                <div className="text-center">
+                                    <p className="text-[10px] text-gray-400 uppercase tracking-widest">Scan untuk Presensi</p>
+                                    <p className="text-[8px] text-gray-300 mt-1">Fakultas Vokasi UNY</p>
+                                </div>
+                            </div>
+
+                            <p className="text-sm text-gray-500 mt-6 text-center">
+                                Cetak dan tempel kode QR ini di ruangan agar dosen dapat melakukan presensi.
+                            </p>
+
+                            <div className="flex gap-3 w-full mt-6">
+                                <button
+                                    onClick={() => setShowQRModal(false)}
+                                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium"
+                                >
+                                    Tutup
+                                </button>
+                                <button
+                                    onClick={downloadQR}
+                                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center justify-center gap-2"
+                                >
+                                    <Download className="w-4 h-4" />
+                                    Download
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

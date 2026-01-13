@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Camera, User, Clock, BookOpen, Users, CheckCircle, AlertCircle, ChevronDown, Loader2, ExternalLink, PartyPopper, GraduationCap, MapPin, Navigation } from 'lucide-react';
+import { Search, Camera, User, Clock, BookOpen, Users, CheckCircle, AlertCircle, ChevronDown, Loader2, ExternalLink, PartyPopper, GraduationCap, MapPin, Navigation, CalendarX, X, PenTool, QrCode } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import toast from 'react-hot-toast';
+import { Html5QrcodeScanner } from 'html5-qrcode';
+import SignatureCanvas from 'react-signature-canvas';
 
 // ==================== KONFIGURASI PRESENSI ====================
 // Jika true, presensi tetap bisa dilakukan meski di luar lokasi (hanya warning)
@@ -195,6 +197,12 @@ const DosenPresensi: React.FC = () => {
     const [submitting, setSubmitting] = useState(false);
     const [activeTab, setActiveTab] = useState<'presensi' | 'uny'>('presensi');
 
+    // QR & Signature State
+    const [scannedRoomId, setScannedRoomId] = useState<string | null>(null);
+    const [scannedRoomName, setScannedRoomName] = useState<string | null>(null);
+    const signatureRef = useRef<any>(null);
+    const [signatureError, setSignatureError] = useState<string | null>(null);
+
     // Attendance limit states
     const [hasAttendedToday, setHasAttendedToday] = useState(false);
     const [checkingAttendance, setCheckingAttendance] = useState(false);
@@ -226,6 +234,19 @@ const DosenPresensi: React.FC = () => {
 
     // Realtime clock state
     const [currentTime, setCurrentTime] = useState(new Date());
+
+    // Special date states (tanggal libur)
+    const [todaySpecialDate, setTodaySpecialDate] = useState<{ date: string; reason: string } | null>(null);
+    const [showSpecialDateModal, setShowSpecialDateModal] = useState(false);
+
+    // Active week states (untuk cek apakah dalam periode minggu aktif)
+    const [isWithinActiveWeek, setIsWithinActiveWeek] = useState<boolean>(true); // Default true to not block initially
+    const [activeWeekInfo, setActiveWeekInfo] = useState<{ week_number: number; start_date: string; end_date: string } | null>(null);
+    const [showNoActiveWeekModal, setShowNoActiveWeekModal] = useState(false);
+
+    // Global Disable Attendance State
+    const [isAttendanceDisabledGlobally, setIsAttendanceDisabledGlobally] = useState<{ isDisabled: boolean; message: string; fromDate: string | null } | null>(null);
+    const [showGlobalDisableModal, setShowGlobalDisableModal] = useState(false);
 
     // Calculate distance between two coordinates using Haversine formula
     const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -266,7 +287,136 @@ const DosenPresensi: React.FC = () => {
         }
     };
 
-    // Get current geolocation and compare with campus locations
+    // Fetch today's special date if any (tanggal libur)
+    const fetchTodaySpecialDate = async () => {
+        try {
+            const todayStr = format(new Date(), 'yyyy-MM-dd');
+            const { data, error } = await supabase
+                .from('attendance_special_dates')
+                .select('date, reason')
+                .eq('date', todayStr)
+                .maybeSingle();
+
+            if (error) {
+                console.error('[SpecialDate] Error:', error);
+                return;
+            }
+
+            if (data) {
+                console.log('[SpecialDate] Today is a special date:', data.reason);
+                setTodaySpecialDate(data);
+                setShowSpecialDateModal(true); // Show warning modal
+            } else {
+                setTodaySpecialDate(null);
+            }
+        } catch (error) {
+            console.error('[SpecialDate] Error:', error);
+        }
+    };
+
+    // Check if today is within an active teaching week
+    const checkActiveWeek = async () => {
+        try {
+            const today = new Date();
+            const todayStr = format(today, 'yyyy-MM-dd');
+            const currentMonth = today.getMonth() + 1;
+            const currentYear = today.getFullYear();
+
+            // Fetch week settings for current month
+            const { data, error } = await supabase
+                .from('attendance_week_settings')
+                .select('*')
+                .eq('month', currentMonth)
+                .eq('year', currentYear)
+                .eq('is_active', true);
+
+            if (error) {
+                console.error('[ActiveWeek] Error:', error);
+                return;
+            }
+
+            console.log('[ActiveWeek] Week settings for this month:', data);
+
+            // If no week settings configured, allow attendance (default behavior)
+            if (!data || data.length === 0) {
+                console.log('[ActiveWeek] No week settings configured, allowing attendance');
+                setIsWithinActiveWeek(true);
+                setActiveWeekInfo(null);
+                return;
+            }
+
+            // Check if today falls within any active week
+            const todayDate = new Date(todayStr);
+            const activeWeek = data.find(week => {
+                const startDate = new Date(week.start_date);
+                const endDate = new Date(week.end_date);
+                return todayDate >= startDate && todayDate <= endDate;
+            });
+
+            if (activeWeek) {
+                console.log('[ActiveWeek] Today is within active week:', activeWeek.week_number);
+                setIsWithinActiveWeek(true);
+                setActiveWeekInfo({
+                    week_number: activeWeek.week_number,
+                    start_date: activeWeek.start_date,
+                    end_date: activeWeek.end_date
+                });
+            } else {
+                console.log('[ActiveWeek] Today is NOT within any active week - blocking attendance');
+                setIsWithinActiveWeek(false);
+                setActiveWeekInfo(null);
+                setShowNoActiveWeekModal(true);
+            }
+        } catch (error) {
+            console.error('[ActiveWeek] Error:', error);
+        }
+    };
+
+    // Check global attendance settings (disable attendance toggle)
+    const checkGlobalSettings = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('attendance_global_settings')
+                .select('*')
+                .limit(1)
+                .maybeSingle();
+
+            if (error) {
+                console.error('[GlobalSettings] Error:', error);
+                return;
+            }
+
+            if (data && data.is_attendance_disabled) {
+                // Check if we passed the disable start date (if set)
+                let shouldDisable = true;
+                if (data.disabled_from_date) {
+                    const today = new Date();
+                    const fromDate = new Date(data.disabled_from_date);
+                    today.setHours(0, 0, 0, 0);
+                    fromDate.setHours(0, 0, 0, 0);
+
+                    if (today < fromDate) {
+                        shouldDisable = false;
+                    }
+                }
+
+                if (shouldDisable) {
+                    setIsAttendanceDisabledGlobally({
+                        isDisabled: true,
+                        message: data.disabled_message || 'Presensi transport sedang ditutup.',
+                        fromDate: data.disabled_from_date
+                    });
+                    setShowGlobalDisableModal(true);
+                } else {
+                    setIsAttendanceDisabledGlobally(null);
+                }
+            } else {
+                setIsAttendanceDisabledGlobally(null);
+            }
+        } catch (error) {
+            console.error('[GlobalSettings] Error:', error);
+        }
+    };
     const fetchGeolocation = async () => {
         if (!navigator.geolocation) {
             setGeolocationError('Browser tidak mendukung geolokasi');
@@ -358,6 +508,9 @@ const DosenPresensi: React.FC = () => {
     useEffect(() => {
         fetchLecturers();
         fetchCampusLocations();
+        fetchTodaySpecialDate(); // Check if today is special date
+        checkActiveWeek(); // Check if today is within active teaching week
+        checkGlobalSettings(); // Check if attendance is disabled globally
         // Also fetch geolocation on mount
         fetchGeolocation();
     }, []);
@@ -436,6 +589,44 @@ const DosenPresensi: React.FC = () => {
             setSelectedSchedules([]);
         }
     }, [selectedLecturerId, lecturers, hasAttendedToday]);
+
+    // QR Scanner Effect
+    useEffect(() => {
+        if (activeTab === 'presensi' && !scannedRoomId && !showSpecialDateModal && !showNoActiveWeekModal && !showGlobalDisableModal) {
+            // Delay slightly to ensure DOM is ready
+            const timeoutId = setTimeout(() => {
+                const scanner = new Html5QrcodeScanner(
+                    "qr-reader",
+                    { fps: 10, qrbox: { width: 250, height: 250 } },
+                    /* verbose= */ false
+                );
+
+                scanner.render((decodedText) => {
+                    // Assuming QR code contains the ROOM ID
+                    console.log("Scanned:", decodedText);
+                    setScannedRoomId(decodedText);
+                    scanner.clear().catch(console.error);
+
+                    // Optional: Fetch room name
+                    supabase.from('rooms').select('name').eq('id', decodedText).single()
+                        .then(({ data }) => {
+                            if (data) setScannedRoomName(data.name);
+                        });
+
+                    toast.success('Ruangan berhasil di-scan!');
+                }, (errorMessage) => {
+                    // parse error, ignore
+                });
+
+                // Cleanup function inside the effect
+                return () => {
+                    scanner.clear().catch(() => { });
+                };
+            }, 500);
+
+            return () => clearTimeout(timeoutId);
+        }
+    }, [activeTab, scannedRoomId, showSpecialDateModal, showNoActiveWeekModal, showGlobalDisableModal]);
 
     const fetchLecturers = async () => {
         try {
@@ -670,6 +861,24 @@ const DosenPresensi: React.FC = () => {
     };
 
     const handleSubmit = async () => {
+        // Block submission on special dates (holidays)
+        if (todaySpecialDate) {
+            setShowSpecialDateModal(true);
+            return;
+        }
+
+        // Block submission if not within active teaching week
+        if (!isWithinActiveWeek) {
+            setShowNoActiveWeekModal(true);
+            return;
+        }
+
+        // Block submission if attendance is disabled globally
+        if (isAttendanceDisabledGlobally?.isDisabled) {
+            setShowGlobalDisableModal(true);
+            return;
+        }
+
         if (!selectedLecturerId) {
             toast.error('Silakan pilih nama dosen');
             return;
@@ -683,26 +892,54 @@ const DosenPresensi: React.FC = () => {
             return;
         }
 
-        // Capture photo automatically
-        const photoData = capturePhoto();
-        if (!photoData) {
-            toast.error('Gagal mengambil foto, silakan coba lagi');
+        // Validate Signature
+        if (!signatureRef.current || signatureRef.current.isEmpty()) {
+            setSignatureError('Tanda tangan wajib diisi');
+            toast.error('Mohon tanda tangan terlebih dahulu');
+            const signatureElement = document.querySelector('canvas');
+            signatureElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
             return;
         }
 
-        if (hasAttendedToday) {
-            toast.error(`Anda sudah melakukan presensi hari ini pada pukul ${lastAttendanceTime}.`);
-            return;
-        }
-
-        // Check geolocation if required
-        if (!ALLOW_OUTSIDE_LOCATION && geolocation && !geolocation.isWithinAllowedLocation) {
-            toast.error(`Anda berada di luar area yang diizinkan. Jarak ke ${geolocation.nearestLocation}: ${geolocation.distanceToNearest}m`);
-            return;
-        }
+        setSubmitting(true);
 
         try {
-            setSubmitting(true);
+            // Upload Signature
+            const signatureUrlData = signatureRef.current.toDataURL();
+            const signatureBlob = await (await fetch(signatureUrlData)).blob();
+            const signatureFileName = `signature_${selectedLecturerId}_${Date.now()}.png`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('attendance_signatures')
+                .upload(signatureFileName, signatureBlob);
+
+            if (uploadError) throw uploadError;
+
+            const { data: publicUrlData } = supabase.storage
+                .from('attendance_signatures')
+                .getPublicUrl(signatureFileName);
+
+            const signatureUrl = publicUrlData.publicUrl;
+
+            // Capture photo automatically
+            const photoData = capturePhoto();
+            if (!photoData) {
+                toast.error('Gagal mengambil foto, silakan coba lagi');
+                return;
+            }
+
+            if (hasAttendedToday) {
+                toast.error(`Anda sudah melakukan presensi hari ini pada pukul ${lastAttendanceTime}.`);
+                return;
+            }
+
+            // Check geolocation if required
+            if (!ALLOW_OUTSIDE_LOCATION && geolocation && !geolocation.isWithinAllowedLocation) {
+                toast.error(`Anda berada di luar area yang diizinkan. Jarak ke ${geolocation.nearestLocation}: ${geolocation.distanceToNearest}m`);
+                return;
+            }
+
+
 
             // Refresh geolocation before submit
             if (!geolocation) {
@@ -765,7 +1002,9 @@ const DosenPresensi: React.FC = () => {
                 purpose: purposeValue,
                 purpose_description: purposeDesc,
                 verification_status: 'pending',
-                study_program_id: lecturer.study_program?.id || null
+                study_program_id: lecturer.study_program?.id || null,
+                scanned_room_id: scannedRoomId || null,
+                signature_url: signatureUrl || null
                 // Note: Geolocation columns will be added later via migration
                 // location_latitude, location_longitude, location_accuracy, location_name, is_within_allowed_location
             };
@@ -911,8 +1150,42 @@ const DosenPresensi: React.FC = () => {
 
             {/* Content */}
             <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
-                {activeTab === 'presensi' ? (
+                {activeTab === 'presensi' && !scannedRoomId ? (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center animate-fadeIn">
+                        <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <QrCode className="w-8 h-8 text-blue-600" />
+                        </div>
+                        <h2 className="text-2xl font-bold text-gray-900 mb-3">Scan QR Code Ruangan</h2>
+                        <p className="text-gray-600 mb-8 max-w-md mx-auto">
+                            Sebelum melakukan presensi, Anda wajib memindai QR Code yang tertempel di dinding ruangan untuk verifikasi lokasi.
+                        </p>
+                        <div className="max-w-sm mx-auto bg-gray-900 rounded-2xl overflow-hidden shadow-lg border-4 border-white mb-6">
+                            <div id="qr-reader" className="w-full"></div>
+                        </div>
+                        <div className="text-sm text-gray-400">
+                            Arahkan kamera ke kode QR ruangan
+                        </div>
+                    </div>
+                ) : activeTab === 'presensi' ? (
                     <div className="space-y-6">
+                        {/* Scanned Room Indicator */}
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-emerald-100 rounded-lg">
+                                    <MapPin className="w-5 h-5 text-emerald-600" />
+                                </div>
+                                <div>
+                                    <h3 className="font-semibold text-emerald-900">Terverifikasi di Ruangan</h3>
+                                    <p className="text-sm text-emerald-700">{scannedRoomName || 'Ruangan Valid'} (ID: {scannedRoomId?.substring(0, 8)}...)</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setScannedRoomId(null)}
+                                className="text-xs text-emerald-600 hover:text-emerald-700 underline"
+                            >
+                                Scan Ulang
+                            </button>
+                        </div>
                         {/* Step 1: Select Lecturer */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                             <div className="flex items-center gap-3 mb-4">
@@ -1240,6 +1513,41 @@ const DosenPresensi: React.FC = () => {
                                 </div>
                             </div>
                         )}
+
+
+                        {/* Signature Section */}
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                <PenTool className="w-5 h-5 text-blue-600" />
+                                Tanda Tangan Digital
+                            </h2>
+                            <div className={`border-2 rounded-xl overflow-hidden ${signatureError ? 'border-red-300' : 'border-gray-200 border-dashed'}`}>
+                                <SignatureCanvas
+                                    ref={signatureRef}
+                                    canvasProps={{
+                                        className: 'w-full h-40 bg-gray-50 cursor-crosshair',
+                                        height: 160
+                                    }}
+                                    onBegin={() => setSignatureError(null)}
+                                />
+                            </div>
+                            <div className="flex justify-between items-center mt-2">
+                                <p className="text-xs text-gray-500">Tanda tangan pada area di atas</p>
+                                <button
+                                    onClick={() => signatureRef.current?.clear()}
+                                    className="text-xs text-red-600 hover:text-red-700 font-medium"
+                                >
+                                    Hapus & Ulangi
+                                </button>
+                            </div>
+                            {signatureError && (
+                                <p className="text-sm text-red-600 mt-2 flex items-center gap-1">
+                                    <AlertCircle className="w-4 h-4" />
+                                    {signatureError}
+                                </p>
+                            )}
+                        </div>
+
                         <button
                             onClick={handleSubmit}
                             disabled={
@@ -1275,7 +1583,8 @@ const DosenPresensi: React.FC = () => {
                                 </>
                             )}
                         </button>
-                    </div>
+
+                    </div >
                 ) : (
                     /* UNY Presensi Tab - Full Frame iFrame */
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1303,95 +1612,238 @@ const DosenPresensi: React.FC = () => {
                         </div>
                     </div>
                 )}
-            </div>
+            </div >
 
             {/* Footer */}
-            <div className="py-8 text-center text-sm text-gray-400">
+            < div className="py-8 text-center text-sm text-gray-400" >
                 SIMPEL Kuliah © {new Date().getFullYear()}
-            </div>
+            </div >
 
             {/* Success Modal */}
-            {showSuccessModal && successData && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-300">
-                        {/* Success Header */}
-                        <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 text-center">
-                            <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-4">
-                                <PartyPopper className="w-10 h-10 text-white" />
-                            </div>
-                            <h3 className="text-2xl font-bold text-white mb-1">Presensi Berhasil!</h3>
-                            <p className="text-emerald-100 text-sm">Data kehadiran Anda telah tercatat</p>
-                        </div>
-
-                        {/* Photo & Info */}
-                        <div className="p-6">
-                            {/* Captured Photo */}
-                            <div className="mb-4">
-                                <img
-                                    src={successData.photo}
-                                    alt="Foto Presensi"
-                                    className="w-32 h-32 rounded-2xl object-cover mx-auto border-4 border-emerald-100 shadow-lg"
-                                />
-                            </div>
-
-                            {/* Lecturer Info */}
-                            <div className="text-center mb-4">
-                                <h4 className="text-xl font-bold text-gray-900 mb-1">{successData.lecturerName}</h4>
-                                <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
-                                    <Clock className="w-4 h-4" />
-                                    {successData.time} WIB
+            {
+                showSuccessModal && successData && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                        <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-300">
+                            {/* Success Header */}
+                            <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 text-center">
+                                <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <PartyPopper className="w-10 h-10 text-white" />
                                 </div>
+                                <h3 className="text-2xl font-bold text-white mb-1">Presensi Berhasil!</h3>
+                                <p className="text-emerald-100 text-sm">Data kehadiran Anda telah tercatat</p>
                             </div>
 
-                            {/* Schedule/Purpose Info */}
-                            <div className="bg-gray-50 rounded-xl p-4 mb-4">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${successData.purpose === 'Mengajar' ? 'bg-blue-100 text-blue-700' :
-                                        successData.purpose === 'Sidang' ? 'bg-purple-100 text-purple-700' :
-                                            'bg-amber-100 text-amber-700'
-                                        }`}>
-                                        {successData.purpose}
-                                    </span>
-                                    {successData.scheduleCount > 0 && (
-                                        <span className="text-xs text-gray-500">
-                                            {successData.scheduleCount} kegiatan tercatat
+                            {/* Photo & Info */}
+                            <div className="p-6">
+                                {/* Captured Photo */}
+                                <div className="mb-4">
+                                    <img
+                                        src={successData.photo}
+                                        alt="Foto Presensi"
+                                        className="w-32 h-32 rounded-2xl object-cover mx-auto border-4 border-emerald-100 shadow-lg"
+                                    />
+                                </div>
+
+                                {/* Lecturer Info */}
+                                <div className="text-center mb-4">
+                                    <h4 className="text-xl font-bold text-gray-900 mb-1">{successData.lecturerName}</h4>
+                                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                                        <Clock className="w-4 h-4" />
+                                        {successData.time} WIB
+                                    </div>
+                                </div>
+
+                                {/* Schedule/Purpose Info */}
+                                <div className="bg-gray-50 rounded-xl p-4 mb-4">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${successData.purpose === 'Mengajar' ? 'bg-blue-100 text-blue-700' :
+                                            successData.purpose === 'Sidang' ? 'bg-purple-100 text-purple-700' :
+                                                'bg-amber-100 text-amber-700'
+                                            }`}>
+                                            {successData.purpose}
                                         </span>
-                                    )}
+                                        {successData.scheduleCount > 0 && (
+                                            <span className="text-xs text-gray-500">
+                                                {successData.scheduleCount} kegiatan tercatat
+                                            </span>
+                                        )}
+                                    </div>
+                                    <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans max-h-40 overflow-y-auto">
+                                        {successData.scheduleInfo}
+                                    </pre>
                                 </div>
-                                <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans max-h-40 overflow-y-auto">
-                                    {successData.scheduleInfo}
-                                </pre>
+
+                                {/* Location Info */}
+                                {successData.locationInfo && (
+                                    <div className="flex items-center justify-center gap-2 text-sm text-gray-600 bg-gray-100 rounded-lg p-2 mb-3">
+                                        <MapPin className="w-4 h-4" />
+                                        <span>{successData.locationInfo}</span>
+                                    </div>
+                                )}
+
+                                {/* Status */}
+                                <div className="flex items-center justify-center gap-2 text-sm text-amber-600 bg-amber-50 rounded-lg p-3">
+                                    <AlertCircle className="w-4 h-4" />
+                                    <span>Status: Menunggu Verifikasi</span>
+                                </div>
                             </div>
 
-                            {/* Location Info */}
-                            {successData.locationInfo && (
-                                <div className="flex items-center justify-center gap-2 text-sm text-gray-600 bg-gray-100 rounded-lg p-2 mb-3">
-                                    <MapPin className="w-4 h-4" />
-                                    <span>{successData.locationInfo}</span>
-                                </div>
-                            )}
-
-                            {/* Status */}
-                            <div className="flex items-center justify-center gap-2 text-sm text-amber-600 bg-amber-50 rounded-lg p-3">
-                                <AlertCircle className="w-4 h-4" />
-                                <span>Status: Menunggu Verifikasi</span>
+                            {/* Close Button */}
+                            <div className="px-6 pb-6">
+                                <button
+                                    onClick={closeSuccessModal}
+                                    className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all flex items-center justify-center gap-2"
+                                >
+                                    <CheckCircle className="w-5 h-5" />
+                                    Selesai
+                                </button>
                             </div>
-                        </div>
-
-                        {/* Close Button */}
-                        <div className="px-6 pb-6">
-                            <button
-                                onClick={closeSuccessModal}
-                                className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all flex items-center justify-center gap-2"
-                            >
-                                <CheckCircle className="w-5 h-5" />
-                                Selesai
-                            </button>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+
+            {/* Special Date Warning Modal */}
+            {
+                showSpecialDateModal && todaySpecialDate && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowSpecialDateModal(false)} />
+                        <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+                            {/* Header */}
+                            <div className="bg-gradient-to-r from-red-500 to-orange-500 p-6 text-center">
+                                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <CalendarX className="w-8 h-8 text-white" />
+                                </div>
+                                <h2 className="text-xl font-bold text-white">Tanggal Libur</h2>
+                                <p className="text-white/80 text-sm mt-1">
+                                    {format(new Date(todaySpecialDate.date), 'EEEE, d MMMM yyyy', { locale: localeId })}
+                                </p>
+                            </div>
+                            {/* Content */}
+                            <div className="p-6">
+                                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                                    <p className="text-red-800 font-medium text-center">{todaySpecialDate.reason}</p>
+                                </div>
+                                <p className="text-gray-600 text-center text-sm">
+                                    Presensi tidak dapat dilakukan pada tanggal ini. Silakan hubungi bagian Keuangan jika ada pertanyaan.
+                                </p>
+                            </div>
+                            {/* Footer */}
+                            <div className="px-6 pb-6">
+                                <button
+                                    onClick={() => setShowSpecialDateModal(false)}
+                                    className="w-full py-3 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all flex items-center justify-center gap-2"
+                                >
+                                    <X className="w-5 h-5" />
+                                    Tutup
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* No Active Week Modal */}
+            {
+                showNoActiveWeekModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowNoActiveWeekModal(false)} />
+                        <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+                            {/* Header */}
+                            <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-6 text-center">
+                                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <CalendarX className="w-8 h-8 text-white" />
+                                </div>
+                                <h2 className="text-xl font-bold text-white">Di Luar Minggu Kuliah</h2>
+                                <p className="text-white/80 text-sm mt-1">
+                                    {format(new Date(), 'EEEE, d MMMM yyyy', { locale: localeId })}
+                                </p>
+                            </div>
+                            {/* Content */}
+                            <div className="p-6">
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+                                    <p className="text-amber-800 font-medium text-center">
+                                        Periode Minggu Kuliah belum aktif atau sudah berakhir
+                                    </p>
+                                </div>
+                                <p className="text-gray-600 text-center text-sm">
+                                    Presensi hanya dapat dilakukan pada periode minggu kuliah yang sudah diaktifkan oleh bagian Keuangan.
+                                    Hubungi bagian Keuangan jika Anda yakin periode kuliah seharusnya masih aktif.
+                                </p>
+                                {activeWeekInfo && (
+                                    <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                                        <p className="text-sm text-green-700 text-center">
+                                            Minggu aktif terakhir: <br />
+                                            <span className="font-semibold">Minggu Ke-{activeWeekInfo.week_number}</span>
+                                            <br />
+                                            ({format(new Date(activeWeekInfo.start_date), 'd MMM', { locale: localeId })} - {format(new Date(activeWeekInfo.end_date), 'd MMM yyyy', { locale: localeId })})
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                            {/* Footer */}
+                            <div className="px-6 pb-6">
+                                <button
+                                    onClick={() => setShowNoActiveWeekModal(false)}
+                                    className="w-full py-3 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all flex items-center justify-center gap-2"
+                                >
+                                    <X className="w-5 h-5" />
+                                    Tutup
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Global Disable Attendance Modal */}
+            {
+                showGlobalDisableModal && isAttendanceDisabledGlobally && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowGlobalDisableModal(false)} />
+                        <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+                            {/* Header */}
+                            <div className="bg-gradient-to-r from-red-600 to-pink-600 p-6 text-center">
+                                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <CalendarX className="w-8 h-8 text-white" />
+                                </div>
+                                <h2 className="text-xl font-bold text-white">Presensi Ditutup</h2>
+                                <p className="text-white/80 text-sm mt-1">
+                                    Akses presensi dinonaktifkan sementara
+                                </p>
+                            </div>
+                            {/* Content */}
+                            <div className="p-6">
+                                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                                    <p className="text-red-800 font-medium text-center">
+                                        Mohon Maaf, Presensi Dosen Saat Ini Tidak Dapat Diakses.
+                                    </p>
+                                </div>
+                                <p className="text-gray-600 text-center text-sm">
+                                    Sistem sedang dalam pemeliharaan atau ditutup oleh administrator.
+                                    Silakan hubungi bagian Admin/Keuangan untuk informasi lebih lanjut.
+                                </p>
+                                {isAttendanceDisabledGlobally.fromDate && (
+                                    <p className="text-gray-500 text-center text-xs mt-4">
+                                        Ditutup sejak: {format(new Date(isAttendanceDisabledGlobally.fromDate), 'd MMMM yyyy', { locale: localeId })}
+                                    </p>
+                                )}
+                            </div>
+                            {/* Footer */}
+                            <div className="px-6 pb-6">
+                                <button
+                                    onClick={() => setShowGlobalDisableModal(false)}
+                                    className="w-full py-3 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all flex items-center justify-center gap-2"
+                                >
+                                    <X className="w-5 h-5" />
+                                    Tutup
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+        </div >
     );
 };
 
