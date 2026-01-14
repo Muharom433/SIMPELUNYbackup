@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
 import Swal from 'sweetalert2';
 import { format } from 'date-fns';
+import RoomExcelUploadModal from '../components/ExcelUpload/RoomExcelUploadModal';
 
 // Types
 interface Campus { id: string; name: string; location: string; description: string; latitude?: number | null; longitude?: number | null; radius_meters?: number | null; }
@@ -74,6 +75,7 @@ const LocationManagement: React.FC = () => {
   const [showBoxModal, setShowBoxModal] = useState(false);
   const [showRoomDetailModal, setShowRoomDetailModal] = useState(false);
   const [showEditFloorModal, setShowEditFloorModal] = useState(false);
+  const [showRoomExcelModal, setShowRoomExcelModal] = useState(false);
   const [editingFloorName, setEditingFloorName] = useState('');
   const [originalFloorName, setOriginalFloorName] = useState('');
 
@@ -1215,17 +1217,26 @@ const LocationManagement: React.FC = () => {
                 <div className="bg-slate-50 border-t border-gray-100 p-2 space-y-1 animate-in slide-in-from-top-2 duration-200">
                   <div className="flex items-center justify-between px-2 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <span>{getText('Buildings', 'Gedung')}</span>
-                    <button
-                      onClick={() => {
-                        setEditingBuilding(null);
-                        setBuildingForm({ name: '', code: '', description: '', campus_id: campus.id, attachments: '' });
-                        setBuildingImagePreview('');
-                        setShowBuildingModal(true);
-                      }}
-                      className="text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                    >
-                      <Plus className="h-3 w-3" /> {getText('Add', 'Tambah')}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setShowRoomExcelModal(true)}
+                        className="text-green-600 hover:text-green-700 flex items-center gap-1"
+                        title={getText('Import Rooms from Excel', 'Import Ruangan dari Excel')}
+                      >
+                        <Upload className="h-3 w-3" /> {getText('Import', 'Import')}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingBuilding(null);
+                          setBuildingForm({ name: '', code: '', description: '', campus_id: campus.id, attachments: '' });
+                          setBuildingImagePreview('');
+                          setShowBuildingModal(true);
+                        }}
+                        className="text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                      >
+                        <Plus className="h-3 w-3" /> {getText('Add', 'Tambah')}
+                      </button>
+                    </div>
                   </div>
                   {buildings.filter(b => b.campus_id === campus.id).map(building => (
                     <div
@@ -3823,6 +3834,15 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
           </div>
         )
       }
+
+      {/* Room Excel Upload Modal */}
+      <RoomExcelUploadModal
+        isOpen={showRoomExcelModal}
+        onClose={() => setShowRoomExcelModal(false)}
+        onSuccess={() => fetchData(true)}
+        campusId={selectedCampusId || ''}
+        campusName={selectedCampus?.name || ''}
+      />
 
     </div >
   );
