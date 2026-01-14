@@ -2280,32 +2280,31 @@ const RoomManagement: React.FC = () => {
             <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
                 <div
                     id="room-users-card-element"
-                    className="relative w-[600px] min-h-[800px] bg-[#ffcc80] p-12 flex flex-col items-center text-gray-900 font-sans"
-                    style={{ backgroundColor: '#ffcc80' }} // Fallback inline style
+                    className="relative w-[215mm] min-h-[330mm] p-12 flex flex-col items-center text-gray-700 font-sans"
                 >
-                    {/* Watermark Background Type */}
-                    <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none overflow-hidden select-none">
-                        <div className="transform -rotate-12 text-white font-black text-[120px] leading-tight text-center">
-                            Mantap<br />Pilih<br />Vokasi!
-                        </div>
-                    </div>
+                    {/* Background Image Template */}
+                    <img
+                        src="/template_room_users.png"
+                        alt="Background"
+                        className="absolute inset-0 w-full h-full object-cover z-0"
+                    />
 
                     {/* Content */}
                     <div className="relative z-10 w-full flex flex-col items-center">
-                        <h1 className="text-3xl font-bold mb-1 text-center">Daftar Dosen</h1>
-                        <h2 className="text-2xl font-bold mb-12 text-center">
+                        <h1 className="text-[31px] font-bold mb-1 text-center">Daftar Dosen</h1>
+                        <h2 className="text-[31px] font-bold mb-12 text-center">
                             Ruang {showRoomDetail?.name || ''}
                         </h2>
 
                         <div className="w-full space-y-8 px-4">
                             {Object.entries(usersByProdi).map(([prodiName, users]) => (
                                 <div key={prodiName} className="mb-6">
-                                    <h3 className="text-xl font-medium mb-3 pl-2">
-                                        [{prodiName}]
+                                    <h3 className="text-[28px] font-medium mb-3 pl-2">
+                                        {prodiName}
                                     </h3>
                                     <ul className="list-disc pl-8 space-y-2">
                                         {users.map((item: any) => (
-                                            <li key={item.id} className="text-lg font-bold">
+                                            <li key={item.id} className="text-[28px] font-bold">
                                                 <span>{item.user.full_name}</span>
                                                 {item.user.jabatan && (
                                                     <span className="font-bold"> ( {item.user.jabatan} )</span>
