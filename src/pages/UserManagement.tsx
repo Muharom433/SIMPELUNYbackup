@@ -63,6 +63,7 @@ const userSchema = z.object({
   full_name: z.string().min(2, 'Full name is required'),
   identity_number: z.string().min(1, 'Identity number is required'),
   phone_number: z.string().optional().or(z.literal('')),
+  jabatan: z.string().optional().or(z.literal('')), // Position/Title field
   role: z.enum(['super_admin', 'department_admin', 'lecturer', 'student', 'laboratory', 'staffing', 'purchasing', 'technician', 'frontdesk', 'staff', 'finance']),
   department_id: z.string().optional().nullable(),
   study_program_id: z.string().optional().nullable(),
@@ -83,6 +84,7 @@ interface User {
   full_name: string;
   identity_number: string;
   phone_number?: string;
+  jabatan?: string; // Position/Title
   role: string;
   department_id?: string;
   study_program_id?: string;
@@ -424,6 +426,7 @@ const UserManagement: React.FC = () => {
       full_name: '',
       identity_number: '',
       phone_number: '',
+      jabatan: '', // Position/Title
       department_id: '',
       study_program_id: '',
       password: '',
@@ -510,8 +513,8 @@ const UserManagement: React.FC = () => {
       // Apply Search Filter (Server-side)
       if (debouncedSearchTerm) {
         const term = debouncedSearchTerm.toLowerCase();
-        // search fields: username, full_name, email, identity_number, phone_number
-        query = query.or(`username.ilike.%${term}%,full_name.ilike.%${term}%,email.ilike.%${term}%,identity_number.ilike.%${term}%,phone_number.ilike.%${term}%`);
+        // search fields: username, full_name, email, identity_number, phone_number, jabatan
+        query = query.or(`username.ilike.%${term}%,full_name.ilike.%${term}%,email.ilike.%${term}%,identity_number.ilike.%${term}%,phone_number.ilike.%${term}%,jabatan.ilike.%${term}%`);
       }
 
       // Apply Role Filter
@@ -855,6 +858,7 @@ const UserManagement: React.FC = () => {
         full_name: data.full_name.trim(),
         identity_number: data.identity_number.trim(),
         phone_number: data.phone_number?.trim() || null,
+        jabatan: data.jabatan?.trim() || null, // Position/Title
         role: data.role,
         department_id: data.department_id || null,
         study_program_id: data.study_program_id || null,
@@ -931,6 +935,7 @@ const UserManagement: React.FC = () => {
       full_name: user.full_name,
       identity_number: user.identity_number,
       phone_number: user.phone_number || '',
+      jabatan: user.jabatan || '', // Position/Title
       role: user.role as any,
       department_id: user.department_id || '',
       study_program_id: user.study_program_id || '',
@@ -1187,6 +1192,7 @@ const UserManagement: React.FC = () => {
                   full_name: '',
                   identity_number: '',
                   phone_number: '',
+                  jabatan: '', // Position/Title
                   department_id: profile?.role === 'department_admin' ? profile.department_id : '',
                   study_program_id: '',
                   password: '',
@@ -1341,6 +1347,11 @@ const UserManagement: React.FC = () => {
                               {getRoleDisplayName(user.role)}
                             </span>
                           </div>
+                          {user.jabatan && (
+                            <div className="text-xs text-gray-500 mt-1 italic">
+                              {user.jabatan}
+                            </div>
+                          )}
                         </div>
                       </td>
 
@@ -1529,6 +1540,12 @@ const UserManagement: React.FC = () => {
                         <div className="flex justify-between items-center py-2 border-b border-blue-200 last:border-b-0">
                           <span className="text-sm text-blue-700">{getText('Phone', 'Telepon')}</span>
                           <span className="font-medium text-blue-900">{showUserDetail.phone_number}</span>
+                        </div>
+                      )}
+                      {showUserDetail.jabatan && (
+                        <div className="flex justify-between items-center py-2 border-b border-blue-200 last:border-b-0">
+                          <span className="text-sm text-blue-700">{getText('Position/Title', 'Jabatan')}</span>
+                          <span className="font-medium text-blue-900">{showUserDetail.jabatan}</span>
                         </div>
                       )}
                       <div className="flex justify-between items-center py-2 border-b border-blue-200 last:border-b-0">
@@ -1937,6 +1954,24 @@ const UserManagement: React.FC = () => {
                           disabled={submitting}
                         />
                       </div>
+                    </div>
+
+                    {/* Jabatan (Position/Title) */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        {getText('Position/Title', 'Jabatan')}
+                      </label>
+                      <input
+                        {...form.register('jabatan')}
+                        type="text"
+                        className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${form.formState.errors.jabatan ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
+                          }`}
+                        placeholder={getText('e.g. Assistant Professor, Lab Assistant', 'cth. Asisten Ahli, Laboran')}
+                        disabled={submitting}
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        {getText('Enter the user\'s job title or position', 'Masukkan jabatan atau posisi pengguna')}
+                      </p>
                     </div>
                   </div>
                 </div>

@@ -137,6 +137,8 @@ const RoomManagement: React.FC = () => {
     const [showQRModal, setShowQRModal] = useState(false);
     const [selectedRoomForQR, setSelectedRoomForQR] = useState<EnhancedRoomStatus | null>(null);
     const [isDownloadingQR, setIsDownloadingQR] = useState(false);
+    const [isDownloadingUsers, setIsDownloadingUsers] = useState(false);
+
 
 
     // Refs untuk dropdown manual DOM manipulation
@@ -752,8 +754,56 @@ const RoomManagement: React.FC = () => {
                 setIsDownloadingQR(false);
             }
         }, 500);
+
     };
 
+    // Helper for Grouping Users by Study Program
+    const usersByProdi = useMemo(() => {
+        const groups: Record<string, typeof roomUsers> = {};
+
+        // Sort users by name first
+        const sortedUsers = [...roomUsers].sort((a, b) => a.user.full_name.localeCompare(b.user.full_name));
+
+        sortedUsers.forEach(u => {
+            // Get study program name, default to 'Umum' if null
+            // Note: We need to make sure the fetchRoomUsers query joins study_program table
+            const userAny = u.user as any;
+            const prodiName = userAny.study_program?.name || getText('Other', 'Lainnya');
+
+            if (!groups[prodiName]) {
+                groups[prodiName] = [];
+            }
+            groups[prodiName].push(u);
+        });
+        return groups;
+    }, [roomUsers, getText]);
+
+    const downloadRoomUsersImage = async () => {
+        const element = document.getElementById('room-users-card-element');
+        if (!element || !showRoomDetail) return;
+
+        setIsDownloadingUsers(true);
+        setTimeout(async () => {
+            try {
+                const canvas = await html2canvas(element, {
+                    backgroundColor: null, // Transparent, background is handled by CSS in element
+                    scale: 2 // High resolution
+                });
+
+                const link = document.createElement('a');
+                link.download = `Daftar-Dosen-${showRoomDetail.name.replace(/\s+/g, '-')}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+
+                alert.success(getText('User list downloaded successfully', 'Daftar pengguna berhasil diunduh'));
+            } catch (error) {
+                console.error('Error downloading user list:', error);
+                alert.error(getText('Failed to download user list', 'Gagal mengunduh daftar pengguna'));
+            } finally {
+                setIsDownloadingUsers(false);
+            }
+        }, 500);
+    };
     const getRoleColor = (role: string) => {
         switch (role) {
             case 'student': return 'from-blue-500 to-indigo-500';
@@ -790,7 +840,9 @@ const RoomManagement: React.FC = () => {
                         full_name,
                         identity_number,
                         role,
-                        department:departments(name)
+                        jabatan,
+                        department:departments(name),
+                        study_program:study_programs(name)
                     )
                 `)
                 .eq('room_id', roomId)
@@ -1855,6 +1907,16 @@ const RoomManagement: React.FC = () => {
                                                 </div>
                                             </div>
                                             <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
+                                                <MapPin className="h-5 w-5 text-gray-400" />
+                                                <div>
+                                                    <p className="text-gray-500">{getText('Location', 'Lokasi')}</p>
+                                                    <p className="font-semibold text-gray-800">
+                                                        {showRoomDetail.building?.name || '-'}
+                                                        {showRoomDetail.building?.campus?.name ? ` (${showRoomDetail.building.campus.name})` : ''}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
                                                 <Users className="h-5 w-5 text-gray-400" />
                                                 <div>
                                                     <p className="text-gray-500">{getText('Capacity', 'Kapasitas')}</p>
@@ -1929,6 +1991,16 @@ const RoomManagement: React.FC = () => {
                                     <div>
                                         <div className="flex items-center justify-between mb-3">
                                             <h3 className="text-lg font-semibold text-gray-800">{getText('Assigned Users', 'Pengguna yang Ditugaskan')}</h3>
+
+                                            <button
+                                                onClick={downloadRoomUsersImage}
+                                                disabled={isDownloadingUsers || roomUsers.length === 0}
+                                                className={`flex items-center space-x-1 px-3 py-1 text-white rounded-lg transition-colors text-sm ${isDownloadingUsers || roomUsers.length === 0 ? 'bg-orange-400 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600'}`}
+                                                title={getText('Download User List', 'Unduh Daftar Penghuni')}
+                                            >
+                                                {isDownloadingUsers ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                                                <span className="hidden sm:inline">{getText('List', 'Daftar')}</span>
+                                            </button>
                                             <button
                                                 onClick={() => setShowAssignUserModal(true)}
                                                 className="flex items-center space-x-1 px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
@@ -1995,206 +2067,259 @@ const RoomManagement: React.FC = () => {
             )}
 
             {/* Assign User Modal */}
-            {showAssignUserModal && showRoomDetail && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10000] p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
-                        <div className="p-6">
-                            <div className="flex items-center justify-between mb-6">
-                                <h3 className="text-lg font-semibold text-gray-900">
-                                    {getText(
-                                        `Assign User to ${showRoomDetail.name}`,
-                                        `Tugaskan Pengguna ke ${showRoomDetail.name}`
-                                    )}
-                                </h3>
-                                <button
-                                    onClick={() => {
-                                        setShowAssignUserModal(false);
-                                        setSelectedUser(null);
-                                        if (userDisplayRef.current) {
-                                            userDisplayRef.current.value = '';
-                                        }
-                                    }}
-                                    className="text-gray-400 hover:text-gray-600 transition-colors"
-                                >
-                                    <X className="h-6 w-6" />
-                                </button>
-                            </div>
+            {
+                showAssignUserModal && showRoomDetail && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10000] p-4">
+                        <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+                            <div className="p-6">
+                                <div className="flex items-center justify-between mb-6">
+                                    <h3 className="text-lg font-semibold text-gray-900">
+                                        {getText(
+                                            `Assign User to ${showRoomDetail.name}`,
+                                            `Tugaskan Pengguna ke ${showRoomDetail.name}`
+                                        )}
+                                    </h3>
+                                    <button
+                                        onClick={() => {
+                                            setShowAssignUserModal(false);
+                                            setSelectedUser(null);
+                                            if (userDisplayRef.current) {
+                                                userDisplayRef.current.value = '';
+                                            }
+                                        }}
+                                        className="text-gray-400 hover:text-gray-600 transition-colors"
+                                    >
+                                        <X className="h-6 w-6" />
+                                    </button>
+                                </div>
 
-                            <UserSearchDropdown />
+                                <UserSearchDropdown />
 
-                            <div className="flex space-x-3 pt-6">
-                                <button
-                                    onClick={() => {
-                                        setShowAssignUserModal(false);
-                                        setSelectedUser(null);
-                                        if (userDisplayRef.current) {
-                                            userDisplayRef.current.value = '';
-                                        }
-                                    }}
-                                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                                >
-                                    {getText('Cancel', 'Batal')}
-                                </button>
-                                <button
-                                    onClick={handleAssignUser}
-                                    disabled={!selectedUser}
-                                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                >
-                                    {getText('Assign User', 'Tugaskan Pengguna')}
-                                </button>
+                                <div className="flex space-x-3 pt-6">
+                                    <button
+                                        onClick={() => {
+                                            setShowAssignUserModal(false);
+                                            setSelectedUser(null);
+                                            if (userDisplayRef.current) {
+                                                userDisplayRef.current.value = '';
+                                            }
+                                        }}
+                                        className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                                    >
+                                        {getText('Cancel', 'Batal')}
+                                    </button>
+                                    <button
+                                        onClick={handleAssignUser}
+                                        disabled={!selectedUser}
+                                        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        {getText('Assign User', 'Tugaskan Pengguna')}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* NEW: Custom Confirmation Modal */}
-            {showCustomConfirmModal && customConfirmModalContent && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001] p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
-                        <div className="p-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-lg font-semibold text-gray-900">
-                                    {customConfirmModalContent.title}
-                                </h3>
+            {
+                showCustomConfirmModal && customConfirmModalContent && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001] p-4">
+                        <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+                            <div className="p-6">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-lg font-semibold text-gray-900">
+                                        {customConfirmModalContent.title}
+                                    </h3>
+                                    <button
+                                        onClick={customConfirmModalContent.onCancel}
+                                        className="text-gray-400 hover:text-gray-600 transition-colors"
+                                    >
+                                        <X className="h-6 w-6" />
+                                    </button>
+                                </div>
+
+                                <div className="mb-6">
+                                    <div className="flex items-start space-x-3 p-4 bg-red-50 rounded-lg border border-red-200">
+                                        <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                                            <AlertTriangle className="h-5 w-5 text-red-600" />
+                                        </div>
+                                        <div>
+                                            <p className="text-sm text-gray-900 font-medium">
+                                                {customConfirmModalContent.message}
+                                            </p>
+                                            <p className="text-xs text-gray-600 mt-1">
+                                                {getText('This action cannot be undone.', 'Tindakan ini tidak dapat dibatalkan.')}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex space-x-3">
+                                    <button
+                                        onClick={customConfirmModalContent.onCancel}
+                                        className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                                    >
+                                        {getText('Cancel', 'Batal')}
+                                    </button>
+                                    <button
+                                        onClick={customConfirmModalContent.onConfirm}
+                                        className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                                    >
+                                        {getText('Confirm', 'Konfirmasi')}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Fullscreen Photo Preview Modal */}
+            {
+                fullscreenPhoto && (
+                    <div
+                        className="fixed inset-0 bg-black/95 z-[10000] flex items-center justify-center p-4 animate-in fade-in duration-200 cursor-zoom-out"
+                        onClick={() => setFullscreenPhoto(null)}
+                    >
+                        <button
+                            onClick={() => setFullscreenPhoto(null)}
+                            className="absolute top-4 right-4 p-3 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-full text-white transition-all"
+                            title={getText('Close', 'Tutup')}
+                        >
+                            <X className="h-6 w-6" />
+                        </button>
+                        <img
+                            src={fullscreenPhoto}
+                            alt="Fullscreen preview"
+                            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                    </div>
+                )
+            }
+            {/* QR Code Modal */}
+            {
+                showQRModal && selectedRoomForQR && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+                        <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+                            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                                <h3 className="font-semibold text-lg">QR Code: {selectedRoomForQR.name}</h3>
                                 <button
-                                    onClick={customConfirmModalContent.onCancel}
-                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                    onClick={() => setShowQRModal(false)}
+                                    className="text-gray-400 hover:text-gray-600"
                                 >
                                     <X className="h-6 w-6" />
                                 </button>
                             </div>
-
-                            <div className="mb-6">
-                                <div className="flex items-start space-x-3 p-4 bg-red-50 rounded-lg border border-red-200">
-                                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                                        <AlertTriangle className="h-5 w-5 text-red-600" />
+                            <div className="p-6 flex flex-col items-center">
+                                {/* The Card to be captured */}
+                                <div
+                                    id="qr-card-element"
+                                    className="bg-white p-6 border-2 border-gray-900 rounded-xl flex flex-col items-center gap-4 w-64 shadow-sm"
+                                >
+                                    <div className="text-center">
+                                        <h2 className="font-bold text-xl uppercase text-gray-900">{selectedRoomForQR.name}</h2>
+                                        <p className="text-xs text-gray-500">{selectedRoomForQR.code}</p>
                                     </div>
-                                    <div>
-                                        <p className="text-sm text-gray-900 font-medium">
-                                            {customConfirmModalContent.message}
-                                        </p>
-                                        <p className="text-xs text-gray-600 mt-1">
-                                            {getText('This action cannot be undone.', 'Tindakan ini tidak dapat dibatalkan.')}
-                                        </p>
+                                    <div className="bg-white p-2 rounded">
+                                        <QRCode
+                                            value={selectedRoomForQR.id}
+                                            size={180}
+                                            viewBox={`0 0 256 256`}
+                                            style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                                        />
+                                    </div>
+                                    <div className="text-center">
+                                        <p className="text-[10px] text-gray-400 uppercase tracking-widest">Scan untuk Presensi</p>
+                                        <p className="text-[8px] text-gray-300 mt-1">Fakultas Vokasi UNY</p>
                                     </div>
                                 </div>
-                            </div>
 
-                            <div className="flex space-x-3">
-                                <button
-                                    onClick={customConfirmModalContent.onCancel}
-                                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                                >
-                                    {getText('Cancel', 'Batal')}
-                                </button>
-                                <button
-                                    onClick={customConfirmModalContent.onConfirm}
-                                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                                >
-                                    {getText('Confirm', 'Konfirmasi')}
-                                </button>
+                                <p className="text-sm text-gray-500 mt-6 text-center">
+                                    Cetak dan tempel kode QR ini di ruangan agar dosen dapat melakukan presensi.
+                                </p>
+
+                                <div className="flex gap-3 w-full mt-6">
+                                    <button
+                                        onClick={() => setShowQRModal(false)}
+                                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium"
+                                    >
+                                        Tutup
+                                    </button>
+                                    <button
+                                        onClick={downloadQR}
+                                        disabled={isDownloadingQR}
+                                        className={`flex-1 px-4 py-2 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all duration-200 ${isDownloadingQR
+                                            ? 'bg-blue-400 cursor-wait opacity-80'
+                                            : 'bg-blue-600 hover:bg-blue-700 hover:shadow-md'
+                                            }`}
+                                    >
+                                        {isDownloadingQR ? (
+                                            <>
+                                                <RefreshCw className="w-4 h-4 animate-spin" />
+                                                <span>{getText('Processing...', 'Memproses...')}</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Download className="w-4 h-4" />
+                                                <span>Download</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
-            {/* Fullscreen Photo Preview Modal */}
-            {fullscreenPhoto && (
+            {/* HIDDEN TEMPLATE FOR GENERATING IMAGE */}
+            {/* Positioned absolute off-screen so user doesn't see it but html2canvas can capture it */}
+            <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
                 <div
-                    className="fixed inset-0 bg-black/95 z-[10000] flex items-center justify-center p-4 animate-in fade-in duration-200 cursor-zoom-out"
-                    onClick={() => setFullscreenPhoto(null)}
+                    id="room-users-card-element"
+                    className="relative w-[600px] min-h-[800px] bg-[#ffcc80] p-12 flex flex-col items-center text-gray-900 font-sans"
+                    style={{ backgroundColor: '#ffcc80' }} // Fallback inline style
                 >
-                    <button
-                        onClick={() => setFullscreenPhoto(null)}
-                        className="absolute top-4 right-4 p-3 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-full text-white transition-all"
-                        title={getText('Close', 'Tutup')}
-                    >
-                        <X className="h-6 w-6" />
-                    </button>
-                    <img
-                        src={fullscreenPhoto}
-                        alt="Fullscreen preview"
-                        className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-                        onClick={(e) => e.stopPropagation()}
-                    />
-                </div>
-            )}
-            {/* QR Code Modal */}
-            {showQRModal && selectedRoomForQR && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
-                        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-                            <h3 className="font-semibold text-lg">QR Code: {selectedRoomForQR.name}</h3>
-                            <button
-                                onClick={() => setShowQRModal(false)}
-                                className="text-gray-400 hover:text-gray-600"
-                            >
-                                <X className="h-6 w-6" />
-                            </button>
+                    {/* Watermark Background Type */}
+                    <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none overflow-hidden select-none">
+                        <div className="transform -rotate-12 text-white font-black text-[120px] leading-tight text-center">
+                            Mantap<br />Pilih<br />Vokasi!
                         </div>
-                        <div className="p-6 flex flex-col items-center">
-                            {/* The Card to be captured */}
-                            <div
-                                id="qr-card-element"
-                                className="bg-white p-6 border-2 border-gray-900 rounded-xl flex flex-col items-center gap-4 w-64 shadow-sm"
-                            >
-                                <div className="text-center">
-                                    <h2 className="font-bold text-xl uppercase text-gray-900">{selectedRoomForQR.name}</h2>
-                                    <p className="text-xs text-gray-500">{selectedRoomForQR.code}</p>
-                                </div>
-                                <div className="bg-white p-2 rounded">
-                                    <QRCode
-                                        value={selectedRoomForQR.id}
-                                        size={180}
-                                        viewBox={`0 0 256 256`}
-                                        style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                                    />
-                                </div>
-                                <div className="text-center">
-                                    <p className="text-[10px] text-gray-400 uppercase tracking-widest">Scan untuk Presensi</p>
-                                    <p className="text-[8px] text-gray-300 mt-1">Fakultas Vokasi UNY</p>
-                                </div>
-                            </div>
+                    </div>
 
-                            <p className="text-sm text-gray-500 mt-6 text-center">
-                                Cetak dan tempel kode QR ini di ruangan agar dosen dapat melakukan presensi.
-                            </p>
+                    {/* Content */}
+                    <div className="relative z-10 w-full flex flex-col items-center">
+                        <h1 className="text-3xl font-bold mb-1 text-center">Daftar Dosen</h1>
+                        <h2 className="text-2xl font-bold mb-12 text-center">
+                            Ruang {showRoomDetail?.name || ''}
+                        </h2>
 
-                            <div className="flex gap-3 w-full mt-6">
-                                <button
-                                    onClick={() => setShowQRModal(false)}
-                                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium"
-                                >
-                                    Tutup
-                                </button>
-                                <button
-                                    onClick={downloadQR}
-                                    disabled={isDownloadingQR}
-                                    className={`flex-1 px-4 py-2 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all duration-200 ${isDownloadingQR
-                                        ? 'bg-blue-400 cursor-wait opacity-80'
-                                        : 'bg-blue-600 hover:bg-blue-700 hover:shadow-md'
-                                        }`}
-                                >
-                                    {isDownloadingQR ? (
-                                        <>
-                                            <RefreshCw className="w-4 h-4 animate-spin" />
-                                            <span>{getText('Processing...', 'Memproses...')}</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Download className="w-4 h-4" />
-                                            <span>Download</span>
-                                        </>
-                                    )}
-                                </button>
-                            </div>
+                        <div className="w-full space-y-8 px-4">
+                            {Object.entries(usersByProdi).map(([prodiName, users]) => (
+                                <div key={prodiName} className="mb-6">
+                                    <h3 className="text-xl font-medium mb-3 pl-2">
+                                        [{prodiName}]
+                                    </h3>
+                                    <ul className="list-disc pl-8 space-y-2">
+                                        {users.map((item: any) => (
+                                            <li key={item.id} className="text-lg font-bold">
+                                                <span>{item.user.full_name}</span>
+                                                {item.user.jabatan && (
+                                                    <span className="font-bold"> ( {item.user.jabatan} )</span>
+                                                )}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 </div>
-            )}
-        </div>
+            </div>
+        </div >
     );
 };
 
