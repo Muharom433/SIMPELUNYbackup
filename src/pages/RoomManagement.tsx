@@ -564,6 +564,7 @@ const RoomManagement: React.FC = () => {
 
     const fetchAllUsers = async () => {
         try {
+            // Fetch ALL users without any limit restriction
             const { data, error } = await supabase
                 .from('users')
                 .select(`
@@ -573,9 +574,11 @@ const RoomManagement: React.FC = () => {
                     role,
                     department:departments(name)
                 `)
-                .order('full_name');
+                .order('full_name')
+                .range(0, 10000); // Explicitly set large range to get all users
 
             if (error) throw error;
+            console.log('Fetched users count:', data?.length); // Debug log
             setAllUsers(data || []);
         } catch (error) {
             console.error('Error fetching users:', error);

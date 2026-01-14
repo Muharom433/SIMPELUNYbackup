@@ -48,6 +48,7 @@ import {
   ImageIcon,
   Trash,
   DollarSign,
+  DoorOpen,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -400,6 +401,13 @@ const UserManagement: React.FC = () => {
   const [loadingUserDetails, setLoadingUserDetails] = useState(false);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
 
+  // Room assignment states for Edit User modal
+  const [allRooms, setAllRooms] = useState<Room[]>([]);
+  const [selectedRoomToAssign, setSelectedRoomToAssign] = useState<string>('');
+  const [assigningRoom, setAssigningRoom] = useState(false);
+  const [editingUserRooms, setEditingUserRooms] = useState<Room[]>([]);
+  const [roomSearchTerm, setRoomSearchTerm] = useState('');
+
   const itemsPerPage = 10;
   const [currentPage, setCurrentPage] = useState(1);
   // Calculate startIndex for pagination display
@@ -623,10 +631,10 @@ const UserManagement: React.FC = () => {
 
       if (!roomsError && roomsData) {
         const rooms = roomsData.map(item => ({
-          ...item.room,
+          ...(item.room as any),
           assigned_at: item.assigned_at
         }));
-        setUserRooms(rooms);
+        setUserRooms(rooms as Room[]);
       }
 
       // Fetch recent activities
@@ -645,9 +653,9 @@ const UserManagement: React.FC = () => {
       if (!bookingsError && bookingsData) {
         const activities = bookingsData.map(booking => ({
           id: booking.id,
-          description: `${getText('Booked', 'Memesan')} ${booking.room?.name} - ${booking.purpose}`,
+          description: `${getText('Booked', 'Memesan')} ${(booking.room as any)?.name} - ${booking.purpose}`,
           timestamp: booking.created_at,
-          room_name: booking.room?.name
+          room_name: (booking.room as any)?.name
         }));
         setUserActivities(activities);
       }
@@ -658,6 +666,130 @@ const UserManagement: React.FC = () => {
       setLoadingUserDetails(false);
     }
   }, [getText]);
+
+  // Fetch all rooms for assignment dropdown
+  const fetchAllRooms = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('rooms')
+        .select(`
+          id,
+          name,
+          code,
+          capacity,
+          floor,
+          building:building_id(
+            name,
+            campus:campus_id(name)
+          )
+        `)
+        .order('name')
+        .range(0, 10000); // Get all rooms
+
+      if (error) throw error;
+      setAllRooms((data as unknown as Room[]) || []);
+    } catch (error) {
+      console.error('Error fetching all rooms:', error);
+    }
+  }, []);
+
+  // Fetch rooms assigned to the user being edited
+  const fetchEditingUserRooms = useCallback(async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('room_users')
+        .select(`
+          assigned_at,
+          room:rooms(
+            id, 
+            name, 
+            code, 
+            capacity, 
+            floor,
+            building:building_id(
+              name,
+              campus:campus_id(name)
+            )
+          )
+        `)
+        .eq('user_id', userId)
+        .order('assigned_at', { ascending: false });
+
+      if (error) throw error;
+
+      const rooms = data?.map(item => ({
+        ...(item.room as any),
+        assigned_at: item.assigned_at
+      })) || [];
+      setEditingUserRooms(rooms as Room[]);
+    } catch (error) {
+      console.error('Error fetching user rooms:', error);
+    }
+  }, []);
+
+  // Assign room to user from Edit User modal
+  const handleAssignRoomToUser = async () => {
+    if (!selectedRoomToAssign || !editingUser) return;
+
+    try {
+      setAssigningRoom(true);
+
+      // Check if already assigned
+      const { data: existing } = await supabase
+        .from('room_users')
+        .select('id')
+        .eq('user_id', editingUser.id)
+        .eq('room_id', selectedRoomToAssign)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error(getText('User is already assigned to this room', 'Pengguna sudah ditugaskan ke ruangan ini'));
+        return;
+      }
+
+      // Assign user to room
+      const { error } = await supabase
+        .from('room_users')
+        .insert({
+          user_id: editingUser.id,
+          room_id: selectedRoomToAssign,
+          assigned_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+
+      toast.success(getText('User assigned to room successfully', 'Pengguna berhasil ditugaskan ke ruangan'));
+      setSelectedRoomToAssign('');
+      setRoomSearchTerm('');
+      fetchEditingUserRooms(editingUser.id);
+    } catch (error: any) {
+      console.error('Error assigning room:', error);
+      toast.error(error.message || getText('Failed to assign room', 'Gagal menugaskan ruangan'));
+    } finally {
+      setAssigningRoom(false);
+    }
+  };
+
+  // Unassign room from user in Edit User modal
+  const handleUnassignRoomFromUser = async (roomId: string, roomName: string) => {
+    if (!editingUser) return;
+
+    try {
+      const { error } = await supabase
+        .from('room_users')
+        .delete()
+        .eq('user_id', editingUser.id)
+        .eq('room_id', roomId);
+
+      if (error) throw error;
+
+      toast.success(getText(`Removed from ${roomName}`, `Dihapus dari ${roomName}`));
+      fetchEditingUserRooms(editingUser.id);
+    } catch (error: any) {
+      console.error('Error unassigning room:', error);
+      toast.error(getText('Failed to remove from room', 'Gagal menghapus dari ruangan'));
+    }
+  };
 
   // useEffect hooks
   useEffect(() => {
@@ -687,6 +819,14 @@ const UserManagement: React.FC = () => {
       fetchUserDetails(showUserDetail.id);
     }
   }, [showUserDetail, fetchUserDetails]);
+
+  // Fetch all rooms when modal opens and user's assigned rooms when editing
+  useEffect(() => {
+    if (showModal && editingUser) {
+      fetchAllRooms();
+      fetchEditingUserRooms(editingUser.id);
+    }
+  }, [showModal, editingUser, fetchAllRooms, fetchEditingUserRooms]);
 
   // Calculate total pages based on server count
   const totalPages = Math.ceil(totalUsers / itemsPerPage);
@@ -2034,6 +2174,123 @@ const UserManagement: React.FC = () => {
                     )}
                   </div>
                 </div>
+
+                {/* Room Assignment Section - Only show when editing */}
+                {editingUser && (
+                  <div className="bg-orange-50 rounded-xl p-4 border border-orange-200">
+                    <h4 className="font-semibold text-orange-900 mb-4 flex items-center">
+                      <DoorOpen className="h-5 w-5 mr-2" />
+                      {getText('Room Assignment', 'Penugasan Ruangan')}
+                    </h4>
+
+                    {/* Add Room to User */}
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        {getText('Assign to Room', 'Tugaskan ke Ruangan')}
+                      </label>
+                      <div className="flex gap-2">
+                        <div className="flex-1 relative">
+                          <input
+                            type="text"
+                            placeholder={getText('Search room...', 'Cari ruangan...')}
+                            value={roomSearchTerm}
+                            onChange={(e) => setRoomSearchTerm(e.target.value)}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                          />
+                          {roomSearchTerm && (
+                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                              {allRooms
+                                .filter(room =>
+                                  room.name.toLowerCase().includes(roomSearchTerm.toLowerCase()) ||
+                                  room.code.toLowerCase().includes(roomSearchTerm.toLowerCase()) ||
+                                  (room.building?.name?.toLowerCase().includes(roomSearchTerm.toLowerCase()))
+                                )
+                                .slice(0, 20)
+                                .map(room => {
+                                  const isAlreadyAssigned = editingUserRooms.some(r => r.id === room.id);
+                                  return (
+                                    <button
+                                      key={room.id}
+                                      type="button"
+                                      onClick={() => {
+                                        if (!isAlreadyAssigned) {
+                                          setSelectedRoomToAssign(room.id);
+                                          setRoomSearchTerm(room.name);
+                                        }
+                                      }}
+                                      disabled={isAlreadyAssigned}
+                                      className={`w-full px-4 py-2 text-left text-sm hover:bg-orange-50 border-b last:border-b-0 ${isAlreadyAssigned ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''
+                                        } ${selectedRoomToAssign === room.id ? 'bg-orange-100' : ''}`}
+                                    >
+                                      <div className="font-medium">{room.name}</div>
+                                      <div className="text-xs text-gray-500">
+                                        {room.code} • {room.building?.campus?.name} - {room.building?.name}
+                                        {isAlreadyAssigned && ' • (Already assigned)'}
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              {allRooms.filter(room =>
+                                room.name.toLowerCase().includes(roomSearchTerm.toLowerCase()) ||
+                                room.code.toLowerCase().includes(roomSearchTerm.toLowerCase())
+                              ).length === 0 && (
+                                  <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                                    {getText('No rooms found', 'Ruangan tidak ditemukan')}
+                                  </div>
+                                )}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleAssignRoomToUser}
+                          disabled={!selectedRoomToAssign || assigningRoom}
+                          className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                        >
+                          {assigningRoom ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Plus className="h-4 w-4" />
+                          )}
+                          {getText('Assign', 'Tugaskan')}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Current Assigned Rooms */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        {getText('Assigned Rooms', 'Ruangan yang Ditugaskan')} ({editingUserRooms.length})
+                      </label>
+                      {editingUserRooms.length > 0 ? (
+                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                          {editingUserRooms.map(room => (
+                            <div key={room.id} className="flex items-center justify-between bg-white p-3 rounded-lg border border-orange-200">
+                              <div>
+                                <div className="font-medium text-gray-900 text-sm">{room.name}</div>
+                                <div className="text-xs text-gray-500">
+                                  {room.code} • {room.building?.campus?.name} - {room.building?.name}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleUnassignRoomFromUser(room.id, room.name)}
+                                className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                title={getText('Remove from room', 'Hapus dari ruangan')}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-500 text-center py-4 bg-white rounded-lg border border-dashed border-orange-300">
+                          {getText('No rooms assigned yet', 'Belum ada ruangan yang ditugaskan')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </form>
 
