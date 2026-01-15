@@ -1851,6 +1851,22 @@ const RoomManagement: React.FC = () => {
                                                     <p className="font-semibold text-gray-800">{showRoomDetail.code}</p>
                                                 </div>
                                             </div>
+
+                                            {/* Campus & Building Info */}
+                                            {(showRoomDetail.building || showRoomDetail.building?.campus) && (
+                                                <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
+                                                    <MapPin className="h-5 w-5 text-gray-400" />
+                                                    <div>
+                                                        <p className="text-gray-500">{getText('Location', 'Lokasi')}</p>
+                                                        <p className="font-semibold text-gray-800">
+                                                            {[
+                                                                showRoomDetail.building?.campus?.name,
+                                                                showRoomDetail.building?.name
+                                                            ].filter(Boolean).join(' • ')}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            )}
                                             <div className="bg-white p-3 rounded-lg border flex items-center space-x-3">
                                                 <Users className="h-5 w-5 text-gray-400" />
                                                 <div>

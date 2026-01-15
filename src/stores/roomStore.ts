@@ -80,6 +80,14 @@ export interface EnhancedRoomStatus {
   equipment: string[];
   is_available: boolean;
   study_program_ids?: string[]; // Changed to array for multi-prodi support
+  building?: {
+    id: string;
+    name: string;
+    campus?: {
+      id: string;
+      name: string;
+    };
+  };
 
   // 2-LAYER STATUS
   todayStatus: 'In Use' | 'Scheduled' | 'Available';
