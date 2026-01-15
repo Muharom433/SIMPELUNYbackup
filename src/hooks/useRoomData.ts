@@ -67,6 +67,12 @@ export const useRoomData = (targetDate: string) => {
               name
             )
           )
+          study_program_ids,
+          department:departments(id, name),
+          building:building(
+            name,
+            campus:campus(name)
+          )
         `)
         .order('name');
 
@@ -316,17 +322,15 @@ export const useRoomData = (targetDate: string) => {
           code: room.code,
           capacity: room.capacity,
           department: room.department,
-          building: (() => {
-            const b = Array.isArray(room.building) ? room.building[0] : room.building;
-            if (!b) return undefined;
-            return {
-              ...b,
-              campus: Array.isArray(b.campus) ? b.campus[0] : b.campus
-            };
-          })(),
+          equipment: room.equipment || [],
+          department: room.department,
           equipment: room.equipment || [],
           is_available: room.is_available,
           study_program_ids: room.study_program_ids,
+          building: Array.isArray(room.building) ? (room.building[0] ? {
+            name: room.building[0].name,
+            campus: Array.isArray(room.building[0].campus) ? room.building[0].campus[0] : room.building[0].campus
+          } : undefined) : room.building,
 
           todayStatus,
           targetDateStatus,

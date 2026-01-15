@@ -88,6 +88,12 @@ export interface EnhancedRoomStatus {
       name: string;
     };
   };
+  building?: {
+    name: string;
+    campus?: {
+      name: string;
+    };
+  };
 
   // 2-LAYER STATUS
   todayStatus: 'In Use' | 'Scheduled' | 'Available';
