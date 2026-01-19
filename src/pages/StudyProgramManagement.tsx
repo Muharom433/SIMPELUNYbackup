@@ -32,6 +32,7 @@ const studyProgramSchema = z.object({
   name: z.string().min(2, 'Program name must be at least 2 characters'),
   code: z.string().min(2, 'Program code must be at least 2 characters').max(10, 'Program code must be at most 10 characters'),
   department_id: z.string().min(1, 'Please select a department'),
+  status: z.enum(['show', 'hide']),
 });
 
 type StudyProgramForm = z.infer<typeof studyProgramSchema>;
@@ -39,6 +40,7 @@ type StudyProgramForm = z.infer<typeof studyProgramSchema>;
 interface StudyProgramWithDepartment extends StudyProgram {
   department?: Department;
   student_count?: number;
+  status: 'show' | 'hide';
 }
 
 const StudyProgramManagement: React.FC = () => {
@@ -48,6 +50,7 @@ const StudyProgramManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showModal, setShowModal] = useState(false);
   const [editingProgram, setEditingProgram] = useState<StudyProgramWithDepartment | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
@@ -68,7 +71,7 @@ const StudyProgramManagement: React.FC = () => {
   const fetchStudyPrograms = async () => {
     try {
       setLoading(true);
-      
+
       // Fetch study programs with department info and real student counts
       const { data: programsData, error: programsError } = await supabase
         .from('study_programs')
@@ -76,6 +79,7 @@ const StudyProgramManagement: React.FC = () => {
           *,
           department:departments(*)
         `)
+        .order('status', { ascending: false })
         .order('created_at', { ascending: false });
 
       if (programsError) throw programsError;
@@ -136,6 +140,7 @@ const StudyProgramManagement: React.FC = () => {
             name: data.name,
             code: data.code.toUpperCase(),
             department_id: data.department_id,
+            status: data.status,
           })
           .eq('id', editingProgram.id);
 
@@ -149,6 +154,7 @@ const StudyProgramManagement: React.FC = () => {
             name: data.name,
             code: data.code.toUpperCase(),
             department_id: data.department_id,
+            status: data.status,
           });
 
         if (error) throw error;
@@ -177,6 +183,7 @@ const StudyProgramManagement: React.FC = () => {
       name: program.name,
       code: program.code,
       department_id: program.department_id,
+      status: program.status || 'show',
     });
     setShowModal(true);
   };
@@ -184,7 +191,7 @@ const StudyProgramManagement: React.FC = () => {
   const handleDelete = async (programId: string) => {
     try {
       setLoading(true);
-      
+
       const { error } = await supabase
         .from('study_programs')
         .delete()
@@ -208,18 +215,19 @@ const StudyProgramManagement: React.FC = () => {
   };
 
   const filteredPrograms = studyPrograms.filter(program => {
-    const matchesSearch = 
+    const matchesSearch =
       program.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       program.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
       program.department?.name.toLowerCase().includes(searchTerm.toLowerCase());
-    
+
     const matchesDepartment = departmentFilter === 'all' || program.department_id === departmentFilter;
-    
-    return matchesSearch && matchesDepartment;
+    const matchesStatus = statusFilter === 'all' || program.status === statusFilter;
+
+    return matchesSearch && matchesDepartment && matchesStatus;
   });
 
   // Check permissions
-  const canManage = profile?.role === 'super_admin' || 
+  const canManage = profile?.role === 'super_admin' ||
     (profile?.role === 'department_admin' && profile.department_id);
 
   if (!canManage) {
@@ -291,6 +299,19 @@ const StudyProgramManagement: React.FC = () => {
                 </select>
               </div>
 
+              {/* Status Filter - Always visible on desktop */}
+              <div className="hidden sm:block">
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                >
+                  <option value="all">All Status</option>
+                  <option value="show">Show Only</option>
+                  <option value="hide">Hide Only</option>
+                </select>
+              </div>
+
               {/* Mobile Filter Button */}
               <button
                 onClick={() => setShowMobileFilters(!showMobileFilters)}
@@ -304,21 +325,19 @@ const StudyProgramManagement: React.FC = () => {
               <div className="flex border border-gray-300 rounded-lg overflow-hidden">
                 <button
                   onClick={() => setViewMode('grid')}
-                  className={`px-3 py-2 text-sm font-medium ${
-                    viewMode === 'grid'
-                      ? 'bg-green-500 text-white'
-                      : 'bg-white text-gray-700 hover:bg-gray-50'
-                  }`}
+                  className={`px-3 py-2 text-sm font-medium ${viewMode === 'grid'
+                    ? 'bg-green-500 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
                 >
                   Grid
                 </button>
                 <button
                   onClick={() => setViewMode('table')}
-                  className={`px-3 py-2 text-sm font-medium ${
-                    viewMode === 'table'
-                      ? 'bg-green-500 text-white'
-                      : 'bg-white text-gray-700 hover:bg-gray-50'
-                  }`}
+                  className={`px-3 py-2 text-sm font-medium ${viewMode === 'table'
+                    ? 'bg-green-500 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
                 >
                   Table
                 </button>
@@ -351,7 +370,7 @@ const StudyProgramManagement: React.FC = () => {
 
           {/* Mobile Filters Dropdown */}
           {showMobileFilters && (
-            <div className="sm:hidden border-t pt-4">
+            <div className="sm:hidden border-t pt-4 space-y-2">
               <select
                 value={departmentFilter}
                 onChange={(e) => setDepartmentFilter(e.target.value)}
@@ -363,6 +382,15 @@ const StudyProgramManagement: React.FC = () => {
                     {dept.name}
                   </option>
                 ))}
+              </select>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              >
+                <option value="all">All Status</option>
+                <option value="show">Show Only</option>
+                <option value="hide">Hide Only</option>
               </select>
             </div>
           )}
@@ -393,6 +421,18 @@ const StudyProgramManagement: React.FC = () => {
                   <div className="min-w-0 flex-1">
                     <h3 className="text-base sm:text-lg font-semibold text-gray-900 truncate">{program.name}</h3>
                     <p className="text-sm text-gray-500">{program.code}</p>
+                  </div>
+                </div>
+                <span className={`px-2 py-1 text-xs font-medium rounded-full ${program.status === 'show'
+                  ? 'bg-green-100 text-green-800'
+                  : 'bg-gray-100 text-gray-600'
+                  }`}>
+                  {program.status === 'show' ? 'Show' : 'Hide'}
+                </span>
+              </div>
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center space-x-3 flex-1 min-w-0">
+                  <div className="min-w-0 flex-1">
                   </div>
                 </div>
                 <div className="flex items-center space-x-1 flex-shrink-0">
@@ -611,8 +651,8 @@ const StudyProgramManagement: React.FC = () => {
                   >
                     <option value="">Select Department</option>
                     {departments
-                      .filter(dept => 
-                        profile?.role === 'super_admin' || 
+                      .filter(dept =>
+                        profile?.role === 'super_admin' ||
                         dept.id === profile?.department_id
                       )
                       .map((dept) => (
@@ -624,6 +664,24 @@ const StudyProgramManagement: React.FC = () => {
                   {form.formState.errors.department_id && (
                     <p className="mt-1 text-sm text-red-600">
                       {form.formState.errors.department_id.message}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Visibility Status *
+                  </label>
+                  <select
+                    {...form.register('status')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  >
+                    <option value="show">Show (Visible in dropdowns)</option>
+                    <option value="hide">Hide (Internal use only)</option>
+                  </select>
+                  {form.formState.errors.status && (
+                    <p className="mt-1 text-sm text-red-600">
+                      {form.formState.errors.status.message}
                     </p>
                   )}
                 </div>

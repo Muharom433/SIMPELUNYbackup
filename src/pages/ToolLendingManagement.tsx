@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     Wrench, Search, Eye, Trash2, RefreshCw, Download, User, Package,
     AlertCircle, Clock, X, CheckCircle, XCircle, Loader2,
@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Equipment, User as UserType } from '../types';
+import { useLendingStore } from '../stores/lendingStore';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 
@@ -65,6 +66,15 @@ const ImageWithLoader = ({ src, alt, className, title, subtitle, isSmall = false
 const ToolLendingManagement: React.FC = () => {
     const { profile } = useAuth();
     const { getText } = useLanguage();
+
+    // ✅ USE ZUSTAND STORE FOR CACHING
+    const {
+        addToUsersCache,
+        addToEquipmentCache,
+        getUserFromCache,
+        getEquipmentFromCache
+    } = useLendingStore();
+
     const [lendingRecords, setLendingRecords] = useState<LendingRecord[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -79,113 +89,146 @@ const ToolLendingManagement: React.FC = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const [totalRecords, setTotalRecords] = useState(0);
 
+    // Ref to prevent duplicate fetches
+    const fetchingRef = useRef(false);
+
     useEffect(() => {
         fetchLendingRecords();
 
-        // Real-time subscription
+        // Real-time subscription with debounce to prevent excessive refetches
+        let debounceTimer: NodeJS.Timeout;
         const subscription = supabase
             .channel('tool-lending-management')
             .on('postgres_changes',
                 { event: '*', schema: 'public', table: 'lending_tool' },
-                () => { fetchLendingRecords(); }
+                () => {
+                    // Debounce real-time updates to prevent multiple rapid fetches
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(() => {
+                        fetchLendingRecords();
+                    }, 500);
+                }
             )
             .subscribe();
 
         return () => {
+            clearTimeout(debounceTimer);
             subscription.unsubscribe();
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [profile?.id, currentPage]);
 
     const fetchLendingRecords = useCallback(async () => {
+        // Prevent duplicate fetches
+        if (fetchingRef.current) return;
+        fetchingRef.current = true;
+
         try {
             setLoading(true);
+            const startTime = performance.now();
 
             const userRole = profile?.role;
             const offset = (currentPage - 1) * ITEMS_PER_PAGE;
 
-            console.log(`🔍 Fetching lending records - Role: ${userRole}, Page: ${currentPage}`);
-
-            // ==================== SUPER ADMIN: SIMPLE DIRECT QUERY ====================
+            // ==================== SUPER ADMIN: OPTIMIZED PARALLEL QUERY ====================
             if (userRole === 'super_admin') {
-                // Count total (simple, fast)
-                const { count, error: countError } = await supabase
-                    .from('lending_tool')
-                    .select('id', { count: 'estimated', head: true }); // Use estimated for speed
+                // ✅ PARALLEL: Count + Fetch lending data simultaneously
+                const [countResult, lendingResult] = await Promise.all([
+                    supabase
+                        .from('lending_tool')
+                        .select('id', { count: 'estimated', head: true }),
+                    supabase
+                        .from('lending_tool')
+                        .select('id, created_at, updated_at, id_user, date, id_equipment, qty, status')
+                        .order('created_at', { ascending: false })
+                        .range(offset, offset + ITEMS_PER_PAGE - 1)
+                ]);
 
-                if (countError) throw countError;
-                setTotalRecords(count || 0);
+                if (countResult.error) throw countResult.error;
+                if (lendingResult.error) throw lendingResult.error;
 
-                // Fetch paginated records - SELECT ONLY NECESSARY COLUMNS
-                const { data: lendingData, error } = await supabase
-                    .from('lending_tool')
-                    .select('id, created_at, updated_at, id_user, date, id_equipment, qty, status, attachments')
-                    .order('created_at', { ascending: false })
-                    .range(offset, offset + ITEMS_PER_PAGE - 1);
+                setTotalRecords(countResult.count || 0);
+                const lendingData = lendingResult.data || [];
 
-                if (error) throw error;
-
-                if (!lendingData || lendingData.length === 0) {
+                if (lendingData.length === 0) {
                     setLendingRecords([]);
                     setLoading(false);
+                    fetchingRef.current = false;
                     return;
                 }
 
-                console.log(`📦 Super Admin: Fetched ${lendingData.length} records`);
+                // Collect IDs needing fetch (exclude those already in cache)
+                const userIds = [...new Set(lendingData.map(r => r.id_user).filter(Boolean))] as string[];
+                const equipmentIds = [...new Set(lendingData.flatMap(r => r.id_equipment || []))] as string[];
 
-                // Batch fetch users and equipment for this page only
-                const userIds = [...new Set(lendingData.map(r => r.id_user).filter(Boolean))];
-                const equipmentIds = [...new Set(lendingData.flatMap(r => r.id_equipment || []))];
+                // ✅ CHECK CACHE: Only fetch missing data
+                const missingUserIds = userIds.filter(id => !getUserFromCache(id));
+                const missingEquipmentIds = equipmentIds.filter(id => !getEquipmentFromCache(id));
 
-                // Fetch users in batch
-                let usersMap = new Map<string, any>();
-                if (userIds.length > 0) {
-                    const { data: usersData } = await supabase
-                        .from('users')
-                        .select('id, full_name, identity_number, email, role, phone_number, study_program_id')
-                        .in('id', userIds);
+                // ✅ PARALLEL: Fetch missing users and equipment simultaneously
+                const fetchPromises: Promise<any>[] = [];
 
-                    (usersData || []).forEach((u: any) => usersMap.set(u.id, u));
+                if (missingUserIds.length > 0) {
+                    const fetchUsers = async () => {
+                        const res = await supabase
+                            .from('users')
+                            .select('id, full_name, identity_number, email, role, phone_number, study_program_id')
+                            .in('id', missingUserIds);
+                        if (res.data) addToUsersCache(res.data as any);
+                        return res;
+                    };
+                    fetchPromises.push(fetchUsers());
                 }
 
-                // Fetch equipment in batch
-                let equipmentMap = new Map<string, Equipment>();
-                if (equipmentIds.length > 0) {
-                    const { data: equipmentData } = await supabase
-                        .from('equipment')
-                        .select('id, name, code, quantity, unit')
-                        .in('id', equipmentIds);
-
-                    (equipmentData || []).forEach((eq: any) => equipmentMap.set(eq.id, eq));
+                if (missingEquipmentIds.length > 0) {
+                    const fetchEquipment = async () => {
+                        const res = await supabase
+                            .from('equipment')
+                            .select('id, name, code, quantity, unit')
+                            .in('id', missingEquipmentIds);
+                        if (res.data) addToEquipmentCache(res.data as any);
+                        return res;
+                    };
+                    fetchPromises.push(fetchEquipment());
                 }
 
-                // Map data
+                // Wait for all fetches to complete
+                if (fetchPromises.length > 0) {
+                    await Promise.all(fetchPromises);
+                }
+
+                // Map data using cache
                 const recordsWithDetails: LendingRecord[] = lendingData.map((record: any) => ({
                     ...record,
-                    user: record.id_user ? usersMap.get(record.id_user) || null : null,
+                    user: record.id_user ? getUserFromCache(record.id_user) || null : null,
                     equipment_details: (record.id_equipment || [])
-                        .map((id: string) => equipmentMap.get(id))
+                        .map((id: string) => getEquipmentFromCache(id))
                         .filter(Boolean) as Equipment[]
                 }));
 
                 setLendingRecords(recordsWithDetails);
-                console.log(`✅ Super Admin fetch complete. ${recordsWithDetails.length} records`);
+
+                const endTime = performance.now();
+                console.log(`✅ Super Admin fetch: ${recordsWithDetails.length} records in ${Math.round(endTime - startTime)}ms`);
+
                 setLoading(false);
+                fetchingRef.current = false;
                 return;
             }
 
-            // ==================== LABORATORY: FILTER BY STUDY PROGRAM ====================
+            // ==================== LABORATORY: OPTIMIZED FILTER BY STUDY PROGRAM ====================
             if (userRole === 'laboratory') {
                 const laborStudyProgramId = profile?.study_program_id;
 
                 if (!laborStudyProgramId) {
-                    console.warn('⚠️ Laboran has no study_program_id assigned');
                     setLendingRecords([]);
                     setTotalRecords(0);
                     setLoading(false);
+                    fetchingRef.current = false;
                     return;
                 }
 
-                // Step 1: Get user IDs in same study program
+                // Step 1: Get user IDs in same study program (cached if possible)
                 const { data: usersInProdi, error: usersError } = await supabase
                     .from('users')
                     .select('id')
@@ -194,92 +237,112 @@ const ToolLendingManagement: React.FC = () => {
                 if (usersError) throw usersError;
 
                 if (!usersInProdi || usersInProdi.length === 0) {
-                    console.log('⚠️ No users in this study program');
                     setLendingRecords([]);
                     setTotalRecords(0);
                     setLoading(false);
+                    fetchingRef.current = false;
                     return;
                 }
 
                 const userIdsInProdi = usersInProdi.map(u => u.id);
 
-                // Count total for this filter
-                const { count, error: countError } = await supabase
-                    .from('lending_tool')
-                    .select('id', { count: 'estimated', head: true }) // Use estimated
-                    .in('id_user', userIdsInProdi);
+                // ✅ PARALLEL: Count + Fetch lending data
+                const [countResult, lendingResult] = await Promise.all([
+                    supabase
+                        .from('lending_tool')
+                        .select('id', { count: 'estimated', head: true })
+                        .in('id_user', userIdsInProdi),
+                    supabase
+                        .from('lending_tool')
+                        .select('id, created_at, updated_at, id_user, date, id_equipment, qty, status')
+                        .in('id_user', userIdsInProdi)
+                        .order('created_at', { ascending: false })
+                        .range(offset, offset + ITEMS_PER_PAGE - 1)
+                ]);
 
-                if (countError) throw countError;
-                setTotalRecords(count || 0);
+                if (countResult.error) throw countResult.error;
+                if (lendingResult.error) throw lendingResult.error;
 
-                // Fetch paginated records - SELECT ONLY NECESSARY COLUMNS
-                const { data: lendingData, error } = await supabase
-                    .from('lending_tool')
-                    .select('id, created_at, updated_at, id_user, date, id_equipment, qty, status, attachments')
-                    .in('id_user', userIdsInProdi)
-                    .order('created_at', { ascending: false })
-                    .range(offset, offset + ITEMS_PER_PAGE - 1);
+                setTotalRecords(countResult.count || 0);
+                const lendingData = lendingResult.data || [];
 
-                if (error) throw error;
-
-                if (!lendingData || lendingData.length === 0) {
+                if (lendingData.length === 0) {
                     setLendingRecords([]);
                     setLoading(false);
+                    fetchingRef.current = false;
                     return;
                 }
 
-                console.log(`📦 Laboran: Fetched ${lendingData.length} records`);
+                // Check cache for missing data
+                const pageUserIds = [...new Set(lendingData.map(r => r.id_user).filter(Boolean))] as string[];
+                const equipmentIds = [...new Set(lendingData.flatMap(r => r.id_equipment || []))] as string[];
 
-                // Batch fetch users and equipment for this page only
-                const pageUserIds = [...new Set(lendingData.map(r => r.id_user).filter(Boolean))];
-                const equipmentIds = [...new Set(lendingData.flatMap(r => r.id_equipment || []))];
+                const missingUserIds = pageUserIds.filter(id => !getUserFromCache(id));
+                const missingEquipmentIds = equipmentIds.filter(id => !getEquipmentFromCache(id));
 
-                let usersMap = new Map<string, any>();
-                if (pageUserIds.length > 0) {
-                    const { data: usersData } = await supabase
-                        .from('users')
-                        .select('id, full_name, identity_number, email, role, phone_number, study_program_id')
-                        .in('id', pageUserIds);
+                // ✅ PARALLEL: Fetch missing data
+                const fetchPromises: Promise<any>[] = [];
 
-                    (usersData || []).forEach((u: any) => usersMap.set(u.id, u));
+                if (missingUserIds.length > 0) {
+                    const fetchUsers = async () => {
+                        const res = await supabase
+                            .from('users')
+                            .select('id, full_name, identity_number, email, role, phone_number, study_program_id')
+                            .in('id', missingUserIds);
+                        if (res.data) addToUsersCache(res.data as any);
+                        return res;
+                    };
+                    fetchPromises.push(fetchUsers());
                 }
 
-                let equipmentMap = new Map<string, Equipment>();
-                if (equipmentIds.length > 0) {
-                    const { data: equipmentData } = await supabase
-                        .from('equipment')
-                        .select('id, name, code, quantity, unit')
-                        .in('id', equipmentIds);
-
-                    (equipmentData || []).forEach((eq: any) => equipmentMap.set(eq.id, eq));
+                if (missingEquipmentIds.length > 0) {
+                    const fetchEquipment = async () => {
+                        const res = await supabase
+                            .from('equipment')
+                            .select('id, name, code, quantity, unit')
+                            .in('id', missingEquipmentIds);
+                        if (res.data) addToEquipmentCache(res.data as any);
+                        return res;
+                    };
+                    fetchPromises.push(fetchEquipment());
                 }
 
+                if (fetchPromises.length > 0) {
+                    await Promise.all(fetchPromises);
+                }
+
+                // Map data using cache
                 const recordsWithDetails: LendingRecord[] = lendingData.map((record: any) => ({
                     ...record,
-                    user: record.id_user ? usersMap.get(record.id_user) || null : null,
+                    user: record.id_user ? getUserFromCache(record.id_user) || null : null,
                     equipment_details: (record.id_equipment || [])
-                        .map((id: string) => equipmentMap.get(id))
+                        .map((id: string) => getEquipmentFromCache(id))
                         .filter(Boolean) as Equipment[]
                 }));
 
                 setLendingRecords(recordsWithDetails);
-                console.log(`✅ Laboran fetch complete. ${recordsWithDetails.length} records`);
+
+                const endTime = performance.now();
+                console.log(`✅ Laboran fetch: ${recordsWithDetails.length} records in ${Math.round(endTime - startTime)}ms`);
+
                 setLoading(false);
+                fetchingRef.current = false;
                 return;
             }
 
             // ==================== OTHER ROLES: NO ACCESS ====================
-            console.warn(`⚠️ Unknown role: ${userRole} - Access denied`);
             setLendingRecords([]);
             setTotalRecords(0);
             setLoading(false);
+            fetchingRef.current = false;
 
         } catch (error) {
             console.error('Error fetching lending records:', error);
             toast.error(getText('Failed to load lending records', 'Gagal memuat data peminjaman'));
             setLoading(false);
+            fetchingRef.current = false;
         }
-    }, [profile?.role, profile?.study_program_id, currentPage, getText]);
+    }, [profile?.role, profile?.study_program_id, currentPage, getText, getUserFromCache, getEquipmentFromCache, addToUsersCache, addToEquipmentCache]);
 
     // Pagination helpers
     const totalPages = Math.ceil(totalRecords / ITEMS_PER_PAGE);

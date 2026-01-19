@@ -313,6 +313,7 @@ const UserManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
+  const [homebaseFilter, setHomebaseFilter] = useState<string>('all'); // 'all', 'homebase', 'non-homebase'
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
@@ -533,6 +534,13 @@ const UserManagement: React.FC = () => {
         query = query.eq('department_id', profile.department_id);
       }
 
+      // Apply Homebase Filter
+      if (homebaseFilter === 'homebase') {
+        query = query.eq('is_homebase', true);
+      } else if (homebaseFilter === 'non-homebase') {
+        query = query.eq('is_homebase', false);
+      }
+
       // Apply Pagination
       const from = (currentPage - 1) * itemsPerPage;
       const to = from + itemsPerPage - 1;
@@ -552,7 +560,7 @@ const UserManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [profile, getText, debouncedSearchTerm, roleFilter, departmentFilter, currentPage]);
+  }, [profile, getText, debouncedSearchTerm, roleFilter, departmentFilter, homebaseFilter, currentPage]);
 
   const fetchDepartments = useCallback(async () => {
     try {
@@ -573,7 +581,7 @@ const UserManagement: React.FC = () => {
 
   const fetchStudyPrograms = useCallback(async () => {
     try {
-      let query = supabase.from('study_programs').select('*');
+      let query = supabase.from('study_programs').select('*').eq('status', 'show');
 
       if (profile?.role === 'department_admin' && profile.department_id) {
         query = query.eq('department_id', profile.department_id);
@@ -593,6 +601,7 @@ const UserManagement: React.FC = () => {
       const { data, error } = await supabase
         .from('study_programs')
         .select('*')
+        .eq('status', 'show')
         .eq('department_id', departmentId);
 
       if (error) throw error;
@@ -608,6 +617,33 @@ const UserManagement: React.FC = () => {
       toast.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
     }
   }, [form, getText]);
+
+  // Fetch ALL study programs (both show and hide) for non-homebase users
+  const fetchAllStudyPrograms = useCallback(async (departmentId?: string) => {
+    try {
+      let query = supabase.from('study_programs').select('*'); // All programs (show and hide)
+
+      if (departmentId) {
+        query = query.eq('department_id', departmentId);
+      } else if (profile?.role === 'department_admin' && profile.department_id) {
+        query = query.eq('department_id', profile.department_id);
+      }
+
+      // NO status filter - fetch ALL programs including hidden ones
+      const { data, error } = await query;
+      if (error) throw error;
+      setStudyPrograms(data || []);
+
+      const currentStudyProgramId = form.getValues('study_program_id');
+      const isCurrentProgramInDepartment = data?.some(program => program.id === currentStudyProgramId);
+      if (!isCurrentProgramInDepartment) {
+        form.setValue('study_program_id', '');
+      }
+    } catch (error: any) {
+      console.error('Error fetching all study programs:', error);
+      toast.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
+    }
+  }, [profile, form, getText]);
 
   const fetchUserDetails = useCallback(async (userId: string) => {
     setLoadingUserDetails(true);
@@ -951,13 +987,18 @@ const UserManagement: React.FC = () => {
     }
 
     if (user.department_id) {
-      fetchStudyProgramsByDepartment(user.department_id);
+      // Use fetchAllStudyPrograms for non-homebase users to show ALL programs (including hidden)
+      if (!user.is_homebase) {
+        fetchAllStudyPrograms(user.department_id);
+      } else {
+        fetchStudyProgramsByDepartment(user.department_id);
+      }
     } else if (profile?.role === 'super_admin') {
       setStudyPrograms([]);
     }
 
     setShowModal(true);
-  }, [form, fetchStudyProgramsByDepartment, profile]);
+  }, [form, fetchStudyProgramsByDepartment, fetchAllStudyPrograms, profile]);
 
   const handleDelete = async (userId: string) => {
     try {
@@ -1166,6 +1207,20 @@ const UserManagement: React.FC = () => {
                 ))}
               </select>
             )}
+
+            {/* Homebase Filter */}
+            <select
+              value={homebaseFilter}
+              onChange={(e) => {
+                setHomebaseFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+            >
+              <option value="all">{getText('All Users', 'Semua Pengguna')}</option>
+              <option value="homebase">{getText('Homebase Only', 'Homebase Saja')}</option>
+              <option value="non-homebase">{getText('Non-Homebase Only', 'Non-Homebase Saja')}</option>
+            </select>
           </div>
 
           {/* Action Buttons */}
@@ -2069,103 +2124,113 @@ const UserManagement: React.FC = () => {
                     {getText('Academic Information', 'Informasi Akademik')}
                   </h4>
 
+                  {/* Non-homebase info box */}
+                  {editingUser && !editingUser.is_homebase && (
+                    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2">
+                      <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-sm text-blue-800">
+                        {getText(
+                          'Non-homebase lecturer: All study programs (including hidden ones) are available for selection.',
+                          'Dosen non-homebase: Semua program studi (termasuk yang disembunyikan) tersedia untuk dipilih.'
+                        )}
+                      </p>
+                    </div>
+                  )}
+
                   <div className="space-y-4">
-                    {(watchRole !== 'lecturer' || form.watch('is_homebase')) ? (
-                      <>
-                        {/* Department Selection */}
-                        {profile?.role === 'super_admin' ? (
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              {getText('Department', 'Departemen')}
-                            </label>
-                            <SearchableDropdown
-                              options={departments.map(dept => ({ id: dept.id, name: dept.name, code: dept.code }))}
-                              value={form.watch('department_id') || ''}
-                              onChange={(value) => {
-                                form.setValue('department_id', value);
-                                form.setValue('study_program_id', '');
-                              }}
-                              placeholder={getText('Select Department (Optional)', 'Pilih Departemen (Opsional)')}
-                              searchPlaceholder={getText('Search departments...', 'Cari departemen...')}
-                              emptyMessage={getText('No departments found', 'Tidak ada departemen ditemukan')}
-                              disabled={submitting}
-                            />
-                            {form.formState.errors.department_id && (
-                              <p className="mt-1 text-sm text-red-600 flex items-center">
-                                <AlertCircle className="h-4 w-4 mr-1" />
-                                {form.formState.errors.department_id.message}
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              {getText('Department', 'Departemen')}
-                            </label>
-                            <input
-                              type="text"
-                              value={departments.find(d => d.id === profile?.department_id)?.name || getText('Your Department', 'Departemen Anda')}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 transition-all duration-200"
-                              disabled
-                            />
-                            <p className="mt-1 text-sm text-gray-500 flex items-center">
-                              <Info className="h-4 w-4 mr-1" />
-                              {getText('Department is automatically set based on your role', 'Departemen diatur otomatis berdasarkan peran Anda')}
-                            </p>
-                          </div>
+                    {/* Department Selection */}
+                    {profile?.role === 'super_admin' ? (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {getText('Department', 'Departemen')}
+                        </label>
+                        <SearchableDropdown
+                          options={departments.map(dept => ({ id: dept.id, name: dept.name, code: dept.code }))}
+                          value={form.watch('department_id') || ''}
+                          onChange={(value) => {
+                            form.setValue('department_id', value);
+                            form.setValue('study_program_id', '');
+                            // Use fetchAllStudyPrograms for non-homebase users
+                            if (editingUser && !editingUser.is_homebase) {
+                              fetchAllStudyPrograms(value);
+                            } else if (value) {
+                              fetchStudyProgramsByDepartment(value);
+                            }
+                          }}
+                          placeholder={getText('Select Department (Optional)', 'Pilih Departemen (Opsional)')}
+                          searchPlaceholder={getText('Search departments...', 'Cari departemen...')}
+                          emptyMessage={getText('No departments found', 'Tidak ada departemen ditemukan')}
+                          disabled={submitting}
+                        />
+                        {form.formState.errors.department_id && (
+                          <p className="mt-1 text-sm text-red-600 flex items-center">
+                            <AlertCircle className="h-4 w-4 mr-1" />
+                            {form.formState.errors.department_id.message}
+                          </p>
                         )}
-
-                        {/* Study Program Selection */}
-                        {((profile?.role === 'super_admin' && watchDepartmentId) || profile?.role === 'department_admin') && (
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              {getText('Study Program', 'Program Studi')}
-                            </label>
-                            <SearchableDropdown
-                              options={studyPrograms.filter(sp =>
-                                profile?.role === 'department_admin'
-                                  ? sp.department_id === profile.department_id
-                                  : sp.department_id === watchDepartmentId
-                              ).map(program => ({
-                                id: program.id,
-                                name: program.name,
-                                code: program.code
-                              }))}
-                              value={form.watch('study_program_id') || ''}
-                              onChange={(value) => form.setValue('study_program_id', value)}
-                              placeholder={getText('Select Study Program (Optional)', 'Pilih Program Studi (Opsional)')}
-                              searchPlaceholder={getText('Search study programs...', 'Cari program studi...')}
-                              emptyMessage={getText('No study programs found', 'Tidak ada program studi ditemukan')}
-                              disabled={submitting}
-                            />
-                            {form.formState.errors.study_program_id && (
-                              <p className="mt-1 text-sm text-red-600 flex items-center">
-                                <AlertCircle className="h-4 w-4 mr-1" />
-                                {form.formState.errors.study_program_id.message}
-                              </p>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Info Message for Super Admin */}
-                        {profile?.role === 'super_admin' && !watchDepartmentId && (
-                          <div className="bg-blue-100 border border-blue-300 rounded-lg p-3">
-                            <div className="flex items-center">
-                              <Info className="h-5 w-5 text-blue-600 mr-2" />
-                              <p className="text-sm text-blue-700">
-                                {getText('Select a department to see available study programs, or leave empty for general users', 'Pilih departemen untuk melihat program studi yang tersedia, atau biarkan kosong untuk pengguna umum')}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                      </>
+                      </div>
                     ) : (
-                      <div className="text-sm text-gray-500 italic p-3 bg-white/50 rounded-lg border border-green-100 flex items-center gap-2">
-                        <Info className="w-4 h-4 text-green-600" />
-                        {getText('Non-homebase lecturers do not require department/study program assignment.', 'Dosen non-homebase tidak memerlukan penugasan departemen/program studi.')}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {getText('Department', 'Departemen')}
+                        </label>
+                        <input
+                          type="text"
+                          value={departments.find(d => d.id === profile?.department_id)?.name || getText('Your Department', 'Departemen Anda')}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 transition-all duration-200"
+                          disabled
+                        />
+                        <p className="mt-1 text-sm text-gray-500 flex items-center">
+                          <Info className="h-4 w-4 mr-1" />
+                          {getText('Department is automatically set based on your role', 'Departemen diatur otomatis berdasarkan peran Anda')}
+                        </p>
                       </div>
                     )}
+
+                    {/* Study Program Selection */}
+                    {((profile?.role === 'super_admin' && watchDepartmentId) || profile?.role === 'department_admin') && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {getText('Study Program', 'Program Studi')}
+                        </label>
+                        <SearchableDropdown
+                          options={studyPrograms.filter(sp =>
+                            profile?.role === 'department_admin'
+                              ? sp.department_id === profile.department_id
+                              : sp.department_id === watchDepartmentId
+                          ).map(program => ({
+                            id: program.id,
+                            name: program.name,
+                            code: program.code
+                          }))}
+                          value={form.watch('study_program_id') || ''}
+                          onChange={(value) => form.setValue('study_program_id', value)}
+                          placeholder={getText('Select Study Program (Optional)', 'Pilih Program Studi (Opsional)')}
+                          searchPlaceholder={getText('Search study programs...', 'Cari program studi...')}
+                          emptyMessage={getText('No study programs found', 'Tidak ada program studi ditemukan')}
+                          disabled={submitting}
+                        />
+                        {form.formState.errors.study_program_id && (
+                          <p className="mt-1 text-sm text-red-600 flex items-center">
+                            <AlertCircle className="h-4 w-4 mr-1" />
+                            {form.formState.errors.study_program_id.message}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Info Message for Super Admin */}
+                    {profile?.role === 'super_admin' && !watchDepartmentId && (
+                      <div className="bg-blue-100 border border-blue-300 rounded-lg p-3">
+                        <div className="flex items-center">
+                          <Info className="h-5 w-5 text-blue-600 mr-2" />
+                          <p className="text-sm text-blue-700">
+                            {getText('Select a department to see available study programs, or leave empty for general users', 'Pilih departemen untuk melihat program studi yang tersedia, atau biarkan kosong untuk pengguna umum')}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                   </div>
                 </div>
 
@@ -2372,94 +2437,96 @@ const UserManagement: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div >
       )}
 
       {/* Enhanced Delete Confirmation Modal */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
-            <div className="p-6">
-              <div className="flex items-center space-x-4 mb-4">
-                <div className="flex-shrink-0 w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-                  <AlertTriangle className="h-6 w-6 text-red-600" />
+      {
+        showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+              <div className="p-6">
+                <div className="flex items-center space-x-4 mb-4">
+                  <div className="flex-shrink-0 w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                    <AlertTriangle className="h-6 w-6 text-red-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-bold text-gray-900">
+                      {getText('Delete User', 'Hapus Pengguna')}
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                      {getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-bold text-gray-900">
-                    {getText('Delete User', 'Hapus Pengguna')}
-                  </h3>
-                  <p className="text-sm text-gray-600">
-                    {getText('This action cannot be undone', 'Tindakan ini tidak dapat dibatalkan')}
+
+                <div className="mb-6">
+                  <p className="text-gray-700 mb-4">
+                    {getText(
+                      'Are you sure you want to delete this user? All associated data will be permanently removed.',
+                      'Apakah Anda yakin ingin menghapus pengguna ini? Semua data terkait akan dihapus secara permanen.'
+                    )}
                   </p>
-                </div>
-              </div>
 
-              <div className="mb-6">
-                <p className="text-gray-700 mb-4">
-                  {getText(
-                    'Are you sure you want to delete this user? All associated data will be permanently removed.',
-                    'Apakah Anda yakin ingin menghapus pengguna ini? Semua data terkait akan dihapus secara permanen.'
-                  )}
-                </p>
-
-                {(() => {
-                  const userToDelete = users.find(u => u.id === showDeleteConfirm);
-                  return userToDelete && (
-                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                      <div className="flex items-center space-x-3">
-                        <div className="h-10 w-10 bg-gradient-to-r from-red-500 to-red-600 rounded-lg flex items-center justify-center">
-                          {React.createElement(getRoleIcon(userToDelete.role), {
-                            className: "h-5 w-5 text-white"
-                          })}
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">{userToDelete.full_name}</p>
-                          <p className="text-sm text-gray-500">@{userToDelete.username}</p>
-                          <span className={`inline-block mt-1 px-2 py-1 rounded-full text-xs font-medium ${getRoleBadgeColor(userToDelete.role)}`}>
-                            {getRoleDisplayName(userToDelete.role)}
-                          </span>
+                  {(() => {
+                    const userToDelete = users.find(u => u.id === showDeleteConfirm);
+                    return userToDelete && (
+                      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <div className="flex items-center space-x-3">
+                          <div className="h-10 w-10 bg-gradient-to-r from-red-500 to-red-600 rounded-lg flex items-center justify-center">
+                            {React.createElement(getRoleIcon(userToDelete.role), {
+                              className: "h-5 w-5 text-white"
+                            })}
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900">{userToDelete.full_name}</p>
+                            <p className="text-sm text-gray-500">@{userToDelete.username}</p>
+                            <span className={`inline-block mt-1 px-2 py-1 rounded-full text-xs font-medium ${getRoleBadgeColor(userToDelete.role)}`}>
+                              {getRoleDisplayName(userToDelete.role)}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })()}
-              </div>
+                    );
+                  })()}
+                </div>
 
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowDeleteConfirm(null)}
-                  className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-200 font-medium"
-                  disabled={processingIds.has(showDeleteConfirm || '')}
-                >
-                  {getText('Cancel', 'Batal')}
-                </button>
-                <button
-                  onClick={() => {
-                    if (showDeleteConfirm) {
-                      handleDelete(showDeleteConfirm);
-                    }
-                  }}
-                  disabled={processingIds.has(showDeleteConfirm || '')}
-                  className="flex-1 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors duration-200 font-medium flex items-center justify-center gap-2"
-                >
-                  {processingIds.has(showDeleteConfirm || '') ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      {getText('Deleting...', 'Menghapus...')}
-                    </>
-                  ) : (
-                    <>
-                      <Trash2 className="h-4 w-4" />
-                      {getText('Delete User', 'Hapus Pengguna')}
-                    </>
-                  )}
-                </button>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowDeleteConfirm(null)}
+                    className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-200 font-medium"
+                    disabled={processingIds.has(showDeleteConfirm || '')}
+                  >
+                    {getText('Cancel', 'Batal')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (showDeleteConfirm) {
+                        handleDelete(showDeleteConfirm);
+                      }
+                    }}
+                    disabled={processingIds.has(showDeleteConfirm || '')}
+                    className="flex-1 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors duration-200 font-medium flex items-center justify-center gap-2"
+                  >
+                    {processingIds.has(showDeleteConfirm || '') ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        {getText('Deleting...', 'Menghapus...')}
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="h-4 w-4" />
+                        {getText('Delete User', 'Hapus Pengguna')}
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 };
 

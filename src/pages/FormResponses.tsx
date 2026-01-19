@@ -107,7 +107,7 @@ const FormResponses: React.FC = () => {
 
             // Load departments & study programs for filters
             const { data: deptsData } = await supabase.from('departments').select('id, name');
-            const { data: prodiData } = await supabase.from('study_programs').select('id, name');
+            const { data: prodiData } = await supabase.from('study_programs').select('id, name').eq('status', 'show');
             setDepartments(deptsData || []);
             setStudyPrograms(prodiData || []);
 

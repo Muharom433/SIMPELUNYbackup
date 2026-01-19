@@ -141,7 +141,7 @@ const LaboratoryLocationManagement: React.FC = () => {
 
     // Fetch study programs
     const fetchStudyPrograms = async () => {
-        const { data } = await supabase.from('study_programs').select('id, name, code');
+        const { data } = await supabase.from('study_programs').select('id, name, code').eq('status', 'show');
         setStudyPrograms(data || []);
     };
 

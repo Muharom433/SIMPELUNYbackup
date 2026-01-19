@@ -556,6 +556,7 @@ const RoomManagement: React.FC = () => {
             const { data, error } = await supabase
                 .from('study_programs')
                 .select('id, name, code, department_id')
+                .eq('status', 'show')
                 .order('name');
             if (error) throw error;
             setStudyPrograms(data as any || []);

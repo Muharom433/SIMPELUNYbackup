@@ -2,11 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { 
-    Building, Eye, EyeOff, User, Lock, UserPlus, LogIn, Shield, Phone, 
-    Mail, Hash, GraduationCap, ChevronDown, Globe, Sparkles, ArrowRight,
-    Users, BookOpen, X, Search, RefreshCw, Key, AlertTriangle, Info,
-    CheckCircle2, Lightbulb, Zap, Star
+import {
+  Building, Eye, EyeOff, User, Lock, UserPlus, LogIn, Shield, Phone,
+  Mail, Hash, GraduationCap, ChevronDown, Globe, Sparkles, ArrowRight,
+  Users, BookOpen, X, Search, RefreshCw, Key, AlertTriangle, Info,
+  CheckCircle2, Lightbulb, Zap, Star
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -66,12 +66,12 @@ const AuthForm: React.FC = () => {
   const [studyProgramSearchTerm, setStudyProgramSearchTerm] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState<Department | null>(null);
   const [selectedStudyProgram, setSelectedStudyProgram] = useState<StudyProgram | null>(null);
-  
+
   // Captcha states
   const [captchaCode, setCaptchaCode] = useState('');
   const [captchaInput, setCaptchaInput] = useState('');
   const [showLoginInfo, setShowLoginInfo] = useState(true);
-  
+
   const { signIn, signUp } = useAuth();
   const { getText, currentLanguage, setLanguage } = useLanguage();
   const navigate = useNavigate();
@@ -137,7 +137,7 @@ const AuthForm: React.FC = () => {
         .from('departments')
         .select('*')
         .order('name');
-      
+
       if (error) throw error;
       setDepartments(data || []);
     } catch (error) {
@@ -150,8 +150,9 @@ const AuthForm: React.FC = () => {
       const { data, error } = await supabase
         .from('study_programs')
         .select('*')
+        .eq('status', 'show')
         .order('name');
-      
+
       if (error) throw error;
       setStudyPrograms(data || []);
     } catch (error) {
@@ -206,7 +207,7 @@ const AuthForm: React.FC = () => {
         department_id: data.department_id,
         study_program_id: data.study_program_id,
       });
-      
+
       if (result.error) {
         toast.error(result.error.message || getText('Failed to create account', 'Gagal membuat akun'));
         generateCaptcha();
@@ -214,7 +215,7 @@ const AuthForm: React.FC = () => {
         toast.success(getText('Account created successfully! You can now sign in.', 'Akun berhasil dibuat! Anda sekarang dapat masuk.'));
         setIsSignUp(false);
         generateCaptcha();
-        
+
         signInForm.reset({
           username: data.username,
           password: '',
@@ -230,7 +231,7 @@ const AuthForm: React.FC = () => {
     }
   };
 
-  const filteredDepartments = departments.filter(dept => 
+  const filteredDepartments = departments.filter(dept =>
     dept.name.toLowerCase().includes(departmentSearchTerm.toLowerCase()) ||
     dept.code.toLowerCase().includes(departmentSearchTerm.toLowerCase())
   );
@@ -255,21 +256,19 @@ const AuthForm: React.FC = () => {
           <Globe className="h-4 w-4 text-gray-600" />
           <button
             onClick={() => setLanguage('en')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium transition-all duration-200 ${
-              currentLanguage === 'en' 
-                ? 'bg-blue-500 text-white shadow-md' 
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition-all duration-200 ${currentLanguage === 'en'
+                ? 'bg-blue-500 text-white shadow-md'
                 : 'text-gray-600 hover:bg-gray-100'
-            }`}
+              }`}
           >
             EN
           </button>
           <button
             onClick={() => setLanguage('id')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium transition-all duration-200 ${
-              currentLanguage === 'id' 
-                ? 'bg-blue-500 text-white shadow-md' 
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition-all duration-200 ${currentLanguage === 'id'
+                ? 'bg-blue-500 text-white shadow-md'
                 : 'text-gray-600 hover:bg-gray-100'
-            }`}
+              }`}
           >
             ID
           </button>
@@ -293,7 +292,7 @@ const AuthForm: React.FC = () => {
             SIMPEL Kuliah
           </h2>
           <p className="mt-2 text-sm text-gray-600 max-w-md mx-auto">
-            {isSignUp 
+            {isSignUp
               ? getText('Create your account to get started with smart campus management', 'Buat akun Anda untuk memulai manajemen kampus yang cerdas')
               : getText('Sign in to access your smart campus dashboard', 'Masuk untuk mengakses dasbor kampus cerdas Anda')
             }
@@ -305,7 +304,7 @@ const AuthForm: React.FC = () => {
           <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-6 border-2 border-emerald-200 shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-emerald-300/20 to-teal-300/20 rounded-full blur-2xl"></div>
             <div className="absolute bottom-0 left-0 w-16 h-16 bg-gradient-to-tr from-teal-300/20 to-emerald-300/20 rounded-full blur-xl"></div>
-            
+
             <button
               onClick={() => setShowLoginInfo(false)}
               className="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-white/50 transition-all duration-200"
@@ -327,7 +326,7 @@ const AuthForm: React.FC = () => {
                   </p>
                 </div>
               </div>
-              
+
               <div className="bg-white/60 backdrop-blur-sm rounded-xl p-4 mb-4 border border-emerald-200/50">
                 <div className="flex items-start space-x-3">
                   <div className="h-8 w-8 bg-emerald-500 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -357,7 +356,7 @@ const AuthForm: React.FC = () => {
         {/* Auth Card */}
         <div className="bg-white/80 backdrop-blur-sm py-8 px-6 shadow-2xl rounded-3xl border border-white/20 relative">
           <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-16 h-1 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"></div>
-          
+
           {/* Tab Switcher */}
           <div className="flex mb-8 bg-gray-100/80 rounded-2xl p-1 backdrop-blur-sm">
             <button
@@ -366,11 +365,10 @@ const AuthForm: React.FC = () => {
                 setIsSignUp(false);
                 generateCaptcha();
               }}
-              className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 rounded-xl text-sm font-semibold transition-all duration-300 ${
-                !isSignUp
+              className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 rounded-xl text-sm font-semibold transition-all duration-300 ${!isSignUp
                   ? 'bg-white text-blue-600 shadow-lg transform scale-[1.02]'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
-              }`}
+                }`}
             >
               <LogIn className="h-4 w-4" />
               <span>{getText('Sign In', 'Masuk')}</span>
@@ -382,11 +380,10 @@ const AuthForm: React.FC = () => {
                 generateCaptcha();
                 setShowLoginInfo(false);
               }}
-              className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 rounded-xl text-sm font-semibold transition-all duration-300 ${
-                isSignUp
+              className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 rounded-xl text-sm font-semibold transition-all duration-300 ${isSignUp
                   ? 'bg-white text-blue-600 shadow-lg transform scale-[1.02]'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
-              }`}
+                }`}
             >
               <UserPlus className="h-4 w-4" />
               <span>{getText('Sign Up', 'Daftar')}</span>
@@ -520,7 +517,7 @@ const AuthForm: React.FC = () => {
                       className="w-full pl-10 pr-10 py-3 bg-white/70 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm"
                     />
                     <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    
+
                     {showDepartmentDropdown && (
                       <div className="absolute z-50 w-full mt-1 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-xl max-h-60 overflow-y-auto">
                         {filteredDepartments.length > 0 ? (
@@ -564,7 +561,7 @@ const AuthForm: React.FC = () => {
                     <BookOpen className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 z-10" />
                     <input
                       type="text"
-                      placeholder={getText("Search and select study program", "Cari dan pilih program studi")}value={selectedStudyProgram ? `${selectedStudyProgram.name} (${selectedStudyProgram.code})` : studyProgramSearchTerm}
+                      placeholder={getText("Search and select study program", "Cari dan pilih program studi")} value={selectedStudyProgram ? `${selectedStudyProgram.name} (${selectedStudyProgram.code})` : studyProgramSearchTerm}
                       onChange={(e) => {
                         setStudyProgramSearchTerm(e.target.value);
                         setShowStudyProgramDropdown(true);
@@ -578,7 +575,7 @@ const AuthForm: React.FC = () => {
                       className="w-full pl-10 pr-10 py-3 bg-white/70 border border-gray-200/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                     <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    
+
                     {showStudyProgramDropdown && selectedDepartment && (
                       <div className="absolute z-50 w-full mt-1 bg-white/95 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-xl max-h-60 overflow-y-auto">
                         {filteredStudyProgramsForSearch.length > 0 ? (
@@ -908,8 +905,8 @@ const AuthForm: React.FC = () => {
 
           {/* Dropdown click outside handler */}
           {(showDepartmentDropdown || showStudyProgramDropdown) && (
-            <div 
-              className="fixed inset-0 z-40" 
+            <div
+              className="fixed inset-0 z-40"
               onClick={() => {
                 setShowDepartmentDropdown(false);
                 setShowStudyProgramDropdown(false);

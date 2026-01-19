@@ -1155,7 +1155,7 @@ const SessionScheduleProgressive = () => {
 
   const fetchStudyPrograms = async () => {
     try {
-      const { data } = await supabase.from('study_programs').select('*, department:departments(name)').order('name');
+      const { data } = await supabase.from('study_programs').select('*, department:departments(name)').eq('status', 'show').order('name');
       setStudyPrograms(data || []);
     } catch (error) {
       console.error('Error fetching study programs:', error);

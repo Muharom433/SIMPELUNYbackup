@@ -774,6 +774,7 @@ const ToolLending: React.FC = () => {
             const { data, error } = await supabase
                 .from('study_programs')
                 .select(`*, department:departments(*)`)
+                .eq('status', 'show')
                 .order('name');
 
             if (error) throw error;

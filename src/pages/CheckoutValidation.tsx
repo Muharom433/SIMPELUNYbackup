@@ -120,16 +120,16 @@ const CheckoutValidation: React.FC = () => {
 
   useEffect(() => {
     fetchCheckouts();
-    
+
     // Set up real-time subscription for checkouts
     const subscription = supabase
       .channel('checkout-validation')
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
           table: 'checkouts'
-        }, 
+        },
         () => {
           fetchCheckouts();
         }
@@ -144,7 +144,7 @@ const CheckoutValidation: React.FC = () => {
   const fetchCheckouts = async () => {
     try {
       setLoading(true);
-      
+
       // Get all checkouts that need approval (status is not 'returned')
       const { data: checkoutsData, error: checkoutsError } = await supabase
         .from('checkouts')
@@ -177,12 +177,12 @@ const CheckoutValidation: React.FC = () => {
                 .select('id, full_name, identity_number, email, role')
                 .eq('id', checkout.user_id)
                 .maybeSingle();
-              
+
               if (!userError && userData) {
                 user = userData;
               }
             } catch (error) {
-              console.log('User not found for checkout:', checkout.id);
+              // User not found - silently continue
             }
           }
 
@@ -211,12 +211,12 @@ const CheckoutValidation: React.FC = () => {
                 `)
                 .eq('id', checkout.booking_id)
                 .maybeSingle();
-              
+
               if (!bookingError && bookingData) {
                 booking = bookingData;
               }
             } catch (error) {
-              console.log('Booking not found for checkout:', checkout.id);
+              // Booking not found - silently continue
             }
           }
 
@@ -234,12 +234,12 @@ const CheckoutValidation: React.FC = () => {
                 )
               `)
               .eq('checkout_id', checkout.id);
-            
+
             if (!itemsError && itemsData) {
               items = itemsData;
             }
           } catch (error) {
-            console.log('Error fetching checkout items:', error);
+            // Error fetching checkout items - silently continue
           }
 
           // Fetch violations
@@ -248,13 +248,13 @@ const CheckoutValidation: React.FC = () => {
               .from('checkout_violations')
               .select('*')
               .eq('checkout_id', checkout.id);
-            
+
             if (!violationsError && violationsData && violationsData.length > 0) {
               violations = violationsData;
               hasViolation = true;
             }
           } catch (error) {
-            console.log('Error fetching violations:', error);
+            // Error fetching violations - silently continue
           }
 
           return {
@@ -271,7 +271,7 @@ const CheckoutValidation: React.FC = () => {
       // Apply department filtering for department admins
       let filteredCheckouts = checkoutsWithDetails;
       if (profile?.role === 'department_admin' && profile.department_id) {
-        filteredCheckouts = checkoutsWithDetails.filter(checkout => 
+        filteredCheckouts = checkoutsWithDetails.filter(checkout =>
           checkout.booking?.room?.department?.id === profile.department_id
         );
       }
@@ -288,21 +288,21 @@ const CheckoutValidation: React.FC = () => {
   const handleApproval = async (checkoutId: string) => {
     try {
       setProcessingIds(prev => new Set(prev).add(checkoutId));
-      
+
       // Update checkout status to approved
       const { error: checkoutError } = await supabase
         .from('checkouts')
-        .update({ 
+        .update({
           approved_by: profile?.id,
           updated_at: new Date().toISOString()
         })
         .eq('id', checkoutId);
 
       if (checkoutError) throw checkoutError;
-      
+
       toast.success('Checkout approved successfully');
       fetchCheckouts();
-      
+
       if (selectedCheckout?.id === checkoutId) {
         setShowDetailModal(false);
       }
@@ -321,15 +321,15 @@ const CheckoutValidation: React.FC = () => {
   const handleDelete = async (checkoutId: string) => {
     try {
       setProcessingIds(prev => new Set(prev).add(checkoutId));
-      
+
       // Get the booking ID before deleting the checkout
       const checkout = checkouts.find(c => c.id === checkoutId);
       const bookingId = checkout?.booking_id;
-      
+
       if (!bookingId) {
         throw new Error('Booking ID not found for this checkout');
       }
-      
+
       // Delete the checkout
       const { error: checkoutError } = await supabase
         .from('checkouts')
@@ -337,11 +337,11 @@ const CheckoutValidation: React.FC = () => {
         .eq('id', checkoutId);
 
       if (checkoutError) throw checkoutError;
-      
+
       // Update the booking status back to 'approved'
       const { error: bookingError } = await supabase
         .from('bookings')
-        .update({ 
+        .update({
           status: 'approved',
           updated_at: new Date().toISOString()
         })
@@ -352,10 +352,10 @@ const CheckoutValidation: React.FC = () => {
       } else {
         toast.success('Checkout deleted and booking status restored to approved');
       }
-      
+
       setShowDeleteConfirm(null);
       fetchCheckouts();
-      
+
       if (selectedCheckout?.id === checkoutId) {
         setShowDetailModal(false);
       }
@@ -373,15 +373,15 @@ const CheckoutValidation: React.FC = () => {
 
   const handleAddViolation = async () => {
     if (!selectedCheckout) return;
-    
+
     try {
       setProcessingIds(prev => new Set(prev).add(selectedCheckout.id));
-      
+
       if (!violationTitle || !violationDescription) {
         toast.error('Please provide both title and description for the violation');
         return;
       }
-      
+
       // Create violation record
       const violationData = {
         checkout_id: selectedCheckout.id,
@@ -393,25 +393,25 @@ const CheckoutValidation: React.FC = () => {
         reported_by: profile?.id,
         status: 'active'
       };
-      
+
       const { error } = await supabase
         .from('checkout_violations')
         .insert(violationData);
 
       if (error) throw error;
-      
+
       toast.success('Violation report added successfully');
-      
+
       // Reset form
       setViolationTitle('');
       setViolationDescription('');
       setViolationType('late_return');
       setViolationSeverity('minor');
       setShowViolationForm(false);
-      
+
       // Refresh data
       fetchCheckouts();
-      
+
     } catch (error: any) {
       console.error('Error adding violation:', error);
       toast.error(error.message || 'Failed to add violation');
@@ -428,17 +428,17 @@ const CheckoutValidation: React.FC = () => {
 
   const filteredCheckouts = checkouts.filter(checkout => {
     const searchLower = searchTerm.toLowerCase();
-    const matchesSearch = 
+    const matchesSearch =
       (checkout.user?.full_name && checkout.user.full_name.toLowerCase().includes(searchLower)) ||
       (checkout.user?.identity_number && checkout.user.identity_number.toLowerCase().includes(searchLower)) ||
       (checkout.booking?.purpose && checkout.booking.purpose.toLowerCase().includes(searchLower)) ||
       (checkout.booking?.room?.name && checkout.booking.room.name.toLowerCase().includes(searchLower)) ||
       (checkout.booking?.room?.code && checkout.booking.room.code.toLowerCase().includes(searchLower));
-    
-    const matchesStatus = statusFilter === 'all' || 
+
+    const matchesStatus = statusFilter === 'all' ||
       (statusFilter === 'flagged' && checkout.has_violation) ||
       checkout.status === statusFilter;
-    
+
     return matchesSearch && matchesStatus;
   });
 
@@ -601,28 +601,26 @@ const CheckoutValidation: React.FC = () => {
             const StatusIcon = getStatusIcon(checkout.status);
             const isProcessing = processingIds.has(checkout.id);
             const isOverdue = checkout.expected_return_date && isAfter(new Date(), new Date(checkout.expected_return_date));
-            
+
             return (
               <div
                 key={checkout.id}
-                className={`bg-white rounded-xl shadow-sm border-2 p-6 hover:shadow-md transition-all duration-200 ${
-                  checkout.has_violation 
-                    ? 'border-yellow-300' 
-                    : isOverdue 
-                      ? 'border-red-300' 
+                className={`bg-white rounded-xl shadow-sm border-2 p-6 hover:shadow-md transition-all duration-200 ${checkout.has_violation
+                    ? 'border-yellow-300'
+                    : isOverdue
+                      ? 'border-red-300'
                       : 'border-gray-200'
-                }`}
+                  }`}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center space-x-3 mb-4">
-                      <div className={`p-2 rounded-lg ${
-                        checkout.has_violation 
-                          ? 'bg-yellow-500' 
-                          : isOverdue 
-                            ? 'bg-red-500' 
+                      <div className={`p-2 rounded-lg ${checkout.has_violation
+                          ? 'bg-yellow-500'
+                          : isOverdue
+                            ? 'bg-red-500'
                             : 'bg-blue-500'
-                      }`}>
+                        }`}>
                         {checkout.has_violation ? (
                           <Flag className="h-5 w-5 text-white" />
                         ) : isOverdue ? (
@@ -722,8 +720,8 @@ const CheckoutValidation: React.FC = () => {
                               {checkout.violations[0].title}
                             </p>
                             <p className="text-xs text-yellow-700 mt-1">
-                              {checkout.violations[0].description.length > 100 
-                                ? `${checkout.violations[0].description.substring(0, 100)}...` 
+                              {checkout.violations[0].description.length > 100
+                                ? `${checkout.violations[0].description.substring(0, 100)}...`
                                 : checkout.violations[0].description}
                             </p>
                             {checkout.violations.length > 1 && (
@@ -748,7 +746,7 @@ const CheckoutValidation: React.FC = () => {
                     >
                       <Eye className="h-4 w-4" />
                     </button>
-                    
+
                     <button
                       onClick={() => handleApproval(checkout.id)}
                       disabled={isProcessing}
@@ -757,7 +755,7 @@ const CheckoutValidation: React.FC = () => {
                       <Check className="h-4 w-4" />
                       <span>Approve</span>
                     </button>
-                    
+
                     <button
                       onClick={() => setShowDeleteConfirm(checkout.id)}
                       disabled={isProcessing}
@@ -799,7 +797,7 @@ const CheckoutValidation: React.FC = () => {
                     {getStatusIcon(selectedCheckout.status)({ className: "h-4 w-4 mr-1" })}
                     {selectedCheckout.status.toUpperCase()}
                   </span>
-                  
+
                   {selectedCheckout.has_violation && (
                     <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
                       <Flag className="h-4 w-4 mr-1" />
@@ -955,7 +953,7 @@ const CheckoutValidation: React.FC = () => {
                           <option value="other">Other</option>
                         </select>
                       </div>
-                      
+
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           Severity
@@ -970,7 +968,7 @@ const CheckoutValidation: React.FC = () => {
                           <option value="critical">Critical</option>
                         </select>
                       </div>
-                      
+
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           Violation Title
@@ -983,7 +981,7 @@ const CheckoutValidation: React.FC = () => {
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
                         />
                       </div>
-                      
+
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           Description
@@ -996,7 +994,7 @@ const CheckoutValidation: React.FC = () => {
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
                         />
                       </div>
-                      
+
                       <div className="flex space-x-3 pt-2">
                         <button
                           type="button"

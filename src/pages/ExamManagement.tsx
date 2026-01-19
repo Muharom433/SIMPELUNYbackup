@@ -293,7 +293,7 @@ const ExamManagement = () => {
 
     const fetchStudyPrograms = async () => {
         try {
-            let query = supabase.from('study_programs').select('*');
+            let query = supabase.from('study_programs').select('*').eq('status', 'show');
             if (profile?.role === 'department_admin' && profile?.department_id) {
                 query = query.eq('department_id', profile.department_id);
             }

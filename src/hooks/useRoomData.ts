@@ -59,19 +59,13 @@ export const useRoomData = (targetDate: string) => {
           equipment,
           study_program_ids,
           department:departments(id, name),
-          building:buildings(
+          building:building(
             id, 
             name, 
-            campus:campuses(
+            campus:campus(
               id, 
               name
             )
-          )
-          study_program_ids,
-          department:departments(id, name),
-          building:building(
-            name,
-            campus:campus(name)
           )
         `)
         .order('name');
@@ -321,8 +315,6 @@ export const useRoomData = (targetDate: string) => {
           name: room.name,
           code: room.code,
           capacity: room.capacity,
-          department: room.department,
-          equipment: room.equipment || [],
           department: room.department,
           equipment: room.equipment || [],
           is_available: room.is_available,

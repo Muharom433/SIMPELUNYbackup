@@ -361,13 +361,9 @@ const ValidationQueue: React.FC = () => {
     const buildVerificationItems = useCallback((checkout: CheckoutWithDetails): VerificationItem[] => {
         const items: VerificationItem[] = [];
 
-        console.log('📦 Building verification items for checkout:', checkout.id);
-        console.log('   Checkout items count:', checkout.checkout_items?.length || 0);
-
         // ⭐⭐ WAJIB DARI CHECKOUT_ITEMS
         if (!checkout.checkout_items || checkout.checkout_items.length === 0) {
-            console.warn('⚠️ No checkout_items found for checkout:', checkout.id);
-            toast.error('Data checkout_items tidak ditemukan. Pastikan checkout dibuat dengan benar.');
+            console.warn('No checkout_items found for checkout:', checkout.id);
             return [];
         }
 
@@ -375,16 +371,9 @@ const ValidationQueue: React.FC = () => {
         const checkoutItem = checkout.checkout_items[0];
 
         if (!checkoutItem.equipment_requested || !checkoutItem.equipment_quantities) {
-            console.warn('⚠️ No equipment_requested in checkout_items');
+            console.warn('No equipment_requested in checkout_items');
             return [];
         }
-
-        console.log('   Equipment requested:', checkoutItem.equipment_requested.length);
-        console.log('   Equipment back:', checkoutItem.equipment_back?.length || 0);
-        console.log('   🔍 DEBUG - equipment_requested:', checkoutItem.equipment_requested);
-        console.log('   🔍 DEBUG - equipment_quantities:', checkoutItem.equipment_quantities);
-        console.log('   🔍 DEBUG - equipment_back:', checkoutItem.equipment_back);
-        console.log('   🔍 DEBUG - quantities_back:', checkoutItem.quantities_back);
 
         // ⭐ Loop langsung tanpa grouping (supaya angka tidak dijumlahkan)
         checkoutItem.equipment_requested.forEach((eqId, index) => {
@@ -393,7 +382,7 @@ const ValidationQueue: React.FC = () => {
             // ⭐⭐ PENTING: Konversi eksplisit ke NUMBER untuk hindari string concatenation
             const borrowedQty = Number(checkoutItem.equipment_quantities[index]) || 1;
 
-            console.log(`   🔍 DEBUG - equipment_quantities[${index}]:`, checkoutItem.equipment_quantities[index], 'type:', typeof checkoutItem.equipment_quantities[index]);
+
 
             // ⭐⭐ LOGIKA BARU: Cari sudah kembali dari quantities_back (bukan equipment_back)
             // quantities_back = total kumulatif yang sudah dikembalikan
@@ -403,14 +392,14 @@ const ValidationQueue: React.FC = () => {
                 if (backIndex !== -1) {
                     // ⭐⭐ Konversi eksplisit ke NUMBER
                     alreadyReturned = Number(checkoutItem.quantities_back[backIndex]) || 0;
-                    console.log(`   🔍 DEBUG - quantities_back[${backIndex}]:`, checkoutItem.quantities_back[backIndex], 'type:', typeof checkoutItem.quantities_back[backIndex]);
+
                 }
             }
 
             // ⭐⭐ GAP = dipinjam - sudah kembali
             const gap = borrowedQty - alreadyReturned;
 
-            console.log(`   📦 ${equipment?.name || eqId}: dipinjam=${borrowedQty}, sudah_kembali=${alreadyReturned}, gap=${gap}`);
+
 
             items.push({
                 equipment_id: eqId,
@@ -426,7 +415,7 @@ const ValidationQueue: React.FC = () => {
             });
         });
 
-        console.log('✅ Built', items.length, 'verification items');
+
         return items;
     }, [allEquipment]);
 
@@ -435,7 +424,7 @@ const ValidationQueue: React.FC = () => {
         try {
             setLoading(true);
 
-            console.log('🔍 Fetching checkouts for tab:', activeTab, 'status:', statusFilter);
+
 
             // Check if user is laboratory and has department_id
             const isLaboratory = profile?.role === 'laboratory';
@@ -483,7 +472,7 @@ const ValidationQueue: React.FC = () => {
                     throw error;
                 }
 
-                console.log(`✅ Fetched ${data?.length || 0} room checkouts`);
+
 
                 // Laboratory filtering logic:
                 // - Department MUST be same as laboran's department
@@ -511,7 +500,7 @@ const ValidationQueue: React.FC = () => {
                         // Otherwise -> HIDE
                         return false;
                     });
-                    console.log(`🔬 Filtered to ${filteredData.length} checkouts for laboran`);
+
                 }
 
                 // Process room data
@@ -524,10 +513,10 @@ const ValidationQueue: React.FC = () => {
                         if (checkout.room_id) {
                             old_room = await fetchRoomById(checkout.room_id);
                             hasRoomChanged = true;
-                            console.log(`🏠 Room change detected for checkout ${checkout.id}`);
+
                         }
 
-                        console.log(`📦 Checkout ${checkout.id} has ${checkout.checkout_items?.length || 0} items`);
+
 
                         return {
                             ...checkout,
@@ -572,7 +561,7 @@ const ValidationQueue: React.FC = () => {
                     throw error;
                 }
 
-                console.log(`✅ Fetched ${data?.length || 0} equipment checkouts`);
+
 
                 // Get all rooms that laboran can access (for filtering equipment)
                 // Laboratory filtering logic:
@@ -589,7 +578,7 @@ const ValidationQueue: React.FC = () => {
                     labRoomIds = (labRooms || [])
                         .filter(r => r.study_program_id === null || r.study_program_id === laborStudyProgramId)
                         .map(r => r.id);
-                    console.log(`🔬 Lab has ${labRoomIds.length} accessible rooms`);
+
                 }
 
                 processedData = await Promise.all(
@@ -611,7 +600,7 @@ const ValidationQueue: React.FC = () => {
                             }
                         }
 
-                        console.log(`📦 Checkout ${checkout.id} has ${checkout.checkout_items?.length || 0} items`);
+
 
                         return {
                             ...checkout,
@@ -628,7 +617,7 @@ const ValidationQueue: React.FC = () => {
                         const hasLabEquipment = equipmentRoomIds.some((rid: string) => labRoomIds.includes(rid));
                         return hasLabEquipment;
                     });
-                    console.log(`🔬 Filtered to ${processedData.length} equipment checkouts for laboran`);
+
                 }
             }
 
@@ -654,7 +643,6 @@ const ValidationQueue: React.FC = () => {
                 })
             );
 
-            console.log(`✅ Final processed checkouts: ${enhancedData.length}`);
             setCheckouts(enhancedData);
 
         } catch (error: any) {
@@ -686,17 +674,10 @@ const ValidationQueue: React.FC = () => {
             const checkout = checkouts.find(c => c.id === checkoutId);
             if (!checkout) throw new Error('Checkout tidak ditemukan');
 
-            console.log('🔥 Starting approval process for checkout:', checkoutId);
-            console.log('📦 Verification items:', verificationItems);
-
             // ⭐⭐ CEK APAKAH ADA EQUIPMENT
             const hasEquipment = verificationItems.length > 0;
             const verifiedItems = verificationItems.filter(i => i.is_verified);
             const hasVerifiedItems = verifiedItems.length > 0;
-
-            if (!hasEquipment) {
-                console.log('ℹ️ No equipment in this checkout (room-only booking)');
-            }
 
             // ⭐⭐ CEK GAP - Hitung total gap (hanya untuk item yang diverifikasi)
             let totalGap = 0;
@@ -712,11 +693,9 @@ const ValidationQueue: React.FC = () => {
 
             // Warning jika ada gap (tapi tetap lanjut approve)
             if (totalGap > 0) {
-                console.warn(`⚠️ Gap detected: ${totalGap} items missing`);
-                console.warn('   Items:', itemsWithGap);
-                toast.warning(
+                toast(
                     `Perhatian: Ada ${totalGap} item yang belum dikembalikan. Akan dicatat sebagai kehilangan.`,
-                    { duration: 5000 }
+                    { duration: 5000, icon: '⚠️' }
                 );
             }
 
@@ -751,7 +730,7 @@ const ValidationQueue: React.FC = () => {
                             continue;
                         }
 
-                        console.log(`✅ ${currentEq.name}: ${currentEq.quantity} → ${newQuantity} (+${item.returned_quantity} baru dikembalikan)`);
+
 
                         await supabase
                             .from('equipment_quantity_logs')
@@ -766,8 +745,6 @@ const ValidationQueue: React.FC = () => {
                             });
                     }
                 }
-            } else {
-                console.log('ℹ️ No items returned to stock (no verified items or empty return)');
             }
 
             // ⭐⭐ STEP 2: Update equipment_back & quantities_back di CHECKOUT_ITEMS
@@ -792,14 +769,6 @@ const ValidationQueue: React.FC = () => {
                     // ⭐⭐ Total kumulatif = yang sudah ada + yang baru dikembalikan
                     const newTotal = currentBack + item.returned_quantity;
                     equipmentBackMap.set(item.equipment_id, newTotal);
-
-                    console.log(`   📝 ${item.equipment_name}: quantities_back ${currentBack} → ${newTotal} (+${item.returned_quantity})`);
-
-                    // ⭐⭐ CEK GAP untuk equipment ini
-                    const gap = item.borrowed_quantity - newTotal;
-                    if (gap > 0) {
-                        console.warn(`   ⚠️ ${item.equipment_name} masih kurang ${gap} ${item.equipment_unit || 'unit'}`);
-                    }
                 });
 
                 const equipmentBack: string[] = [];
@@ -830,8 +799,6 @@ const ValidationQueue: React.FC = () => {
                     console.error('Error updating checkout_items:', checkoutItemUpdateError);
                     throw checkoutItemUpdateError;
                 }
-
-                console.log('✅ checkout_items updated with equipment_back (cumulative)');
             }
 
             // ⭐⭐ STEP 3: Update checkout status
@@ -855,8 +822,6 @@ const ValidationQueue: React.FC = () => {
 
             // ⭐⭐ STEP 4: Create violation report jika ada gap
             if (totalGap > 0 && itemsWithGap.length > 0) {
-                console.log('📝 Creating violation report for missing items...');
-
                 const violationDescription = `User tidak mengembalikan equipment secara lengkap:\n${itemsWithGap.join('\n')}`;
 
                 const { error: violationError } = await supabase
@@ -875,9 +840,6 @@ const ValidationQueue: React.FC = () => {
 
                 if (violationError) {
                     console.error('Error creating violation report:', violationError);
-                    // Don't throw, just log
-                } else {
-                    console.log('✅ Violation report created for missing items');
                 }
             }
 
@@ -894,8 +856,6 @@ const ValidationQueue: React.FC = () => {
 
                     if (bookingError) {
                         console.error('Error updating booking status:', bookingError);
-                    } else {
-                        console.log('✅ Booking status updated to "completed"');
                     }
                 } else if (checkout.type === 'things' && checkout.lendingTool_id) {
                     const { error: lendingError } = await supabase
@@ -908,12 +868,8 @@ const ValidationQueue: React.FC = () => {
 
                     if (lendingError) {
                         console.error('Error updating lending tool status:', lendingError);
-                    } else {
-                        console.log('✅ Lending tool status updated to "completed"');
                     }
                 }
-            } else {
-                console.log('ℹ️ Booking/lending status not updated - room change detected');
             }
 
             const successMessage = checkout.room_id
@@ -952,8 +908,6 @@ const ValidationQueue: React.FC = () => {
             const checkout = checkouts.find(c => c.id === checkoutId);
             if (!checkout) throw new Error('Checkout tidak ditemukan');
 
-            console.log('🔄 Rejecting checkout:', checkoutId);
-
             const { error: deleteError } = await supabase
                 .from('checkouts')
                 .delete()
@@ -970,8 +924,6 @@ const ValidationQueue: React.FC = () => {
                     })
                     .eq('id', checkout.booking_id);
 
-                console.log('✅ Booking status reverted to "borrowed"');
-
             } else if (checkout.type === 'things' && checkout.lendingTool_id) {
                 await supabase
                     .from('lending_tool')
@@ -980,8 +932,6 @@ const ValidationQueue: React.FC = () => {
                         updated_at: new Date().toISOString()
                     })
                     .eq('id', checkout.lendingTool_id);
-
-                console.log('✅ Lending tool status reverted to "borrow"');
             }
 
             toast.success('Pengembalian ditolak. Status dikembalikan ke "borrowed".');

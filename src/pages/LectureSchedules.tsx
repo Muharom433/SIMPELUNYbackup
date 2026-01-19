@@ -31,7 +31,9 @@ import {
   Filter,
   CalendarCheck,
   ChevronDown,
-  MapPin
+  MapPin,
+  Link,
+  Check
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line } from 'recharts';
 import { supabase } from '../lib/supabase';
@@ -42,7 +44,7 @@ import ExcelUploadModal from '../components/ExcelUpload/ExcelUploadModal';
 import { useLanguage } from '../contexts/LanguageContext';
 import jsPDF from 'jspdf';
 
-// Reusable Searchable Dropdown Component
+// Reusable Searchable Dropdown Component (returns name)
 const SearchableDropdown = ({
   options,
   value,
@@ -72,7 +74,8 @@ const SearchableDropdown = ({
     if (!searchTerm.trim()) return options;
     const searchLower = searchTerm.toLowerCase().trim();
     return options.filter(option =>
-      (option.name?.toLowerCase() || '').includes(searchLower)
+      (option.name?.toLowerCase() || '').includes(searchLower) ||
+      (option.code?.toLowerCase() || '').includes(searchLower)
     );
   }, [options, searchTerm]);
 
@@ -135,6 +138,114 @@ const SearchableDropdown = ({
                   type="button"
                   onClick={() => handleSelect(option.name)}
                   className={`w-full px-4 py-3 text-left text-sm hover:bg-teal-50 hover:text-teal-900 transition-colors ${option.name === value ? 'bg-teal-100 text-teal-900' : 'text-gray-900'
+                    }`}
+                >
+                  <div className="font-medium">{option.name}</div>
+                  {option.code && <div className="text-xs text-gray-500">{option.code}</div>}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Searchable Dropdown Component that returns ID (for user selection)
+const SearchableDropdownById = ({
+  options,
+  value,
+  onChange,
+  placeholder = 'Select option',
+  searchPlaceholder = 'Search...',
+  emptyMessage = 'No results found',
+  disabled = false
+}: {
+  options: { id: string; name: string; code?: string }[];
+  value: string; // This is the ID
+  onChange: (id: string) => void;
+  placeholder?: string;
+  searchPlaceholder?: string;
+  emptyMessage?: string;
+  disabled?: boolean;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  const selectedOption = useMemo(() => {
+    return options.find(option => option.id === value); // Match by ID
+  }, [options, value]);
+
+  const filteredOptions = useMemo(() => {
+    if (!searchTerm.trim()) return options;
+    const searchLower = searchTerm.toLowerCase().trim();
+    return options.filter(option =>
+      (option.name?.toLowerCase() || '').includes(searchLower) ||
+      (option.code?.toLowerCase() || '').includes(searchLower)
+    );
+  }, [options, searchTerm]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+        setSearchTerm('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSelect = (optionId: string) => {
+    onChange(optionId); // Pass ID back
+    setIsOpen(false);
+    setSearchTerm('');
+  };
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={`w-full px-3 py-2 border border-gray-300 rounded-lg text-left flex items-center justify-between transition-colors text-sm ${disabled ? 'bg-gray-100 cursor-not-allowed text-gray-500' : 'hover:border-purple-500 focus:border-purple-500 bg-white'
+          }`}
+      >
+        <span className={selectedOption ? 'text-gray-900 truncate' : 'text-gray-500'}>
+          {selectedOption ? `${selectedOption.name}${selectedOption.code ? ` (${selectedOption.code})` : ''}` : placeholder}
+        </span>
+        <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && !disabled && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-hidden">
+          <div className="p-2 border-b border-gray-200">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder={searchPlaceholder}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-500"
+                autoFocus
+              />
+            </div>
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            {filteredOptions.length === 0 ? (
+              <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                {searchTerm ? emptyMessage : 'No options'}
+              </div>
+            ) : (
+              filteredOptions.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => handleSelect(option.id)}
+                  className={`w-full px-4 py-2 text-left text-sm hover:bg-purple-50 hover:text-purple-900 transition-colors ${option.id === value ? 'bg-purple-100 text-purple-900' : 'text-gray-900'
                     }`}
                 >
                   <div className="font-medium">{option.name}</div>
@@ -266,6 +377,17 @@ const LectureSchedules: React.FC = () => {
   const [rescheduleFilter, setRescheduleFilter] = useState<string>('pending');
   const [roomSearchTerm, setRoomSearchTerm] = useState('');
   const [showRoomDropdown, setShowRoomDropdown] = useState(false);
+
+  // Data Matching State
+  const [showMatchingModal, setShowMatchingModal] = useState(false);
+  const [unmatchedRooms, setUnmatchedRooms] = useState<string[]>([]);
+  const [unmatchedLecturers, setUnmatchedLecturers] = useState<string[]>([]);
+  const [roomMappings, setRoomMappings] = useState<Record<string, string>>({});
+  const [lecturerMappings, setLecturerMappings] = useState<Record<string, string>>({});
+  const [matchingLoading, setMatchingLoading] = useState(false);
+
+  // Tab state for matching modal
+  const [matchingTab, setMatchingTab] = useState<'rooms' | 'lecturers'>('rooms');
 
   const [sortConfig, setSortConfig] = useState<{ key: keyof LectureSchedule; direction: 'ascending' | 'descending' } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -623,6 +745,225 @@ const LectureSchedules: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Data Matching Functions
+  const analyzeUnmatchedData = async () => {
+    try {
+      setMatchingLoading(true);
+
+      // Fetch all unique room and lecturer values from lecture_schedules
+      const { data: scheduleData, error: scheduleError } = await supabase
+        .from('lecture_schedules')
+        .select('room, lecturer');
+
+      if (scheduleError) throw scheduleError;
+
+      // Get unique values
+      const scheduleRooms = [...new Set((scheduleData || []).map(s => s.room).filter(Boolean))] as string[];
+      const scheduleLecturers = [...new Set((scheduleData || []).map(s => s.lecturer).filter(Boolean))] as string[];
+
+      // Compare with master data (rooms)
+      const roomNames = rooms.map(r => r.name.toLowerCase());
+      const unmatchedRoomsList = scheduleRooms.filter(
+        sr => !roomNames.includes(sr.toLowerCase())
+      );
+
+      // Compare with master data (lecturers)
+      const lecturerNames = lecturers.map(l => l.full_name.toLowerCase());
+      const unmatchedLecturersList = scheduleLecturers.filter(
+        sl => !lecturerNames.includes(sl.toLowerCase())
+      );
+
+      setUnmatchedRooms(unmatchedRoomsList);
+      setUnmatchedLecturers(unmatchedLecturersList);
+
+      // Initialize mappings
+      setRoomMappings({});
+      setLecturerMappings({});
+
+    } catch (error: any) {
+      console.error('Error analyzing unmatched data:', error);
+      alert.error(getText('Failed to analyze data', 'Gagal menganalisis data'));
+    } finally {
+      setMatchingLoading(false);
+    }
+  };
+
+  const handleBulkUpdateRoom = async (oldValue: string, newValue: string) => {
+    try {
+      setMatchingLoading(true);
+
+      const { error } = await supabase
+        .from('lecture_schedules')
+        .update({ room: newValue })
+        .eq('room', oldValue);
+
+      if (error) throw error;
+
+      alert.success(getText(
+        `Successfully updated all schedules with room "${oldValue}" to "${newValue}"`,
+        `Berhasil memperbarui semua jadwal dengan ruangan "${oldValue}" ke "${newValue}"`
+      ));
+
+      // Re-analyze data and refresh schedules
+      await analyzeUnmatchedData();
+      fetchSchedules();
+
+    } catch (error: any) {
+      console.error('Error updating rooms:', error);
+      alert.error(error.message || getText('Failed to update rooms', 'Gagal memperbarui ruangan'));
+    } finally {
+      setMatchingLoading(false);
+    }
+  };
+
+  // UPDATE USER'S FULL_NAME BASED ON SCHEDULE LECTURER NAME (Excel is master)
+  const handleBulkUpdateLecturer = async (scheduleLecturerName: string, selectedUserId: string) => {
+    try {
+      setMatchingLoading(true);
+
+      // Find the selected user
+      const selectedUser = lecturers.find(l => l.id === selectedUserId);
+      if (!selectedUser) {
+        throw new Error('User not found');
+      }
+
+      // Update user's full_name to match the schedule lecturer name
+      const { error } = await supabase
+        .from('users')
+        .update({ full_name: scheduleLecturerName })
+        .eq('id', selectedUserId);
+
+      if (error) throw error;
+
+      alert.success(getText(
+        `Successfully updated user "${selectedUser.full_name}" to "${scheduleLecturerName}"`,
+        `Berhasil memperbarui nama user "${selectedUser.full_name}" menjadi "${scheduleLecturerName}"`
+      ));
+
+      // Refresh lecturers list and re-analyze data
+      const { data: updatedLecturers } = await supabase
+        .from('users')
+        .select('id, full_name, identity_number')
+        .eq('role', 'lecturer')
+        .order('full_name');
+
+      setLecturers(updatedLecturers || []);
+      await analyzeUnmatchedData();
+
+    } catch (error: any) {
+      console.error('Error updating user name:', error);
+      alert.error(error.message || getText('Failed to update user name', 'Gagal memperbarui nama user'));
+    } finally {
+      setMatchingLoading(false);
+    }
+  };
+
+  // Batch update all rooms that have mappings defined
+  const handleBatchUpdateAllRooms = async () => {
+    // Get all rooms that have a mapping defined
+    const roomsWithMappings = Object.entries(roomMappings).filter(([_, target]) => target);
+
+    if (roomsWithMappings.length === 0) {
+      alert.error(getText('Please select target room for at least one item', 'Pilih ruangan target untuk minimal satu item'));
+      return;
+    }
+
+    try {
+      setMatchingLoading(true);
+
+      // Update each room that has a mapping
+      for (const [oldRoom, newRoom] of roomsWithMappings) {
+        const { error } = await supabase
+          .from('lecture_schedules')
+          .update({ room: newRoom })
+          .eq('room', oldRoom);
+
+        if (error) throw error;
+      }
+
+      alert.success(getText(
+        `Successfully updated ${roomsWithMappings.length} room mappings`,
+        `Berhasil memperbarui ${roomsWithMappings.length} pemetaan ruangan`
+      ));
+
+      // Reset mappings and refresh
+      setRoomMappings({});
+      await analyzeUnmatchedData();
+      fetchSchedules();
+
+    } catch (error: any) {
+      console.error('Error batch updating rooms:', error);
+      alert.error(error.message || getText('Failed to update rooms', 'Gagal memperbarui ruangan'));
+    } finally {
+      setMatchingLoading(false);
+    }
+  };
+
+  // Batch update all lecturers that have mappings defined
+  const handleBatchUpdateAllLecturers = async () => {
+    // Get all lecturers that have a mapping defined
+    const lecturersWithMappings = Object.entries(lecturerMappings).filter(([_, target]) => target);
+
+    if (lecturersWithMappings.length === 0) {
+      alert.error(getText('Please select target user for at least one item', 'Pilih user target untuk minimal satu item'));
+      return;
+    }
+
+    try {
+      setMatchingLoading(true);
+
+      // For each lecturer mapping, update the user's full_name
+      for (const [scheduleLecturerName, userId] of lecturersWithMappings) {
+        const selectedUser = lecturers.find(l => l.id === userId);
+        if (!selectedUser) continue;
+
+        // Update user's full_name to match the schedule lecturer name
+        const { error } = await supabase
+          .from('users')
+          .update({ full_name: scheduleLecturerName })
+          .eq('id', userId);
+
+        if (error) throw error;
+      }
+
+      alert.success(getText(
+        `Successfully updated ${lecturersWithMappings.length} user names`,
+        `Berhasil memperbarui ${lecturersWithMappings.length} nama user`
+      ));
+
+      // Refresh lecturers list
+      const { data: updatedLecturers } = await supabase
+        .from('users')
+        .select('id, full_name, identity_number')
+        .eq('role', 'lecturer')
+        .order('full_name');
+
+      setLecturers(updatedLecturers || []);
+
+      // Reset mappings and refresh
+      setLecturerMappings({});
+      await analyzeUnmatchedData();
+
+    } catch (error: any) {
+      console.error('Error batch updating lecturers:', error);
+      alert.error(error.message || getText('Failed to update lecturers', 'Gagal memperbarui dosen'));
+    } finally {
+      setMatchingLoading(false);
+    }
+  };
+
+  // Count how many mappings are defined
+  const roomMappingsCount = Object.values(roomMappings).filter(v => v).length;
+  const lecturerMappingsCount = Object.values(lecturerMappings).filter(v => v).length;
+
+  const openMatchingModal = async () => {
+    setShowMatchingModal(true);
+    setMatchingTab('rooms');
+    setRoomMappings({});
+    setLecturerMappings({});
+    await analyzeUnmatchedData();
   };
 
   const generatePDF = () => {
@@ -1091,6 +1432,13 @@ const LectureSchedules: React.FC = () => {
                   <span className="hidden sm:inline">{getText('Import Excel', 'Impor Excel')}</span>
                 </button>
                 <button
+                  onClick={openMatchingModal}
+                  className="flex items-center gap-2 px-3 py-2 text-cyan-700 border border-cyan-300 rounded-lg hover:bg-cyan-50 transition-colors text-sm"
+                >
+                  <Link className="h-4 w-4" />
+                  <span className="hidden sm:inline">{getText('Data Matching', 'Pencocokan Data')}</span>
+                </button>
+                <button
                   onClick={() => setShowDeleteAllConfirm(true)}
                   disabled={schedules.length === 0}
                   className="flex items-center gap-2 px-3 py-2 text-red-700 border border-red-300 rounded-lg hover:bg-red-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1338,13 +1686,11 @@ const LectureSchedules: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">{getText('Lecturer', 'Dosen')} *</label>
-                  <SearchableDropdown
-                    options={lecturers.map(l => ({ id: l.id, name: l.full_name, code: l.identity_number }))}
-                    value={form.watch('lecturer')}
-                    onChange={(val) => form.setValue('lecturer', val)}
-                    placeholder={getText('Select lecturer', 'Pilih dosen')}
-                    searchPlaceholder={getText('Search lecturer...', 'Cari dosen...')}
-                    emptyMessage={getText('No lecturer found', 'Dosen tidak ditemukan')}
+                  <input
+                    type="text"
+                    {...form.register('lecturer')}
+                    placeholder={getText('Enter lecturer name', 'Masukkan nama dosen')}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-teal-500 focus:ring-0 transition-colors"
                   />
                   {form.formState.errors.lecturer && (
                     <p className="text-red-500 text-sm">{form.formState.errors.lecturer.message}</p>
@@ -1976,6 +2322,262 @@ const LectureSchedules: React.FC = () => {
                     {getText('Delete All', 'Hapus Semua')}
                   </div>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Data Matching Modal - Redesigned with Tabs and Batch Selection */}
+      {showMatchingModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden">
+            <div className="bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 p-6 text-white">
+              <div className="flex items-center justify-between">
+                <h3 className="text-2xl font-bold flex items-center gap-3">
+                  <Link className="h-6 w-6" />
+                  {getText('Data Matching', 'Pencocokan Data')}
+                </h3>
+                <button
+                  onClick={() => setShowMatchingModal(false)}
+                  className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+              <p className="mt-2 text-sm opacity-90">
+                {getText(
+                  'Match schedule room and lecturer names with master data. You can select multiple items and set them all at once.',
+                  'Cocokkan nama ruangan dan dosen jadwal dengan data master. Anda bisa memilih beberapa item dan set sekaligus.'
+                )}
+              </p>
+            </div>
+
+            {/* Tabs */}
+            <div className="border-b border-gray-200">
+              <div className="flex">
+                <button
+                  onClick={() => setMatchingTab('rooms')}
+                  className={`flex-1 py-4 px-6 text-center font-medium transition-colors relative ${matchingTab === 'rooms'
+                    ? 'text-cyan-600 bg-cyan-50'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    }`}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <MapPin className="h-5 w-5" />
+                    <span>{getText('Room Matching', 'Pencocokan Ruangan')}</span>
+                    {unmatchedRooms.length > 0 && (
+                      <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
+                        {unmatchedRooms.length}
+                      </span>
+                    )}
+                  </div>
+                  {matchingTab === 'rooms' && (
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-cyan-600" />
+                  )}
+                </button>
+                <button
+                  onClick={() => setMatchingTab('lecturers')}
+                  className={`flex-1 py-4 px-6 text-center font-medium transition-colors relative ${matchingTab === 'lecturers'
+                    ? 'text-purple-600 bg-purple-50'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    }`}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <User className="h-5 w-5" />
+                    <span>{getText('Lecturer Matching', 'Pencocokan Dosen')}</span>
+                    {unmatchedLecturers.length > 0 && (
+                      <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
+                        {unmatchedLecturers.length}
+                      </span>
+                    )}
+                  </div>
+                  {matchingTab === 'lecturers' && (
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-purple-600" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[65vh] overflow-y-auto">
+              {matchingLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <RefreshCw className="h-8 w-8 animate-spin text-teal-600 mr-3" />
+                  <span className="text-gray-600">{getText('Processing...', 'Memproses...')}</span>
+                </div>
+              ) : (
+                <>
+                  {/* Room Tab Content */}
+                  {matchingTab === 'rooms' && (
+                    <div className="space-y-4">
+                      {unmatchedRooms.length === 0 ? (
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-6 flex flex-col items-center justify-center gap-3">
+                          <CheckCircle className="h-12 w-12 text-green-500" />
+                          <span className="text-green-700 font-medium text-lg">{getText('All rooms are matched!', 'Semua ruangan sudah cocok!')}</span>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Action Bar - Set All Button */}
+                          <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-4">
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="text-sm text-cyan-800">
+                                <strong>{getText('Instructions:', 'Petunjuk:')}</strong>{' '}
+                                {getText(
+                                  'Select target room for each item below, then click "Set All" to apply all at once.',
+                                  'Pilih ruangan target untuk setiap item di bawah, lalu klik "Set Semua" untuk menerapkan sekaligus.'
+                                )}
+                              </div>
+                              <button
+                                onClick={handleBatchUpdateAllRooms}
+                                disabled={roomMappingsCount === 0 || matchingLoading}
+                                className="px-5 py-2.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold flex items-center gap-2 shadow-md whitespace-nowrap"
+                              >
+                                <Check className="h-4 w-4" />
+                                {getText(`Set All (${roomMappingsCount})`, `Set Semua (${roomMappingsCount})`)}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Room List - Dropdowns only */}
+                          <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-3">
+                            {unmatchedRooms.map((room, index) => (
+                              <div
+                                key={`room-${index}`}
+                                className={`flex items-center gap-4 p-3 rounded-lg transition-colors ${roomMappings[room]
+                                  ? 'bg-cyan-50 border border-cyan-300'
+                                  : 'bg-gray-50 border border-gray-200'
+                                  }`}
+                              >
+                                {/* Source room name */}
+                                <div className="w-1/3 min-w-[150px]">
+                                  <span className="text-sm font-medium text-red-600">{room}</span>
+                                </div>
+
+                                <span className="text-gray-400">→</span>
+
+                                {/* Target dropdown */}
+                                <div className="flex-1">
+                                  <SearchableDropdown
+                                    options={rooms.map(r => ({ id: r.id, name: r.name, code: r.code }))}
+                                    value={roomMappings[room] || ''}
+                                    onChange={(val) => setRoomMappings(prev => ({ ...prev, [room]: val }))}
+                                    placeholder={getText('Select target room...', 'Pilih ruangan target...')}
+                                    searchPlaceholder={getText('Search room...', 'Cari ruangan...')}
+                                    emptyMessage={getText('No room found', 'Ruangan tidak ditemukan')}
+                                  />
+                                </div>
+
+                                {/* Mapped indicator */}
+                                {roomMappings[room] && (
+                                  <CheckCircle className="h-5 w-5 text-cyan-600 flex-shrink-0" />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Lecturer Tab Content */}
+                  {matchingTab === 'lecturers' && (
+                    <div className="space-y-4">
+                      {unmatchedLecturers.length === 0 ? (
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-6 flex flex-col items-center justify-center gap-3">
+                          <CheckCircle className="h-12 w-12 text-green-500" />
+                          <span className="text-green-700 font-medium text-lg">{getText('All lecturer names are synced!', 'Semua nama dosen sudah tersinkron!')}</span>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Info Box */}
+                          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+                            <strong>{getText('Note:', 'Catatan:')}</strong> {getText(
+                              'Clicking "Set" will update the selected user\'s name to match the schedule name (Excel data is master).',
+                              'Klik "Set" akan mengupdate nama user yang dipilih agar sesuai dengan nama di jadwal (data Excel adalah master).'
+                            )}
+                          </div>
+
+                          {/* Action Bar - Set All Button */}
+                          <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="text-sm text-purple-800">
+                                <strong>{getText('Instructions:', 'Petunjuk:')}</strong>{' '}
+                                {getText(
+                                  'Select target user for each item below, then click "Set All" to apply all at once.',
+                                  'Pilih user target untuk setiap item di bawah, lalu klik "Set Semua" untuk menerapkan sekaligus.'
+                                )}
+                              </div>
+                              <button
+                                onClick={handleBatchUpdateAllLecturers}
+                                disabled={lecturerMappingsCount === 0 || matchingLoading}
+                                className="px-5 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold flex items-center gap-2 shadow-md whitespace-nowrap"
+                              >
+                                <Check className="h-4 w-4" />
+                                {getText(`Set All (${lecturerMappingsCount})`, `Set Semua (${lecturerMappingsCount})`)}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Lecturer List - Dropdowns only */}
+                          <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-3">
+                            {unmatchedLecturers.map((lecturer, index) => (
+                              <div
+                                key={`lecturer-${index}`}
+                                className={`flex items-center gap-4 p-3 rounded-lg transition-colors ${lecturerMappings[lecturer]
+                                  ? 'bg-purple-50 border border-purple-300'
+                                  : 'bg-gray-50 border border-gray-200'
+                                  }`}
+                              >
+                                {/* Source lecturer name */}
+                                <div className="w-1/3 min-w-[180px]">
+                                  <span className="text-sm font-medium text-purple-700">{lecturer}</span>
+                                  <span className="text-xs text-gray-500 block">{getText('(Schedule name)', '(Nama di jadwal)')}</span>
+                                </div>
+
+                                <span className="text-gray-400">←</span>
+
+                                {/* Target dropdown */}
+                                <div className="flex-1">
+                                  <SearchableDropdownById
+                                    options={lecturers.map(l => ({ id: l.id, name: l.full_name, code: l.identity_number }))}
+                                    value={lecturerMappings[lecturer] || ''}
+                                    onChange={(id) => setLecturerMappings(prev => ({ ...prev, [lecturer]: id }))}
+                                    placeholder={getText('Select target user...', 'Pilih user target...')}
+                                    searchPlaceholder={getText('Search by name or ID...', 'Cari nama atau NIP...')}
+                                    emptyMessage={getText('No user found', 'User tidak ditemukan')}
+                                  />
+                                </div>
+
+                                {/* Mapped indicator */}
+                                {lecturerMappings[lecturer] && (
+                                  <CheckCircle className="h-5 w-5 text-purple-600 flex-shrink-0" />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 flex items-center justify-between">
+              <span className="text-sm text-gray-600">
+                {getText(
+                  `Total unmatched: ${unmatchedRooms.length} rooms, ${unmatchedLecturers.length} lecturers`,
+                  `Total tidak cocok: ${unmatchedRooms.length} ruangan, ${unmatchedLecturers.length} dosen`
+                )}
+              </span>
+              <button
+                onClick={analyzeUnmatchedData}
+                disabled={matchingLoading}
+                className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                <RefreshCw className={`h-4 w-4 ${matchingLoading ? 'animate-spin' : ''}`} />
+                {getText('Refresh Data', 'Muat Ulang Data')}
               </button>
             </div>
           </div>

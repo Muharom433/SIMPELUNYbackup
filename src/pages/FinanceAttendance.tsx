@@ -112,6 +112,7 @@ interface PaymentRate {
 interface LectureSchedule {
     id: string;
     lecturer: string;
+    lecturer_user_id: string | null;  // Added for accurate matching
     day: string;
     course_name: string;
     course_code: string;
@@ -350,9 +351,10 @@ const FinanceAttendance: React.FC = () => {
         try {
             const { data, error } = await supabase
                 .from('lecture_schedules')
-                .select('id, lecturer, day, course_name, course_code, subject_study');
+                .select('id, lecturer, lecturer_user_id, day, course_name, course_code, subject_study');
 
             if (error) throw error;
+            console.log('📅 Fetched lecture schedules:', data?.length, 'records');
             setLectureSchedules(data || []);
         } catch (error) {
             console.error('Error fetching lecture schedules:', error);
@@ -1152,6 +1154,29 @@ const FinanceAttendance: React.FC = () => {
                 return;
             }
 
+            // Fetch special dates (holidays) for the current month
+            const exportMonth = dateRange.start ? new Date(dateRange.start).getMonth() + 1 : new Date().getMonth() + 1;
+            const exportYear = dateRange.start ? new Date(dateRange.start).getFullYear() : new Date().getFullYear();
+
+            const { data: holidayData } = await supabase
+                .from('attendance_special_dates')
+                .select('*')
+                .eq('month', exportMonth)
+                .eq('year', exportYear)
+                .order('date');
+
+            const currentSpecialDates = holidayData || [];
+
+            // 🔍 DEBUG: Comprehensive logging
+            console.log('📊 Export Excel Debug:');
+            console.log('- Lecture Schedules Count:', lectureSchedules.length);
+            console.log('- Week Settings Count:', weekSettings.length);
+            console.log('- Week Settings:', weekSettings);
+            console.log('- Special Dates Count:', currentSpecialDates.length);
+            console.log('- Special Dates:', currentSpecialDates);
+            console.log('- Verified Records Count:', verifiedRecords.length);
+            console.log('- Sample Verified Records:', verifiedRecords.slice(0, 3).map(r => ({ name: r.lecturer_name, date: r.attendance_date })));
+
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('Rekap Kehadiran');
 
@@ -1177,25 +1202,93 @@ const FinanceAttendance: React.FC = () => {
             // If no weeks defined, create a default structure (not ideal but fallback)
             // But user said "Based on Finance Settings", so we rely on sortedWeeks being populated.
 
+
             const lecturerMap = new Map<string, {
                 name: string;
-                prodi: string;
+                prodiSet: Set<string>; // For Homebase (User's prodi)
+                teachingProdisSet: Set<string>; // For Teaching Prodi (From Details)
                 is_homebase: boolean;
                 dates: string[];
+                lecturer_user_id: string | null;
             }>();
 
             verifiedRecords.forEach(r => {
                 const key = r.lecturer_name;
+                const homebaseProdiName = r.study_program?.name || '-';
+
                 if (!lecturerMap.has(key)) {
                     lecturerMap.set(key, {
                         name: r.lecturer_name,
-                        prodi: r.study_program?.name || '-',
+                        prodiSet: new Set([homebaseProdiName]),
+                        teachingProdisSet: new Set(), // Init empty
                         is_homebase: r.is_homebase ?? true,
-                        dates: []
+                        dates: [],
+                        lecturer_user_id: r.lecturer_user_id || null
+                    });
+                } else {
+                    lecturerMap.get(key)!.prodiSet.add(homebaseProdiName);
+                }
+
+                // Collect Teaching Prodis from details
+                if (r.details && r.details.length > 0) {
+                    r.details.forEach(d => {
+                        if (d.study_program_name) {
+                            lecturerMap.get(key)!.teachingProdisSet.add(d.study_program_name);
+                        }
                     });
                 }
+
                 lecturerMap.get(key)!.dates.push(r.attendance_date);
             });
+
+            // Helper: Calculate paid attendance per week (max 3 per week)
+            const calculatePaidAttendancePerWeek = (dates: string[], weeks: WeekSetting[]): {
+                paidDatesPerWeek: Map<number, string[]>;  // weekNumber -> paid dates
+                unpaidDates: string[];  // dates beyond 3 per week
+                totalPaidDays: number;
+            } => {
+                const paidDatesPerWeek = new Map<number, string[]>();
+                const unpaidDates: string[] = [];
+                let totalPaidDays = 0;
+
+                // Initialize weeks
+                weeks.forEach(w => paidDatesPerWeek.set(w.week_number, []));
+
+                // Sort dates chronologically
+                const sortedDates = [...dates].sort();
+
+                sortedDates.forEach(dateStr => {
+                    const date = new Date(dateStr);
+
+                    // Find which week this date belongs to
+                    const weekIdx = weeks.findIndex(w => {
+                        const start = new Date(w.start_date);
+                        const end = new Date(w.end_date);
+                        start.setHours(0, 0, 0, 0);
+                        end.setHours(23, 59, 59, 999);
+                        const d = new Date(date);
+                        d.setHours(12, 0, 0, 0);
+                        return d >= start && d <= end;
+                    });
+
+                    if (weekIdx !== -1) {
+                        const week = weeks[weekIdx];
+                        const weekDates = paidDatesPerWeek.get(week.week_number) || [];
+
+                        if (weekDates.length < 3) {
+                            // Still within 3 days limit - paid
+                            weekDates.push(dateStr);
+                            paidDatesPerWeek.set(week.week_number, weekDates);
+                            totalPaidDays++;
+                        } else {
+                            // Beyond 3 days - NOT paid (but still recorded)
+                            unpaidDates.push(dateStr);
+                        }
+                    }
+                });
+
+                return { paidDatesPerWeek, unpaidDates, totalPaidDays };
+            };
 
             const hbvRate = paymentRates.find(r => r.lecturer_type === 'HBV')?.rate || 75000;
             const nhbvRate = paymentRates.find(r => r.lecturer_type === 'NHBV')?.rate || 75000;
@@ -1204,114 +1297,135 @@ const FinanceAttendance: React.FC = () => {
 
             // Row 1: Title
             // Merge A1 to end column. Calculate end column index.
-            // Cols: NO(1) + NAMA(2) + PRODI(3) + (Weeks * 5) + KET + JML + SATUAN + JML + JADWAL(5)
-            // Fixed cols count = 3 (Start) + 4 (Stats) + 5 (Schedule) = 12
-            // Total width = 12 + (Weeks * 5)
-            const totalWidth = 12 + ((sortedWeeks.length || 3) * 5);
-            // Logic to convert col index to letter is complex for generic, but ExcelJS supports by index.
+            // Cols: NO(1) + NAMA(2) + HOMEBASE(3) + PRODI(4) + (Weeks * 5) + KET + JML + SATUAN + JML + JADWAL(5)
+            // Fixed cols count = 4 (Start) + 4 (Stats) + 5 (Schedule) = 13
+            // Total width = 13 + (Weeks * 5)
+            const totalWidth = 13 + ((sortedWeeks.length || 3) * 5);
 
             worksheet.mergeCells(1, 1, 1, totalWidth);
-            const titleCell = worksheet.getCell(1, 1);
-            titleCell.value = 'PENERIMAAN TRANSPORT MENGAJAR DOSEN FAKULTAS VOKASI UNY';
-            titleCell.font = { bold: true, size: 12 };
-            titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+            const titleRow = worksheet.getRow(1);
+            titleRow.getCell(1).value = 'PENERIMAAN TRANSPORT MENGAJAR DOSEN FAKULTAS VOKASI UNY';
+            titleRow.getCell(1).font = { bold: true, size: 14 };
+            titleRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
 
-            // Row 2: Period
+            // Row 2: Subtitle
             worksheet.mergeCells(2, 1, 2, totalWidth);
-            const periodCell = worksheet.getCell(2, 1);
-            periodCell.value = `KEHADIRAN BULAN ${format(new Date(dateRange.start), 'MMMM yyyy', { locale: localeId }).toUpperCase()}`;
-            periodCell.font = { bold: true, size: 11 };
-            periodCell.alignment = { vertical: 'middle', horizontal: 'center' };
+            const subtitleRow = worksheet.getRow(2);
+            subtitleRow.getCell(1).value = `KEHADIRAN BULAN ${dateRange.start ? format(new Date(dateRange.start), 'MMMM yyyy', { locale: (window as any).dateFnsLocaleID || localeId }).toUpperCase() : ''}`;
+            subtitleRow.getCell(1).font = { bold: true, size: 12 };
+            subtitleRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
 
-            // Row 3 (Main Header) & Row 4 (Sub Header)
-            // Fixed Start Headers
-            worksheet.mergeCells('A3:A4'); worksheet.getCell('A3').value = 'NO';
-            worksheet.mergeCells('B3:B4'); worksheet.getCell('B3').value = 'NAMA DOSEN';
-            worksheet.mergeCells('C3:C4'); worksheet.getCell('C3').value = 'PROGRAM STUDI';
+            // Row 3-4: Headers
+            const headerRow3 = worksheet.getRow(3);
 
-            let colCursor = 4; // Start at D
+            // Fixed Headers
+            worksheet.mergeCells(3, 1, 4, 1); // NO
+            headerRow3.getCell(1).value = 'NO';
+            worksheet.getColumn(1).width = 5;
 
-            // Dynamic Week Headers
-            // Track holiday columns
+            worksheet.mergeCells(3, 2, 4, 2); // NAMA DOSEN
+            headerRow3.getCell(2).value = 'NAMA DOSEN';
+            worksheet.getColumn(2).width = 35;
+
+            worksheet.mergeCells(3, 3, 4, 3); // HOMEBASE
+            headerRow3.getCell(3).value = 'HOMEBASE'; // New Column
+            worksheet.getColumn(3).width = 10;
+
+            worksheet.mergeCells(3, 4, 4, 4); // PRODI
+            headerRow3.getCell(4).value = 'PRODI'; // Shifted Column
+            worksheet.getColumn(4).width = 25;
+
+            // Date Columns (Weeks)
+            let colCursor = 5; // Start after PRODI
             const holidayCols = new Set<number>();
-            sortedWeeks.forEach(week => {
-                // Merge 5 cells for Week Roman Numeral
-                worksheet.mergeCells(3, colCursor, 3, colCursor + 4);
-                const weekHeaderCell = worksheet.getCell(3, colCursor);
-                weekHeaderCell.value = toRoman(week.week_number);
 
-                // Sub-headers: Dates for Mon-Fri of this week
-                // We need to determine the date for Mon, Tue, Wed, Thu, Fri of this specific week
-                // week.start_date might satisfy "Thursday".
+            sortedWeeks.forEach(week => {
+                const weekLabel = toRoman(week.week_number);
+                worksheet.mergeCells(3, colCursor, 3, colCursor + 4);
+                headerRow3.getCell(colCursor).value = weekLabel; // Week Num (I, II, III...)
+
+                // Days headers (Strict Mon-Fri Alignment)
                 const weekStart = new Date(week.start_date);
                 const weekEnd = new Date(week.end_date);
-
-                // Find the Monday of this week block to calculate offsets
-                // But weekStart might be the actual start (e.g. Thursday 1st).
-                // We need to place '1st' in the Thursday column.
-                // Approach: specific dates map to specific day-of-week columns (0-4)
+                weekStart.setHours(0, 0, 0, 0);
+                weekEnd.setHours(23, 59, 59, 999);
 
                 for (let dayOffset = 0; dayOffset < 5; dayOffset++) {
-                    // dayOffset 0 = Monday, 1 = Tuesday ...
-                    // We iterate dates in the range [weekStart, weekEnd]
-                    // If a date matches this day-of-week, putting it here.
+                    // dayOffset 0 = Monday, ..., 4 = Friday
+                    const targetDay = dayOffset + 1; // 1=Mon, 5=Fri (JS GetDay)
 
-                    let dateForColumn = '';
-                    let isHoliday = false;
+                    let matchedDate: Date | null = null;
 
-                    // Simple search in the week range
-                    let d = new Date(weekStart);
-                    while (d <= weekEnd) {
-                        const dayOfWeek = d.getDay(); // 0Sun, 1Mon...
-                        const targetDay = dayOffset + 1; // 1Mon, 2Tue...
-
-                        // Fix javascript day: Sunday=0. We want Mon(1)-Fri(5).
-                        if (dayOfWeek === targetDay) {
-                            dateForColumn = d.getDate().toString();
-
-                            // Check holiday
-                            const dateStr = format(d, 'yyyy-MM-dd');
-                            if (specialDates.some(sd => sd.date === dateStr)) isHoliday = true;
+                    // Find the date in range [start, end] that matches targetDay
+                    const temp = new Date(weekStart);
+                    // Safety break to prevent infinite loop
+                    let safety = 0;
+                    while (temp <= weekEnd && safety < 14) {
+                        if (temp.getDay() === targetDay) {
+                            matchedDate = new Date(temp);
                             break;
                         }
-                        d.setDate(d.getDate() + 1);
+                        temp.setDate(temp.getDate() + 1);
+                        safety++;
                     }
 
-                    const cell = worksheet.getCell(4, colCursor + dayOffset);
-                    cell.value = dateForColumn;
+                    const cell = worksheet.getRow(4).getCell(colCursor + dayOffset);
 
-                    if (isHoliday) {
-                        holidayCols.add(colCursor + dayOffset);
-                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+                    if (matchedDate) {
+                        cell.value = matchedDate.getDate(); // Show Date (e.g. 1, 2, 12...)
+
+                        // Check Holiday
+                        const dateStr = format(matchedDate, 'yyyy-MM-dd');
+                        const isHoliday = currentSpecialDates.some(sd => sd.date === dateStr);
+
+                        if (isHoliday) {
+                            holidayCols.add(colCursor + dayOffset);
+                            // Highlight Header Yellow
+                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+                        }
+                    } else {
+                        cell.value = '';
                     }
+
+                    cell.alignment = { horizontal: 'center' };
                 }
 
                 colCursor += 5;
             });
 
-            // Fallback if no weeks (show at least I, II, III empty)
-            if (sortedWeeks.length === 0) {
-                // ... handle if strictly needed, but Finance Settings usually exist.
-                // For now, if no settings, no week columns generated.
-            }
+            // Debug: Log holiday columns
+            console.log('🎨 Holiday Columns (Yellow):', Array.from(holidayCols));
 
-            // Fixed End Headers
-            worksheet.mergeCells(3, colCursor, 4, colCursor); worksheet.getCell(3, colCursor).value = 'KET'; colCursor++;
-            worksheet.mergeCells(3, colCursor, 4, colCursor); worksheet.getCell(3, colCursor).value = 'JML HDR'; colCursor++;
-            worksheet.mergeCells(3, colCursor, 4, colCursor); worksheet.getCell(3, colCursor).value = 'SATUAN'; colCursor++;
-            worksheet.mergeCells(3, colCursor, 4, colCursor); worksheet.getCell(3, colCursor).value = 'JUMLAH'; colCursor++;
+            // Stats Columns
+            const statsStartCol = colCursor;
 
-            // JADWAL Schedule
-            worksheet.mergeCells(3, colCursor, 3, colCursor + 4);
-            worksheet.getCell(3, colCursor).value = 'JADWAL';
+            worksheet.mergeCells(3, statsStartCol, 4, statsStartCol);
+            headerRow3.getCell(statsStartCol).value = 'KET';
+            worksheet.getColumn(statsStartCol).width = 8;
 
-            const scheduleAbbrs = ['SN', 'SL', 'R', 'K', 'J'];
-            scheduleAbbrs.forEach((abbr, idx) => {
-                worksheet.getCell(4, colCursor + idx).value = abbr;
+            worksheet.mergeCells(3, statsStartCol + 1, 4, statsStartCol + 1);
+            headerRow3.getCell(statsStartCol + 1).value = 'JML HDR';
+            worksheet.getColumn(statsStartCol + 1).width = 8;
+
+            worksheet.mergeCells(3, statsStartCol + 2, 4, statsStartCol + 2);
+            headerRow3.getCell(statsStartCol + 2).value = 'SATUAN';
+            worksheet.getColumn(statsStartCol + 2).width = 12;
+
+            worksheet.mergeCells(3, statsStartCol + 3, 4, statsStartCol + 3);
+            headerRow3.getCell(statsStartCol + 3).value = 'JUMLAH';
+            worksheet.getColumn(statsStartCol + 3).width = 15;
+
+            // Schedule Columns
+            const scheduleStartCol = statsStartCol + 4;
+            worksheet.mergeCells(3, scheduleStartCol, 3, scheduleStartCol + 4);
+            headerRow3.getCell(scheduleStartCol).value = 'JADWAL';
+
+            ['SN', 'SL', 'R', 'K', 'J'].forEach((day, i) => {
+                worksheet.getRow(4).getCell(scheduleStartCol + i).value = day;
+                worksheet.getColumn(scheduleStartCol + i).width = 4;
             });
 
-            // --- HEADER STYLING ---
-            const headerRow3 = worksheet.getRow(3);
+            // Styling
             const headerRow4 = worksheet.getRow(4);
             [headerRow3, headerRow4].forEach(row => {
                 row.font = { bold: true };
@@ -1329,15 +1443,90 @@ const FinanceAttendance: React.FC = () => {
             lecturerMap.forEach((lecturer) => {
                 const row = worksheet.getRow(rowIndex);
 
+                // Calculate paid vs unpaid dates (max 3 per week)
+                const { paidDatesPerWeek, unpaidDates, totalPaidDays } = calculatePaidAttendancePerWeek(
+                    lecturer.dates,
+                    sortedWeeks
+                );
+                const unpaidDatesSet = new Set(unpaidDates);
+
+                // Debug logging for first few lecturers
+                if (counter <= 3) {
+                    console.log(`🔍 Lecturer: ${lecturer.name}`);
+                    console.log(`   Total dates: ${lecturer.dates.length}`, lecturer.dates);
+                    console.log(`   Paid dates per week:`, Object.fromEntries(paidDatesPerWeek));
+                    console.log(`   Total paid days: ${totalPaidDays}`);
+                    console.log(`   Unpaid dates (>3/week):`, unpaidDates);
+                }
+
+                // Process Study Programs
+
+                // 1. HOMEBASE: From User's Study Program (prodiSet) - Code
+                const homebaseNames = Array.from(lecturer.prodiSet).filter(Boolean);
+                const homebaseCodes = homebaseNames.map(name => {
+                    const sp = studyPrograms.find(s => s.name === name);
+                    return sp?.code || '-';
+                });
+                const homebaseDisplay = homebaseCodes.length > 0 ? homebaseCodes[0] : '-'; // Primary homebase
+
+                // 2. PRODI: From Teaching Details (teachingProdisSet)
+                let teachingProdiNames = Array.from(lecturer.teachingProdisSet).filter(Boolean);
+
+                // FALLBACK: If no teaching prodi found in details (e.g. old records), try matching with Schedule
+                if (teachingProdiNames.length === 0) {
+                    console.warn(`⚠️ No teaching prodi in details for ${lecturer.name}, trying schedule fallback...`);
+
+                    // Match lecturer to schedules
+                    let schedulesForProdi: LectureSchedule[] = [];
+                    const sanitizeName = (name: string) => name ? name.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+
+                    if (lecturer.lecturer_user_id) {
+                        schedulesForProdi = lectureSchedules.filter(s => s.lecturer_user_id === lecturer.lecturer_user_id);
+                    }
+
+                    if (schedulesForProdi.length === 0) {
+                        const cleanTargetName = sanitizeName(lecturer.name);
+                        schedulesForProdi = lectureSchedules.filter(s => {
+                            if (!s.lecturer) return false;
+                            const cleanScheduleName = sanitizeName(s.lecturer);
+                            return cleanScheduleName === cleanTargetName ||
+                                cleanScheduleName.includes(cleanTargetName) ||
+                                cleanTargetName.includes(cleanScheduleName);
+                        });
+                    }
+
+                    // Extract unique subjects
+                    const scheduleProdis = new Set<string>();
+                    schedulesForProdi.forEach(s => {
+                        if (s.subject_study) scheduleProdis.add(s.subject_study);
+                    });
+
+                    if (scheduleProdis.size > 0) {
+                        teachingProdiNames = Array.from(scheduleProdis);
+                        console.log(`✅ Found fallback prodis for ${lecturer.name}:`, teachingProdiNames);
+                    }
+                }
+
+                const prodiDisplay = teachingProdiNames.length > 0
+                    ? teachingProdiNames.join('; ')
+                    : '-';
+
                 // Fixed start columns
                 row.getCell(1).value = counter++;
                 row.getCell(2).value = lecturer.name;
-                row.getCell(3).value = lecturer.prodi;
+                row.getCell(3).value = homebaseDisplay; // HOMEBASE (Code)
+                row.getCell(4).value = prodiDisplay;    // PRODI (Teaching Names joined)
 
                 // Dynamic Week Columns
-                // We need to map each attendance date to the correct column.
-                // Col Index = 4 (Start) + (WeekIndex * 5) + (DayOfWeek 0-4)
+                // Col Index = 5 (Start) + (WeekIndex * 5) + (DayOfWeek 0-4)
 
+                // 1. First, apply Holiday Highlights (Yellow) to this row for ALL holiday columns
+                holidayCols.forEach(colIdx => {
+                    const cell = row.getCell(colIdx);
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+                });
+
+                // 2. Fill Attendance Data & Apply Red for Unpaid
                 lecturer.dates.forEach(dateStr => {
                     const date = new Date(dateStr);
                     const dayOfWeek = date.getDay(); // 0-6
@@ -1349,7 +1538,6 @@ const FinanceAttendance: React.FC = () => {
                     const weekIdx = sortedWeeks.findIndex(w => {
                         const start = new Date(w.start_date);
                         const end = new Date(w.end_date);
-                        // Reset hours for comparison
                         start.setHours(0, 0, 0, 0);
                         end.setHours(23, 59, 59, 999);
                         const d = new Date(date);
@@ -1358,12 +1546,35 @@ const FinanceAttendance: React.FC = () => {
                     });
 
                     if (weekIdx !== -1 && dayIndex >= 0 && dayIndex <= 4) {
-                        const colIdx = 4 + (weekIdx * 5) + dayIndex;
+                        const colIdx = 5 + (weekIdx * 5) + dayIndex; // Start at 5 now
                         const dayAbbrs = ['SN', 'SL', 'R', 'K', 'J'];
 
-                        if (!holidayCols.has(colIdx)) {
-                            row.getCell(colIdx).value = dayAbbrs[dayIndex];
-                            row.getCell(colIdx).alignment = { horizontal: 'center' };
+                        const cell = row.getCell(colIdx);
+                        cell.value = dayAbbrs[dayIndex];
+                        cell.alignment = { horizontal: 'center' };
+
+                        if (unpaidDatesSet.has(dateStr)) {
+                            // Highlight RED for unpaid (>3 per week) - Overwrites Yellow if collision
+                            cell.font = { color: { argb: 'FFFFFFFF' }, bold: true }; // White text
+                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } }; // Red Fill
+                        } else {
+                            // Paid (Normal)
+                            // If it matches a holiday column (Yellow), do we keep it Yellow or make it White?
+                            // User request: "maksimal 3 kali seminggu lebih dari itu tidak dihitung tapi tetap di tulis beri higligh merah"
+                            // User request: "beri highlight kuning pada tanggal yang libur"
+                            // If attendance is on a holiday (and paid <= 3), let's keep it Yellow to show it's a holiday attendance?
+                            // OR reset to white to show "Valid Attendance"?
+                            // Typically, "Holiday" highlight is mainly for empty cells to show why it's empty.
+                            // If there is attendance, usually the attendance status (Paid/Unpaid) is more important.
+                            // BUT, let's keep Yellow if it's holiday to be safe, unless unpaid red overrides.
+
+                            // If cell.fill is ALREADY yellow (from step 1), we don't change it to white.
+                            // But Font color should be black.
+                            if (!holidayCols.has(colIdx)) {
+                                // Reset to white/clean if NOT a holiday
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } };
+                            }
+                            cell.font = { color: { argb: 'FF000000' } }; // Black text
                         }
                     }
                 });
@@ -1376,46 +1587,75 @@ const FinanceAttendance: React.FC = () => {
                 });
 
                 // End Stats Columns
-                // Current colCursor is at start of JADWAL (e.g. col 25 if 3 weeks)
-                // We need to find the column indices for KET, JML, etc.
-                // They are at: 4 + (Weeks*5) ...
-                const statsStartCol = 4 + (sortedWeeks.length * 5);
+                const statsColsStart = 5 + (sortedWeeks.length * 5); // Start after dates
 
                 const ket = lecturer.is_homebase ? 'HBV' : 'NHBV';
-                row.getCell(statsStartCol).value = ket;
+                row.getCell(statsColsStart).value = ket;
 
+                // JML HDR - Total attendance (ALL, including unpaid)
                 const totalAttendance = lecturer.dates.length;
-                row.getCell(statsStartCol + 1).value = totalAttendance;
+                row.getCell(statsColsStart + 1).value = totalAttendance;
+
+                // If there are unpaid dates, add note
+                if (unpaidDates.length > 0) {
+                    row.getCell(statsColsStart + 1).note = `Melebihi 3x/minggu: ${unpaidDates.length} hari tidak dibayar`;
+                }
 
                 const rate = lecturer.is_homebase ? hbvRate : nhbvRate;
-                row.getCell(statsStartCol + 2).value = rate;
-                row.getCell(statsStartCol + 2).numFmt = '#,##0';
+                row.getCell(statsColsStart + 2).value = rate;
+                row.getCell(statsColsStart + 2).numFmt = '#,##0';
 
-                const totalPayment = totalAttendance * rate;
-                row.getCell(statsStartCol + 3).value = totalPayment;
-                row.getCell(statsStartCol + 3).numFmt = '#,##0';
+                // JUMLAH - Only count PAID days (max 3 per week)
+                const totalPayment = totalPaidDays * rate;
+                row.getCell(statsColsStart + 3).value = totalPayment;
+                row.getCell(statsColsStart + 3).numFmt = '#,##0';
 
-                // JADWAL Columns
-                const scheduleStartCol = statsStartCol + 4;
-                const schedules = lectureSchedules.filter(s => s.lecturer?.toLowerCase() === lecturer.name.toLowerCase());
+                // Highlight if there are unpaid dates
+                if (unpaidDates.length > 0) {
+                    row.getCell(statsColsStart + 3).note = `Dibayar ${totalPaidDays} dari ${totalAttendance} hari (maks 3x/minggu)`;
+                }
+
+                // JADWAL Columns - Robust name matching
+                const scheduleColStart = statsColsStart + 4;
+
+                // ... (Schedule matching logic remains same) ...
+                // Re-using the logic block below but adjusting column indices in the final write loop
+
+                let schedules: LectureSchedule[] = [];
+                const sanitizeName = (name: string) => name ? name.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+
+                if (lecturer.lecturer_user_id) {
+                    schedules = lectureSchedules.filter(s => s.lecturer_user_id === lecturer.lecturer_user_id);
+                }
+
+                if (schedules.length === 0) {
+                    const cleanTargetName = sanitizeName(lecturer.name);
+                    schedules = lectureSchedules.filter(s => {
+                        if (!s.lecturer) return false;
+                        const cleanScheduleName = sanitizeName(s.lecturer);
+                        return cleanScheduleName === cleanTargetName ||
+                            cleanScheduleName.includes(cleanTargetName) ||
+                            cleanTargetName.includes(cleanScheduleName);
+                    });
+                }
+
                 const scheduleDays = new Set(schedules.map(s => getDayAbbr(s.day || '')));
 
                 ['SN', 'SL', 'R', 'K', 'J'].forEach((day, idx) => {
                     if (scheduleDays.has(day)) {
-                        row.getCell(scheduleStartCol + idx).value = day;
-                        row.getCell(scheduleStartCol + idx).alignment = { horizontal: 'center' };
+                        row.getCell(scheduleColStart + idx).value = day;
+                        row.getCell(scheduleColStart + idx).alignment = { horizontal: 'center' };
                     }
                 });
 
                 // Style the row
-                const totalCols = scheduleStartCol + 5;
+                const totalCols = scheduleColStart + 5;
                 for (let c = 1; c < totalCols; c++) {
                     const cell = row.getCell(c);
                     cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-                    if (c === 2 || c === 3) {
-                        // Name/Prodi
+                    if (c === 2 || c === 4) { // Name and PRODI (Name) left aligned
                         cell.alignment = { vertical: 'middle', horizontal: 'left' };
-                    } else {
+                    } else if (!cell.alignment) {
                         cell.alignment = { vertical: 'middle', horizontal: 'center' };
                     }
                 }
@@ -1425,23 +1665,39 @@ const FinanceAttendance: React.FC = () => {
 
             // --- FOOTER & SIGNATURE ---
             const lastRowIdx = rowIndex;
-            const statsStartCol = 4 + (sortedWeeks.length * 5);
+            // Re-calculate statsStartCol safely based on new layout
+            // Start Col for dates is 5.
+            const footStatsStartCol = 5 + (sortedWeeks.length * 5);
 
             // Grand Total Row
-            worksheet.mergeCells(lastRowIdx, 1, lastRowIdx, statsStartCol + 2); // Merge from A to SATUAN column
+            worksheet.mergeCells(lastRowIdx, 1, lastRowIdx, footStatsStartCol + 2); // Merge from A to SATUAN column
             const totalLabelCell = worksheet.getCell(lastRowIdx, 1);
             totalLabelCell.value = 'JUMLAH';
             totalLabelCell.font = { bold: true };
             totalLabelCell.alignment = { vertical: 'middle', horizontal: 'center' };
 
-            // Calculate Grand Total Sum
+            // Calculate Grand Total Sum (only PAID days - max 3 per week)
             let totalAmount = 0;
+            let totalPaidDaysAll = 0;
+            let totalUnpaidDaysAll = 0;
+
             lecturerMap.forEach(l => {
+                const { totalPaidDays: paidDays, unpaidDates } = calculatePaidAttendancePerWeek(
+                    l.dates,
+                    sortedWeeks
+                );
                 const rate = l.is_homebase ? hbvRate : nhbvRate;
-                totalAmount += l.dates.length * rate;
+                totalAmount += paidDays * rate;
+                totalPaidDaysAll += paidDays;
+                totalUnpaidDaysAll += unpaidDates.length;
             });
 
-            const totalValueCell = worksheet.getCell(lastRowIdx, statsStartCol + 3);
+            // Add note about unpaid days if any
+            if (totalUnpaidDaysAll > 0) {
+                console.log(`📊 Grand Total: ${totalPaidDaysAll} hari dibayar, ${totalUnpaidDaysAll} hari melebihi batas 3x/minggu`);
+            }
+
+            const totalValueCell = worksheet.getCell(lastRowIdx, footStatsStartCol + 3);
             totalValueCell.value = totalAmount;
             totalValueCell.numFmt = '#,##0';
             totalValueCell.font = { bold: true };
@@ -1461,7 +1717,7 @@ const FinanceAttendance: React.FC = () => {
             const signStartRow = lastRowIdx + 2;
             // Align signature block to the right side of the sheet (near JUMLAH column)
             // Let's use the stats columns area for the signature.
-            const signCol = statsStartCol + 1; // Roughly aligned with JML HDR / SATUAN / JUMLAH area
+            const signCol = footStatsStartCol + 1; // Align roughly with stats area
 
             worksheet.getCell(signStartRow, signCol).value = 'Menyetujui:';
             worksheet.getCell(signStartRow + 1, signCol).value = 'Dekan Fakultas Vokasi';
@@ -1476,21 +1732,21 @@ const FinanceAttendance: React.FC = () => {
             // Column Widths
             worksheet.getColumn(1).width = 5;  // NO
             worksheet.getColumn(2).width = 30; // NAMA
-            worksheet.getColumn(3).width = 20; // PRODI
+            worksheet.getColumn(3).width = 10; // HOMEBASE (Code)
+            worksheet.getColumn(4).width = 25; // PRODI (Name)
 
-            // Week Cols
+            // Week Cols start at 5
             for (let i = 0; i < sortedWeeks.length * 5; i++) {
-                worksheet.getColumn(4 + i).width = 4;
+                worksheet.getColumn(5 + i).width = 4;
             }
             // Stats Cols
-            // statsStartCol is already defined above
-            worksheet.getColumn(statsStartCol).width = 8;     // KET
-            worksheet.getColumn(statsStartCol + 1).width = 8; // JML HDR
-            worksheet.getColumn(statsStartCol + 2).width = 12; // SATUAN
-            worksheet.getColumn(statsStartCol + 3).width = 12; // JUMLAH
+            worksheet.getColumn(footStatsStartCol).width = 8;     // KET
+            worksheet.getColumn(footStatsStartCol + 1).width = 8; // JML HDR
+            worksheet.getColumn(footStatsStartCol + 2).width = 12; // SATUAN
+            worksheet.getColumn(footStatsStartCol + 3).width = 15; // JUMLAH
             // Schedule Cols
             for (let i = 0; i < 5; i++) {
-                worksheet.getColumn(statsStartCol + 4 + i).width = 4;
+                worksheet.getColumn(footStatsStartCol + 4 + i).width = 4;
             }
 
             // Write File

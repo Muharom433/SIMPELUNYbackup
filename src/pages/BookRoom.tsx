@@ -1190,6 +1190,7 @@ const BookRoom: React.FC = () => {
       const { data, error } = await supabase
         .from('study_programs')
         .select('id, name, code')
+        .eq('status', 'show')
         .order('name');
 
       if (error) throw error;
