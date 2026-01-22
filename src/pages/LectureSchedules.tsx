@@ -33,7 +33,9 @@ import {
   ChevronDown,
   MapPin,
   Link,
-  Check
+  Check,
+  Copy,
+  UserPlus
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line } from 'recharts';
 import { supabase } from '../lib/supabase';
@@ -388,6 +390,19 @@ const LectureSchedules: React.FC = () => {
 
   // Tab state for matching modal
   const [matchingTab, setMatchingTab] = useState<'rooms' | 'lecturers'>('rooms');
+
+  // State for Add New User Modal in Matching
+  const [showAddUserInMatching, setShowAddUserInMatching] = useState(false);
+  const [newUserScheduleName, setNewUserScheduleName] = useState('');
+
+  // State for showing lecturer schedules when selected in matching
+  const [selectedLecturerForSchedule, setSelectedLecturerForSchedule] = useState<string>(''); // lecturer name from schedule
+  const [lecturerSchedules, setLecturerSchedules] = useState<LectureSchedule[]>([]);
+  const [loadingLecturerSchedules, setLoadingLecturerSchedules] = useState(false);
+
+  // State for duplicate feature
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [scheduleToDuplicate, setScheduleToDuplicate] = useState<LectureSchedule | null>(null);
 
   const [sortConfig, setSortConfig] = useState<{ key: keyof LectureSchedule; direction: 'ascending' | 'descending' } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -819,6 +834,7 @@ const LectureSchedules: React.FC = () => {
   };
 
   // UPDATE USER'S FULL_NAME BASED ON SCHEDULE LECTURER NAME (Excel is master)
+  // ✅ FIXED: Also update lecture_schedules.lecturer_user_id to link schedules
   const handleBulkUpdateLecturer = async (scheduleLecturerName: string, selectedUserId: string) => {
     try {
       setMatchingLoading(true);
@@ -829,17 +845,29 @@ const LectureSchedules: React.FC = () => {
         throw new Error('User not found');
       }
 
-      // Update user's full_name to match the schedule lecturer name
-      const { error } = await supabase
+      // Step 1: Update user's full_name to match the schedule lecturer name
+      const { error: userError } = await supabase
         .from('users')
         .update({ full_name: scheduleLecturerName })
         .eq('id', selectedUserId);
 
-      if (error) throw error;
+      if (userError) throw userError;
+
+      // ✅ Step 2: Link all schedules with this lecturer name to the user
+      // This is critical for DosenPresensi to find schedules via lecturer_user_id
+      const { data: updatedSchedules, error: scheduleError } = await supabase
+        .from('lecture_schedules')
+        .update({ lecturer_user_id: selectedUserId })
+        .eq('lecturer', scheduleLecturerName)
+        .select('id');
+
+      if (scheduleError) throw scheduleError;
+
+      const countUpdated = updatedSchedules?.length || 0;
 
       alert.success(getText(
-        `Successfully updated user "${selectedUser.full_name}" to "${scheduleLecturerName}"`,
-        `Berhasil memperbarui nama user "${selectedUser.full_name}" menjadi "${scheduleLecturerName}"`
+        `Successfully updated user "${selectedUser.full_name}" to "${scheduleLecturerName}" and linked ${countUpdated} schedule(s)`,
+        `Berhasil memperbarui nama user "${selectedUser.full_name}" menjadi "${scheduleLecturerName}" dan menghubungkan ${countUpdated} jadwal`
       ));
 
       // Refresh lecturers list and re-analyze data
@@ -853,8 +881,8 @@ const LectureSchedules: React.FC = () => {
       await analyzeUnmatchedData();
 
     } catch (error: any) {
-      console.error('Error updating user name:', error);
-      alert.error(error.message || getText('Failed to update user name', 'Gagal memperbarui nama user'));
+      console.error('Error updating lecturer:', error);
+      alert.error(error.message || getText('Failed to update lecturer', 'Gagal memperbarui dosen'));
     } finally {
       setMatchingLoading(false);
     }
@@ -902,6 +930,7 @@ const LectureSchedules: React.FC = () => {
   };
 
   // Batch update all lecturers that have mappings defined
+  // ✅ FIXED: Also update lecture_schedules.lecturer_user_id for each mapping
   const handleBatchUpdateAllLecturers = async () => {
     // Get all lecturers that have a mapping defined
     const lecturersWithMappings = Object.entries(lecturerMappings).filter(([_, target]) => target);
@@ -913,24 +942,36 @@ const LectureSchedules: React.FC = () => {
 
     try {
       setMatchingLoading(true);
+      let totalSchedulesUpdated = 0;
 
-      // For each lecturer mapping, update the user's full_name
+      // For each lecturer mapping, update the user's full_name AND link schedules
       for (const [scheduleLecturerName, userId] of lecturersWithMappings) {
         const selectedUser = lecturers.find(l => l.id === userId);
         if (!selectedUser) continue;
 
-        // Update user's full_name to match the schedule lecturer name
-        const { error } = await supabase
+        // Step 1: Update user's full_name to match the schedule lecturer name
+        const { error: userError } = await supabase
           .from('users')
           .update({ full_name: scheduleLecturerName })
           .eq('id', userId);
 
-        if (error) throw error;
+        if (userError) throw userError;
+
+        // ✅ Step 2: Link all schedules with this lecturer name to the user
+        const { data: updatedSchedules, error: scheduleError } = await supabase
+          .from('lecture_schedules')
+          .update({ lecturer_user_id: userId })
+          .eq('lecturer', scheduleLecturerName)
+          .select('id');
+
+        if (scheduleError) throw scheduleError;
+
+        totalSchedulesUpdated += updatedSchedules?.length || 0;
       }
 
       alert.success(getText(
-        `Successfully updated ${lecturersWithMappings.length} user names`,
-        `Berhasil memperbarui ${lecturersWithMappings.length} nama user`
+        `Successfully updated ${lecturersWithMappings.length} user names and linked ${totalSchedulesUpdated} schedules`,
+        `Berhasil memperbarui ${lecturersWithMappings.length} nama user dan menghubungkan ${totalSchedulesUpdated} jadwal`
       ));
 
       // Refresh lecturers list
@@ -963,7 +1004,140 @@ const LectureSchedules: React.FC = () => {
     setMatchingTab('rooms');
     setRoomMappings({});
     setLecturerMappings({});
+    setSelectedLecturerForSchedule('');
+    setLecturerSchedules([]);
     await analyzeUnmatchedData();
+  };
+
+  // Fetch schedules for selected lecturer in matching modal
+  const fetchLecturerSchedules = async (lecturerName: string) => {
+    if (!lecturerName) {
+      setLecturerSchedules([]);
+      return;
+    }
+
+    try {
+      setLoadingLecturerSchedules(true);
+      const { data, error } = await supabase
+        .from('lecture_schedules')
+        .select('*')
+        .eq('lecturer', lecturerName)
+        .order('day', { ascending: true })
+        .order('start_time', { ascending: true });
+
+      if (error) throw error;
+      setLecturerSchedules(data || []);
+    } catch (error: any) {
+      console.error('Error fetching lecturer schedules:', error);
+      setLecturerSchedules([]);
+    } finally {
+      setLoadingLecturerSchedules(false);
+    }
+  };
+
+  // Handle adding new user from matching modal
+  const handleAddNewUserInMatching = async (userData: {
+    full_name: string;
+    identity_number: string;
+    email: string;
+    phone: string;
+    position: string;
+  }) => {
+    try {
+      setMatchingLoading(true);
+
+      // Create new user with lecturer role
+      const { data: newUser, error: userError } = await supabase
+        .from('users')
+        .insert({
+          full_name: userData.full_name,
+          identity_number: userData.identity_number,
+          email: userData.email,
+          phone: userData.phone,
+          position: userData.position,
+          role: 'lecturer',
+        })
+        .select()
+        .single();
+
+      if (userError) throw userError;
+
+      alert.success(getText(
+        `User "${userData.full_name}" created successfully!`,
+        `User "${userData.full_name}" berhasil dibuat!`
+      ));
+
+      // Refresh lecturers list
+      const { data: updatedLecturers } = await supabase
+        .from('users')
+        .select('id, full_name, identity_number')
+        .eq('role', 'lecturer')
+        .order('full_name');
+
+      setLecturers(updatedLecturers || []);
+
+      // Auto-select the newly created user for the current unmatched lecturer
+      if (newUserScheduleName) {
+        setLecturerMappings(prev => ({ ...prev, [newUserScheduleName]: newUser.id }));
+      }
+
+      setShowAddUserInMatching(false);
+      setNewUserScheduleName('');
+
+      // Re-analyze to update unmatched list
+      await analyzeUnmatchedData();
+
+    } catch (error: any) {
+      console.error('Error adding new user:', error);
+      alert.error(error.message || getText('Failed to add user', 'Gagal menambahkan user'));
+    } finally {
+      setMatchingLoading(false);
+    }
+  };
+
+  // Handle duplicate schedule
+  const handleDuplicateSchedule = async (duplicateData: Partial<ScheduleForm>) => {
+    if (!scheduleToDuplicate) return;
+
+    try {
+      setLoading(true);
+
+      // Get room name from room ID
+      const selectedRoomData = rooms.find(r => r.id === duplicateData.room);
+
+      const scheduleData = {
+        course_name: duplicateData.course_name || scheduleToDuplicate.course_name,
+        course_code: duplicateData.course_code || scheduleToDuplicate.course_code,
+        lecturer: duplicateData.lecturer || scheduleToDuplicate.lecturer,
+        room: selectedRoomData?.name || duplicateData.room || scheduleToDuplicate.room,
+        subject_study: duplicateData.subject_study || scheduleToDuplicate.subject_study,
+        day: duplicateData.day || scheduleToDuplicate.day,
+        start_time: duplicateData.start_time || scheduleToDuplicate.start_time,
+        end_time: duplicateData.end_time || scheduleToDuplicate.end_time,
+        semester: duplicateData.semester || scheduleToDuplicate.semester,
+        academics_year: duplicateData.academics_year || scheduleToDuplicate.academics_year,
+        type: duplicateData.type || scheduleToDuplicate.type,
+        class: duplicateData.class || scheduleToDuplicate.class,
+        amount: duplicateData.amount || scheduleToDuplicate.amount,
+        kurikulum: duplicateData.kurikulum || scheduleToDuplicate.kurikulum,
+      };
+
+      const { error } = await supabase
+        .from('lecture_schedules')
+        .insert(scheduleData);
+
+      if (error) throw error;
+
+      alert.success(getText('Schedule duplicated successfully!', 'Jadwal berhasil diduplikat!'));
+      setShowDuplicateModal(false);
+      setScheduleToDuplicate(null);
+      fetchSchedules();
+    } catch (error: any) {
+      console.error('Error duplicating schedule:', error);
+      alert.error(error.message || getText('Failed to duplicate schedule', 'Gagal menduplikat jadwal'));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const generatePDF = () => {
@@ -2518,39 +2692,122 @@ const LectureSchedules: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* Lecturer List - Dropdowns only */}
-                          <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-3">
+                          {/* Lecturer List - Dropdowns with schedule preview */}
+                          <div className="space-y-3 max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-3">
                             {unmatchedLecturers.map((lecturer, index) => (
-                              <div
-                                key={`lecturer-${index}`}
-                                className={`flex items-center gap-4 p-3 rounded-lg transition-colors ${lecturerMappings[lecturer]
-                                  ? 'bg-purple-50 border border-purple-300'
-                                  : 'bg-gray-50 border border-gray-200'
-                                  }`}
-                              >
-                                {/* Source lecturer name */}
-                                <div className="w-1/3 min-w-[180px]">
-                                  <span className="text-sm font-medium text-purple-700">{lecturer}</span>
-                                  <span className="text-xs text-gray-500 block">{getText('(Schedule name)', '(Nama di jadwal)')}</span>
+                              <div key={`lecturer-${index}`} className="space-y-2">
+                                <div
+                                  className={`flex items-center gap-4 p-3 rounded-lg transition-colors ${lecturerMappings[lecturer]
+                                    ? 'bg-purple-50 border border-purple-300'
+                                    : 'bg-gray-50 border border-gray-200'
+                                    }`}
+                                >
+                                  {/* Source lecturer name - CLICKABLE untuk toggle jadwal */}
+                                  <div className="w-1/3 min-w-[180px] flex items-center gap-2">
+                                    <button
+                                      onClick={() => {
+                                        if (selectedLecturerForSchedule === lecturer) {
+                                          setSelectedLecturerForSchedule('');
+                                          setLecturerSchedules([]);
+                                        } else {
+                                          setSelectedLecturerForSchedule(lecturer);
+                                          fetchLecturerSchedules(lecturer);
+                                        }
+                                      }}
+                                      className="flex-1 text-left p-2 rounded hover:bg-purple-100 transition-colors"
+                                    >
+                                      <span className="text-sm font-medium text-purple-700 flex items-center gap-1">
+                                        {selectedLecturerForSchedule === lecturer ? (
+                                          <ChevronDown className="h-4 w-4" />
+                                        ) : (
+                                          <ChevronRight className="h-4 w-4" />
+                                        )}
+                                        {lecturer}
+                                      </span>
+                                      <span className="text-xs text-gray-500 block ml-5">{getText('(Schedule name)', '(Nama di jadwal)')}</span>
+                                    </button>
+
+                                    {/* Tombol + untuk tambah user baru */}
+                                    <button
+                                      onClick={() => {
+                                        setNewUserScheduleName(lecturer);
+                                        setShowAddUserInMatching(true);
+                                      }}
+                                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors flex-shrink-0"
+                                      title={getText('Add as new user', 'Tambahkan sebagai user baru')}
+                                    >
+                                      <UserPlus className="h-4 w-4" />
+                                    </button>
+                                  </div>
+
+                                  <span className="text-gray-400">←</span>
+
+                                  {/* Target dropdown */}
+                                  <div className="flex-1">
+                                    <SearchableDropdownById
+                                      options={lecturers.map(l => ({ id: l.id, name: l.full_name, code: l.identity_number }))}
+                                      value={lecturerMappings[lecturer] || ''}
+                                      onChange={(id) => {
+                                        setLecturerMappings(prev => ({ ...prev, [lecturer]: id }));
+                                      }}
+                                      placeholder={getText('Select target user...', 'Pilih user target...')}
+                                      searchPlaceholder={getText('Search by name or ID...', 'Cari nama atau NIP...')}
+                                      emptyMessage={getText('No user found', 'User tidak ditemukan')}
+                                    />
+                                  </div>
+
+                                  {/* Mapped indicator only */}
+                                  {lecturerMappings[lecturer] && (
+                                    <CheckCircle className="h-5 w-5 text-purple-600 flex-shrink-0" />
+                                  )}
                                 </div>
 
-                                <span className="text-gray-400">←</span>
-
-                                {/* Target dropdown */}
-                                <div className="flex-1">
-                                  <SearchableDropdownById
-                                    options={lecturers.map(l => ({ id: l.id, name: l.full_name, code: l.identity_number }))}
-                                    value={lecturerMappings[lecturer] || ''}
-                                    onChange={(id) => setLecturerMappings(prev => ({ ...prev, [lecturer]: id }))}
-                                    placeholder={getText('Select target user...', 'Pilih user target...')}
-                                    searchPlaceholder={getText('Search by name or ID...', 'Cari nama atau NIP...')}
-                                    emptyMessage={getText('No user found', 'User tidak ditemukan')}
-                                  />
-                                </div>
-
-                                {/* Mapped indicator */}
-                                {lecturerMappings[lecturer] && (
-                                  <CheckCircle className="h-5 w-5 text-purple-600 flex-shrink-0" />
+                                {/* Lecturer Schedules Panel */}
+                                {selectedLecturerForSchedule === lecturer && (
+                                  <div className="ml-8 bg-white border border-purple-200 rounded-lg p-4">
+                                    <h4 className="text-sm font-semibold text-purple-700 mb-3 flex items-center gap-2">
+                                      <Calendar className="h-4 w-4" />
+                                      {getText(`Schedules for ${lecturer}`, `Jadwal untuk ${lecturer}`)}
+                                    </h4>
+                                    {loadingLecturerSchedules ? (
+                                      <div className="flex items-center justify-center py-4">
+                                        <RefreshCw className="h-5 w-5 animate-spin text-purple-600" />
+                                      </div>
+                                    ) : lecturerSchedules.length === 0 ? (
+                                      <p className="text-sm text-gray-500 text-center py-4">
+                                        {getText('No schedules found', 'Tidak ada jadwal ditemukan')}
+                                      </p>
+                                    ) : (
+                                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                                        {lecturerSchedules.map((sched, idx) => (
+                                          <div key={idx} className="flex items-center justify-between p-3 bg-purple-50 rounded-lg text-sm border border-purple-100">
+                                            <div className="flex-1">
+                                              <div className="font-medium text-gray-900">{sched.course_name}</div>
+                                              <div className="text-xs text-gray-600 mt-0.5">
+                                                <span className="font-medium">{sched.day}</span> • {sched.start_time?.substring(0, 5)} - {sched.end_time?.substring(0, 5)} • <span className="text-purple-700">{sched.room}</span>
+                                              </div>
+                                            </div>
+                                            <div className="flex items-center gap-2 ml-2">
+                                              <span className="text-xs px-2 py-1 bg-purple-200 text-purple-800 rounded font-medium">
+                                                {sched.class}
+                                              </span>
+                                              {/* Tombol Duplicate */}
+                                              <button
+                                                onClick={() => {
+                                                  setScheduleToDuplicate(sched);
+                                                  setShowDuplicateModal(true);
+                                                }}
+                                                className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                                title={getText('Duplicate this schedule', 'Duplikat jadwal ini')}
+                                              >
+                                                <Copy className="h-3.5 w-3.5" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
                                 )}
                               </div>
                             ))}
@@ -2593,6 +2850,438 @@ const LectureSchedules: React.FC = () => {
             fetchSchedules();
           }}
         />
+      )}
+
+      {/* Add New User Modal in Matching */}
+      {showAddUserInMatching && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-500 via-blue-600 to-indigo-600 p-6 text-white">
+              <div className="flex items-center justify-between">
+                <h3 className="text-2xl font-bold flex items-center gap-3">
+                  <UserPlus className="h-6 w-6" />
+                  {getText('Add New User', 'Tambah Pengguna Baru')}
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowAddUserInMatching(false);
+                    setNewUserScheduleName('');
+                  }}
+                  className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+              <p className="mt-2 text-sm opacity-90">
+                {getText('Create new user', 'Buat akun pengguna baru')}
+              </p>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                handleAddNewUserInMatching({
+                  full_name: formData.get('full_name') as string,
+                  identity_number: formData.get('identity_number') as string,
+                  email: formData.get('email') as string,
+                  phone: formData.get('phone') as string,
+                  position: formData.get('position') as string,
+                });
+              }}
+              className="p-6 space-y-4 max-h-[70vh] overflow-y-auto"
+            >
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700">
+                  {getText('Full Name', 'Nama Lengkap')} *
+                </label>
+                <input
+                  type="text"
+                  name="full_name"
+                  defaultValue={newUserScheduleName}
+                  required
+                  className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
+                  placeholder={getText('Enter full name', 'Masukkan nama lengkap')}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('ID Number', 'NIM/NIP')} *
+                  </label>
+                  <input
+                    type="text"
+                    name="identity_number"
+                    required
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
+                    placeholder="NIM/NIP"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('Email', 'Email')} *
+                  </label>
+                  <input
+                    type="email"
+                    name="email"
+                    required
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
+                    placeholder="user@email.com"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('Phone', 'Telepon')}
+                  </label>
+                  <input
+                    type="tel"
+                    name="phone"
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
+                    placeholder="08xxxxxxxxxx"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('Position', 'Jabatan')}
+                  </label>
+                  <input
+                    type="text"
+                    name="position"
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
+                    placeholder={getText('e.g. Lecturer, Assistant', 'cth. Dosen, Asisten')}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddUserInMatching(false);
+                    setNewUserScheduleName('');
+                  }}
+                  className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
+                >
+                  {getText('Cancel', 'Batal')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={matchingLoading}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-semibold transition-all shadow-lg"
+                >
+                  {matchingLoading ? (
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      {getText('Creating...', 'Membuat...')}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <UserPlus className="h-4 w-4" />
+                      {getText('Create User', 'Buat Pengguna')}
+                    </div>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate Schedule Modal */}
+      {showDuplicateModal && scheduleToDuplicate && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            <div className="bg-gradient-to-r from-green-500 via-emerald-500 to-teal-600 p-6 text-white">
+              <div className="flex items-center justify-between">
+                <h3 className="text-2xl font-bold flex items-center gap-3">
+                  <Copy className="h-6 w-6" />
+                  {getText('Duplicate Schedule', 'Duplikat Jadwal')}
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowDuplicateModal(false);
+                    setScheduleToDuplicate(null);
+                  }}
+                  className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+              <p className="mt-2 text-sm opacity-90">
+                {getText(
+                  'Modify the schedule details below before creating the duplicate',
+                  'Ubah detail jadwal di bawah sebelum membuat duplikat'
+                )}
+              </p>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                handleDuplicateSchedule({
+                  course_name: formData.get('course_name') as string,
+                  course_code: formData.get('course_code') as string,
+                  lecturer: formData.get('lecturer') as string,
+                  room: formData.get('room') as string,
+                  subject_study: formData.get('subject_study') as string,
+                  day: formData.get('day') as string,
+                  start_time: formData.get('start_time') as string,
+                  end_time: formData.get('end_time') as string,
+                  semester: parseInt(formData.get('semester') as string),
+                  academics_year: parseInt(formData.get('academics_year') as string),
+                  type: formData.get('type') as 'theory' | 'practical',
+                  class: formData.get('class') as string,
+                  amount: parseInt(formData.get('amount') as string || '0'),
+                  kurikulum: formData.get('kurikulum') as string,
+                });
+              }}
+              className="p-6 space-y-6 max-h-[70vh] overflow-y-auto"
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('Course Name', 'Nama Mata Kuliah')} *
+                  </label>
+                  <input
+                    type="text"
+                    name="course_name"
+                    defaultValue={scheduleToDuplicate.course_name || ''}
+                    required
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-green-500 focus:ring-0 transition-colors"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('Course Code', 'Kode Mata Kuliah')} *
+                  </label>
+                  <input
+                    type="text"
+                    name="course_code"
+                    defaultValue={scheduleToDuplicate.course_code || ''}
+                    required
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-green-500 focus:ring-0 transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('Lecturer', 'Dosen')} *
+                  </label>
+                  <input
+                    type="text"
+                    name="lecturer"
+                    defaultValue={scheduleToDuplicate.lecturer || ''}
+                    required
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-green-500 focus:ring-0 transition-colors"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('Room', 'Ruangan')} *
+                  </label>
+                  <select
+                    name="room"
+                    defaultValue={rooms.find(r => r.name === scheduleToDuplicate.room)?.id || ''}
+                    required
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-green-500 focus:ring-0 transition-colors"
+                  >
+                    <option value="">{getText('Select room', 'Pilih ruangan')}</option>
+                    {rooms.map(room => (
+                      <option key={room.id} value={room.id}>
+                        {room.name} ({room.code}) - {room.capacity} {getText('seats', 'kursi')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700">
+                  {getText('Study Program', 'Program Studi')} *
+                </label>
+                <input
+                  type="text"
+                  name="subject_study"
+                  defaultValue={scheduleToDuplicate.subject_study || ''}
+                  required
+                  className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-green-500 focus:ring-0 transition-colors"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('Day', 'Hari')} *
+                  </label>
+                  <select
+                    name="day"
+                    defaultValue={scheduleToDuplicate.day || ''}
+                    required
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-green-500 focus:ring-0 transition-colors"
+                  >
+                    <option value="">{getText('Select Day', 'Pilih Hari')}</option>
+                    {dayNames.map(day => (
+                      <option key={day} value={day}>{day}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('Start Time', 'Waktu Mulai')} *
+                  </label>
+                  <input
+                    type="time"
+                    name="start_time"
+                    defaultValue={scheduleToDuplicate.start_time || ''}
+                    required
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-green-500 focus:ring-0 transition-colors"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('End Time', 'Waktu Selesai')} *
+                  </label>
+                  <input
+                    type="time"
+                    name="end_time"
+                    defaultValue={scheduleToDuplicate.end_time || ''}
+                    required
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-green-500 focus:ring-0 transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('Semester', 'Semester')} *
+                  </label>
+                  <select
+                    name="semester"
+                    defaultValue={scheduleToDuplicate.semester?.toString() || '1'}
+                    required
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-green-500 focus:ring-0 transition-colors"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map(sem => (
+                      <option key={sem} value={sem}>Semester {sem}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('Academic Year', 'Tahun Akademik')} *
+                  </label>
+                  <input
+                    type="number"
+                    name="academics_year"
+                    defaultValue={scheduleToDuplicate.academics_year || new Date().getFullYear()}
+                    required
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-green-500 focus:ring-0 transition-colors"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('Class Type', 'Tipe Kelas')} *
+                  </label>
+                  <select
+                    name="type"
+                    defaultValue={scheduleToDuplicate.type || 'theory'}
+                    required
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-green-500 focus:ring-0 transition-colors"
+                  >
+                    <option value="theory">{getText('Theory', 'Teori')}</option>
+                    <option value="practical">{getText('Practical', 'Praktik')}</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('Class/Rombel', 'Kelas/Rombel')} *
+                  </label>
+                  <input
+                    type="text"
+                    name="class"
+                    defaultValue={scheduleToDuplicate.class || ''}
+                    required
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-green-500 focus:ring-0 transition-colors"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('Amount', 'Jumlah')}
+                  </label>
+                  <input
+                    type="number"
+                    name="amount"
+                    min="0"
+                    defaultValue={scheduleToDuplicate.amount || 0}
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-green-500 focus:ring-0 transition-colors"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {getText('Curriculum', 'Kurikulum')}
+                  </label>
+                  <input
+                    type="text"
+                    name="kurikulum"
+                    defaultValue={scheduleToDuplicate.kurikulum || ''}
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-green-500 focus:ring-0 transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDuplicateModal(false);
+                    setScheduleToDuplicate(null);
+                  }}
+                  className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
+                >
+                  {getText('Cancel', 'Batal')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-semibold transition-all shadow-lg"
+                >
+                  {loading ? (
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      {getText('Duplicating...', 'Menduplikat...')}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Copy className="h-4 w-4" />
+                      {getText('Create Duplicate', 'Buat Duplikat')}
+                    </div>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

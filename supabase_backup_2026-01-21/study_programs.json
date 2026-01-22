@@ -1,0 +1,137 @@
+[
+  {
+    "id": "78d64c8d-1041-4a2a-9daa-9ef02b10eff4",
+    "name": "Tata Boga",
+    "code": "BOGA",
+    "department_id": "c2fd2e0c-cb12-4bf4-8ab2-d20b48b9056a",
+    "created_at": "2025-06-16T05:51:28.560743+00:00",
+    "updated_at": "2025-06-16T05:51:28.560743+00:00",
+    "status": "show"
+  },
+  {
+    "id": "4b1a2aad-06ab-4afd-9e93-bf01197b7a76",
+    "name": "Teknik Elektronika",
+    "code": "ELKA",
+    "department_id": "8c899a72-055d-4e1d-9ef5-96e13822bd2d",
+    "created_at": "2025-06-16T10:01:56.811727+00:00",
+    "updated_at": "2025-06-16T10:01:56.811727+00:00",
+    "status": "show"
+  },
+  {
+    "id": "768cd183-f6e1-467a-b624-80d06dd403b3",
+    "name": "Tata Busana",
+    "code": "BUSANA",
+    "department_id": "c2fd2e0c-cb12-4bf4-8ab2-d20b48b9056a",
+    "created_at": "2025-06-20T04:36:34.733815+00:00",
+    "updated_at": "2025-06-26T02:37:23.261027+00:00",
+    "status": "show"
+  },
+  {
+    "id": "71b54ce4-a7d9-41f5-bca2-0799a62b0411",
+    "name": "Teknik Elektro",
+    "code": "ELKO",
+    "department_id": "8c899a72-055d-4e1d-9ef5-96e13822bd2d",
+    "created_at": "2025-06-28T02:10:41.123356+00:00",
+    "updated_at": "2025-06-28T02:10:41.123356+00:00",
+    "status": "show"
+  },
+  {
+    "id": "ec41b3a5-0e4a-4f29-9d55-6a47ab247539",
+    "name": "Tata Rias dan Kecantikan",
+    "code": "RIAS",
+    "department_id": "c2fd2e0c-cb12-4bf4-8ab2-d20b48b9056a",
+    "created_at": "2025-06-28T02:11:27.249921+00:00",
+    "updated_at": "2025-06-28T02:11:27.249921+00:00",
+    "status": "show"
+  },
+  {
+    "id": "ce2f7df4-9675-43fc-b5f2-cea48381ff57",
+    "name": "Teknik Sipil",
+    "code": "SIPIL",
+    "department_id": "7ae13129-6ee9-43dc-8f07-bb50a459f24a",
+    "created_at": "2025-06-28T02:13:11.698135+00:00",
+    "updated_at": "2025-06-28T02:13:11.698135+00:00",
+    "status": "show"
+  },
+  {
+    "id": "1bde6595-bad1-425c-9871-936690b34876",
+    "name": "Teknik Mesin",
+    "code": "MESIN",
+    "department_id": "dfdfe186-1def-40b8-ba1d-02ad48286f0c",
+    "created_at": "2025-06-28T02:13:31.481368+00:00",
+    "updated_at": "2025-06-28T02:13:31.481368+00:00",
+    "status": "show"
+  },
+  {
+    "id": "1aa2e90e-64cd-4596-b134-04ab04fb293c",
+    "name": "Teknik Otomotif",
+    "code": "OTO",
+    "department_id": "dfdfe186-1def-40b8-ba1d-02ad48286f0c",
+    "created_at": "2025-06-28T02:13:48.297705+00:00",
+    "updated_at": "2025-06-28T02:13:48.297705+00:00",
+    "status": "show"
+  },
+  {
+    "id": "9d3c820d-b2e5-4bfd-9480-bfb3374c0b57",
+    "name": "Administrasi Perkantoran",
+    "code": "ADP",
+    "department_id": "5e7cbb8f-3aee-41b9-93c3-bbadfc442f87",
+    "created_at": "2025-06-28T02:14:27.166843+00:00",
+    "updated_at": "2025-06-28T02:14:27.166843+00:00",
+    "status": "show"
+  },
+  {
+    "id": "34dd0db4-0f13-441e-837b-aaf2f5dfcf43",
+    "name": "Manajemen Pemasaran",
+    "code": "MP",
+    "department_id": "5e7cbb8f-3aee-41b9-93c3-bbadfc442f87",
+    "created_at": "2025-06-28T02:14:58.093333+00:00",
+    "updated_at": "2025-06-28T02:14:58.093333+00:00",
+    "status": "show"
+  },
+  {
+    "id": "0ef7d262-b981-4c65-917f-f15a7b6a7f7a",
+    "name": "Akuntansi",
+    "code": "AKT",
+    "department_id": "5e7cbb8f-3aee-41b9-93c3-bbadfc442f87",
+    "created_at": "2025-06-28T02:15:18.424826+00:00",
+    "updated_at": "2025-06-28T02:15:18.424826+00:00",
+    "status": "show"
+  },
+  {
+    "id": "d68f21a0-4854-4863-8078-8f4ba2f356e6",
+    "name": "Promosi Kesehatan",
+    "code": "PROMKES",
+    "department_id": "c4316899-eda1-4a59-ba66-eeae5f91f68d",
+    "created_at": "2025-06-28T02:15:34.470662+00:00",
+    "updated_at": "2025-06-28T02:15:34.470662+00:00",
+    "status": "show"
+  },
+  {
+    "id": "0e4509c3-a296-4bed-ad6a-2cc63be37695",
+    "name": "Pengelolaan Usaha Rekreasi",
+    "code": "PUR",
+    "department_id": "c4316899-eda1-4a59-ba66-eeae5f91f68d",
+    "created_at": "2025-06-28T02:16:06.050014+00:00",
+    "updated_at": "2025-06-28T02:16:06.050014+00:00",
+    "status": "show"
+  },
+  {
+    "id": "a493bd5d-5b5b-47ea-8df3-07373ba94710",
+    "name": "Pengobatan Tradisional Indonesia",
+    "code": "PTI",
+    "department_id": "c4316899-eda1-4a59-ba66-eeae5f91f68d",
+    "created_at": "2025-06-28T02:16:29.770802+00:00",
+    "updated_at": "2025-06-28T02:16:29.770802+00:00",
+    "status": "show"
+  },
+  {
+    "id": "ea79b66a-dc9e-49c1-a984-b36159dc34d7",
+    "name": "Fakultas Teknik",
+    "code": "FT",
+    "department_id": "22b9550a-5cf4-4922-9a23-bce4cae80b45",
+    "created_at": "2026-01-18T13:28:45.073876+00:00",
+    "updated_at": "2026-01-18T13:28:45.073876+00:00",
+    "status": "hide"
+  }
+]

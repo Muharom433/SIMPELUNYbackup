@@ -1,0 +1,10 @@
+[
+  {
+    "id": "2f9d0ddc-a875-4adf-b719-6f01c57fe054",
+    "is_attendance_disabled": false,
+    "disabled_from_date": "2026-01-12",
+    "disabled_message": "Presensi transport sedang ditutup",
+    "updated_by": "be483065-19e8-42b1-8b42-0eb8c308bb81",
+    "updated_at": "2026-01-12T11:12:40.696+00:00"
+  }
+]

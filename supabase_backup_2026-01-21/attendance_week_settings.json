@@ -1,0 +1,62 @@
+[
+  {
+    "id": "a0ab3cac-ba6a-4ff2-9262-4784eb9b45bd",
+    "month": 1,
+    "year": 2026,
+    "week_number": 1,
+    "start_date": "2026-01-01",
+    "end_date": "2026-01-02",
+    "is_active": true,
+    "created_by": "be483065-19e8-42b1-8b42-0eb8c308bb81",
+    "created_at": "2026-01-12T11:11:42.578663+00:00",
+    "updated_at": "2026-01-12T11:11:42.578663+00:00"
+  },
+  {
+    "id": "0b4d0d8e-e827-48df-be5a-18460325874b",
+    "month": 1,
+    "year": 2026,
+    "week_number": 2,
+    "start_date": "2026-01-05",
+    "end_date": "2026-01-09",
+    "is_active": true,
+    "created_by": "be483065-19e8-42b1-8b42-0eb8c308bb81",
+    "created_at": "2026-01-12T11:11:58.373224+00:00",
+    "updated_at": "2026-01-12T11:11:58.373224+00:00"
+  },
+  {
+    "id": "f02e687c-19b7-4074-802d-9082a49105b2",
+    "month": 1,
+    "year": 2026,
+    "week_number": 3,
+    "start_date": "2026-01-12",
+    "end_date": "2026-01-16",
+    "is_active": true,
+    "created_by": "be483065-19e8-42b1-8b42-0eb8c308bb81",
+    "created_at": "2026-01-12T11:13:17.683522+00:00",
+    "updated_at": "2026-01-12T11:13:17.683522+00:00"
+  },
+  {
+    "id": "ba2945ea-c47d-49c0-98ac-3ab9c7265c85",
+    "month": 1,
+    "year": 2026,
+    "week_number": 4,
+    "start_date": "2026-01-19",
+    "end_date": "2026-01-23",
+    "is_active": true,
+    "created_by": "be483065-19e8-42b1-8b42-0eb8c308bb81",
+    "created_at": "2026-01-12T11:14:33.61296+00:00",
+    "updated_at": "2026-01-12T11:14:33.61296+00:00"
+  },
+  {
+    "id": "4a92dec1-58ae-490a-a714-9900017f37c1",
+    "month": 1,
+    "year": 2026,
+    "week_number": 5,
+    "start_date": "2026-01-26",
+    "end_date": "2026-01-30",
+    "is_active": true,
+    "created_by": "be483065-19e8-42b1-8b42-0eb8c308bb81",
+    "created_at": "2026-01-12T11:14:43.41642+00:00",
+    "updated_at": "2026-01-12T11:14:43.41642+00:00"
+  }
+]
