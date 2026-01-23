@@ -64,6 +64,7 @@ interface AttendanceRecord {
     details?: AttendanceDetail[];
     // Homebase status from user
     is_homebase?: boolean;
+    scanned_room_id?: string | null;
 }
 
 interface StudyProgram {
@@ -194,6 +195,25 @@ const FinanceAttendance: React.FC = () => {
         disabled_from_date: null,
         disabled_message: 'Presensi transport sedang ditutup'
     });
+
+    // Cache for Room Names
+    const [roomsMap, setRoomsMap] = useState<Record<string, string>>({});
+
+    useEffect(() => {
+        const fetchRooms = async () => {
+            try {
+                const { data } = await supabase.from('rooms').select('id, name');
+                if (data) {
+                    const map: Record<string, string> = {};
+                    data.forEach((r: any) => map[r.id] = r.name);
+                    setRoomsMap(map);
+                }
+            } catch (error) {
+                console.error('Error fetching rooms:', error);
+            }
+        };
+        fetchRooms();
+    }, []);
 
     // Fetch data on mount and filter changes
     useEffect(() => {
@@ -2479,6 +2499,19 @@ const FinanceAttendance: React.FC = () => {
                                     <div>
                                         <label className="text-gray-500">Tujuan</label>
                                         <p className="font-medium text-gray-900 capitalize">{selectedRecord.purpose}</p>
+                                    </div>
+                                    <div>
+                                        <label className="text-gray-500">Ruangan Scan</label>
+                                        <div className="flex items-center gap-2">
+                                            <div className="p-1 bg-blue-50 rounded">
+                                                <Building className="w-4 h-4 text-blue-600" />
+                                            </div>
+                                            <p className="font-medium text-gray-900">
+                                                {selectedRecord.scanned_room_id
+                                                    ? (roomsMap[selectedRecord.scanned_room_id] || <span className="text-xs text-gray-500 font-mono">{selectedRecord.scanned_room_id.substring(0, 8)}...</span>)
+                                                    : <span className="text-gray-400 italic text-sm">Tidak ada data scan</span>}
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
                                 {selectedRecord.purpose_description && (

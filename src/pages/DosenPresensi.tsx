@@ -192,14 +192,18 @@ const SearchableDropdown: React.FC<{
 
 const DosenPresensi: React.FC = () => {
     const [lecturers, setLecturers] = useState<Lecturer[]>([]);
+    const [activeTab, setActiveTab] = useState<'presensi' | 'uny'>('presensi');
     const [selectedLecturerId, setSelectedLecturerId] = useState('');
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
-    const [activeTab, setActiveTab] = useState<'presensi' | 'uny'>('presensi');
-
     // QR & Signature State
     const [scannedRoomId, setScannedRoomId] = useState<string | null>(null);
     const [scannedRoomName, setScannedRoomName] = useState<string | null>(null);
+    const [scanRetry, setScanRetry] = useState(0);
+
+    // Initial Day Selection (Default to Today)
+    const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const [selectedDay, setSelectedDay] = useState<string>(dayNames[new Date().getDay()]);
     const signatureRef = useRef<any>(null);
     const [signatureError, setSignatureError] = useState<string | null>(null);
 
@@ -576,19 +580,19 @@ const DosenPresensi: React.FC = () => {
         checkAttendance();
     }, [selectedLecturerId]);
 
-    // Detect ALL schedules when lecturer is selected
+    // Detect ALL schedules when lecturer OR selectedDay changes
     useEffect(() => {
         if (selectedLecturerId && !hasAttendedToday) {
             const lecturer = lecturers.find(l => l.id === selectedLecturerId);
             if (lecturer) {
                 // Pass both ID and name for flexible matching
-                detectAllSchedules(selectedLecturerId, lecturer.full_name);
+                detectAllSchedules(selectedLecturerId, lecturer.full_name, selectedDay);
             }
         } else {
             setAvailableSchedules([]);
             setSelectedSchedules([]);
         }
-    }, [selectedLecturerId, lecturers, hasAttendedToday]);
+    }, [selectedLecturerId, lecturers, hasAttendedToday, selectedDay]);
 
     // QR Scanner Effect - AUTO START, NO UI SELECTION
     useEffect(() => {
@@ -609,16 +613,37 @@ const DosenPresensi: React.FC = () => {
                             console.log("Scanned:", decodedText);
 
                             // Stop scanning immediately after success
-                            html5QrCode.stop().then(() => {
-                                setScannedRoomId(decodedText);
+                            html5QrCode.stop().then(async () => {
+                                // VALIDATE ROOM FIRST
+                                const toastId = toast.loading('Memverifikasi QR Code...');
 
-                                // Optional: Fetch room name
-                                supabase.from('rooms').select('name').eq('id', decodedText).single()
-                                    .then(({ data }) => {
-                                        if (data) setScannedRoomName(data.name);
-                                    });
+                                try {
+                                    const { data, error } = await supabase
+                                        .from('rooms')
+                                        .select('id, name')
+                                        .eq('id', decodedText)
+                                        .single();
 
-                                toast.success('Ruangan berhasil di-scan!');
+                                    if (error || !data) {
+                                        console.error("Invalid Room QR:", decodedText, error);
+                                        toast.error('QR Code TIDAK VALID! Ini bukan QR Ruangan.', { id: toastId });
+
+                                        // Restart scanner after short delay
+                                        setTimeout(() => {
+                                            setScanRetry(prev => prev + 1);
+                                        }, 2000);
+                                    } else {
+                                        setScannedRoomId(data.id);
+                                        setScannedRoomName(data.name);
+                                        toast.success(`Terverifikasi: ${data.name}`, { id: toastId });
+                                    }
+                                } catch (err) {
+                                    console.error("Validation error:", err);
+                                    toast.error('Terjadi kesalahan verifikasi.', { id: toastId });
+                                    setTimeout(() => {
+                                        setScanRetry(prev => prev + 1);
+                                    }, 2000);
+                                }
                             }).catch((err: any) => console.error("Failed to stop scanner", err));
                         },
                         (errorMessage: any) => {
@@ -644,7 +669,7 @@ const DosenPresensi: React.FC = () => {
                 }
             };
         }
-    }, [activeTab, scannedRoomId, showSpecialDateModal, showNoActiveWeekModal, showGlobalDisableModal]);
+    }, [activeTab, scannedRoomId, showSpecialDateModal, showNoActiveWeekModal, showGlobalDisableModal, scanRetry]);
 
     const fetchLecturers = async () => {
         try {
@@ -717,17 +742,15 @@ const DosenPresensi: React.FC = () => {
         setCustomPurpose('');
     };
 
-    // Detect ALL schedules for today (lectures + sessions)
-    const detectAllSchedules = async (lecturerId: string, lecturerName: string) => {
+    // Detect ALL schedules for SELECTED DAY (lectures + sessions)
+    const detectAllSchedules = async (lecturerId: string, lecturerName: string, day: string) => {
         setCheckingSchedule(true);
         setAvailableSchedules([]);
 
         const today = new Date();
-        const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-        const currentDay = dayNames[today.getDay()];
         const todayStr = format(today, 'yyyy-MM-dd');
 
-        console.log('[detectAllSchedules] Checking for:', lecturerName, '(ID:', lecturerId, ') on day:', currentDay);
+        console.log('[detectAllSchedules] Checking for:', lecturerName, '(ID:', lecturerId, ') on day:', day);
 
         const allSchedules: ScheduleItem[] = [];
 
@@ -737,7 +760,7 @@ const DosenPresensi: React.FC = () => {
                 .from('lecture_schedules')
                 .select('id, course_name, course_code, room, start_time, end_time, class, subject_study, semester, academics_year')
                 .eq('lecturer_user_id', lecturerId)  // Use exact ID match, not name
-                .ilike('day', currentDay);
+                .ilike('day', day); // Use SELECTED DAY
 
             console.log('[detectAllSchedules] Lecture query (by ID) result:', { lectureData, lectureError });
 
@@ -754,7 +777,7 @@ const DosenPresensi: React.FC = () => {
                     .from('lecture_schedules')
                     .select('id, course_name, course_code, room, start_time, end_time, class, subject_study, semester, academics_year')
                     .ilike('lecturer', `%${lecturerName}%`)
-                    .ilike('day', currentDay);
+                    .ilike('day', day); // Use SELECTED DAY
 
                 console.log('[detectAllSchedules] Lecture query (by name fallback) result:', { lectureDataByName, lectureErrorByName });
 
@@ -984,9 +1007,26 @@ const DosenPresensi: React.FC = () => {
                     purposeDesc = `${selectedSchedules.length} kegiatan (Mengajar & Sidang)`;
                 } else if (hasLecture) {
                     purposeValue = 'mengajar';
-                    purposeDesc = selectedSchedules.length === 1
-                        ? selectedSchedules[0].course_name || 'Mengajar'
-                        : `${selectedSchedules.length} mata kuliah`;
+                    // GENERATE PURPOSE DESCRIPTION
+                    const isToday = selectedDay === dayNames[currentTime.getDay()];
+
+                    if (selectedSchedules[0]) {
+                        const s = selectedSchedules[0];
+
+                        if (isToday) {
+                            // Regular Schedule - Course Name
+                            purposeDesc = selectedSchedules.length === 1
+                                ? s.course_name || 'Mengajar'
+                                : `${selectedSchedules.length} mata kuliah`;
+                        } else {
+                            // Substitute Schedule - Formatted Sentence
+                            purposeDesc = `Saya mengajar kelas pengganti mata kuliah ${s.course_name} kelas ${s.class_group || '-'} semester ${s.semester?.replace('Semester ', '') || '-'}`;
+
+                            if (selectedSchedules.length > 1) {
+                                purposeDesc += ` dan ${selectedSchedules.length - 1} matkul lainnya`;
+                            }
+                        }
+                    }
                 } else if (hasSession) {
                     purposeValue = 'sidang';
                     purposeDesc = selectedSchedules.length === 1
@@ -1235,49 +1275,62 @@ const DosenPresensi: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* Step 1.5: Schedule Selection (Multiple) */}
+                            {/* Step 1.5: Schedule Selection (Multiple) - Auto Day */}
                             {selectedLecturerId && !hasAttendedToday && (
                                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 font-bold">
-                                                <BookOpen className="w-4 h-4" />
-                                            </div>
-                                            <h2 className="text-lg font-semibold text-gray-900">Pilih Kegiatan Hari Ini</h2>
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 font-bold">
+                                            <BookOpen className="w-4 h-4" />
                                         </div>
-                                        {selectedSchedules.length > 0 && (
-                                            <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
-                                                {selectedSchedules.length} dipilih
-                                            </span>
-                                        )}
+                                        <div>
+                                            <h2 className="text-lg font-semibold text-gray-900">Pilih Jadwal Kegiatan</h2>
+                                            <p className="text-xs text-gray-500">Pilih hari untuk menampilkan jadwal mata kuliah</p>
+                                        </div>
                                     </div>
 
+                                    {/* Day Selector - Hidden if schedules found on current day */}
+                                    {!(selectedDay === dayNames[currentTime.getDay()] && availableSchedules.length > 0) && (
+                                        <div className="flex flex-wrap gap-2 mb-6 animate-fadeIn">
+                                            {dayNames.filter(d => d !== 'Minggu').map((day) => (
+                                                <button
+                                                    key={day}
+                                                    onClick={() => setSelectedDay(day)}
+                                                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${selectedDay === day
+                                                        ? 'bg-emerald-600 text-white border-emerald-600'
+                                                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                                                        }`}
+                                                >
+                                                    {day}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+
                                     {checkingSchedule ? (
-                                        <div className="flex items-center gap-2 text-gray-500 text-sm py-4">
-                                            <Loader2 className="w-5 h-5 animate-spin" />
-                                            Memeriksa jadwal hari ini...
+                                        <div className="flex flex-col items-center justify-center py-8 text-gray-500">
+                                            <Loader2 className="w-8 h-8 animate-spin mb-2 text-blue-600" />
+                                            <p className="text-sm">Mencari jadwal {selectedDay}...</p>
                                         </div>
                                     ) : availableSchedules.length > 0 ? (
                                         <div className="space-y-3">
-                                            {/* Quick actions */}
-                                            <div className="flex items-center gap-2 mb-3">
-                                                <button
-                                                    onClick={selectAllSchedules}
-                                                    className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                                                >
-                                                    Pilih Semua
-                                                </button>
-                                                <span className="text-gray-300">|</span>
-                                                <button
-                                                    onClick={clearAllSelections}
-                                                    className="text-sm text-gray-500 hover:text-gray-700"
-                                                >
-                                                    Hapus Pilihan
-                                                </button>
+                                            <div className="flex items-center justify-between mb-2">
+                                                <p className="text-sm text-gray-600">Ditemukan {availableSchedules.length} jadwal:</p>
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={selectAllSchedules}
+                                                        className="text-xs text-blue-600 hover:underline"
+                                                    >
+                                                        Pilih Semua
+                                                    </button>
+                                                    <button
+                                                        onClick={clearAllSelections}
+                                                        className="text-xs text-gray-500 hover:underline"
+                                                    >
+                                                        Reset
+                                                    </button>
+                                                </div>
                                             </div>
-
-                                            {/* Schedule list */}
-                                            <div className="space-y-2 max-h-80 overflow-y-auto">
+                                            <div className="grid grid-cols-1 gap-3">
                                                 {availableSchedules.map(schedule => {
                                                     const isSelected = selectedSchedules.some(s => s.id === schedule.id);
                                                     return (
@@ -1598,7 +1651,7 @@ const DosenPresensi: React.FC = () => {
                             </button>
 
                         </div>
-                    </div>
+                    </div >
                 ) : (
                     /* UNY Presensi Tab - Full Frame iFrame */
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1857,7 +1910,7 @@ const DosenPresensi: React.FC = () => {
                     </div>
                 )
             }
-        </div>
+        </div >
     );
 };
 

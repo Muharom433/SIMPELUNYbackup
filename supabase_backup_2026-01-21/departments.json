@@ -1,0 +1,58 @@
+[
+  {
+    "id": "c2fd2e0c-cb12-4bf4-8ab2-d20b48b9056a",
+    "name": "Tata Boga,Busana,dan Rias Kecantikan",
+    "code": "TBBR",
+    "description": null,
+    "created_at": "2025-06-16T05:49:24.611372+00:00",
+    "updated_at": "2025-06-17T18:07:48.325055+00:00"
+  },
+  {
+    "id": "8c899a72-055d-4e1d-9ef5-96e13822bd2d",
+    "name": "Teknik Elektro dan Elektronika",
+    "code": "DTEE",
+    "description": null,
+    "created_at": "2025-06-16T10:01:17.900755+00:00",
+    "updated_at": "2025-06-17T18:08:06.450997+00:00"
+  },
+  {
+    "id": "dfdfe186-1def-40b8-ba1d-02ad48286f0c",
+    "name": "Teknik Mesin dan Otomotif",
+    "code": "DTMO",
+    "description": null,
+    "created_at": "2025-06-28T02:06:23.12378+00:00",
+    "updated_at": "2025-06-28T02:06:23.12378+00:00"
+  },
+  {
+    "id": "7ae13129-6ee9-43dc-8f07-bb50a459f24a",
+    "name": "Teknik Sipil",
+    "code": "SIPIL",
+    "description": null,
+    "created_at": "2025-06-28T02:08:32.174898+00:00",
+    "updated_at": "2025-06-28T02:08:32.174898+00:00"
+  },
+  {
+    "id": "c4316899-eda1-4a59-ba66-eeae5f91f68d",
+    "name": "Olahraga dan Kesehatan",
+    "code": "ORKES",
+    "description": null,
+    "created_at": "2025-06-28T02:08:58.703728+00:00",
+    "updated_at": "2025-06-28T02:08:58.703728+00:00"
+  },
+  {
+    "id": "5e7cbb8f-3aee-41b9-93c3-bbadfc442f87",
+    "name": "Bisnis dan Keuangan",
+    "code": "BISKEU",
+    "description": null,
+    "created_at": "2025-06-28T02:09:31.823974+00:00",
+    "updated_at": "2025-06-28T02:09:31.823974+00:00"
+  },
+  {
+    "id": "22b9550a-5cf4-4922-9a23-bce4cae80b45",
+    "name": "Non HomeBase",
+    "code": "GENERAL",
+    "description": null,
+    "created_at": "2026-01-18T13:28:26.339384+00:00",
+    "updated_at": "2026-01-18T13:29:04.070713+00:00"
+  }
+]
