@@ -65,6 +65,7 @@ interface AttendanceRecord {
     // Homebase status from user
     is_homebase?: boolean;
     scanned_room_id?: string | null;
+    additional_notes?: string; // Optional additional notes from lecturer
 }
 
 interface StudyProgram {
@@ -728,7 +729,7 @@ const FinanceAttendance: React.FC = () => {
     // Handle selecting a record (fetch details too)
     const handleSelectRecord = async (record: AttendanceRecord) => {
         setSelectedRecord(record);
-        setVerificationNotes('');
+        setVerificationNotes(record.verified_notes || ''); // Load existing notes if available
         // Fetch details for this record
         await fetchAttendanceDetails(record.id);
     };
@@ -2442,7 +2443,7 @@ const FinanceAttendance: React.FC = () => {
                                                                         </span>
                                                                     ) : (
                                                                         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                                                                            <Clock className="w-3 h-3" /> Perlu Perhatian
+                                                                            <Clock className="w-3 h-3" /> Perlu Pertimbangan
                                                                         </span>
                                                                     )}
                                                                 </td>
@@ -2520,6 +2521,16 @@ const FinanceAttendance: React.FC = () => {
                                         <p className="mt-1 font-medium text-gray-900">{selectedRecord.purpose_description}</p>
                                     </div>
                                 )}
+
+                                {selectedRecord.additional_notes && (
+                                    selectedRecord.purpose === 'mengajar' ||
+                                    selectedRecord.additional_notes !== selectedRecord.purpose_description
+                                ) && (
+                                        <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                                            <label className="text-blue-800 text-xs font-semibold uppercase tracking-wider">Opsi Keterangan Tambahan</label>
+                                            <p className="mt-1 font-medium text-gray-900">{selectedRecord.additional_notes}</p>
+                                        </div>
+                                    )}
 
                                 {/* Attendance Details Section - Multi-jadwal */}
                                 {loadingDetails ? (

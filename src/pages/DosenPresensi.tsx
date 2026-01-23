@@ -73,6 +73,7 @@ interface SubmitSuccessData {
     photo: string;
     scheduleCount: number;
     locationInfo?: string;
+    additionalNotes?: string;
 }
 
 // Searchable Dropdown Component
@@ -222,6 +223,9 @@ const DosenPresensi: React.FC = () => {
     const [availableSchedules, setAvailableSchedules] = useState<ScheduleItem[]>([]);
     const [selectedSchedules, setSelectedSchedules] = useState<ScheduleItem[]>([]);
     const [checkingSchedule, setCheckingSchedule] = useState(false);
+
+    // Track if today's schedule is empty (for persistent notification)
+    const [isTodayScheduleEmpty, setIsTodayScheduleEmpty] = useState<boolean>(false);
 
     // Custom purpose for non-scheduled attendance
     const [customPurpose, setCustomPurpose] = useState('');
@@ -877,6 +881,14 @@ const DosenPresensi: React.FC = () => {
 
         console.log('[detectAllSchedules] Total schedules found:', allSchedules.length);
         setAvailableSchedules(allSchedules);
+
+        // Track if TODAY'S schedule is empty (for persistent notification)
+        const todayDayName = dayNames[today.getDay()];
+        if (day === todayDayName) {
+            // We're checking today's schedule
+            setIsTodayScheduleEmpty(allSchedules.length === 0);
+        }
+
         setCheckingSchedule(false);
     };
 
@@ -1051,7 +1063,8 @@ const DosenPresensi: React.FC = () => {
                 verification_status: 'pending',
                 study_program_id: lecturer.study_program?.id || null,
                 scanned_room_id: scannedRoomId || null,
-                signature_url: signatureUrl || null
+                signature_url: signatureUrl || null,
+                additional_notes: customPurpose.trim() || null
                 // Note: Geolocation columns will be added later via migration
                 // location_latitude, location_longitude, location_accuracy, location_name, is_within_allowed_location
             };
@@ -1129,7 +1142,8 @@ const DosenPresensi: React.FC = () => {
                 time: format(new Date(), 'HH:mm'),
                 photo: photoData,
                 scheduleCount: selectedSchedules.length,
-                locationInfo
+                locationInfo,
+                additionalNotes: customPurpose.trim() || undefined
             });
             setShowSuccessModal(true);
 
@@ -1288,6 +1302,21 @@ const DosenPresensi: React.FC = () => {
                                         </div>
                                     </div>
 
+                                    {/* Notification when TODAY's schedule is not found (persists across day changes) */}
+                                    {!checkingSchedule && isTodayScheduleEmpty && (
+                                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 animate-fadeIn">
+                                            <div className="flex items-start gap-3">
+                                                <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                                                <div>
+                                                    <p className="font-medium text-blue-900">Jadwal hari ini tidak ditemukan</p>
+                                                    <p className="text-sm text-blue-700 mt-1">
+                                                        Silahkan pilih kelas pengganti yang anda ajar. Pilih hari sesuai jadwal asli anda.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* Day Selector - Hidden if schedules found on current day */}
                                     {!(selectedDay === dayNames[currentTime.getDay()] && availableSchedules.length > 0) && (
                                         <div className="flex flex-wrap gap-2 mb-6 animate-fadeIn">
@@ -1429,12 +1458,12 @@ const DosenPresensi: React.FC = () => {
                                     {/* Custom purpose when schedules exist but want to add other purpose */}
                                     {availableSchedules.length > 0 && (
                                         <div className="mt-4 pt-4 border-t border-gray-200">
-                                            <p className="text-sm text-gray-600 mb-2">Atau tambahkan tujuan lain:</p>
+                                            <p className="text-sm text-gray-600 mb-2">Opsi Keterangan Tambahan:</p>
                                             <input
                                                 type="text"
                                                 value={customPurpose}
                                                 onChange={(e) => setCustomPurpose(e.target.value)}
-                                                placeholder="Contoh: Rapat, Bimbingan, Konsultasi... (opsional)"
+                                                placeholder="Isikan alasan / keterangan"
                                                 className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                             />
                                         </div>
@@ -1745,6 +1774,16 @@ const DosenPresensi: React.FC = () => {
                                     <div className="flex items-center justify-center gap-2 text-sm text-gray-600 bg-gray-100 rounded-lg p-2 mb-3">
                                         <MapPin className="w-4 h-4" />
                                         <span>{successData.locationInfo}</span>
+                                    </div>
+                                )}
+
+                                {/* Additional Notes */}
+                                {successData.additionalNotes && (
+                                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-3">
+                                        <p className="text-xs font-semibold text-blue-900 mb-2 uppercase tracking-wide">Keterangan Tambahan</p>
+                                        <p className="text-sm text-blue-800">
+                                            {successData.additionalNotes}
+                                        </p>
                                     </div>
                                 )}
 
