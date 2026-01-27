@@ -339,6 +339,10 @@ const LectureSchedules: React.FC = () => {
   // Lecturers State for Dropdown
   const [lecturers, setLecturers] = useState<{ id: string; full_name: string; identity_number?: string }[]>([]);
 
+  // Departments and Study Programs State for Add New User Modal
+  const [departments, setDepartments] = useState<{ id: string; name: string; code: string }[]>([]);
+  const [studyPrograms, setStudyPrograms] = useState<{ id: string; name: string; code: string; department_id: string }[]>([]);
+
   useEffect(() => {
     const fetchLecturers = async () => {
       try {
@@ -355,8 +359,38 @@ const LectureSchedules: React.FC = () => {
       }
     };
 
+    const fetchDepartments = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('departments')
+          .select('id, name, code')
+          .order('name');
+
+        if (error) throw error;
+        setDepartments(data || []);
+      } catch (err) {
+        console.error('Error fetching departments:', err);
+      }
+    };
+
+    const fetchStudyPrograms = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('study_programs')
+          .select('id, name, code, department_id')
+          .order('name');
+
+        if (error) throw error;
+        setStudyPrograms(data || []);
+      } catch (err) {
+        console.error('Error fetching study programs:', err);
+      }
+    };
+
     // Fetch once on mount or when modal opens
     fetchLecturers();
+    fetchDepartments();
+    fetchStudyPrograms();
   }, []);
   const [schedules, setSchedules] = useState<LectureSchedule[]>([]);
   const [totalSchedules, setTotalSchedules] = useState(0); // Server-side pagination
@@ -1040,8 +1074,9 @@ const LectureSchedules: React.FC = () => {
     full_name: string;
     identity_number: string;
     email: string;
-    phone: string;
-    position: string;
+    phone_number: string;
+    department_id?: string;
+    study_program_id?: string;
   }) => {
     try {
       setMatchingLoading(true);
@@ -1053,8 +1088,9 @@ const LectureSchedules: React.FC = () => {
           full_name: userData.full_name,
           identity_number: userData.identity_number,
           email: userData.email,
-          phone: userData.phone,
-          position: userData.position,
+          phone_number: userData.phone_number,
+          department_id: userData.department_id || null,
+          study_program_id: userData.study_program_id || null,
           role: 'lecturer',
         })
         .select()
@@ -2885,8 +2921,9 @@ const LectureSchedules: React.FC = () => {
                   full_name: formData.get('full_name') as string,
                   identity_number: formData.get('identity_number') as string,
                   email: formData.get('email') as string,
-                  phone: formData.get('phone') as string,
-                  position: formData.get('position') as string,
+                  phone_number: formData.get('phone_number') as string,
+                  department_id: formData.get('department_id') as string || '',
+                  study_program_id: formData.get('study_program_id') as string || '',
                 });
               }}
               className="p-6 space-y-4 max-h-[70vh] overflow-y-auto"
@@ -2933,29 +2970,51 @@ const LectureSchedules: React.FC = () => {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700">
+                  {getText('Phone', 'Telepon')}
+                </label>
+                <input
+                  type="tel"
+                  name="phone_number"
+                  className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
+                  placeholder="08xxxxxxxxxx"
+                />
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">
-                    {getText('Phone', 'Telepon')}
+                    {getText('Department', 'Departemen')}
                   </label>
-                  <input
-                    type="tel"
-                    name="phone"
+                  <select
+                    name="department_id"
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
-                    placeholder="08xxxxxxxxxx"
-                  />
+                  >
+                    <option value="">{getText('Select Department', 'Pilih Departemen')}</option>
+                    {departments.map(dept => (
+                      <option key={dept.id} value={dept.id}>
+                        {dept.name} ({dept.code})
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">
-                    {getText('Position', 'Jabatan')}
+                    {getText('Study Program', 'Program Studi')}
                   </label>
-                  <input
-                    type="text"
-                    name="position"
+                  <select
+                    name="study_program_id"
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
-                    placeholder={getText('e.g. Lecturer, Assistant', 'cth. Dosen, Asisten')}
-                  />
+                  >
+                    <option value="">{getText('Select Study Program', 'Pilih Program Studi')}</option>
+                    {studyPrograms.map(sp => (
+                      <option key={sp.id} value={sp.id}>
+                        {sp.name} ({sp.code})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
