@@ -570,10 +570,18 @@ const LectureSchedules: React.FC = () => {
 
       // Search
       if (debouncedSearchTerm) {
-        // Escape special characters for PostgREST query (commas, parentheses, etc.)
-        const escapedTerm = debouncedSearchTerm.replace(/[,()]/g, '\\$&');
-        const term = `%${escapedTerm}%`;
-        // Search across multiple fields
+        // Use asterisk wildcards for PostgREST (% doesn't work well with special chars)
+        // Escape special characters: comma, parentheses, asterisks, backslash
+        const escapedTerm = debouncedSearchTerm
+          .replace(/\\/g, '\\\\')  // Escape backslash first
+          .replace(/,/g, '\\,')    // Escape comma
+          .replace(/\(/g, '\\(')   // Escape opening parenthesis
+          .replace(/\)/g, '\\)')   // Escape closing parenthesis
+          .replace(/\*/g, '\\*');  // Escape asterisk
+
+        const term = `*${escapedTerm}*`;
+
+        // Search across multiple fields (course_name, course_code, lecturer, room)
         query = query.or(
           `course_name.ilike.${term},` +
           `course_code.ilike.${term},` +
@@ -1865,6 +1873,16 @@ const LectureSchedules: React.FC = () => {
                             title={getText('Edit', 'Edit')}
                           >
                             <Edit className="h-3 w-3" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setScheduleToDuplicate(schedule);
+                              setShowDuplicateModal(true);
+                            }}
+                            className="p-2 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                            title={getText('Duplicate', 'Duplikat')}
+                          >
+                            <Copy className="h-3 w-3" />
                           </button>
                           <button
                             onClick={() => setShowDeleteConfirm(schedule.id)}
