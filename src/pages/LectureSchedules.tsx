@@ -434,6 +434,11 @@ const LectureSchedules: React.FC = () => {
   const [lecturerSchedules, setLecturerSchedules] = useState<LectureSchedule[]>([]);
   const [loadingLecturerSchedules, setLoadingLecturerSchedules] = useState(false);
 
+  // State for tracking edited schedules
+  const [editedScheduleIds, setEditedScheduleIds] = useState<Set<string>>(new Set());
+  const [duplicatedScheduleIds, setDuplicatedScheduleIds] = useState<Set<string>>(new Set()); // Original schedules that were duplicated
+  const [newScheduleIds, setNewScheduleIds] = useState<Set<string>>(new Set()); // New schedules created from duplication
+
   // State for duplicate feature
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [scheduleToDuplicate, setScheduleToDuplicate] = useState<LectureSchedule | null>(null);
@@ -565,9 +570,16 @@ const LectureSchedules: React.FC = () => {
 
       // Search
       if (debouncedSearchTerm) {
-        const term = debouncedSearchTerm.toLowerCase();
-        // search fields: course_name, course_code, lecturer, room (if stored as text)
-        query = query.or(`course_name.ilike.%${term}%,course_code.ilike.%${term}%,lecturer.ilike.%${term}%,room.ilike.%${term}%`);
+        // Escape special characters for PostgREST query (commas, parentheses, etc.)
+        const escapedTerm = debouncedSearchTerm.replace(/[,()]/g, '\\$&');
+        const term = `%${escapedTerm}%`;
+        // Search across multiple fields
+        query = query.or(
+          `course_name.ilike.${term},` +
+          `course_code.ilike.${term},` +
+          `lecturer.ilike.${term},` +
+          `room.ilike.${term}`
+        );
       }
 
       // Filters
@@ -645,6 +657,15 @@ const LectureSchedules: React.FC = () => {
           .update(scheduleData)
           .eq('id', editingSchedule.id);
         if (error) throw error;
+
+        // Add to edited schedules set
+        setEditedScheduleIds(prev => new Set(prev).add(editingSchedule.id));
+
+        // Refresh lecturer schedules if we're viewing them
+        if (selectedLecturerForSchedule) {
+          fetchLecturerSchedules(selectedLecturerForSchedule);
+        }
+
         alert.success(getText('Schedule updated successfully!', 'Jadwal berhasil diperbarui!'));
       } else {
         const { error } = await supabase
@@ -1040,7 +1061,47 @@ const LectureSchedules: React.FC = () => {
     setLecturerMappings({});
     setSelectedLecturerForSchedule('');
     setLecturerSchedules([]);
+    setEditedScheduleIds(new Set()); // Reset edited schedules
+    setDuplicatedScheduleIds(new Set()); // Reset duplicated schedules
+    setNewScheduleIds(new Set()); // Reset new schedules
     await analyzeUnmatchedData();
+  };
+
+  // Confirm all edited and duplicated schedules and refresh data
+  const handleConfirmAllEdits = async () => {
+    const totalChanges = editedScheduleIds.size + duplicatedScheduleIds.size + newScheduleIds.size;
+
+    if (totalChanges === 0) {
+      alert.error(getText('No schedules have been edited or duplicated', 'Tidak ada jadwal yang diedit atau diduplikat'));
+      return;
+    }
+
+    try {
+      setMatchingLoading(true);
+
+      // Refresh all data
+      await Promise.all([
+        fetchSchedules(),
+        analyzeUnmatchedData(),
+        selectedLecturerForSchedule ? fetchLecturerSchedules(selectedLecturerForSchedule) : Promise.resolve()
+      ]);
+
+      alert.success(getText(
+        `Successfully confirmed ${totalChanges} change(s) (${editedScheduleIds.size} edited, ${duplicatedScheduleIds.size} duplicated)`,
+        `Berhasil mengkonfirmasi ${totalChanges} perubahan (${editedScheduleIds.size} diedit, ${duplicatedScheduleIds.size} diduplikat)`
+      ));
+
+      // Clear edited, duplicated and new schedules
+      setEditedScheduleIds(new Set());
+      setDuplicatedScheduleIds(new Set());
+      setNewScheduleIds(new Set());
+
+    } catch (error: any) {
+      console.error('Error confirming edits:', error);
+      alert.error(error.message || getText('Failed to confirm edits', 'Gagal mengkonfirmasi perubahan'));
+    } finally {
+      setMatchingLoading(false);
+    }
   };
 
   // Fetch schedules for selected lecturer in matching modal
@@ -1158,11 +1219,26 @@ const LectureSchedules: React.FC = () => {
         kurikulum: duplicateData.kurikulum || scheduleToDuplicate.kurikulum,
       };
 
-      const { error } = await supabase
+      const { data: newSchedule, error } = await supabase
         .from('lecture_schedules')
-        .insert(scheduleData);
+        .insert(scheduleData)
+        .select()
+        .single();
 
       if (error) throw error;
+
+      // Add original schedule to duplicated set (source)
+      setDuplicatedScheduleIds(prev => new Set(prev).add(scheduleToDuplicate.id));
+
+      // Add new schedule to new schedules set (result)
+      if (newSchedule) {
+        setNewScheduleIds(prev => new Set(prev).add(newSchedule.id));
+      }
+
+      // Refresh lecturer schedules if we're viewing them
+      if (selectedLecturerForSchedule) {
+        fetchLecturerSchedules(selectedLecturerForSchedule);
+      }
 
       alert.success(getText('Schedule duplicated successfully!', 'Jadwal berhasil diduplikat!'));
       setShowDuplicateModal(false);
@@ -1841,7 +1917,7 @@ const LectureSchedules: React.FC = () => {
 
       {/* Add/Edit Schedule Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
             <div className="bg-gradient-to-r from-teal-500 via-cyan-500 to-blue-600 p-6 text-white">
               <div className="flex items-center justify-between">
@@ -2707,7 +2783,7 @@ const LectureSchedules: React.FC = () => {
                             )}
                           </div>
 
-                          {/* Action Bar - Set All Button */}
+                          {/* Action Bar - Set All Button and Confirm Edits */}
                           <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
                             <div className="flex items-center justify-between gap-4">
                               <div className="text-sm text-purple-800">
@@ -2717,14 +2793,31 @@ const LectureSchedules: React.FC = () => {
                                   'Pilih user target untuk setiap item di bawah, lalu klik "Set Semua" untuk menerapkan sekaligus.'
                                 )}
                               </div>
-                              <button
-                                onClick={handleBatchUpdateAllLecturers}
-                                disabled={lecturerMappingsCount === 0 || matchingLoading}
-                                className="px-5 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold flex items-center gap-2 shadow-md whitespace-nowrap"
-                              >
-                                <Check className="h-4 w-4" />
-                                {getText(`Set All (${lecturerMappingsCount})`, `Set Semua (${lecturerMappingsCount})`)}
-                              </button>
+                              <div className="flex items-center gap-2">
+                                {/* Confirm Edits Button */}
+                                {(editedScheduleIds.size > 0 || duplicatedScheduleIds.size > 0 || newScheduleIds.size > 0) && (
+                                  <button
+                                    onClick={handleConfirmAllEdits}
+                                    disabled={matchingLoading}
+                                    className="px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold flex items-center gap-2 shadow-md whitespace-nowrap"
+                                  >
+                                    <CheckCircle className="h-4 w-4" />
+                                    {getText(
+                                      `Confirm All (${editedScheduleIds.size} edit, ${duplicatedScheduleIds.size + newScheduleIds.size} dup)`,
+                                      `Konfirmasi (${editedScheduleIds.size} edit, ${duplicatedScheduleIds.size + newScheduleIds.size} dup)`
+                                    )}
+                                  </button>
+                                )}
+                                {/* Set All Button */}
+                                <button
+                                  onClick={handleBatchUpdateAllLecturers}
+                                  disabled={lecturerMappingsCount === 0 || matchingLoading}
+                                  className="px-5 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold flex items-center gap-2 shadow-md whitespace-nowrap"
+                                >
+                                  <Check className="h-4 w-4" />
+                                  {getText(`Set All (${lecturerMappingsCount})`, `Set Semua (${lecturerMappingsCount})`)}
+                                </button>
+                              </div>
                             </div>
                           </div>
 
@@ -2827,6 +2920,24 @@ const LectureSchedules: React.FC = () => {
                                               <span className="text-xs px-2 py-1 bg-purple-200 text-purple-800 rounded font-medium">
                                                 {sched.class}
                                               </span>
+                                              {/* Tombol Edit */}
+                                              <button
+                                                onClick={() => {
+                                                  handleEdit(sched);
+                                                  // Don't close Data Matching modal
+                                                }}
+                                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                                title={getText('Edit this schedule', 'Edit jadwal ini')}
+                                              >
+                                                <Edit className="h-3.5 w-3.5" />
+                                              </button>
+                                              {/* Edited indicator */}
+                                              {editedScheduleIds.has(sched.id) && (
+                                                <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded font-medium flex items-center gap-1">
+                                                  <CheckCircle className="h-3 w-3" />
+                                                  {getText('Edited', 'Diedit')}
+                                                </span>
+                                              )}
                                               {/* Tombol Duplicate */}
                                               <button
                                                 onClick={() => {
@@ -2838,6 +2949,20 @@ const LectureSchedules: React.FC = () => {
                                               >
                                                 <Copy className="h-3.5 w-3.5" />
                                               </button>
+                                              {/* Source indicator (original that was duplicated) */}
+                                              {duplicatedScheduleIds.has(sched.id) && (
+                                                <span className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded font-medium flex items-center gap-1">
+                                                  <Copy className="h-3 w-3" />
+                                                  {getText('Source', 'Sumber')}
+                                                </span>
+                                              )}
+                                              {/* New schedule indicator (duplicate result) */}
+                                              {newScheduleIds.has(sched.id) && (
+                                                <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-medium flex items-center gap-1">
+                                                  <span className="text-xs">✨</span>
+                                                  {getText('New', 'Baru')}
+                                                </span>
+                                              )}
                                             </div>
                                           </div>
                                         ))}
@@ -3054,7 +3179,7 @@ const LectureSchedules: React.FC = () => {
 
       {/* Duplicate Schedule Modal */}
       {showDuplicateModal && scheduleToDuplicate && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
             <div className="bg-gradient-to-r from-green-500 via-emerald-500 to-teal-600 p-6 text-white">
               <div className="flex items-center justify-between">
