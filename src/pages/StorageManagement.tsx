@@ -260,7 +260,7 @@ export default function StorageManagement() {
                 }
             }
 
-            // 2. Export Checkouts
+            // 2. Export Checkouts & Items
             if (targets.checkouts) {
                 const { data: checkouts } = await supabase
                     .from('checkouts')
@@ -268,7 +268,7 @@ export default function StorageManagement() {
             *,
             users (full_name, identity_number)
           `)
-                    .gte('created_at', cutoff) // Data DARI cutoff SAMPAI SEKARANG
+                    .gte('created_at', cutoff)
                     .in('status', ['returned', 'completed', 'lost', 'damaged']);
 
                 if (checkouts && checkouts.length > 0) {
@@ -282,6 +282,27 @@ export default function StorageManagement() {
                     }))));
                     XLSX.utils.book_append_sheet(wb, ws, "Checkouts History");
                     hasData = true;
+
+                    // Export Checkout Items (Child)
+                    const checkoutIds = checkouts.map(c => c.id);
+                    const { data: checkoutItems } = await supabase
+                        .from('checkout_items')
+                        .select('*, equipment(name, code)')
+                        .in('checkout_id', checkoutIds);
+
+                    // Always create sheet for items
+                    const itemsData = checkoutItems && checkoutItems.length > 0
+                        ? sanitizeForExcel(checkoutItems.map(i => ({
+                            CheckoutID: i.checkout_id,
+                            EquipmentName: i.equipment?.name,
+                            EquipmentCode: i.equipment?.code,
+                            ConditionBefore: i.condition_before,
+                            ConditionAfter: i.condition_after
+                        })))
+                        : [{ Status: "Tidak ada data detail item" }];
+
+                    const wsItems = XLSX.utils.json_to_sheet(itemsData);
+                    XLSX.utils.book_append_sheet(wb, wsItems, "Checkout Items");
                 }
             }
 
@@ -291,7 +312,7 @@ export default function StorageManagement() {
                     const { data: notifs, error } = await supabase
                         .from('notifications')
                         .select('*')
-                        .gte('created_at', cutoff); // Data DARI cutoff SAMPAI SEKARANG
+                        .gte('created_at', cutoff);
 
                     if (!error && notifs && notifs.length > 0) {
                         const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(notifs));
@@ -299,10 +320,7 @@ export default function StorageManagement() {
                         hasData = true;
                     }
                 } catch (e: any) {
-                    // Tabel notifications tidak ada, skip
-                    if (e.code !== '42P01') {
-                        console.error('Error exporting notifications:', e);
-                    }
+                    if (e.code !== '42P01') console.error('Error exporting notifications:', e);
                 }
             }
 
@@ -320,13 +338,11 @@ export default function StorageManagement() {
                         hasData = true;
                     }
                 } catch (e: any) {
-                    if (e.code !== '42P01') {
-                        console.error('Error exporting reports:', e);
-                    }
+                    if (e.code !== '42P01') console.error('Error exporting reports:', e);
                 }
             }
 
-            // 5. Export Attendance Records
+            // 5. Export Attendance & Details
             if (targets.attendance) {
                 try {
                     const { data: attendance, error } = await supabase
@@ -339,11 +355,24 @@ export default function StorageManagement() {
                         const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(attendance));
                         XLSX.utils.book_append_sheet(wb, ws, "Attendance");
                         hasData = true;
+
+                        // Export Attendance Details (Child)
+                        const attendanceIds = attendance.map(a => a.id);
+                        const { data: attendanceDetails } = await supabase
+                            .from('lecturer_attendance_details')
+                            .select('*')
+                            .in('attendance_id', attendanceIds);
+
+                        // Always create sheet for details
+                        const detailsData = attendanceDetails && attendanceDetails.length > 0
+                            ? sanitizeForExcel(attendanceDetails)
+                            : [{ Status: "Tidak ada data detail presensi (Mata Kuliah/Sidang) untuk data terpilih" }];
+
+                        const wsDetails = XLSX.utils.json_to_sheet(detailsData);
+                        XLSX.utils.book_append_sheet(wb, wsDetails, "Attendance Details");
                     }
                 } catch (e: any) {
-                    if (e.code !== '42P01') {
-                        console.error('Error exporting attendance:', e);
-                    }
+                    if (e.code !== '42P01') console.error('Error exporting attendance:', e);
                 }
             }
 
@@ -362,13 +391,11 @@ export default function StorageManagement() {
                         hasData = true;
                     }
                 } catch (e: any) {
-                    if (e.code !== '42P01') {
-                        console.error('Error exporting todos:', e);
-                    }
+                    if (e.code !== '42P01') console.error('Error exporting todos:', e);
                 }
             }
 
-            // 7. Export Forms
+            // 7. Export Forms & Responses
             if (targets.forms) {
                 try {
                     const { data: forms, error } = await supabase
@@ -380,11 +407,24 @@ export default function StorageManagement() {
                         const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(forms));
                         XLSX.utils.book_append_sheet(wb, ws, "Forms");
                         hasData = true;
+
+                        // Export Form Responses (Child)
+                        const formIds = forms.map(f => f.id);
+                        const { data: responses } = await supabase
+                            .from('form_responses')
+                            .select('*')
+                            .in('form_id', formIds);
+
+                        // Always create sheet for responses
+                        const responsesData = responses && responses.length > 0
+                            ? sanitizeForExcel(responses)
+                            : [{ Status: "Tidak ada data respon di form terpilih" }];
+
+                        const wsResponses = XLSX.utils.json_to_sheet(responsesData);
+                        XLSX.utils.book_append_sheet(wb, wsResponses, "Form Responses");
                     }
                 } catch (e: any) {
-                    if (e.code !== '42P01') {
-                        console.error('Error exporting forms:', e);
-                    }
+                    if (e.code !== '42P01') console.error('Error exporting forms:', e);
                 }
             }
 
