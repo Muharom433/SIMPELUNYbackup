@@ -25,14 +25,22 @@ export default function StorageManagement() {
     const [stats, setStats] = useState({
         bookings: 0,
         checkouts: 0,
-        notifications: 0
+        notifications: 0,
+        reports: 0,
+        attendance: 0,
+        todos: 0,
+        forms: 0
     });
 
     // Selection
     const [targets, setTargets] = useState({
         bookings: true,
         checkouts: true,
-        notifications: true
+        notifications: true,
+        reports: true,
+        attendance: true,
+        todos: true,
+        forms: true
     });
 
     // Confirmation
@@ -67,7 +75,7 @@ export default function StorageManagement() {
                 const { count } = await supabase
                     .from('bookings')
                     .select('id', { count: 'exact', head: true })
-                    .gte('end_time', cutoff) // CHANGED to gte
+                    .gte('end_time', cutoff) // Data DARI cutoff SAMPAI SEKARANG
                     .in('status', ['completed', 'rejected', 'cancelled']);
                 bookingsCount = count || 0;
             }
@@ -76,7 +84,7 @@ export default function StorageManagement() {
                 const { count } = await supabase
                     .from('checkouts')
                     .select('id', { count: 'exact', head: true })
-                    .gte('created_at', cutoff) // CHANGED to gte
+                    .gte('created_at', cutoff) // Data DARI cutoff SAMPAI SEKARANG
                     .in('status', ['returned', 'completed', 'lost', 'damaged']);
                 checkoutsCount = count || 0;
             }
@@ -86,7 +94,7 @@ export default function StorageManagement() {
                     const { count, error } = await supabase
                         .from('notifications')
                         .select('id', { count: 'exact', head: true })
-                        .gte('created_at', cutoff); // CHANGED to gte
+                        .gte('created_at', cutoff); // Data DARI cutoff SAMPAI SEKARANG
 
                     if (!error || error.code === '42P01') {
                         notifsCount = count || 0;
@@ -98,10 +106,88 @@ export default function StorageManagement() {
                 }
             }
 
+            // 4. Count Reports
+            let reportsCount = 0;
+            if (targets.reports) {
+                try {
+                    const { count, error } = await supabase
+                        .from('reports')
+                        .select('id', { count: 'exact', head: true })
+                        .gte('created_at', cutoff);
+
+                    if (!error || error.code === '42P01') {
+                        reportsCount = count || 0;
+                    }
+                } catch (e) {
+                    console.warn('Tabel reports tidak ditemukan');
+                    reportsCount = 0;
+                }
+            }
+
+            // 5. Count Attendance Records
+            let attendanceCount = 0;
+            if (targets.attendance) {
+                try {
+                    const { count, error } = await supabase
+                        .from('lecturer_attendance')
+                        .select('id', { count: 'exact', head: true })
+                        .gte('created_at', cutoff)
+                        .in('verification_status', ['verified', 'pending']);
+
+                    if (!error || error.code === '42P01') {
+                        attendanceCount = count || 0;
+                    }
+                } catch (e) {
+                    console.warn('Tabel lecturer_attendance tidak ditemukan');
+                    attendanceCount = 0;
+                }
+            }
+
+            // 6. Count To-Do Lists
+            let todosCount = 0;
+            if (targets.todos) {
+                try {
+                    const { count, error } = await supabase
+                        .from('technician_tasks')
+                        .select('id', { count: 'exact', head: true })
+                        .gte('created_at', cutoff)
+                        .eq('status', 'completed');
+
+                    if (!error || error.code === '42P01') {
+                        todosCount = count || 0;
+                    }
+                } catch (e) {
+                    console.warn('Tabel technician_tasks tidak ditemukan');
+                    todosCount = 0;
+                }
+            }
+
+            // 7. Count Forms
+            let formsCount = 0;
+            if (targets.forms) {
+                try {
+                    const { count, error } = await supabase
+                        .from('forms')
+                        .select('id', { count: 'exact', head: true })
+                        .gte('created_at', cutoff);
+
+                    if (!error || error.code === '42P01') {
+                        formsCount = count || 0;
+                    }
+                } catch (e) {
+                    console.warn('Tabel forms tidak ditemukan');
+                    formsCount = 0;
+                }
+            }
+
             setStats({
                 bookings: bookingsCount,
                 checkouts: checkoutsCount,
-                notifications: notifsCount
+                notifications: notifsCount,
+                reports: reportsCount,
+                attendance: attendanceCount,
+                todos: todosCount,
+                forms: formsCount
             });
 
         } catch (error) {
@@ -119,6 +205,28 @@ export default function StorageManagement() {
 
     const handleDownloadBackup = async () => {
         const toastId = toast.loading('Menyiapkan backup data...');
+
+        // Helper untuk sanitasi data agar tidak error di Excel (max 32767 chars per cell)
+        const sanitizeForExcel = (data: any[]) => {
+            return data.map(item => {
+                const newItem: any = { ...item };
+                Object.keys(newItem).forEach(key => {
+                    const value = newItem[key];
+                    if (typeof value === 'string') {
+                        // Truncate jika terlalu panjang
+                        if (value.length > 32000) {
+                            newItem[key] = value.substring(0, 32000) + '... [TRUNCATED]';
+                        }
+                        // Hapus data base64 gambar yang biasanya sangat panjang
+                        if ((key === 'photo_capture' || key === 'signature_url' || key === 'image_url' || key === 'signature' || key === 'attachment') && value.length > 1000) {
+                            newItem[key] = '[IMAGE/DATA REMOVED FOR EXCEL COMPATIBILITY]';
+                        }
+                    }
+                });
+                return newItem;
+            });
+        };
+
         try {
             const cutoff = getCutoffDate().toISOString();
             const wb = XLSX.utils.book_new();
@@ -133,11 +241,11 @@ export default function StorageManagement() {
             users (full_name, identity_number),
             rooms (name, code)
           `)
-                    .gte('end_time', cutoff) // CHANGED to gte
+                    .gte('end_time', cutoff) // Data DARI cutoff SAMPAI SEKARANG
                     .in('status', ['completed', 'rejected', 'cancelled']);
 
                 if (bookings && bookings.length > 0) {
-                    const ws = XLSX.utils.json_to_sheet(bookings.map(b => ({
+                    const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(bookings.map(b => ({
                         ID: b.id,
                         User: b.users?.full_name,
                         NIP: b.users?.identity_number,
@@ -146,7 +254,7 @@ export default function StorageManagement() {
                         End: b.end_time,
                         Status: b.status,
                         Purpose: b.purpose
-                    })));
+                    }))));
                     XLSX.utils.book_append_sheet(wb, ws, "Bookings History");
                     hasData = true;
                 }
@@ -160,18 +268,18 @@ export default function StorageManagement() {
             *,
             users (full_name, identity_number)
           `)
-                    .gte('created_at', cutoff) // CHANGED to gte
+                    .gte('created_at', cutoff) // Data DARI cutoff SAMPAI SEKARANG
                     .in('status', ['returned', 'completed', 'lost', 'damaged']);
 
                 if (checkouts && checkouts.length > 0) {
-                    const ws = XLSX.utils.json_to_sheet(checkouts.map(c => ({
+                    const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(checkouts.map(c => ({
                         ID: c.id,
                         User: c.users?.full_name,
                         Date: c.checkout_date,
                         ReturnDate: c.actual_return_date,
                         Status: c.status,
                         TotalItems: c.total_items
-                    })));
+                    }))));
                     XLSX.utils.book_append_sheet(wb, ws, "Checkouts History");
                     hasData = true;
                 }
@@ -183,10 +291,10 @@ export default function StorageManagement() {
                     const { data: notifs, error } = await supabase
                         .from('notifications')
                         .select('*')
-                        .gte('created_at', cutoff); // CHANGED to gte
+                        .gte('created_at', cutoff); // Data DARI cutoff SAMPAI SEKARANG
 
                     if (!error && notifs && notifs.length > 0) {
-                        const ws = XLSX.utils.json_to_sheet(notifs);
+                        const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(notifs));
                         XLSX.utils.book_append_sheet(wb, ws, "Notifications");
                         hasData = true;
                     }
@@ -194,6 +302,88 @@ export default function StorageManagement() {
                     // Tabel notifications tidak ada, skip
                     if (e.code !== '42P01') {
                         console.error('Error exporting notifications:', e);
+                    }
+                }
+            }
+
+            // 4. Export Reports
+            if (targets.reports) {
+                try {
+                    const { data: reports, error } = await supabase
+                        .from('reports')
+                        .select('*')
+                        .gte('created_at', cutoff);
+
+                    if (!error && reports && reports.length > 0) {
+                        const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(reports));
+                        XLSX.utils.book_append_sheet(wb, ws, "Reports");
+                        hasData = true;
+                    }
+                } catch (e: any) {
+                    if (e.code !== '42P01') {
+                        console.error('Error exporting reports:', e);
+                    }
+                }
+            }
+
+            // 5. Export Attendance Records
+            if (targets.attendance) {
+                try {
+                    const { data: attendance, error } = await supabase
+                        .from('lecturer_attendance')
+                        .select('*')
+                        .gte('created_at', cutoff)
+                        .in('verification_status', ['verified', 'pending']);
+
+                    if (!error && attendance && attendance.length > 0) {
+                        const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(attendance));
+                        XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+                        hasData = true;
+                    }
+                } catch (e: any) {
+                    if (e.code !== '42P01') {
+                        console.error('Error exporting attendance:', e);
+                    }
+                }
+            }
+
+            // 6. Export To-Do Lists
+            if (targets.todos) {
+                try {
+                    const { data: todos, error } = await supabase
+                        .from('technician_tasks')
+                        .select('*')
+                        .gte('created_at', cutoff)
+                        .eq('status', 'completed');
+
+                    if (!error && todos && todos.length > 0) {
+                        const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(todos));
+                        XLSX.utils.book_append_sheet(wb, ws, "ToDo Lists");
+                        hasData = true;
+                    }
+                } catch (e: any) {
+                    if (e.code !== '42P01') {
+                        console.error('Error exporting todos:', e);
+                    }
+                }
+            }
+
+            // 7. Export Forms
+            if (targets.forms) {
+                try {
+                    const { data: forms, error } = await supabase
+                        .from('forms')
+                        .select('*')
+                        .gte('created_at', cutoff);
+
+                    if (!error && forms && forms.length > 0) {
+                        const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(forms));
+                        XLSX.utils.book_append_sheet(wb, ws, "Forms");
+                        hasData = true;
+                    }
+                } catch (e: any) {
+                    if (e.code !== '42P01') {
+                        console.error('Error exporting forms:', e);
                     }
                 }
             }
@@ -212,7 +402,7 @@ export default function StorageManagement() {
 
         } catch (error) {
             console.error('Download error:', error);
-            toast.error('Gagal mengunduh backup', { id: toastId });
+            toast.error('Gagal mengunduh backup: Data terlalu besar/panjang', { id: toastId });
         }
     };
 
@@ -326,6 +516,110 @@ export default function StorageManagement() {
                 }
             }
 
+            // 4. DELETE REPORTS
+            if (targets.reports) {
+                try {
+                    toast.loading('Menghapus data reports...', { id: toastId });
+                    const { count, error } = await supabase
+                        .from('reports')
+                        .delete({ count: 'exact' })
+                        .gte('created_at', cutoff);
+
+                    if (error && error.code !== '42P01') throw error;
+                    totalDeleted += count || 0;
+                } catch (e: any) {
+                    if (e.code !== '42P01') console.error('Error deleting reports:', e);
+                }
+            }
+
+            // 5. DELETE ATTENDANCE RECORDS (dan details-nya) - Hapus child dulu
+            if (targets.attendance) {
+                try {
+                    toast.loading('Menghapus data presensi...', { id: toastId });
+
+                    // Ambil daftar attendance yang akan dihapus
+                    const { data: attendanceToDelete } = await supabase
+                        .from('lecturer_attendance')
+                        .select('id')
+                        .gte('created_at', cutoff)
+                        .in('verification_status', ['verified', 'pending']);
+
+                    if (attendanceToDelete && attendanceToDelete.length > 0) {
+                        const attendanceIds = attendanceToDelete.map(a => a.id);
+
+                        // Hapus details terlebih dahulu (child)
+                        await supabase
+                            .from('lecturer_attendance_details')
+                            .delete()
+                            .in('attendance_id', attendanceIds);
+
+                        // Baru hapus parent
+                        const { count, error } = await supabase
+                            .from('lecturer_attendance')
+                            .delete({ count: 'exact' })
+                            .in('id', attendanceIds);
+
+                        if (error && error.code !== '42P01') throw error;
+                        totalDeleted += count || 0;
+                    }
+
+
+                } catch (e: any) {
+                    if (e.code !== '42P01') console.error('Error deleting attendance:', e);
+                }
+            }
+
+            // 6. DELETE TODO LISTS
+            if (targets.todos) {
+                try {
+                    toast.loading('Menghapus to-do list...', { id: toastId });
+                    const { count, error } = await supabase
+                        .from('technician_tasks')
+                        .delete({ count: 'exact' })
+                        .gte('created_at', cutoff)
+                        .eq('status', 'completed');
+
+                    if (error && error.code !== '42P01') throw error;
+                    totalDeleted += count || 0;
+                } catch (e: any) {
+                    if (e.code !== '42P01') console.error('Error deleting todos:', e);
+                }
+            }
+
+            // 7. DELETE FORMS (dan responses-nya) - Hapus child dulu
+            if (targets.forms) {
+                try {
+                    toast.loading('Menghapus data forms...', { id: toastId });
+
+                    // Ambil daftar forms yang akan dihapus
+                    const { data: formsToDelete } = await supabase
+                        .from('forms')
+                        .select('id')
+                        .gte('created_at', cutoff);
+
+                    if (formsToDelete && formsToDelete.length > 0) {
+                        const formIds = formsToDelete.map(f => f.id);
+
+                        // Hapus form_responses terlebih dahulu (child)
+                        await supabase
+                            .from('form_responses')
+                            .delete()
+                            .in('form_id', formIds);
+
+                        // Baru hapus forms (parent)
+                        const { count, error } = await supabase
+                            .from('forms')
+                            .delete({ count: 'exact' })
+                            .in('id', formIds);
+
+                        if (error) throw error;
+                        totalDeleted += count || 0;
+                    }
+                } catch (e: any) {
+                    if (e.code !== '42P01') console.error('Error deleting forms:', e);
+                }
+            }
+
             toast.success(`Berhasil menghapus ${totalDeleted} item!`, { id: toastId });
             setShowConfirm(false);
             setConfirmText('');
@@ -341,7 +635,7 @@ export default function StorageManagement() {
         }
     };
 
-    const totalRecords = stats.bookings + stats.checkouts + stats.notifications;
+    const totalRecords = stats.bookings + stats.checkouts + stats.notifications + stats.reports + stats.attendance + stats.todos + stats.forms;
 
     return (
         <div className="max-w-4xl mx-auto p-6 space-y-8">
@@ -351,7 +645,7 @@ export default function StorageManagement() {
                     Manajemen Penyimpanan Data
                 </h1>
                 <p className="text-gray-500 mt-2">
-                    Kelola penggunaan penyimpanan dengan menghapus riwayat data lama (Booking, Peminjaman, Notifikasi).
+                    Kelola penggunaan penyimpanan dengan menghapus riwayat data lama (Booking, Peminjaman, Notifikasi, Reports, Presensi, To-Do List, Forms).
                 </p>
             </div>
 
@@ -382,10 +676,10 @@ export default function StorageManagement() {
                                 </select>
                                 <div className="mt-2 p-3 bg-red-50 rounded-lg border border-red-100">
                                     <p className="text-xs text-red-800">
-                                        <span className="font-bold">PERHATIAN:</span> Anda memilih data dari <span className="font-bold underline">{format(getCutoffDate(), 'dd MMMM yyyy')}</span> sampai <span className="font-bold">HARI INI</span>.
+                                        <span className="font-bold">PERHATIAN:</span> Anda akan menghapus data <span className="font-bold">DARI</span> <span className="font-bold underline">{format(getCutoffDate(), 'dd MMMM yyyy')}</span> <span className="font-bold">SAMPAI HARI INI</span>.
                                     </p>
                                     <p className="text-xs text-red-600 mt-1">
-                                        Data DALAM rentang waktu tersebut akan <span className="font-bold">DIHAPUS (DIBERSIHKAN)</span> atau <span className="font-bold">DI-BACKUP</span>.
+                                        Data <span className="font-bold">DALAM RENTANG WAKTU TERSEBUT</span> akan <span className="font-bold">DIHAPUS (DIBERSIHKAN)</span> atau <span className="font-bold">DI-BACKUP</span>.
                                     </p>
                                 </div>
                             </div>
@@ -432,6 +726,58 @@ export default function StorageManagement() {
                                     <p className="text-xs text-gray-500">Log notifikasi sistem</p>
                                 </div>
                             </label>
+
+                            <label className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition">
+                                <input
+                                    type="checkbox"
+                                    checked={targets.reports}
+                                    onChange={(e) => setTargets({ ...targets, reports: e.target.checked })}
+                                    className="h-5 w-5 text-blue-600 rounded focus:ring-blue-500"
+                                />
+                                <div className="flex-1">
+                                    <span className="font-medium text-gray-900">Data Reports</span>
+                                    <p className="text-xs text-gray-500">Laporan dan report yang telah dibuat</p>
+                                </div>
+                            </label>
+
+                            <label className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition">
+                                <input
+                                    type="checkbox"
+                                    checked={targets.attendance}
+                                    onChange={(e) => setTargets({ ...targets, attendance: e.target.checked })}
+                                    className="h-5 w-5 text-blue-600 rounded focus:ring-blue-500"
+                                />
+                                <div className="flex-1">
+                                    <span className="font-medium text-gray-900">Data Presensi</span>
+                                    <p className="text-xs text-gray-500">Riwayat kehadiran (Verified & Pending)</p>
+                                </div>
+                            </label>
+
+                            <label className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition">
+                                <input
+                                    type="checkbox"
+                                    checked={targets.todos}
+                                    onChange={(e) => setTargets({ ...targets, todos: e.target.checked })}
+                                    className="h-5 w-5 text-blue-600 rounded focus:ring-blue-500"
+                                />
+                                <div className="flex-1">
+                                    <span className="font-medium text-gray-900">To-Do List (Selesai)</span>
+                                    <p className="text-xs text-gray-500">Tugas teknisi yang sudah selesai</p>
+                                </div>
+                            </label>
+
+                            <label className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition">
+                                <input
+                                    type="checkbox"
+                                    checked={targets.forms}
+                                    onChange={(e) => setTargets({ ...targets, forms: e.target.checked })}
+                                    className="h-5 w-5 text-blue-600 rounded focus:ring-blue-500"
+                                />
+                                <div className="flex-1">
+                                    <span className="font-medium text-gray-900">Data Forms</span>
+                                    <p className="text-xs text-gray-500">Form builder dan responses</p>
+                                </div>
+                            </label>
                         </div>
                     </div>
 
@@ -449,7 +795,7 @@ export default function StorageManagement() {
                                     <div className="text-sm text-gray-500">Total Item</div>
                                 </div>
 
-                                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                                <div className="grid grid-cols-2 gap-2 text-center text-xs">
                                     <div className="bg-white p-2 rounded shadow-sm">
                                         <div className="font-bold text-blue-600">{stats.checkouts}</div>
                                         <div className="text-gray-500">Peminjaman</div>
@@ -461,6 +807,22 @@ export default function StorageManagement() {
                                     <div className="bg-white p-2 rounded shadow-sm">
                                         <div className="font-bold text-purple-600">{stats.notifications}</div>
                                         <div className="text-gray-500">Notifikasi</div>
+                                    </div>
+                                    <div className="bg-white p-2 rounded shadow-sm">
+                                        <div className="font-bold text-orange-600">{stats.reports}</div>
+                                        <div className="text-gray-500">Reports</div>
+                                    </div>
+                                    <div className="bg-white p-2 rounded shadow-sm">
+                                        <div className="font-bold text-teal-600">{stats.attendance}</div>
+                                        <div className="text-gray-500">Presensi</div>
+                                    </div>
+                                    <div className="bg-white p-2 rounded shadow-sm">
+                                        <div className="font-bold text-pink-600">{stats.todos}</div>
+                                        <div className="text-gray-500">To-Do</div>
+                                    </div>
+                                    <div className="bg-white p-2 rounded shadow-sm">
+                                        <div className="font-bold text-indigo-600">{stats.forms}</div>
+                                        <div className="text-gray-500">Forms</div>
                                     </div>
                                 </div>
                             </div>
