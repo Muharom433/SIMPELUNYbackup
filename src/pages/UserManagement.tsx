@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import html2canvas from 'html2canvas';
 import {
   Users,
   Plus,
@@ -410,6 +411,9 @@ const UserManagement: React.FC = () => {
   const [assigningRoom, setAssigningRoom] = useState(false);
   const [editingUserRooms, setEditingUserRooms] = useState<Room[]>([]);
   const [roomSearchTerm, setRoomSearchTerm] = useState('');
+
+  // Download lecturer list state
+  const [isDownloadingLecturers, setIsDownloadingLecturers] = useState(false);
 
   const itemsPerPage = 10;
   const [currentPage, setCurrentPage] = useState(1);
@@ -828,6 +832,36 @@ const UserManagement: React.FC = () => {
       console.error('Error unassigning room:', error);
       toast.error(getText('Failed to remove from room', 'Gagal menghapus dari ruangan'));
     }
+  };
+
+  // Download individual lecturer nametag
+  const downloadLecturerNametag = async () => {
+    if (!editingUser) return;
+
+    const element = document.getElementById('lecturer-nametag-element');
+    if (!element) return;
+
+    setIsDownloadingLecturers(true);
+    setTimeout(async () => {
+      try {
+        const canvas = await html2canvas(element, {
+          backgroundColor: null,
+          scale: 2
+        });
+
+        const link = document.createElement('a');
+        link.download = `Nametag-${editingUser.full_name.replace(/\s+/g, '-')}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+
+        toast.success(getText('Nametag downloaded successfully', 'Nametag berhasil diunduh'));
+      } catch (error) {
+        console.error('Error downloading nametag:', error);
+        toast.error(getText('Failed to download nametag', 'Gagal mengunduh nametag'));
+      } finally {
+        setIsDownloadingLecturers(false);
+      }
+    }, 500);
   };
 
   // useEffect hooks
@@ -2278,10 +2312,26 @@ const UserManagement: React.FC = () => {
                 {/* Room Assignment Section - Only show when editing */}
                 {editingUser && (
                   <div className="bg-orange-50 rounded-xl p-4 border border-orange-200">
-                    <h4 className="font-semibold text-orange-900 mb-4 flex items-center">
-                      <DoorOpen className="h-5 w-5 mr-2" />
-                      {getText('Room Assignment', 'Penugasan Ruangan')}
-                    </h4>
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="font-semibold text-orange-900 flex items-center">
+                        <DoorOpen className="h-5 w-5 mr-2" />
+                        {getText('Room Assignment', 'Penugasan Ruangan')}
+                      </h4>
+
+                      {/* Download Nametag Button - Only for lecturers */}
+                      {editingUser.role === 'lecturer' && (
+                        <button
+                          type="button"
+                          onClick={downloadLecturerNametag}
+                          disabled={isDownloadingLecturers}
+                          className={`flex items-center space-x-2 px-3 py-2 text-white rounded-lg transition-colors text-sm ${isDownloadingLecturers ? 'bg-orange-400 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600'}`}
+                          title={getText('Download Nametag', 'Unduh Nametag')}
+                        >
+                          {isDownloadingLecturers ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                          <span>{getText('Nametag', 'Nametag')}</span>
+                        </button>
+                      )}
+                    </div>
 
                     {/* Add Room to User */}
                     <div className="mb-4">
@@ -2436,7 +2486,7 @@ const UserManagement: React.FC = () => {
                 )}
               </button>
             </div>
-          </div>
+          </div >
         </div >
       )}
 
@@ -2526,6 +2576,76 @@ const UserManagement: React.FC = () => {
           </div>
         )
       }
+
+      {/* HIDDEN TEMPLATE FOR GENERATING INDIVIDUAL NAMETAG */}
+      <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
+        <div
+          id="lecturer-nametag-element"
+          style={{
+            width: '25cm',
+            height: '6.8cm',
+            position: 'relative',
+            overflow: 'hidden'
+          }}
+        >
+          {/* Background Image Template */}
+          <img
+            src="/template_nametag.png"
+            alt="Nametag Background"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover'
+            }}
+          />
+
+          {/* Content Overlay */}
+          {editingUser && (
+            <>
+              {/* Name - Positioned with exact coordinates */}
+              <div style={{
+                position: 'absolute',
+                left: '0.32cm',
+                top: '2.76cm',
+                width: '24cm',
+                height: '1.27cm',
+                fontSize: '30.1pt',
+                fontWeight: 'bold',
+                fontFamily: "'League Spartan', sans-serif",
+                color: '#000',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                lineHeight: 1
+              }}>
+                {editingUser.full_name}
+              </div>
+
+              {/* Program Studi - Positioned with exact coordinates */}
+              <div style={{
+                position: 'absolute',
+                left: '8.59cm',
+                top: '5.0cm',
+                width: '7.83cm',
+                height: '0.63cm',
+                fontSize: '15pt',
+                fontWeight: '600',
+                fontFamily: "'League Spartan', sans-serif",
+                color: '#1e40af',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                lineHeight: 1
+              }}>
+                {editingUser.study_program?.name || getText('General', 'Umum')}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div >
   );
 };

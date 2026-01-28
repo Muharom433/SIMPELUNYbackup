@@ -4,7 +4,7 @@ import { NavLink } from 'react-router-dom';
 import {
     Calendar, Package, CheckCircle, Users, Building, Settings, User, FileText,
     BarChart3, Clock, GraduationCap, Wrench, ClipboardCheck, MapPin, CalendarCheck, CheckSquare, X,
-    ChevronRight, Sparkles, Home, PieChart, Zap, HandHelping, UserCheck, Map, ZoomIn, ZoomOut, AlertTriangle, Camera
+    ChevronRight, Sparkles, Home, PieChart, Zap, HandHelping, UserCheck, Map, ZoomIn, ZoomOut, AlertTriangle, Camera, HardDrive
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -206,6 +206,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: Camera, label: getText('Attendance Verification', 'Validasi Presensi'), path: '/attendance-verification' },
                 { icon: FileText, label: getText('Form Builder', 'Pembuat Formulir'), path: '/forms' },
                 { icon: Settings, label: getText('System Settings', 'Pengaturan Sistem'), path: '/settings' },
+                { icon: HardDrive, label: getText('Data Cleanup', 'Pembersihan Data'), path: '/storage-management' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
         }

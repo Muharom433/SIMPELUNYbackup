@@ -45,6 +45,7 @@ const FormResponses = React.lazy(() => import('./pages/FormResponses'));
 const DosenPresensi = React.lazy(() => import('./pages/DosenPresensi'));
 const FinanceAttendance = React.lazy(() => import('./pages/FinanceAttendance'));
 const AttendanceDailyDetail = React.lazy(() => import('./pages/AttendanceDailyDetail'));
+const StorageManagement = React.lazy(() => import('./pages/StorageManagement'));
 
 // Loading component for Suspense fallback
 const LazyLoadingFallback = () => (
@@ -109,6 +110,7 @@ const AppContent = () => {
           <Route path="tool-admin" element={<Suspense fallback={<LazyLoadingFallback />}><ToolAdministration /></Suspense>} />
           <Route path="reports" element={<Reports />} />
           <Route path="settings" element={<SystemSettings />} />
+          <Route path="storage-management" element={<Suspense fallback={<LazyLoadingFallback />}><StorageManagement /></Suspense>} />
           <Route path="locations" element={<LocationManagement />} />
           <Route path="laboratory-locations" element={<LaboratoryLocationManagement />} />
           <Route path="schedule-calendar" element={<ScheduleCalendar />} />
