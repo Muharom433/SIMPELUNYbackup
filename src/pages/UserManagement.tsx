@@ -585,7 +585,7 @@ const UserManagement: React.FC = () => {
 
   const fetchStudyPrograms = useCallback(async () => {
     try {
-      let query = supabase.from('study_programs').select('*').eq('status', 'show');
+      let query = supabase.from('study_programs').select('*');
 
       if (profile?.role === 'department_admin' && profile.department_id) {
         query = query.eq('department_id', profile.department_id);
@@ -605,7 +605,6 @@ const UserManagement: React.FC = () => {
       const { data, error } = await supabase
         .from('study_programs')
         .select('*')
-        .eq('status', 'show')
         .eq('department_id', departmentId);
 
       if (error) throw error;
