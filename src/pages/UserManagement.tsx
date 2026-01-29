@@ -907,7 +907,7 @@ const UserManagement: React.FC = () => {
   const currentTableData = users;
 
   // Access control check
-  const hasAccess = profile && ['super_admin', 'department_admin', 'staffing'].includes(profile.role);
+  const hasAccess = profile && ['super_admin', 'department_admin', 'staffing', 'finance'].includes(profile.role);
 
   const handleSubmit = async (data: UserForm) => {
     try {

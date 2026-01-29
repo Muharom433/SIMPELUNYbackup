@@ -270,6 +270,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
         // Jika user adalah finance (Keuangan)
         if (user.role === 'finance') {
             return [
+                { icon: Users, label: getText('User Management', 'Manajemen Pengguna'), path: '/users' },
                 { icon: ClipboardCheck, label: getText('Attendance Verification', 'Verifikasi Presensi'), path: '/attendance-verification' },
                 { icon: Camera, label: getText('Attendance', 'Presensi'), path: '/presensi-dosen' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
