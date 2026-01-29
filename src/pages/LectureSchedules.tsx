@@ -833,12 +833,33 @@ const LectureSchedules: React.FC = () => {
     try {
       setMatchingLoading(true);
 
-      // Fetch all unique room and lecturer values from lecture_schedules
-      const { data: scheduleData, error: scheduleError } = await supabase
-        .from('lecture_schedules')
-        .select('room, lecturer');
+      // Fetch all unique room and lecturer values from lecture_schedules (fetch ALL, handling 1000 limit)
+      let allScheduleData: { room: string | null; lecturer: string | null }[] = [];
+      let from = 0;
+      const step = 1000;
+      let hasMore = true;
 
-      if (scheduleError) throw scheduleError;
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('lecture_schedules')
+          .select('room, lecturer')
+          .range(from, from + step - 1);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allScheduleData = [...allScheduleData, ...data];
+          if (data.length < step) {
+            hasMore = false;
+          } else {
+            from += step;
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+
+      const scheduleData = allScheduleData;
 
       // Get unique values
       const scheduleRooms = [...new Set((scheduleData || []).map(s => s.room).filter(Boolean))] as string[];
@@ -1149,6 +1170,7 @@ const LectureSchedules: React.FC = () => {
     phone_number: string;
     department_id?: string;
     study_program_id?: string;
+    is_homebase?: boolean;
   }) => {
     try {
       setMatchingLoading(true);
@@ -1163,7 +1185,9 @@ const LectureSchedules: React.FC = () => {
           phone_number: userData.phone_number,
           department_id: userData.department_id || null,
           study_program_id: userData.study_program_id || null,
+
           role: 'lecturer',
+          is_homebase: userData.is_homebase,
         })
         .select()
         .single();
@@ -3159,6 +3183,7 @@ const LectureSchedules: React.FC = () => {
                     phone_number: formData.get('phone_number') as string,
                     department_id: formData.get('department_id') as string || '',
                     study_program_id: formData.get('study_program_id') as string || '',
+                    is_homebase: formData.get('is_homebase') === 'true',
                   });
                 }}
                 className="p-6 space-y-4 max-h-[70vh] overflow-y-auto"
@@ -3215,6 +3240,29 @@ const LectureSchedules: React.FC = () => {
                     className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 focus:ring-0 transition-colors"
                     placeholder="08xxxxxxxxxx"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      name="is_homebase"
+                      value="true"
+                      // Default unchecked as requested
+                      className="mt-1 h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <div>
+                      <span className="block text-sm font-semibold text-gray-900">
+                        {getText('Homebase Lecturer?', 'Dosen Homebase?')}
+                      </span>
+                      <span className="block text-xs text-gray-500 mt-0.5">
+                        {getText(
+                          'Uncheck if this is an external lecturer without department/study program.',
+                          'Hapus centang jika ini adalah dosen eksternal tanpa departemen/prodi.'
+                        )}
+                      </span>
+                    </div>
+                  </label>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
