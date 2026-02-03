@@ -264,24 +264,50 @@ const PermitLetter: React.FC = () => {
   // Fetch all users for recipient dropdown
   const fetchAllUsers = async () => {
     try {
-      const { data: usersData, error: usersError } = await supabase
-        .from('users')
-        .select(`
-          id,
-          full_name,
-          role,
-          identity_number,
-          study_program_id,
-          study_programs:study_program_id(name)
-        `)
-        .order('full_name', { ascending: true });
+      // ✅ BATCHED FETCHING - Handle >1000 users
+      const BATCH_SIZE = 1000;
+      let allUsersData: any[] = [];
+      let from = 0;
+      let hasMore = true;
 
-      if (usersError) {
-        console.error('Error fetching users:', usersError);
-        return;
+      while (hasMore) {
+        const { data: usersBatch, error: usersError } = await supabase
+          .from('users')
+          .select(`
+            id,
+            full_name,
+            role,
+            identity_number,
+            study_program_id,
+            study_programs:study_program_id(name)
+          `)
+          .order('full_name', { ascending: true })
+          .range(from, from + BATCH_SIZE - 1);
+
+        if (usersError) {
+          console.error('Error fetching users batch:', usersError);
+          if (from === 0) {
+            return; // Stop on first batch error
+          } else {
+            break; // Stop fetching on subsequent batches
+          }
+        }
+
+        if (usersBatch && usersBatch.length > 0) {
+          allUsersData = [...allUsersData, ...usersBatch];
+          if (usersBatch.length < BATCH_SIZE) {
+            hasMore = false; // Last batch
+          } else {
+            from += BATCH_SIZE; // Next batch
+          }
+        } else {
+          hasMore = false;
+        }
       }
 
-      const formattedUsers = (usersData || []).map((user: any) => ({
+      console.log(`✅ Fetched ${allUsersData.length} users in ${Math.ceil(allUsersData.length / BATCH_SIZE)} batch(es)`);
+
+      const formattedUsers = (allUsersData || []).map((user: any) => ({
         id: user.id,
         full_name: user.full_name,
         role: user.role,

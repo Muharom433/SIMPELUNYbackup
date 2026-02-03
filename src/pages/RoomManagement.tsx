@@ -436,6 +436,8 @@ const RoomManagement: React.FC = () => {
             }
 
             // 4. Fetch bookings with timezone handling
+            // Query for ALL bookings that are active on the target date
+            // Not just bookings that START on the target date
             const startOfDay = `${targetDate}T00:00:00Z`;
             const endOfDay = `${targetDate}T23:59:59Z`;
 
@@ -447,8 +449,8 @@ const RoomManagement: React.FC = () => {
                 `)
                 .eq('room_id', roomId)
                 .in('status', ['approved', 'borrowed'])
-                .gte('start_time', startOfDay)
-                .lte('start_time', endOfDay)
+                .lte('start_time', endOfDay)    // Booking starts before or during target date
+                .gte('end_time', startOfDay)    // Booking ends during or after target date
                 .order('start_time');
 
             if (!bookingError && bookingData) {
@@ -456,12 +458,38 @@ const RoomManagement: React.FC = () => {
                     const startDate = new Date(booking.start_time);
                     const endDate = new Date(booking.end_time);
 
+                    // Determine effective time for display on this specific date
+                    const targetDateObj = new Date(targetDate);
+                    const bookingStartDate = new Date(startDate.toDateString());
+                    const bookingEndDate = new Date(endDate.toDateString());
+                    const targetDateOnly = new Date(targetDateObj.toDateString());
+
+                    // Calculate effective display times for this date
+                    let displayStartTime: string;
+                    let displayEndTime: string;
+
+                    if (bookingStartDate.getTime() === targetDateOnly.getTime()) {
+                        displayStartTime = format(startDate, 'HH:mm');
+                    } else {
+                        displayStartTime = '00:00';
+                    }
+
+                    if (bookingEndDate.getTime() === targetDateOnly.getTime()) {
+                        displayEndTime = format(endDate, 'HH:mm');
+                    } else {
+                        displayEndTime = '23:59';
+                    }
+
+                    // Calculate total duration
+                    const durationDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+                    const isMultiDay = durationDays > 1;
+
                     combined.push({
                         id: booking.id,
                         type: 'booking',
-                        start_time: format(startDate, 'HH:mm'),
-                        end_time: format(endDate, 'HH:mm'),
-                        title: `${booking.purpose || getText('Room Booking', 'Pemesanan Ruangan')}`,
+                        start_time: displayStartTime,
+                        end_time: displayEndTime,
+                        title: `${booking.purpose || getText('Room Booking', 'Pemesanan Ruangan')}${isMultiDay ? ` (${durationDays} hari)` : ''}`,
                         subtitle: `${booking.user?.full_name} • ${booking.user?.identity_number}`,
                         description: `${getText('Status', 'Status')}: ${getText('APPROVED', 'DISETUJUI')}`,
                         icon: CalendarIcon,

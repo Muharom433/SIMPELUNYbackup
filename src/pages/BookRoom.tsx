@@ -1208,33 +1208,61 @@ const BookRoom: React.FC = () => {
     setLoadingRooms(true);
     try {
 
+      // ✅ BATCHED FETCHING - Handle >1000 rooms
+      const BATCH_SIZE = 1000;
+      let allRoomsData: any[] = [];
+      let from = 0;
+      let hasMore = true;
 
-      const { data: roomsData, error } = await supabase
-        .from('rooms')
-        .select(`
-          id,
-          name,
-          code,
-          capacity,
-          is_available,
-          department_id,
-          departments (
+      while (hasMore) {
+        const { data: roomsBatch, error } = await supabase
+          .from('rooms')
+          .select(`
             id,
             name,
-            code
-          )
-        `)
-        .eq('is_available', true)
-        .order('name', { ascending: true });
+            code,
+            capacity,
+            is_available,
+            department_id,
+            departments (
+              id,
+              name,
+              code
+            )
+          `)
+          .eq('is_available', true)
+          .order('name', { ascending: true })
+          .range(from, from + BATCH_SIZE - 1);
 
-      if (error) throw error;
+        if (error) {
+          console.error('Error fetching rooms batch:', error);
+          if (from === 0) {
+            throw error; // Throw error only on first batch
+          } else {
+            break; // Stop fetching on subsequent batches
+          }
+        }
 
-      if (!roomsData || roomsData.length === 0) {
+        if (roomsBatch && roomsBatch.length > 0) {
+          allRoomsData = [...allRoomsData, ...roomsBatch];
+          if (roomsBatch.length < BATCH_SIZE) {
+            hasMore = false; // Last batch
+          } else {
+            from += BATCH_SIZE; // Next batch
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+
+      console.log(`✅ Fetched ${allRoomsData.length} rooms in ${Math.ceil(allRoomsData.length / BATCH_SIZE)} batch(es)`);
+
+      if (!allRoomsData || allRoomsData.length === 0) {
         setRooms([]);
         return;
       }
 
-      const mappedRooms: Room[] = roomsData.map((room: any) => ({
+      const mappedRooms: Room[] = allRoomsData.map((room: any) => ({
         id: room.id,
         name: room.name,
         code: room.code,
@@ -2156,6 +2184,70 @@ const BookRoom: React.FC = () => {
   // =====================================================
 
   const onSubmit = async (data: FormValues) => {
+    // ===== VALIDASI SEMUA FIELD WAJIB =====
+    // Validasi Nomor Identitas
+    if (!data.identity_number || data.identity_number.trim() === '') {
+      alert.error(
+        getText("Identity number is required", "Nomor identitas wajib diisi"),
+        ""
+      );
+      return;
+    }
+
+    // Validasi Nama Lengkap
+    if (!data.full_name || data.full_name.trim() === '') {
+      alert.error(
+        getText("Full name is required", "Nama lengkap wajib diisi"),
+        ""
+      );
+      return;
+    }
+
+    // Validasi Nomor Telepon
+    if (!data.phone_number || data.phone_number.trim() === '') {
+      alert.error(
+        getText("Phone number is required", "Nomor telepon wajib diisi"),
+        ""
+      );
+      return;
+    }
+
+    // Validasi Program Studi
+    if (!data.study_program_id || data.study_program_id.trim() === '') {
+      alert.error(
+        getText("Study program is required", "Program studi wajib diisi"),
+        ""
+      );
+      return;
+    }
+
+    // Validasi Waktu Mulai
+    if (!data.start_datetime || data.start_datetime.trim() === '') {
+      alert.error(
+        getText("Start time is required", "Waktu mulai wajib diisi"),
+        ""
+      );
+      return;
+    }
+
+    // Validasi Waktu Selesai
+    if (!data.end_datetime || data.end_datetime.trim() === '') {
+      alert.error(
+        getText("End time is required", "Waktu selesai wajib diisi"),
+        ""
+      );
+      return;
+    }
+
+    // Validasi Tujuan
+    if (!data.purpose || data.purpose.trim() === '') {
+      alert.error(
+        getText("Purpose is required", "Tujuan peminjaman wajib diisi"),
+        ""
+      );
+      return;
+    }
+
     // Validation for 'Other' purpose
     if (data.purpose === 'Other' && (!data.attachments || data.attachments.length === 0)) {
       alert.error(

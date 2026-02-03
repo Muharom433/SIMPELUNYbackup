@@ -946,34 +946,52 @@ const ToolLending: React.FC = () => {
     const handleSubmitRequest = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!identityNumber || !fullName || !phoneNumber) {
-            toast.error(getText('Please fill all required identity fields', 'Harap isi semua kolom identitas yang diperlukan'));
+        // ===== VALIDASI SEMUA FIELD WAJIB =====
+        // Validasi Nomor Identitas
+        if (!identityNumber || identityNumber.trim() === '') {
+            toast.error(getText('Identity number is required', 'Nomor identitas wajib diisi'));
             return;
         }
 
+        // Validasi Nama Lengkap
+        if (!fullName || fullName.trim() === '') {
+            toast.error(getText('Full name is required', 'Nama lengkap wajib diisi'));
+            return;
+        }
+
+        // Validasi Nomor Telepon
+        if (!phoneNumber || phoneNumber.trim() === '') {
+            toast.error(getText('Phone number is required', 'Nomor telepon wajib diisi'));
+            return;
+        }
+
+        // Validasi Program Studi (untuk user baru atau guest)
+        if (!userId && (!selectedStudyProgramId || selectedStudyProgramId.trim() === '')) {
+            toast.error(getText('Study program is required', 'Program studi wajib diisi'));
+            return;
+        }
+
+        // Validasi Peralatan
         if (selectedEquipments.size === 0) {
             toast.error(getText('Please select at least one equipment', 'Pilih minimal satu peralatan'));
             return;
         }
 
-        if (!purpose) {
-            toast.error(getText('Please select the purpose', 'Harap pilih tujuan peminjaman'));
+        // Validasi Tujuan
+        if (!purpose || purpose.trim() === '') {
+            toast.error(getText('Purpose is required', 'Tujuan peminjaman wajib diisi'));
             return;
         }
 
+        // Validasi Dokumen untuk tujuan 'Other'
         if (purpose === 'Other' && attachments.length === 0) {
             toast.error(getText('Please upload supporting documents for Other purpose', 'Harap unggah dokumen pendukung untuk tujuan Lainnya'));
             return;
         }
 
-        if (!returnDate) {
-            toast.error(getText('Please select return date', 'Pilih tanggal pengembalian'));
-            return;
-        }
-
-        // Check for Study Program if creating new user
-        if (!userId && !selectedStudyProgramId) {
-            toast.error(getText('Please select a study program', 'Harap pilih program studi'));
+        // Validasi Tanggal Pengembalian
+        if (!returnDate || returnDate.trim() === '') {
+            toast.error(getText('Return date is required', 'Tanggal pengembalian wajib diisi'));
             return;
         }
 

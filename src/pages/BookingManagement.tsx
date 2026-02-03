@@ -1478,6 +1478,32 @@ const BookingManagement: React.FC = () => {
                     </div>
                 );
 
+            case 'cancelled':
+            case 'rejected':
+                return (
+                    <div className="flex items-center space-x-2">
+                        <button
+                            onClick={() => {
+                                setSelectedBooking(booking);
+                                setShowDetailModal(true);
+                            }}
+                            className="p-2 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg"
+                            title="Lihat Detail"
+                        >
+                            <Eye className="h-4 w-4" />
+                        </button>
+
+                        <button
+                            onClick={() => openDeleteModal(booking)}
+                            disabled={isProcessing}
+                            className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg disabled:opacity-50"
+                            title="Hapus"
+                        >
+                            <Trash2 className="h-4 w-4" />
+                        </button>
+                    </div>
+                );
+
             default:
                 return (
                     <div className="flex items-center space-x-2">
