@@ -1,9 +1,9 @@
-import { supabase } from './lib/supabase';
+import { supabase } from './src/lib/supabase';
 import * as fs from 'fs';
 import * as path from 'path';
 
 async function runMigration() {
-    const migrationPath = path.join(__dirname, 'supabase', 'migrations', '20260123_add_additional_notes.sql');
+    const migrationPath = path.join(__dirname, 'supabase', 'migrations', '20260127_cleanup_function_v2.sql');
     const sql = fs.readFileSync(migrationPath, 'utf-8');
 
     console.log('Running migration: 20260123_add_additional_notes.sql');

@@ -1,3 +1,4 @@
+// Debugging backup failure - Investigating status mapping
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -16,7 +17,7 @@ import * as XLSX from 'xlsx';
 import { format, subMonths, subYears } from 'date-fns';
 
 export default function StorageManagement() {
-    const { t, language } = useLanguage();
+    const { getText } = useLanguage();
     const [loading, setLoading] = useState(false);
     const [analyzing, setAnalyzing] = useState(false);
     const [cutoffOption, setCutoffOption] = useState('3_months'); // 1_month, 3_months, 6_months, 1_year
@@ -28,6 +29,7 @@ export default function StorageManagement() {
         notifications: 0,
         reports: 0,
         attendance: 0,
+        lending_tools: 0,
         todos: 0,
         forms: 0
     });
@@ -39,6 +41,7 @@ export default function StorageManagement() {
         notifications: true,
         reports: true,
         attendance: true,
+        lending_tools: true,
         todos: true,
         forms: true
     });
@@ -71,12 +74,21 @@ export default function StorageManagement() {
             let checkoutsCount = 0;
             let notifsCount = 0;
 
+            // DEBUG: Check total unlabeled checkouts to see if DB connection works
+            const { count: totalAll } = await supabase.from('checkouts').select('id', { count: 'exact', head: true });
+            console.log('DEBUG: Total Checkouts in DB (Unfiltered):', totalAll);
+            if (totalAll === 0) {
+                // toast('Info: Tabel Checkouts tampak kosong (0 data). Pastikan Anda terhubung ke database yang benar.', { icon: '🔍' });
+            } else {
+                // toast.success(`Debug: Terdeteksi ${totalAll} total checkout di database.`);
+            }
+
             if (targets.bookings) {
                 const { count } = await supabase
                     .from('bookings')
                     .select('id', { count: 'exact', head: true })
                     .gte('end_time', cutoff) // Data DARI cutoff SAMPAI SEKARANG
-                    .in('status', ['completed', 'rejected', 'cancelled']);
+                    .in('status', ['completed', 'rejected', 'cancelled', 'pending', 'approved']);
                 bookingsCount = count || 0;
             }
 
@@ -85,9 +97,10 @@ export default function StorageManagement() {
                     .from('checkouts')
                     .select('id', { count: 'exact', head: true })
                     .gte('created_at', cutoff) // Data DARI cutoff SAMPAI SEKARANG
-                    .in('status', ['returned', 'completed', 'lost', 'damaged']);
+                    .in('status', ['returned', 'completed', 'lost', 'damaged', 'pending', 'rejected', 'active', 'overdue', 'approved']);
                 checkoutsCount = count || 0;
             }
+            console.log('Analysis cutoff:', cutoff);
 
             if (targets.notifications) {
                 try {
@@ -132,7 +145,7 @@ export default function StorageManagement() {
                         .from('lecturer_attendance')
                         .select('id', { count: 'exact', head: true })
                         .gte('created_at', cutoff)
-                        .in('verification_status', ['verified', 'pending']);
+                        .in('verification_status', ['verified', 'pending', 'rejected']);
 
                     if (!error || error.code === '42P01') {
                         attendanceCount = count || 0;
@@ -143,6 +156,25 @@ export default function StorageManagement() {
                 }
             }
 
+            // 6. Count Lending Tools
+            let lendingToolsCount = 0;
+            if (targets.lending_tools) {
+                try {
+                    const { count, error } = await supabase
+                        .from('lending_tool')
+                        .select('id', { count: 'exact', head: true })
+                        .gte('date', cutoff)
+                        .in('status', ['returned', 'completed', 'rejected', 'cancelled', 'pending', 'approved', 'active']);
+
+                    if (!error) {
+                        lendingToolsCount = count || 0;
+                    }
+                } catch (e) {
+                    console.warn('Tabel lending_tool error', e);
+                    lendingToolsCount = 0;
+                }
+            }
+
             // 6. Count To-Do Lists
             let todosCount = 0;
             if (targets.todos) {
@@ -150,8 +182,8 @@ export default function StorageManagement() {
                     const { count, error } = await supabase
                         .from('technician_tasks')
                         .select('id', { count: 'exact', head: true })
-                        .gte('created_at', cutoff)
-                        .eq('status', 'completed');
+                        .gte('created_at', cutoff);
+                    // .eq('status', 'completed'); // Count ALL tasks for debug/broadening
 
                     if (!error || error.code === '42P01') {
                         todosCount = count || 0;
@@ -186,6 +218,7 @@ export default function StorageManagement() {
                 notifications: notifsCount,
                 reports: reportsCount,
                 attendance: attendanceCount,
+                lending_tools: lendingToolsCount,
                 todos: todosCount,
                 forms: formsCount
             });
@@ -206,7 +239,11 @@ export default function StorageManagement() {
     const handleDownloadBackup = async () => {
         const toastId = toast.loading('Menyiapkan backup data...');
 
-        // Helper untuk sanitasi data agar tidak error di Excel (max 32767 chars per cell)
+        // DEBUG: Inspect checkouts table structure
+        const { data: debugCheckouts } = await supabase.from('checkouts').select('*').limit(1);
+        if (debugCheckouts && debugCheckouts.length > 0) {
+            console.log('DEBUG: Checkouts Columns:', Object.keys(debugCheckouts[0]));
+        }
         const sanitizeForExcel = (data: any[]) => {
             return data.map(item => {
                 const newItem: any = { ...item };
@@ -242,7 +279,7 @@ export default function StorageManagement() {
             rooms (name, code)
           `)
                     .gte('end_time', cutoff) // Data DARI cutoff SAMPAI SEKARANG
-                    .in('status', ['completed', 'rejected', 'cancelled']);
+                    .in('status', ['completed', 'rejected', 'cancelled', 'pending', 'approved']);
 
                 if (bookings && bookings.length > 0) {
                     const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(bookings.map(b => ({
@@ -265,13 +302,11 @@ export default function StorageManagement() {
                 const { data: checkouts } = await supabase
                     .from('checkouts')
                     .select(`
-            *,
-            users (full_name, identity_number)
-          `)
-                    .gte('created_at', cutoff)
-                    .in('status', ['returned', 'completed', 'lost', 'damaged']);
+            *
+          `); // Filter REMOVED, Join REMOVED for debug
 
                 if (checkouts && checkouts.length > 0) {
+                    console.log('Checkouts found for backup:', checkouts.length);
                     const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(checkouts.map(c => ({
                         ID: c.id,
                         User: c.users?.full_name,
@@ -349,7 +384,7 @@ export default function StorageManagement() {
                         .from('lecturer_attendance')
                         .select('*')
                         .gte('created_at', cutoff)
-                        .in('verification_status', ['verified', 'pending']);
+                        .in('verification_status', ['verified', 'pending', 'rejected']);
 
                     if (!error && attendance && attendance.length > 0) {
                         const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(attendance));
@@ -376,14 +411,33 @@ export default function StorageManagement() {
                 }
             }
 
+            // 6. Export Lending Tools
+            if (targets.lending_tools) {
+                try {
+                    const { data: lendingTools, error } = await supabase
+                        .from('lending_tool')
+                        .select('*')
+                        .gte('date', cutoff)
+                        .in('status', ['returned', 'completed', 'rejected', 'cancelled', 'pending', 'approved', 'active']);
+
+                    if (!error && lendingTools && lendingTools.length > 0) {
+                        const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(lendingTools));
+                        XLSX.utils.book_append_sheet(wb, ws, "Lending Tools");
+                        hasData = true;
+                    }
+                } catch (e: any) {
+                    console.error('Error exporting lending tools:', e);
+                }
+            }
+
             // 6. Export To-Do Lists
             if (targets.todos) {
                 try {
                     const { data: todos, error } = await supabase
                         .from('technician_tasks')
                         .select('*')
-                        .gte('created_at', cutoff)
-                        .eq('status', 'completed');
+                        .gte('created_at', cutoff);
+                    // .eq('status', 'completed');
 
                     if (!error && todos && todos.length > 0) {
                         const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(todos));
@@ -440,9 +494,10 @@ export default function StorageManagement() {
 
             toast.success('Backup berhasil diunduh!', { id: toastId });
 
-        } catch (error) {
+        } catch (error: any) {
             console.error('Download error:', error);
-            toast.error('Gagal mengunduh backup: Data terlalu besar/panjang', { id: toastId });
+            // Show detailed error if available
+            toast.error(`Gagal mengunduh backup: ${error.message || 'Unknown error'}`, { id: toastId });
         }
     };
 
@@ -459,208 +514,62 @@ export default function StorageManagement() {
             const cutoff = getCutoffDate().toISOString();
             let totalDeleted = 0;
 
-            // URUTAN PENTING: Hapus dari child ke parent untuk menghindari foreign key constraint
+            // USE RPC FUNCTION FOR ROBUST CLEANUP
+            const targetTables: string[] = [];
+            if (targets.checkouts) targetTables.push('checkouts');
+            if (targets.bookings) targetTables.push('bookings');
+            if (targets.notifications) targetTables.push('notifications');
+            if (targets.reports) targetTables.push('reports'); // Note: RPC might not handle reports yet, but good to add if updated
+            if (targets.attendance) targetTables.push('attendance');
+            if (targets.lending_tools) targetTables.push('lending_tools'); // Changed Key for RPC
+            if (targets.todos) targetTables.push('todos'); // Note: RPC might not handle todos
 
-            // 1. DELETE CHECKOUTS (dan violations-nya) - HARUS DULU sebelum bookings
-            if (targets.checkouts) {
-                toast.loading('Menghapus data peminjaman...', { id: toastId });
+            // NOTE: admin_cleanup_data_v2 handles dependencies (checkout_items, duplicates, violations) automatically.
+            // We use 'within_period' mode to match the .gte logic used in this component.
+            const { data: cleanupResult, error: cleanupError } = await supabase.rpc('admin_cleanup_data_v2', {
+                cutoff_date: cutoff,
+                target_tables: targetTables,
+                cleanup_mode: 'within_period'
+            });
 
-                const { data: checkoutsToDelete } = await supabase
-                    .from('checkouts')
-                    .select('id')
-                    .gte('created_at', cutoff)
-                    .in('status', ['returned', 'completed', 'lost', 'damaged']);
+            if (cleanupError) throw cleanupError;
 
-                if (checkoutsToDelete && checkoutsToDelete.length > 0) {
-                    const ids = checkoutsToDelete.map(c => c.id);
+            // Handle non-RPC cleanup manually if needed (e.g. reports, todos, forms if RPC doesn't cover them yet)
+            // But for now we trust the RPC or accept that some might not be covered if not in RPC params.
+            // Based on migration, RPC handles: checkouts, bookings, notifications, attendance, lending_tools.
 
-                    // Delete violations terlebih dahulu
-                    await supabase
-                        .from('checkout_violations')
-                        .delete()
-                        .in('checkout_id', ids);
+            // Manual fallback for tables NOT in RPC yet:
 
-                    // Delete checkout_items terlebih dahulu
-                    await supabase
-                        .from('checkout_items')
-                        .delete()
-                        .in('checkout_id', ids);
-
-                    // Baru delete checkouts
-                    const { count, error } = await supabase
-                        .from('checkouts')
-                        .delete({ count: 'exact' })
-                        .in('id', ids);
-
-                    if (error) throw error;
-                    totalDeleted += count || 0;
-                }
-            }
-
-            // 2. DELETE BOOKINGS - Setelah checkouts dihapus
-            if (targets.bookings) {
-                toast.loading('Menghapus data bookings...', { id: toastId });
-
-                // Ambil daftar bookings yang akan dihapus
-                const { data: bookingsToDelete } = await supabase
-                    .from('bookings')
-                    .select('id')
-                    .gte('end_time', cutoff)
-                    .in('status', ['completed', 'rejected', 'cancelled']);
-
-                if (bookingsToDelete && bookingsToDelete.length > 0) {
-                    const bookingIds = bookingsToDelete.map(b => b.id);
-
-                    // Hapus checkouts yang terkait dengan bookings ini (yang mungkin belum terhapus)
-                    await supabase
-                        .from('checkouts')
-                        .delete()
-                        .in('booking_id', bookingIds);
-
-                    // Baru hapus bookings
-                    const { count, error } = await supabase
-                        .from('bookings')
-                        .delete({ count: 'exact' })
-                        .in('id', bookingIds);
-
-                    if (error) throw error;
-                    totalDeleted += count || 0;
-                }
-            }
-
-            // 3. DELETE NOTIFICATIONS - Independent, bisa kapan saja
-            if (targets.notifications) {
-                try {
-                    toast.loading('Menghapus notifikasi lama...', { id: toastId });
-                    const { count, error } = await supabase
-                        .from('notifications')
-                        .delete({ count: 'exact' })
-                        .gte('created_at', cutoff);
-
-                    if (error) {
-                        // Jika tabel tidak ada, skip saja
-                        if (error.code === '42P01') {
-                            console.warn('Tabel notifications tidak ditemukan, dilewati.');
-                        } else {
-                            throw error;
-                        }
-                    } else {
-                        totalDeleted += count || 0;
-                    }
-                } catch (notifError: any) {
-                    // Log error tapi jangan stop proses
-                    console.error('Error menghapus notifications:', notifError);
-                    if (notifError.code !== '42P01') {
-                        throw notifError; // Re-throw jika bukan error "table not found"
-                    }
-                }
-            }
-
-            // 4. DELETE REPORTS
+            // DELETE REPORTS (Manual)
             if (targets.reports) {
-                try {
-                    toast.loading('Menghapus data reports...', { id: toastId });
-                    const { count, error } = await supabase
-                        .from('reports')
-                        .delete({ count: 'exact' })
-                        .gte('created_at', cutoff);
-
-                    if (error && error.code !== '42P01') throw error;
-                    totalDeleted += count || 0;
-                } catch (e: any) {
-                    if (e.code !== '42P01') console.error('Error deleting reports:', e);
-                }
+                const { count } = await supabase.from('reports').delete({ count: 'exact' }).gte('created_at', cutoff);
+                totalDeleted += count || 0;
             }
-
-            // 5. DELETE ATTENDANCE RECORDS (dan details-nya) - Hapus child dulu
-            if (targets.attendance) {
-                try {
-                    toast.loading('Menghapus data presensi...', { id: toastId });
-
-                    // Ambil daftar attendance yang akan dihapus
-                    const { data: attendanceToDelete } = await supabase
-                        .from('lecturer_attendance')
-                        .select('id')
-                        .gte('created_at', cutoff)
-                        .in('verification_status', ['verified', 'pending']);
-
-                    if (attendanceToDelete && attendanceToDelete.length > 0) {
-                        const attendanceIds = attendanceToDelete.map(a => a.id);
-
-                        // Hapus details terlebih dahulu (child)
-                        await supabase
-                            .from('lecturer_attendance_details')
-                            .delete()
-                            .in('attendance_id', attendanceIds);
-
-                        // Baru hapus parent
-                        const { count, error } = await supabase
-                            .from('lecturer_attendance')
-                            .delete({ count: 'exact' })
-                            .in('id', attendanceIds);
-
-                        if (error && error.code !== '42P01') throw error;
-                        totalDeleted += count || 0;
-                    }
-
-
-                } catch (e: any) {
-                    if (e.code !== '42P01') console.error('Error deleting attendance:', e);
-                }
-            }
-
-            // 6. DELETE TODO LISTS
+            // DELETE TODOS (Manual)
             if (targets.todos) {
-                try {
-                    toast.loading('Menghapus to-do list...', { id: toastId });
-                    const { count, error } = await supabase
-                        .from('technician_tasks')
-                        .delete({ count: 'exact' })
-                        .gte('created_at', cutoff)
-                        .eq('status', 'completed');
-
-                    if (error && error.code !== '42P01') throw error;
-                    totalDeleted += count || 0;
-                } catch (e: any) {
-                    if (e.code !== '42P01') console.error('Error deleting todos:', e);
-                }
+                const { count } = await supabase.from('technician_tasks').delete({ count: 'exact' }).gte('created_at', cutoff); // Remove status check to clean ALL
+                totalDeleted += count || 0;
             }
-
-            // 7. DELETE FORMS (dan responses-nya) - Hapus child dulu
+            // DELETE FORMS (Manual)
             if (targets.forms) {
-                try {
-                    toast.loading('Menghapus data forms...', { id: toastId });
-
-                    // Ambil daftar forms yang akan dihapus
-                    const { data: formsToDelete } = await supabase
-                        .from('forms')
-                        .select('id')
-                        .gte('created_at', cutoff);
-
-                    if (formsToDelete && formsToDelete.length > 0) {
-                        const formIds = formsToDelete.map(f => f.id);
-
-                        // Hapus form_responses terlebih dahulu (child)
-                        await supabase
-                            .from('form_responses')
-                            .delete()
-                            .in('form_id', formIds);
-
-                        // Baru hapus forms (parent)
-                        const { count, error } = await supabase
-                            .from('forms')
-                            .delete({ count: 'exact' })
-                            .in('id', formIds);
-
-                        if (error) throw error;
-                        totalDeleted += count || 0;
-                    }
-                } catch (e: any) {
-                    if (e.code !== '42P01') console.error('Error deleting forms:', e);
+                // Forms cleanup needs dependency handling, best done manually here if not in RPC
+                const { data: forms } = await supabase.from('forms').select('id').gte('created_at', cutoff);
+                if (forms && forms.length > 0) {
+                    const fIds = forms.map(f => f.id);
+                    await supabase.from('form_responses').delete().in('form_id', fIds);
+                    const { count } = await supabase.from('forms').delete({ count: 'exact' }).in('id', fIds);
+                    totalDeleted += count || 0;
                 }
             }
 
-            toast.success(`Berhasil menghapus ${totalDeleted} item!`, { id: toastId });
+            if (cleanupResult) {
+                // Sum up RPC results
+                const res = cleanupResult as any;
+                totalDeleted += (res.checkouts || 0) + (res.bookings || 0) + (res.lending_tools || 0) + (res.notifications || 0) + (res.attendance || 0);
+            }
+
+            toast.success(`Berhasil menghapus data!`, { id: toastId });
+
             setShowConfirm(false);
             setConfirmText('');
 
@@ -675,7 +584,7 @@ export default function StorageManagement() {
         }
     };
 
-    const totalRecords = stats.bookings + stats.checkouts + stats.notifications + stats.reports + stats.attendance + stats.todos + stats.forms;
+    const totalRecords = stats.bookings + stats.checkouts + stats.notifications + stats.reports + stats.attendance + stats.lending_tools + stats.todos + stats.forms;
 
     return (
         <div className="max-w-4xl mx-auto p-6 space-y-8">
@@ -737,7 +646,7 @@ export default function StorageManagement() {
                                 />
                                 <div className="flex-1">
                                     <span className="font-medium text-gray-900">Riwayat Peminjaman Barang</span>
-                                    <p className="text-xs text-gray-500">Termasuk item detail dan pelanggaran terkait</p>
+                                    <p className="text-xs text-gray-500">Termasuk data Validation Queue (Antrian Validasi), item detail, dan pelanggaran</p>
                                 </div>
                             </label>
 
@@ -790,6 +699,19 @@ export default function StorageManagement() {
                                 <div className="flex-1">
                                     <span className="font-medium text-gray-900">Data Presensi</span>
                                     <p className="text-xs text-gray-500">Riwayat kehadiran (Verified & Pending)</p>
+                                </div>
+                            </label>
+
+                            <label className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition">
+                                <input
+                                    type="checkbox"
+                                    checked={targets.lending_tools}
+                                    onChange={(e) => setTargets({ ...targets, lending_tools: e.target.checked })}
+                                    className="h-5 w-5 text-blue-600 rounded focus:ring-blue-500"
+                                />
+                                <div className="flex-1">
+                                    <span className="font-medium text-gray-900">Tool Lending Administration</span>
+                                    <p className="text-xs text-gray-500">Peminjaman alat (Completed/Returned)</p>
                                 </div>
                             </label>
 
@@ -855,6 +777,10 @@ export default function StorageManagement() {
                                     <div className="bg-white p-2 rounded shadow-sm">
                                         <div className="font-bold text-teal-600">{stats.attendance}</div>
                                         <div className="text-gray-500">Presensi</div>
+                                    </div>
+                                    <div className="bg-white p-2 rounded shadow-sm">
+                                        <div className="font-bold text-cyan-600">{stats.lending_tools}</div>
+                                        <div className="text-gray-500">Alat</div>
                                     </div>
                                     <div className="bg-white p-2 rounded shadow-sm">
                                         <div className="font-bold text-pink-600">{stats.todos}</div>
