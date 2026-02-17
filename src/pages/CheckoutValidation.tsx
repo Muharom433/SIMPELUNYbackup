@@ -606,20 +606,20 @@ const CheckoutValidation: React.FC = () => {
               <div
                 key={checkout.id}
                 className={`bg-white rounded-xl shadow-sm border-2 p-6 hover:shadow-md transition-all duration-200 ${checkout.has_violation
-                    ? 'border-yellow-300'
-                    : isOverdue
-                      ? 'border-red-300'
-                      : 'border-gray-200'
+                  ? 'border-yellow-300'
+                  : isOverdue
+                    ? 'border-red-300'
+                    : 'border-gray-200'
                   }`}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center space-x-3 mb-4">
                       <div className={`p-2 rounded-lg ${checkout.has_violation
-                          ? 'bg-yellow-500'
-                          : isOverdue
-                            ? 'bg-red-500'
-                            : 'bg-blue-500'
+                        ? 'bg-yellow-500'
+                        : isOverdue
+                          ? 'bg-red-500'
+                          : 'bg-blue-500'
                         }`}>
                         {checkout.has_violation ? (
                           <Flag className="h-5 w-5 text-white" />

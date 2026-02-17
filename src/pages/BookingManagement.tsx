@@ -407,6 +407,12 @@ const BookingManagement: React.FC = () => {
     const [equipmentSearch, setEquipmentSearch] = useState('');
     const [unavailableEquipment, setUnavailableEquipment] = useState<string[]>([]);
 
+    // Reject modal states
+    const [showRejectModal, setShowRejectModal] = useState(false);
+    const [rejectReason, setRejectReason] = useState('');
+    const [bookingToReject, setBookingToReject] = useState<Booking | null>(null);
+
+
     // ===== FETCH BOOKINGS =====
     // Optimized: Select only needed columns to avoid timeout from large data
     const fetchBookings = useCallback(async () => {
@@ -420,7 +426,8 @@ const BookingManagement: React.FC = () => {
                     status, equipment_requested, equipment_quantities, notes, 
                     created_at, updated_at, user_info, equipment_details, attachments,
                     user:users!bookings_user_id_fkey(
-                        id, full_name, identity_number, phone_number, email, study_program_id
+                        id, full_name, identity_number, phone_number, email, study_program_id,
+                        study_program:study_programs(id, name)
                     ),
                     room:rooms!bookings_room_id_fkey(
                         id, name, code, capacity, study_program_ids, department_id,
@@ -785,6 +792,39 @@ const BookingManagement: React.FC = () => {
         );
     }, [optionalEquipment, equipmentSelections, equipmentSearch]);
 
+    // ===== OPEN WHATSAPP =====
+    const openWhatsApp = (phoneNumber?: string, message?: string) => {
+        if (!phoneNumber) {
+            toast.error('Nomor telepon tidak tersedia');
+            return;
+        }
+
+        // Format phone number: remove leading 0 and add +62
+        let formattedNumber = phoneNumber.trim();
+
+        // Remove any non-digit characters
+        formattedNumber = formattedNumber.replace(/\D/g, '');
+
+        // If starts with 0, replace with 62
+        if (formattedNumber.startsWith('0')) {
+            formattedNumber = '62' + formattedNumber.substring(1);
+        }
+
+        // If doesn't start with 62, add it
+        if (!formattedNumber.startsWith('62')) {
+            formattedNumber = '62' + formattedNumber;
+        }
+
+        // Build WhatsApp URL with optional message
+        let whatsappUrl = `https://wa.me/${formattedNumber}`;
+        if (message) {
+            whatsappUrl += `?text=${encodeURIComponent(message)}`;
+        }
+
+        // Open WhatsApp Web
+        window.open(whatsappUrl, '_blank');
+    };
+
     // ===== HANDLE STATUS CHANGE =====
     /**
      * ALUR STATUS DI BOOKING MANAGEMENT:
@@ -897,6 +937,60 @@ const BookingManagement: React.FC = () => {
 
             toast.success(`Status berhasil diubah ke ${newStatus}`);
             await fetchBookings();
+
+            // Open WhatsApp after successful status change (approved, borrowed, rejected)
+            if (newStatus === 'approved' || newStatus === 'borrowed' || newStatus === 'rejected') {
+                setTimeout(() => {
+                    // Build academic message based on status
+                    let message = '';
+                    const roomName = booking?.room?.name || 'Ruangan';
+                    const startDate = booking?.start_time ? format(parseISO(booking.start_time), 'dd/MM/yyyy HH:mm') : '';
+                    const endDate = booking?.end_time ? format(parseISO(booking.end_time), 'HH:mm') : '';
+
+                    if (newStatus === 'approved') {
+                        message = `Yth. ${booking?.user?.full_name || 'Bapak/Ibu'},\n\n` +
+                            `Dengan hormat,\n\n` +
+                            `Kami informasikan bahwa permohonan peminjaman ruangan Anda telah kami setujui dengan rincian sebagai berikut:\n\n` +
+                            `📍 Ruangan: ${roomName}\n` +
+                            `📅 Waktu: ${startDate} - ${endDate}\n` +
+                            `📝 Keperluan: ${booking?.purpose || '-'}\n\n` +
+                            `Mohon untuk menggunakan ruangan sesuai dengan waktu yang telah ditentukan dan menjaga kebersihan serta fasilitas yang ada.\n\n` +
+                            `Terima kasih atas perhatian dan kerja samanya.\n\n` +
+                            `Hormat kami,\n` +
+                            `Tim Manajemen Fasilitas`;
+                    } else if (newStatus === 'borrowed') {
+                        message = `Yth. ${booking?.user?.full_name || 'Bapak/Ibu'},\n\n` +
+                            `Dengan hormat,\n\n` +
+                            `Peminjaman ruangan Anda telah diproses dengan rincian sebagai berikut:\n\n` +
+                            `📍 Ruangan: ${roomName}\n` +
+                            `📅 Waktu: ${startDate} - ${endDate}\n` +
+                            `📝 Keperluan: ${booking?.purpose || '-'}\n\n` +
+                            `Ruangan dan peralatan telah disiapkan. Mohon untuk:\n` +
+                            `1. Menggunakan ruangan sesuai waktu yang ditentukan\n` +
+                            `2. Menjaga kebersihan ruangan\n` +
+                            `3. Mengembalikan peralatan dalam kondisi baik\n` +
+                            `4. Melaporkan jika ada kerusakan\n\n` +
+                            `Terima kasih atas perhatian dan kerja samanya.\n\n` +
+                            `Hormat kami,\n` +
+                            `Tim Manajemen Fasilitas`;
+                    } else if (newStatus === 'rejected') {
+                        // For rejection, we need the reason - for now use generic message
+                        // This will be updated when called from reject modal
+                        message = `Yth. ${booking?.user?.full_name || 'Bapak/Ibu'},\n\n` +
+                            `Dengan hormat,\n\n` +
+                            `Kami informasikan bahwa permohonan peminjaman ruangan Anda tidak dapat kami setujui dengan rincian sebagai berikut:\n\n` +
+                            `📍 Ruangan: ${roomName}\n` +
+                            `📅 Waktu: ${startDate} - ${endDate}\n\n` +
+                            `Alasan penolakan: Mohon hubungi admin untuk informasi lebih lanjut.\n\n` +
+                            `Kami mohon maaf atas ketidaknyamanan ini.\n\n` +
+                            `Hormat kami,\n` +
+                            `Tim Manajemen Fasilitas`;
+                    }
+
+                    openWhatsApp(booking?.user?.phone_number, message);
+                }, 500); // Small delay to ensure toast is visible first
+            }
+
 
         } catch (error: any) {
             console.error('❌ Error changing status:', error);
@@ -1225,6 +1319,75 @@ const BookingManagement: React.FC = () => {
         setShowDeleteModal(true);
     };
 
+    const openRejectModal = (booking: Booking) => {
+        setBookingToReject(booking);
+        setRejectReason('');
+        setShowRejectModal(true);
+    };
+
+    const handleRejectWithReason = async () => {
+        if (!bookingToReject) return;
+
+        if (!rejectReason.trim()) {
+            toast.error('Mohon masukkan alasan penolakan');
+            return;
+        }
+
+        setShowRejectModal(false);
+
+        try {
+            setProcessingIds(prev => new Set(prev).add(bookingToReject.id));
+
+            // Update status to rejected
+            const { error: statusError } = await supabase
+                .from('bookings')
+                .update({
+                    status: 'rejected',
+                    notes: (bookingToReject.notes || '') + `\n\n[REJECT REASON]: ${rejectReason}`,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', bookingToReject.id);
+
+            if (statusError) throw statusError;
+
+            toast.success('Booking berhasil ditolak');
+            await fetchBookings();
+
+            // Send WhatsApp with custom rejection reason
+            setTimeout(() => {
+                const roomName = bookingToReject?.room?.name || 'Ruangan';
+                const startDate = bookingToReject?.start_time ? format(parseISO(bookingToReject.start_time), 'dd/MM/yyyy HH:mm') : '';
+                const endDate = bookingToReject?.end_time ? format(parseISO(bookingToReject.end_time), 'HH:mm') : '';
+
+                const message = `Yth. ${bookingToReject?.user?.full_name || 'Bapak/Ibu'},\n\n` +
+                    `Dengan hormat,\n\n` +
+                    `Kami informasikan bahwa permohonan peminjaman ruangan Anda tidak dapat kami setujui dengan rincian sebagai berikut:\n\n` +
+                    `📍 Ruangan: ${roomName}\n` +
+                    `📅 Waktu: ${startDate} - ${endDate}\n` +
+                    `📝 Keperluan: ${bookingToReject?.purpose || '-'}\n\n` +
+                    `Alasan penolakan:\n${rejectReason}\n\n` +
+                    `Kami mohon maaf atas ketidaknyamanan ini. Jika ada pertanyaan lebih lanjut, silakan hubungi kami.\n\n` +
+                    `Hormat kami,\n` +
+                    `Tim Manajemen Fasilitas`;
+
+                openWhatsApp(bookingToReject?.user?.phone_number, message);
+            }, 500);
+
+        } catch (error: any) {
+            console.error('❌ Error rejecting booking:', error);
+            toast.error(`Gagal menolak booking: ${error.message}`);
+        } finally {
+            setProcessingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(bookingToReject?.id || '');
+                return newSet;
+            });
+            setBookingToReject(null);
+            setRejectReason('');
+        }
+    };
+
+
     // ===== EFFECTS =====
     useEffect(() => {
         if (profile) {
@@ -1326,7 +1489,7 @@ const BookingManagement: React.FC = () => {
                         </button>
 
                         <button
-                            onClick={() => handleStatusChange(booking.id, 'rejected')}
+                            onClick={() => openRejectModal(booking)}
                             disabled={isProcessing}
                             className="p-2 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg disabled:opacity-50"
                             title="Reject"
@@ -1454,6 +1617,32 @@ const BookingManagement: React.FC = () => {
                 );
 
             case 'completed':
+                return (
+                    <div className="flex items-center space-x-2">
+                        <button
+                            onClick={() => {
+                                setSelectedBooking(booking);
+                                setShowDetailModal(true);
+                            }}
+                            className="p-2 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg"
+                            title="Lihat Detail"
+                        >
+                            <Eye className="h-4 w-4" />
+                        </button>
+
+                        <button
+                            onClick={() => openDeleteModal(booking)}
+                            disabled={isProcessing}
+                            className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg disabled:opacity-50"
+                            title="Hapus"
+                        >
+                            <Trash2 className="h-4 w-4" />
+                        </button>
+                    </div>
+                );
+
+            case 'cancelled':
+            case 'rejected':
                 return (
                     <div className="flex items-center space-x-2">
                         <button
@@ -1689,6 +1878,11 @@ const BookingManagement: React.FC = () => {
                                         <p className="font-semibold">{selectedBooking.user?.full_name}</p>
                                         <p className="text-sm text-gray-600">{selectedBooking.user?.identity_number}</p>
                                         <p className="text-sm text-gray-600">{selectedBooking.user?.phone_number}</p>
+                                        {selectedBooking.user?.study_program?.name && (
+                                            <p className="text-sm text-gray-600 mt-1">
+                                                <span className="font-medium">Prodi:</span> {selectedBooking.user.study_program.name}
+                                            </p>
+                                        )}
                                     </div>
 
                                     <div className="bg-gray-50 rounded-lg p-4">
@@ -2200,6 +2394,85 @@ const BookingManagement: React.FC = () => {
                                         <Trash2 className="h-4 w-4" />
                                     )}
                                     <span>Hapus</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ===== REJECT MODAL ===== */}
+            {showRejectModal && bookingToReject && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full">
+                        <div className="bg-gradient-to-r from-red-600 to-red-700 p-6 text-white rounded-t-2xl">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-2xl font-bold">Tolak Peminjaman</h2>
+                                    <p className="mt-1 opacity-90">
+                                        {bookingToReject.room?.name} - {bookingToReject.user?.full_name}
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setShowRejectModal(false);
+                                        setBookingToReject(null);
+                                        setRejectReason('');
+                                    }}
+                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg"
+                                >
+                                    <X className="h-6 w-6" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-6">
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Alasan Penolakan <span className="text-red-600">*</span>
+                                </label>
+                                <textarea
+                                    value={rejectReason}
+                                    onChange={(e) => setRejectReason(e.target.value)}
+                                    placeholder="Contoh: Ruangan sedang dalam perbaikan / Waktu yang diminta bersamaan dengan kegiatan lain / dll."
+                                    rows={6}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none"
+                                />
+                                <p className="mt-2 text-xs text-gray-500">
+                                    Alasan ini akan dikirimkan ke user melalui WhatsApp dengan bahasa yang formal dan akademik.
+                                </p>
+                            </div>
+
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                                <div className="flex items-start space-x-3">
+                                    <AlertTriangle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                                    <div className="text-sm text-yellow-800">
+                                        <p className="font-medium mb-1">Pesan yang akan dikirim:</p>
+                                        <p className="text-xs">
+                                            WhatsApp akan otomatis terbuka dengan pesan penolakan yang berisi rincian booking dan alasan yang Anda masukkan di atas, menggunakan bahasa akademik yang formal.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end space-x-3">
+                                <button
+                                    onClick={() => {
+                                        setShowRejectModal(false);
+                                        setBookingToReject(null);
+                                        setRejectReason('');
+                                    }}
+                                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    onClick={handleRejectWithReason}
+                                    disabled={!rejectReason.trim()}
+                                    className="flex items-center space-x-2 px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <X className="h-4 w-4" />
+                                    <span>Tolak & Kirim WhatsApp</span>
                                 </button>
                             </div>
                         </div>

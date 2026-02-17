@@ -892,6 +892,8 @@ const BookRoom: React.FC = () => {
   const [isManualEntry, setIsManualEntry] = useState(false);
   const [studyPrograms, setStudyPrograms] = useState<any[]>([]);
   const [selectedProgram, setSelectedProgram] = useState<any>(null);
+  const [campuses, setCampuses] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCampusId, setSelectedCampusId] = useState<string>('');
 
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
@@ -1200,6 +1202,20 @@ const BookRoom: React.FC = () => {
     }
   }
 
+  const fetchCampuses = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('campus')
+        .select('id, name')
+        .order('name');
+
+      if (error) throw error;
+      setCampuses(data || []);
+    } catch (error) {
+      console.error('Error fetching campuses:', error);
+    }
+  };
+
   // =====================================================
   // ROOM FETCHING WITH COMPLETE SCHEDULE DATA
   // =====================================================
@@ -1208,40 +1224,75 @@ const BookRoom: React.FC = () => {
     setLoadingRooms(true);
     try {
 
+      // ✅ BATCHED FETCHING - Handle >1000 rooms
+      const BATCH_SIZE = 1000;
+      let allRoomsData: any[] = [];
+      let from = 0;
+      let hasMore = true;
 
-      const { data: roomsData, error } = await supabase
-        .from('rooms')
-        .select(`
-          id,
-          name,
-          code,
-          capacity,
-          is_available,
-          department_id,
-          departments (
+      while (hasMore) {
+        const { data: roomsBatch, error } = await supabase
+          .from('rooms')
+          .select(`
             id,
             name,
-            code
-          )
-        `)
-        .eq('is_available', true)
-        .order('name', { ascending: true });
+            code,
+            capacity,
+            is_available,
+            department_id,
+            building_id,
+            departments (
+              id,
+              name,
+              code
+            ),
+            building:building (
+              id,
+              name,
+              campus_id
+            )
+          `)
+          .eq('is_available', true)
+          .order('name', { ascending: true })
+          .range(from, from + BATCH_SIZE - 1);
 
-      if (error) throw error;
+        if (error) {
+          console.error('Error fetching rooms batch:', error);
+          if (from === 0) {
+            throw error; // Throw error only on first batch
+          } else {
+            break; // Stop fetching on subsequent batches
+          }
+        }
 
-      if (!roomsData || roomsData.length === 0) {
+        if (roomsBatch && roomsBatch.length > 0) {
+          allRoomsData = [...allRoomsData, ...roomsBatch];
+          if (roomsBatch.length < BATCH_SIZE) {
+            hasMore = false; // Last batch
+          } else {
+            from += BATCH_SIZE; // Next batch
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+
+      console.log(`✅ Fetched ${allRoomsData.length} rooms in ${Math.ceil(allRoomsData.length / BATCH_SIZE)} batch(es)`);
+
+      if (!allRoomsData || allRoomsData.length === 0) {
         setRooms([]);
         return;
       }
 
-      const mappedRooms: Room[] = roomsData.map((room: any) => ({
+      const mappedRooms: Room[] = allRoomsData.map((room: any) => ({
         id: room.id,
         name: room.name,
         code: room.code,
         capacity: room.capacity,
         is_available: room.is_available,
         faculty: room.departments?.name || getText("General", "Umum"),
-        building: room.departments?.name || "",
+        building: room.building?.name || room.departments?.name || "",
+        building_id: room.building_id,
         department: room.departments ? {
           id: room.departments.id,
           name: room.departments.name
@@ -1253,6 +1304,12 @@ const BookRoom: React.FC = () => {
           exams: [],
           sessions: []
         },
+        // Store building with campus_id for filtering
+        buildingData: room.building ? {
+          id: room.building.id,
+          name: room.building.name,
+          campus_id: room.building.campus_id
+        } : null,
       }));
 
       // 3. Get day name for lecture schedule matching
@@ -1957,6 +2014,14 @@ const BookRoom: React.FC = () => {
   const filteredAndSortedRooms = useMemo(() => {
     let filtered = rooms;
 
+    // Filter by campus if selected (for normal booking tab)
+    if (activeTab === 'normal' && selectedCampusId) {
+      filtered = filtered.filter(room => {
+        const building = (room as any).buildingData;
+        return building?.campus_id === selectedCampusId;
+      });
+    }
+
     if (searchTerm && searchTerm.trim() !== '') {
       const searchLower = searchTerm.toLowerCase().trim();
       filtered = filtered.filter(room => {
@@ -2003,7 +2068,7 @@ const BookRoom: React.FC = () => {
     }
 
     return filtered;
-  }, [rooms, searchTerm, startDateTime, endDateTime, activeTab]);
+  }, [rooms, searchTerm, startDateTime, endDateTime, activeTab, selectedCampusId]);
 
   const filteredCourses = useMemo(() => {
     if (!courseSearch) return todaySchedules;
@@ -2029,6 +2094,7 @@ const BookRoom: React.FC = () => {
           fetchStudyPrograms(),
           fetchTodayLectures(),
           fetchOptionalEquipment(),
+          fetchCampuses(),
         ]);
 
         // 2. Fetch rooms untuk hari ini (INITIAL LOAD)
@@ -2156,6 +2222,70 @@ const BookRoom: React.FC = () => {
   // =====================================================
 
   const onSubmit = async (data: FormValues) => {
+    // ===== VALIDASI SEMUA FIELD WAJIB =====
+    // Validasi Nomor Identitas
+    if (!data.identity_number || data.identity_number.trim() === '') {
+      alert.error(
+        getText("Identity number is required", "Nomor identitas wajib diisi"),
+        ""
+      );
+      return;
+    }
+
+    // Validasi Nama Lengkap
+    if (!data.full_name || data.full_name.trim() === '') {
+      alert.error(
+        getText("Full name is required", "Nama lengkap wajib diisi"),
+        ""
+      );
+      return;
+    }
+
+    // Validasi Nomor Telepon
+    if (!data.phone_number || data.phone_number.trim() === '') {
+      alert.error(
+        getText("Phone number is required", "Nomor telepon wajib diisi"),
+        ""
+      );
+      return;
+    }
+
+    // Validasi Program Studi
+    if (!data.study_program_id || data.study_program_id.trim() === '') {
+      alert.error(
+        getText("Study program is required", "Program studi wajib diisi"),
+        ""
+      );
+      return;
+    }
+
+    // Validasi Waktu Mulai
+    if (!data.start_datetime || data.start_datetime.trim() === '') {
+      alert.error(
+        getText("Start time is required", "Waktu mulai wajib diisi"),
+        ""
+      );
+      return;
+    }
+
+    // Validasi Waktu Selesai
+    if (!data.end_datetime || data.end_datetime.trim() === '') {
+      alert.error(
+        getText("End time is required", "Waktu selesai wajib diisi"),
+        ""
+      );
+      return;
+    }
+
+    // Validasi Tujuan
+    if (!data.purpose || data.purpose.trim() === '') {
+      alert.error(
+        getText("Purpose is required", "Tujuan peminjaman wajib diisi"),
+        ""
+      );
+      return;
+    }
+
     // Validation for 'Other' purpose
     if (data.purpose === 'Other' && (!data.attachments || data.attachments.length === 0)) {
       alert.error(
@@ -2566,6 +2696,26 @@ const BookRoom: React.FC = () => {
                             </button>
                           </div>
 
+                          {/* Campus Selection */}
+                          <div className="md:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              {getText('Campus', 'Kampus')} *
+                            </label>
+                            <select
+                              value={selectedCampusId}
+                              onChange={(e) => setSelectedCampusId(e.target.value)}
+                              className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            >
+                              <option value="">{getText('Select Campus', 'Pilih Kampus')}</option>
+                              {campuses.map(campus => (
+                                <option key={campus.id} value={campus.id}>
+                                  {campus.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+
                           {/* SKS Toggle */}
                           <div className="md:col-span-2">
                             <button
@@ -2774,7 +2924,7 @@ const BookRoom: React.FC = () => {
                           </div>
                         )}
 
-                        {/* Prompt to select time first */}
+                        {/* Prompt to select time and campus first */}
                         {(!startDateTime || !endDateTime) ? (
                           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
                             <CalendarIcon className="h-12 w-12 text-yellow-600 mx-auto mb-3" />
@@ -2783,6 +2933,16 @@ const BookRoom: React.FC = () => {
                             </p>
                             <p className="text-yellow-600 text-sm mt-2">
                               {getText('Rooms will be displayed after you set the booking time', 'Ruangan akan ditampilkan setelah Anda mengatur waktu pemesanan')}
+                            </p>
+                          </div>
+                        ) : !selectedCampusId ? (
+                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
+                            <Building className="h-12 w-12 text-yellow-600 mx-auto mb-3" />
+                            <p className="text-yellow-800 font-medium">
+                              {getText('Please select a campus first', 'Silakan pilih kampus terlebih dahulu')}
+                            </p>
+                            <p className="text-yellow-600 text-sm mt-2">
+                              {getText('Rooms will be displayed after you select a campus', 'Ruangan akan ditampilkan setelah Anda memilih kampus')}
                             </p>
                           </div>
                         ) : (

@@ -64,6 +64,13 @@ interface AttendanceRecord {
     details?: AttendanceDetail[];
     // Homebase status from user
     is_homebase?: boolean;
+    scanned_room_id?: string | null;
+    scanned_room?: {
+        id: string;
+        name: string;
+        building?: { id: string; name: string; campus_id: string | null } | null;
+    } | null;
+    additional_notes?: string; // Optional additional notes from lecturer
 }
 
 interface StudyProgram {
@@ -137,6 +144,8 @@ const FinanceAttendance: React.FC = () => {
     const [studyProgramFilter, setStudyProgramFilter] = useState('all');
     const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'verified' | 'rejected'>('pending');
     const [searchTerm, setSearchTerm] = useState('');
+    const [campuses, setCampuses] = useState<{ id: string; name: string }[]>([]);
+    const [campusFilter, setCampusFilter] = useState('all');
 
     // Pagination
     const [currentPage, setCurrentPage] = useState(1);
@@ -195,6 +204,8 @@ const FinanceAttendance: React.FC = () => {
         disabled_message: 'Presensi transport sedang ditutup'
     });
 
+
+
     // Fetch data on mount and filter changes
     useEffect(() => {
         fetchAttendanceRecords();
@@ -203,7 +214,22 @@ const FinanceAttendance: React.FC = () => {
         fetchLectureSchedules();
         fetchWeekSettings();
         fetchPaymentRates();
-    }, [dateRange, studyProgramFilter, statusFilter]);
+        fetchCampuses();
+    }, [dateRange, studyProgramFilter, statusFilter, campusFilter]);
+
+    const fetchCampuses = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('campus')
+                .select('id, name')
+                .order('name');
+
+            if (error) throw error;
+            setCampuses(data || []);
+        } catch (error) {
+            console.error('Error fetching campuses:', error);
+        }
+    };
 
     useEffect(() => {
         if (attendanceRecords.length > 0) {
@@ -230,7 +256,16 @@ const FinanceAttendance: React.FC = () => {
 
             let query = supabase
                 .from('lecturer_attendance')
-                .select('*, study_program:study_programs(id, name), details:lecturer_attendance_details(*)')
+                .select(`
+                    *, 
+                    study_program:study_programs(id, name), 
+                    details:lecturer_attendance_details(*),
+                    scanned_room:rooms(
+                        id, 
+                        name, 
+                        building:building(id, name, campus_id)
+                    )
+                `)
                 .gte('attendance_date', dateRange.start)
                 .lte('attendance_date', dateRange.end)
                 .order('attendance_date', { ascending: false })
@@ -273,6 +308,15 @@ const FinanceAttendance: React.FC = () => {
             // Filter for non-homebase if selected
             if (studyProgramFilter === 'non_homebase') {
                 enrichedData = enrichedData.filter(r => r.is_homebase === false);
+            }
+
+            // Filter by campus if selected
+            if (campusFilter !== 'all') {
+                enrichedData = enrichedData.filter(r => {
+                    // Access campus_id from nested building object
+                    const scannedRoom = r.scanned_room as any;
+                    return scannedRoom?.building?.campus_id === campusFilter;
+                });
             }
 
             setAttendanceRecords(enrichedData);
@@ -708,7 +752,7 @@ const FinanceAttendance: React.FC = () => {
     // Handle selecting a record (fetch details too)
     const handleSelectRecord = async (record: AttendanceRecord) => {
         setSelectedRecord(record);
-        setVerificationNotes('');
+        setVerificationNotes(record.verified_notes || ''); // Load existing notes if available
         // Fetch details for this record
         await fetchAttendanceDetails(record.id);
     };
@@ -1875,7 +1919,7 @@ const FinanceAttendance: React.FC = () => {
 
             {/* Filters */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                     {/* Date Range */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">{getText('Start Date', 'Tanggal Mulai')}</label>
@@ -1924,6 +1968,23 @@ const FinanceAttendance: React.FC = () => {
                             <option value="pending">{getText('Pending', 'Menunggu')}</option>
                             <option value="verified">{getText('Verified', 'Terverifikasi')}</option>
                             <option value="rejected">{getText('Rejected', 'Ditolak')}</option>
+                        </select>
+                    </div>
+
+                    {/* Campus Filter */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{getText('Campus', 'Kampus')}</label>
+                        <select
+                            value={campusFilter}
+                            onChange={(e) => setCampusFilter(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                            <option value="all">{getText('All Campuses', 'Semua Kampus')}</option>
+                            {campuses.map(campus => (
+                                <option key={campus.id} value={campus.id}>
+                                    {campus.name}
+                                </option>
+                            ))}
                         </select>
                     </div>
                 </div>
@@ -2001,6 +2062,14 @@ const FinanceAttendance: React.FC = () => {
                                         {paginatedRecords.map((record) => (
                                             <tr key={record.id} className={`hover:bg-gray-50 ${record.is_homebase === false ? 'bg-orange-50/50' : ''}`}>
                                                 <td className="px-4 py-3">
+                                                    <span className="text-xs text-gray-500">
+                                                        {(() => {
+                                                            const scannedRoom = record.scanned_room as any;
+                                                            return scannedRoom?.name
+                                                                ? `📍 ${scannedRoom.name}`
+                                                                : '📍 Lokasi tidak tercatat';
+                                                        })()}
+                                                    </span>
                                                     {record.photo_capture ? (
                                                         <img
                                                             src={record.photo_capture}
@@ -2422,7 +2491,7 @@ const FinanceAttendance: React.FC = () => {
                                                                         </span>
                                                                     ) : (
                                                                         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                                                                            <Clock className="w-3 h-3" /> Perlu Perhatian
+                                                                            <Clock className="w-3 h-3" /> Perlu Pertimbangan
                                                                         </span>
                                                                     )}
                                                                 </td>
@@ -2480,6 +2549,26 @@ const FinanceAttendance: React.FC = () => {
                                         <label className="text-gray-500">Tujuan</label>
                                         <p className="font-medium text-gray-900 capitalize">{selectedRecord.purpose}</p>
                                     </div>
+                                    <div>
+                                        <label className="text-gray-500">Ruangan Scan</label>
+                                        <div className="flex items-center gap-2">
+                                            <div className="p-1 bg-blue-50 rounded">
+                                                <Building className="w-4 h-4 text-blue-600" />
+                                            </div>
+                                            <p className="font-medium text-gray-900">
+                                                {(() => {
+                                                    const scannedRoom = selectedRecord.scanned_room as any;
+                                                    if (scannedRoom?.name) {
+                                                        return scannedRoom.name;
+                                                    } else if (selectedRecord.scanned_room_id) {
+                                                        return <span className="text-xs text-gray-500 font-mono">{selectedRecord.scanned_room_id.substring(0, 8)}...</span>;
+                                                    } else {
+                                                        return <span className="text-gray-400 italic text-sm">Tidak ada data scan</span>;
+                                                    }
+                                                })()}
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
                                 {selectedRecord.purpose_description && (
                                     <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100">
@@ -2487,6 +2576,16 @@ const FinanceAttendance: React.FC = () => {
                                         <p className="mt-1 font-medium text-gray-900">{selectedRecord.purpose_description}</p>
                                     </div>
                                 )}
+
+                                {selectedRecord.additional_notes && (
+                                    selectedRecord.purpose === 'mengajar' ||
+                                    selectedRecord.additional_notes !== selectedRecord.purpose_description
+                                ) && (
+                                        <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                                            <label className="text-blue-800 text-xs font-semibold uppercase tracking-wider">Opsi Keterangan Tambahan</label>
+                                            <p className="mt-1 font-medium text-gray-900">{selectedRecord.additional_notes}</p>
+                                        </div>
+                                    )}
 
                                 {/* Attendance Details Section - Multi-jadwal */}
                                 {loadingDetails ? (

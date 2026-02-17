@@ -73,6 +73,8 @@ export const useRoomData = (targetDate: string) => {
       if (roomsError) throw roomsError;
 
       // 2. FETCH BOOKINGS - APPROVED dan BOOKED untuk conflict detection
+      // Query for ALL bookings that are active on the target date
+      // Not just bookings that START on the target date
       const { startUTC, endUTC } = getDateRangeForBookings(date);
 
       const { data: bookingsData, error: bookingsError } = await supabase
@@ -99,9 +101,9 @@ export const useRoomData = (targetDate: string) => {
             )
           )
         `)
-        .gte('start_time', startUTC)
-        .lt('start_time', endUTC)
-        .in('status', ['approved', 'borrowed']); // APPROVED dan BOOKED
+        .lte('start_time', endUTC)    // Booking starts before or during target date
+        .gte('end_time', startUTC)    // Booking ends during or after target date
+        .in('status', ['approved', 'borrowed']); // APPROVED dan BORROWED
 
       if (bookingsError) throw bookingsError;
 

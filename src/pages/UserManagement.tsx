@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import html2canvas from 'html2canvas';
 import {
   Users,
   Plus,
@@ -411,6 +412,16 @@ const UserManagement: React.FC = () => {
   const [editingUserRooms, setEditingUserRooms] = useState<Room[]>([]);
   const [roomSearchTerm, setRoomSearchTerm] = useState('');
 
+  // Download lecturer list state
+  const [isDownloadingLecturers, setIsDownloadingLecturers] = useState(false);
+
+  // Student Cleanup States
+  const [showCleanupModal, setShowCleanupModal] = useState(false);
+  const [cleanupMonths, setCleanupMonths] = useState<2 | 3 | 6>(6);
+  const [cleanupNimPrefix, setCleanupNimPrefix] = useState('');
+  const [cleanupPreviewCount, setCleanupPreviewCount] = useState<number | null>(null);
+  const [isCleaning, setIsCleaning] = useState(false);
+
   const itemsPerPage = 10;
   const [currentPage, setCurrentPage] = useState(1);
   // Calculate startIndex for pagination display
@@ -581,7 +592,7 @@ const UserManagement: React.FC = () => {
 
   const fetchStudyPrograms = useCallback(async () => {
     try {
-      let query = supabase.from('study_programs').select('*').eq('status', 'show');
+      let query = supabase.from('study_programs').select('*');
 
       if (profile?.role === 'department_admin' && profile.department_id) {
         query = query.eq('department_id', profile.department_id);
@@ -601,7 +612,6 @@ const UserManagement: React.FC = () => {
       const { data, error } = await supabase
         .from('study_programs')
         .select('*')
-        .eq('status', 'show')
         .eq('department_id', departmentId);
 
       if (error) throw error;
@@ -830,6 +840,155 @@ const UserManagement: React.FC = () => {
     }
   };
 
+  // Download individual lecturer nametag
+  const downloadLecturerNametag = async () => {
+    if (!editingUser) return;
+
+    const element = document.getElementById('lecturer-nametag-element');
+    if (!element) return;
+
+    setIsDownloadingLecturers(true);
+    setTimeout(async () => {
+      try {
+        const canvas = await html2canvas(element, {
+          backgroundColor: null,
+          scale: 2
+        });
+
+        const link = document.createElement('a');
+        link.download = `Nametag-${editingUser.full_name.replace(/\s+/g, '-')}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+
+        toast.success(getText('Nametag downloaded successfully', 'Nametag berhasil diunduh'));
+      } catch (error) {
+        console.error('Error downloading nametag:', error);
+        toast.error(getText('Failed to download nametag', 'Gagal mengunduh nametag'));
+      } finally {
+        setIsDownloadingLecturers(false);
+      }
+    }, 500);
+  };
+
+  // ==========================================
+  // STUDENT CLEANUP FEATURE
+  // ==========================================
+
+  // Check how many students would be deleted
+  const checkCleanupCount = useCallback(async (months: number) => {
+    setIsCleaning(true);
+    try {
+      const cutoffDate = new Date();
+      cutoffDate.setMonth(cutoffDate.getMonth() - months);
+
+      const { count, error } = await supabase
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .eq('role', 'student')
+        .lt('created_at', cutoffDate.toISOString()); // Older than cutoff
+
+      if (error) throw error;
+      setCleanupPreviewCount(count || 0);
+    } catch (error) {
+      console.error('Error checking cleanup count:', error);
+      toast.error(getText('Failed to check student count', 'Gagal memeriksa jumlah mahasiswa'));
+    } finally {
+      setIsCleaning(false);
+    }
+  }, [getText]);
+
+  // Update preview when months change
+  useEffect(() => {
+    if (showCleanupModal) {
+      checkCleanupCount(cleanupMonths);
+    }
+  }, [showCleanupModal, cleanupMonths, checkCleanupCount]);
+
+  // Execute Cleanup with Manual Cascade
+  const handleExecuteCleanup = async () => {
+    if (cleanupPreviewCount === 0) return;
+
+    try {
+      setIsCleaning(true);
+      const cutoffDate = new Date();
+      cutoffDate.setMonth(cutoffDate.getMonth() - cleanupMonths);
+      const cutoffISO = cutoffDate.toISOString();
+
+      let totalDeleted = 0;
+      let hasMore = true;
+      const BATCH_SIZE = 50;
+
+      toast.loading(getText('Starting cleanup process...', 'Memulai proses pembersihan...'), { id: 'cleanup-toast' });
+
+      while (hasMore) {
+        // 1. Get Batch of User IDs
+        const { data: usersToDelete, error: fetchError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('role', 'student')
+          .lt('created_at', cutoffISO)
+          .limit(BATCH_SIZE);
+
+        if (fetchError) throw fetchError;
+
+        if (!usersToDelete || usersToDelete.length === 0) {
+          hasMore = false;
+          break;
+        }
+
+        const userIds = usersToDelete.map(u => u.id);
+        console.log(`Processing batch cleanup for ${userIds.length} users...`);
+
+        // 2. DELETE RELATED DATA (MANUAL CASCADE)
+
+        // A. Checkouts & Items
+        const { data: checkouts } = await supabase.from('checkouts').select('id').in('user_id', userIds);
+        if (checkouts && checkouts.length > 0) {
+          const checkoutIds = checkouts.map(c => c.id);
+          await supabase.from('checkout_items').delete().in('checkout_id', checkoutIds);
+          await supabase.from('checkouts').delete().in('user_id', userIds);
+        }
+
+        // B. Independent Child Tables (Parallel)
+        await Promise.all([
+          supabase.from('bookings').delete().in('user_id', userIds),
+          supabase.from('lending_tool').delete().in('id_user', userIds),
+          supabase.from('room_users').delete().in('user_id', userIds),
+          supabase.from('reports').delete().in('reporter_id', userIds),
+          supabase.from('final_sessions').delete().in('student_id', userIds),
+          supabase.from('exam_schedules').delete().in('examiner_id', userIds),
+        ]);
+
+        // 3. DELETE USERS
+        const { error: deleteError, count } = await supabase
+          .from('users')
+          .delete({ count: 'exact' })
+          .in('id', userIds);
+
+        if (deleteError) throw deleteError;
+
+        totalDeleted += count || 0;
+      }
+
+      toast.dismiss('cleanup-toast');
+      toast.success(getText(
+        `Successfully deleted ${totalDeleted} student data older than ${cleanupMonths} months`,
+        `Berhasil menghapus ${totalDeleted} data mahasiswa yang lebih lama dari ${cleanupMonths} bulan`
+      ));
+
+      setShowCleanupModal(false);
+      fetchUsers();
+      setCleanupPreviewCount(0);
+
+    } catch (error: any) {
+      console.error('Error executing cleanup:', error);
+      toast.dismiss('cleanup-toast');
+      toast.error(error.message || getText('Failed to delete students', 'Gagal menghapus data mahasiswa'));
+    } finally {
+      setIsCleaning(false);
+    }
+  };
+
   // useEffect hooks
   useEffect(() => {
     if (profile) {
@@ -874,7 +1033,7 @@ const UserManagement: React.FC = () => {
   const currentTableData = users;
 
   // Access control check
-  const hasAccess = profile && ['super_admin', 'department_admin', 'staffing'].includes(profile.role);
+  const hasAccess = profile && ['super_admin', 'department_admin', 'staffing', 'finance'].includes(profile.role);
 
   const handleSubmit = async (data: UserForm) => {
     try {
@@ -1236,6 +1395,17 @@ const UserManagement: React.FC = () => {
             >
               <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
             </button>
+
+            {/* Cleanup Button (Admin Only) */}
+            {(profile?.role === 'super_admin' || profile?.role === 'department_admin') && (
+              <button
+                onClick={() => setShowCleanupModal(true)}
+                className="p-3 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors duration-200"
+                title={getText('Cleanup Old Students', 'Hapus Mahasiswa Lama')}
+              >
+                <Trash2 className="h-5 w-5" />
+              </button>
+            )}
 
             <button
               onClick={() => {
@@ -2278,10 +2448,26 @@ const UserManagement: React.FC = () => {
                 {/* Room Assignment Section - Only show when editing */}
                 {editingUser && (
                   <div className="bg-orange-50 rounded-xl p-4 border border-orange-200">
-                    <h4 className="font-semibold text-orange-900 mb-4 flex items-center">
-                      <DoorOpen className="h-5 w-5 mr-2" />
-                      {getText('Room Assignment', 'Penugasan Ruangan')}
-                    </h4>
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="font-semibold text-orange-900 flex items-center">
+                        <DoorOpen className="h-5 w-5 mr-2" />
+                        {getText('Room Assignment', 'Penugasan Ruangan')}
+                      </h4>
+
+                      {/* Download Nametag Button - Only for lecturers */}
+                      {editingUser.role === 'lecturer' && (
+                        <button
+                          type="button"
+                          onClick={downloadLecturerNametag}
+                          disabled={isDownloadingLecturers}
+                          className={`flex items-center space-x-2 px-3 py-2 text-white rounded-lg transition-colors text-sm ${isDownloadingLecturers ? 'bg-orange-400 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600'}`}
+                          title={getText('Download Nametag', 'Unduh Nametag')}
+                        >
+                          {isDownloadingLecturers ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                          <span>{getText('Nametag', 'Nametag')}</span>
+                        </button>
+                      )}
+                    </div>
 
                     {/* Add Room to User */}
                     <div className="mb-4">
@@ -2436,7 +2622,7 @@ const UserManagement: React.FC = () => {
                 )}
               </button>
             </div>
-          </div>
+          </div >
         </div >
       )}
 
@@ -2526,6 +2712,183 @@ const UserManagement: React.FC = () => {
           </div>
         )
       }
+
+      {/* Student Cleanup Modal */}
+      {showCleanupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center space-x-3 mb-6">
+              <div className="p-3 bg-red-100 rounded-full">
+                <Trash2 className="h-6 w-6 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">
+                  {getText('Cleanup Old Students', 'Hapus Mahasiswa Lama')}
+                </h3>
+                <p className="text-sm text-gray-500">
+                  {getText('Delete student accounts based on inactive duration', 'Hapus akun mahasiswa berdasarkan waktu pendaftaran')}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {getText('Delete students registered more than:', 'Hapus mahasiswa yang terdaftar lebih dari:')}
+                </label>
+                <div className="grid grid-cols-3 gap-3">
+                  {[2, 3, 6].map((months) => (
+                    <button
+                      key={months}
+                      onClick={() => setCleanupMonths(months as 2 | 3 | 6)}
+                      className={`py-3 px-4 rounded-xl border text-sm font-semibold transition-all ${cleanupMonths === months
+                        ? 'bg-red-50 border-red-500 text-red-700 ring-2 ring-red-200'
+                        : 'bg-white border-gray-200 text-gray-600 hover:border-red-300 hover:bg-red-50/50'
+                        }`}
+                    >
+                      {months} {getText('Months', 'Bulan')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {getText('Filter by Identity Number (Start with):', 'Filter berdasarkan NIM (Diawali dengan):')}
+                </label>
+                <div className="relative">
+                  <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={cleanupNimPrefix}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 2);
+                      setCleanupNimPrefix(val);
+                    }}
+                    placeholder={getText('e.g. 20, 21', 'cth. 20, 21')}
+                    className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  {getText('Leave empty to select regardless of NIM.', 'Biarkan kosong untuk memilih semua NIM.')}
+                </p>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start space-x-3">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-amber-800">
+                    {getText('Attention', 'Perhatian')}
+                  </p>
+                  <p className="text-sm text-amber-700">
+                    {getText(
+                      `This action will permanently delete ${cleanupPreviewCount === null ? '...' : cleanupPreviewCount} student account(s) registered before ${new Date(new Date().setMonth(new Date().getMonth() - cleanupMonths)).toLocaleDateString()}${cleanupNimPrefix ? ` with NIM starting with '${cleanupNimPrefix}'` : ''}.`,
+                      `Tindakan ini akan menghapus permanen ${cleanupPreviewCount === null ? '...' : cleanupPreviewCount} akun mahasiswa yang terdaftar sebelum ${new Date(new Date().setMonth(new Date().getMonth() - cleanupMonths)).toLocaleDateString('id-ID')}${cleanupNimPrefix ? ` dengan NIM diawali '${cleanupNimPrefix}'` : ''}.`
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowCleanupModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                disabled={isCleaning}
+              >
+                {getText('Cancel', 'Batal')}
+              </button>
+              <button
+                onClick={handleExecuteCleanup}
+                disabled={isCleaning || cleanupPreviewCount === 0}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-lg shadow-red-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+              >
+                {isCleaning ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    <span>{getText('Deleting...', 'Menghapus...')}</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4" />
+                    <span>{getText('Confirm Delete', 'Konfirmasi Hapus')}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HIDDEN TEMPLATE FOR GENERATING INDIVIDUAL NAMETAG */}
+      <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
+        <div
+          id="lecturer-nametag-element"
+          style={{
+            width: '25cm',
+            height: '6.8cm',
+            position: 'relative',
+            overflow: 'hidden'
+          }}
+        >
+          {/* Background Image Template */}
+          <img
+            src="/template_nametag.png"
+            alt="Nametag Background"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover'
+            }}
+          />
+
+          {/* Content Overlay */}
+          {editingUser && (
+            <>
+              {/* Name - Positioned with exact coordinates */}
+              <div style={{
+                position: 'absolute',
+                left: '0.32cm',
+                top: '2.76cm',
+                width: '24cm',
+                height: '1.27cm',
+                fontSize: '30.1pt',
+                fontWeight: 'bold',
+                fontFamily: "'League Spartan', sans-serif",
+                color: '#000',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                lineHeight: 1
+              }}>
+                {editingUser.full_name}
+              </div>
+
+              {/* Program Studi - Positioned with exact coordinates */}
+              <div style={{
+                position: 'absolute',
+                left: '8.59cm',
+                top: '5.0cm',
+                width: '7.83cm',
+                height: '0.63cm',
+                fontSize: '15pt',
+                fontWeight: '600',
+                fontFamily: "'League Spartan', sans-serif",
+                color: '#1e40af',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                lineHeight: 1
+              }}>
+                {editingUser.study_program?.name || getText('General', 'Umum')}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div >
   );
 };

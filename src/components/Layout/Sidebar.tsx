@@ -4,7 +4,7 @@ import { NavLink } from 'react-router-dom';
 import {
     Calendar, Package, CheckCircle, Users, Building, Settings, User, FileText,
     BarChart3, Clock, GraduationCap, Wrench, ClipboardCheck, MapPin, CalendarCheck, CheckSquare, X,
-    ChevronRight, Sparkles, Home, PieChart, Zap, HandHelping, UserCheck, Map, ZoomIn, ZoomOut, AlertTriangle, Camera
+    ChevronRight, Sparkles, Home, PieChart, Zap, HandHelping, UserCheck, Map, ZoomIn, ZoomOut, AlertTriangle, Camera, HardDrive
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -178,6 +178,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
         if (user.role === 'department_admin') {
             return [
                 { icon: PieChart, label: getText('Dashboard', 'Dasbor'), path: '/' },
+                { icon: Building, label: getText('Room Management', 'Manajemen Ruangan'), path: '/rooms' },
                 { icon: CalendarCheck, label: getText('Exam Management', 'Jadwal UAS'), path: '/exams' },
                 { icon: UserCheck, label: getText('Session Schedule', 'Jadwal Sidang'), path: '/session-schedule' },
                 { icon: Clock, label: getText('Lecture Schedules', 'Jadwal Kuliah'), path: '/schedules' },
@@ -206,6 +207,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: Camera, label: getText('Attendance Verification', 'Validasi Presensi'), path: '/attendance-verification' },
                 { icon: FileText, label: getText('Form Builder', 'Pembuat Formulir'), path: '/forms' },
                 { icon: Settings, label: getText('System Settings', 'Pengaturan Sistem'), path: '/settings' },
+                { icon: HardDrive, label: getText('Data Cleanup', 'Pembersihan Data'), path: '/storage-management' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
         }
@@ -269,6 +271,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
         // Jika user adalah finance (Keuangan)
         if (user.role === 'finance') {
             return [
+                { icon: Users, label: getText('User Management', 'Manajemen Pengguna'), path: '/users' },
                 { icon: ClipboardCheck, label: getText('Attendance Verification', 'Verifikasi Presensi'), path: '/attendance-verification' },
                 { icon: Camera, label: getText('Attendance', 'Presensi'), path: '/presensi-dosen' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },

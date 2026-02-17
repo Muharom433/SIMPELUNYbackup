@@ -12,6 +12,8 @@ const AttendanceVerification: React.FC = () => {
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     const [lecturerType, setLecturerType] = useState<'all' | 'homebase' | 'external'>('all');
+    const [campuses, setCampuses] = useState<any[]>([]);
+    const [selectedCampusId, setSelectedCampusId] = useState<string>('all');
     const [data, setData] = useState<any[]>([]);
 
     const months = [
@@ -23,8 +25,26 @@ const AttendanceVerification: React.FC = () => {
     const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
 
     useEffect(() => {
+        fetchCampuses();
+    }, []);
+
+    useEffect(() => {
         fetchData();
-    }, [selectedMonth, selectedYear, lecturerType]);
+    }, [selectedMonth, selectedYear, lecturerType, selectedCampusId]);
+
+    const fetchCampuses = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('campus')
+                .select('id, name')
+                .order('name');
+
+            if (error) throw error;
+            setCampuses(data || []);
+        } catch (error) {
+            console.error('Error fetching campuses:', error);
+        }
+    };
 
     const fetchData = async () => {
         setLoading(true);
@@ -40,7 +60,10 @@ const AttendanceVerification: React.FC = () => {
                     lecturer:users!lecturer_user_id (
                         id, full_name, identity_number
                     ),
-                    details:lecturer_attendance_details (*)
+                    details:lecturer_attendance_details (*),
+                    scanned_room:rooms!scanned_room_id (
+                        id, name, campus_id
+                    )
                 `)
                 .gte('attendance_date', startDate)
                 .lte('attendance_date', endDate)
@@ -50,8 +73,14 @@ const AttendanceVerification: React.FC = () => {
 
             if (error) throw error;
 
-            // Note: Lecturer type filter disabled - column doesn't exist in users table
+            // Filter by campus if selected
             let filteredRecords = records || [];
+            if (selectedCampusId !== 'all') {
+                filteredRecords = filteredRecords.filter((record: any) => {
+                    // Check if the scanned room belongs to the selected campus
+                    return record.scanned_room?.campus_id === selectedCampusId;
+                });
+            }
 
             setData(filteredRecords);
         } catch (error) {
@@ -249,6 +278,22 @@ const AttendanceVerification: React.FC = () => {
                         <option value="external">Dosen Luar Biasa (DLB)</option>
                     </select>
                 </div>
+
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Kampus</label>
+                    <select
+                        value={selectedCampusId}
+                        onChange={(e) => setSelectedCampusId(e.target.value)}
+                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                        <option value="all">Semua Kampus</option>
+                        {campuses.map((campus) => (
+                            <option key={campus.id} value={campus.id}>
+                                {campus.name}
+                            </option>
+                        ))}
+                    </select>
+                </div>
             </div>
 
             {/* Content Table Placeholder - or Summary */}
@@ -270,6 +315,7 @@ const AttendanceVerification: React.FC = () => {
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dosen</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kegiatan</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ruangan</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jam</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                 </tr>
@@ -287,6 +333,9 @@ const AttendanceVerification: React.FC = () => {
                                             {record.details?.map((d: any) => d.course_name || d.activity_type).join(', ') || record.purpose}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            {record.scanned_room?.name || '-'}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                             {record.attendance_time}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm">
@@ -298,7 +347,7 @@ const AttendanceVerification: React.FC = () => {
                                 ))}
                                 {data.length > 10 && (
                                     <tr>
-                                        <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
+                                        <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
                                             ... dan {data.length - 10} data lainnya
                                         </td>
                                     </tr>

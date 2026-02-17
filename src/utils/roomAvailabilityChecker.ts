@@ -27,7 +27,7 @@ interface FilterParams {
  * Checks all 6 criteria for room availability
  */
 export class RoomAvailabilityChecker {
-  
+
   /**
    * 1️⃣ Check if room is available for booking
    */
@@ -39,7 +39,7 @@ export class RoomAvailabilityChecker {
    * 2️⃣ Check lecture schedule conflicts
    */
   private static async checkLectureConflicts(
-    roomName: string, 
+    roomName: string,
     params: FilterParams
   ): Promise<RoomConflict[]> {
     try {
@@ -57,12 +57,12 @@ export class RoomAvailabilityChecker {
       if (error) throw error;
 
       const conflicts: RoomConflict[] = [];
-      
+
       for (const lecture of lectures || []) {
         if (this.isTimeOverlap(
-          params.startTime, 
-          params.endTime, 
-          lecture.start_time?.substring(0, 5) || '', 
+          params.startTime,
+          params.endTime,
+          lecture.start_time?.substring(0, 5) || '',
           lecture.end_time?.substring(0, 5) || ''
         )) {
           conflicts.push({
@@ -86,7 +86,7 @@ export class RoomAvailabilityChecker {
    * 3️⃣ Check exam schedule conflicts
    */
   private static async checkExamConflicts(
-    roomId: string, 
+    roomId: string,
     params: FilterParams
   ): Promise<RoomConflict[]> {
     try {
@@ -99,15 +99,15 @@ export class RoomAvailabilityChecker {
       if (error) throw error;
 
       const conflicts: RoomConflict[] = [];
-      
+
       for (const exam of exams || []) {
         // Skip take-home exams (no time conflict)
         if (exam.is_take_home) continue;
 
         if (this.isTimeOverlap(
-          params.startTime, 
-          params.endTime, 
-          exam.start_time?.substring(0, 5) || '', 
+          params.startTime,
+          params.endTime,
+          exam.start_time?.substring(0, 5) || '',
           exam.end_time?.substring(0, 5) || ''
         )) {
           conflicts.push({
@@ -131,7 +131,7 @@ export class RoomAvailabilityChecker {
    * 4️⃣ Check session schedule conflicts
    */
   private static async checkSessionConflicts(
-    roomId: string, 
+    roomId: string,
     params: FilterParams
   ): Promise<RoomConflict[]> {
     try {
@@ -154,12 +154,12 @@ export class RoomAvailabilityChecker {
       if (error) throw error;
 
       const conflicts: RoomConflict[] = [];
-      
+
       for (const session of sessions || []) {
         if (this.isTimeOverlap(
-          params.startTime, 
-          params.endTime, 
-          session.start_time?.substring(0, 5) || '', 
+          params.startTime,
+          params.endTime,
+          session.start_time?.substring(0, 5) || '',
           session.end_time?.substring(0, 5) || ''
         )) {
           conflicts.push({
@@ -183,14 +183,20 @@ export class RoomAvailabilityChecker {
    * 5️⃣ Check booking conflicts
    */
   private static async checkBookingConflicts(
-    roomId: string, 
+    roomId: string,
     params: FilterParams
   ): Promise<RoomConflict[]> {
     try {
       // Create UTC range for the target date
-      const startOfDay = new Date(`${params.date}T00:00:00`).toISOString();
-      const endOfDay = new Date(`${params.date}T23:59:59`).toISOString();
+      // We need to check ALL bookings that overlap with this date
+      // Not just bookings that START on this date
+      const targetDateStart = new Date(`${params.date}T00:00:00`).toISOString();
+      const targetDateEnd = new Date(`${params.date}T23:59:59`).toISOString();
 
+      // Query for bookings where:
+      // - booking starts before or on target date END
+      // - booking ends after or on target date START
+      // This catches all bookings that are active during the target date
       const { data: bookings, error } = await supabase
         .from('bookings')
         .select(`
@@ -198,34 +204,64 @@ export class RoomAvailabilityChecker {
           user:users!user_id(full_name, identity_number)
         `)
         .eq('room_id', roomId)
-        .eq('status', 'approved') // Only check approved bookings
-        .gte('start_time', startOfDay)
-        .lte('start_time', endOfDay);
+        .in('status', ['approved', 'borrowed']) // Check approved and borrowed bookings
+        .lte('start_time', targetDateEnd)  // Booking starts before or during target date
+        .gte('end_time', targetDateStart); // Booking ends during or after target date
 
       if (error) throw error;
 
       const conflicts: RoomConflict[] = [];
-      
+
       for (const booking of bookings || []) {
         const bookingStart = new Date(booking.start_time);
         const bookingEnd = new Date(booking.end_time);
-        
-        const bookingStartTime = format(bookingStart, 'HH:mm');
-        const bookingEndTime = format(bookingEnd, 'HH:mm');
 
-        if (this.isTimeOverlap(
-          params.startTime, 
-          params.endTime, 
-          bookingStartTime, 
-          bookingEndTime
-        )) {
-          conflicts.push({
-            type: 'booking',
-            title: booking.purpose || 'Pemesanan Ruangan',
-            startTime: bookingStartTime,
-            endTime: bookingEndTime,
-            details: `${booking.user?.full_name || 'User'} • ${booking.user?.identity_number || ''}`
-          });
+        // Check if this booking is actually on the target date
+        const targetDate = new Date(params.date);
+        const bookingStartDate = new Date(bookingStart.toDateString());
+        const bookingEndDate = new Date(bookingEnd.toDateString());
+        const targetDateOnly = new Date(targetDate.toDateString());
+
+        // Only process if booking overlaps with target date
+        if (bookingStartDate <= targetDateOnly && bookingEndDate >= targetDateOnly) {
+          // For the target date, determine the effective time range
+          let effectiveStartTime: string;
+          let effectiveEndTime: string;
+
+          // If booking starts on target date, use actual start time
+          // Otherwise, it started before, so use 00:00
+          if (bookingStartDate.getTime() === targetDateOnly.getTime()) {
+            effectiveStartTime = format(bookingStart, 'HH:mm');
+          } else {
+            effectiveStartTime = '00:00';
+          }
+
+          // If booking ends on target date, use actual end time
+          // Otherwise, it ends later, so use 23:59
+          if (bookingEndDate.getTime() === targetDateOnly.getTime()) {
+            effectiveEndTime = format(bookingEnd, 'HH:mm');
+          } else {
+            effectiveEndTime = '23:59';
+          }
+
+          if (this.isTimeOverlap(
+            params.startTime,
+            params.endTime,
+            effectiveStartTime,
+            effectiveEndTime
+          )) {
+            // Calculate total booking duration in days
+            const durationDays = Math.ceil((bookingEnd.getTime() - bookingStart.getTime()) / (1000 * 60 * 60 * 24));
+            const isMultiDay = durationDays > 1;
+
+            conflicts.push({
+              type: 'booking',
+              title: booking.purpose || 'Pemesanan Ruangan',
+              startTime: effectiveStartTime,
+              endTime: effectiveEndTime,
+              details: `${booking.user?.full_name || 'User'} • ${booking.user?.identity_number || ''}${isMultiDay ? ` • ${durationDays} hari` : ''}`
+            });
+          }
         }
       }
 
@@ -240,13 +276,13 @@ export class RoomAvailabilityChecker {
    * 🔧 Helper: Check if two time ranges overlap
    */
   private static isTimeOverlap(
-    start1: string, 
-    end1: string, 
-    start2: string, 
+    start1: string,
+    end1: string,
+    start2: string,
     end2: string
   ): boolean {
     if (!start1 || !end1 || !start2 || !end2) return false;
-    
+
     // Convert HH:mm to minutes for easier comparison
     const toMinutes = (time: string): number => {
       const [hours, minutes] = time.split(':').map(Number);
@@ -266,7 +302,7 @@ export class RoomAvailabilityChecker {
    * 🎯 MAIN METHOD: Check room availability
    */
   public static async checkRoomAvailability(
-    room: any, 
+    room: any,
     params: FilterParams
   ): Promise<RoomAvailabilityResult> {
     // 1️⃣ Check if room is enabled
@@ -300,7 +336,7 @@ export class RoomAvailabilityChecker {
 
       // 6️⃣ Determine availability
       const isAvailable = allConflicts.length === 0;
-      
+
       let reason: string | undefined;
       if (!isAvailable) {
         const conflictTypes = [...new Set(allConflicts.map(c => c.type))];
@@ -310,7 +346,7 @@ export class RoomAvailabilityChecker {
           session: 'Sidang',
           booking: 'Pemesanan'
         };
-        
+
         reason = `Bertabrakan dengan: ${conflictTypes.map(t => typeNames[t]).join(', ')}`;
       }
 
@@ -334,7 +370,7 @@ export class RoomAvailabilityChecker {
    * 🚀 BATCH METHOD: Filter available rooms from a list
    */
   public static async filterAvailableRooms(
-    rooms: any[], 
+    rooms: any[],
     params: FilterParams
   ): Promise<{ available: any[], unavailable: Array<{ room: any, result: RoomAvailabilityResult }> }> {
     const available: any[] = [];
@@ -351,7 +387,7 @@ export class RoomAvailabilityChecker {
     results.forEach((promiseResult) => {
       if (promiseResult.status === 'fulfilled') {
         const { room, result } = promiseResult.value;
-        
+
         if (result.isAvailable) {
           available.push(room);
         } else {

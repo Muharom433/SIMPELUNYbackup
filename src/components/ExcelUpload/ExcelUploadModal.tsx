@@ -10,6 +10,7 @@ interface ExcelUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  mode?: 'replace' | 'append'; // New prop to control behavior
 }
 
 interface ExcelRow {
@@ -46,7 +47,7 @@ interface TransformedSchedule {
   amount: number | null;
 }
 
-const ExcelUploadModal: React.FC<ExcelUploadModalProps> = ({ isOpen, onClose, onSuccess }) => {
+const ExcelUploadModal: React.FC<ExcelUploadModalProps> = ({ isOpen, onClose, onSuccess, mode = 'replace' }) => {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<TransformedSchedule[]>([]);
@@ -301,17 +302,20 @@ const ExcelUploadModal: React.FC<ExcelUploadModalProps> = ({ isOpen, onClose, on
     }
 
     setUploading(true);
-    const loadingToast = toast.loading('Menghapus jadwal lama...');
+    const loadingToast = toast.loading(mode === 'append' ? 'Menambahkan jadwal...' : 'Menghapus jadwal lama...');
 
     try {
-      // Step 1: Delete all existing schedules
-      const { error: deleteError } = await supabase
-        .from('lecture_schedules')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000'); // Target semua baris
+      // Step 1: Delete all existing schedules (only in replace mode)
+      if (mode === 'replace') {
+        const { error: deleteError } = await supabase
+          .from('lecture_schedules')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000'); // Target semua baris
 
-      if (deleteError) throw deleteError;
-      toast.loading('Mengunggah jadwal baru...', { id: loadingToast });
+        if (deleteError) throw deleteError;
+      }
+
+      toast.loading(mode === 'append' ? 'Menambahkan jadwal...' : 'Mengunggah jadwal baru...', { id: loadingToast });
 
       // Step 2: Prepare and insert new schedule data (Applying Mappings)
       const finalData = getFinalScheduleData(); // Use mapped data
@@ -332,7 +336,10 @@ const ExcelUploadModal: React.FC<ExcelUploadModalProps> = ({ isOpen, onClose, on
       }
 
       toast.dismiss(loadingToast);
-      toast.success(`Berhasil mengunggah ${scheduleData.length} jadwal kuliah baru.`);
+      const successMessage = mode === 'append'
+        ? `Berhasil menambahkan ${scheduleData.length} jadwal kuliah baru.`
+        : `Berhasil mengunggah ${scheduleData.length} jadwal kuliah baru.`;
+      toast.success(successMessage);
       onSuccess();
       onClose();
     } catch (error: any) {
