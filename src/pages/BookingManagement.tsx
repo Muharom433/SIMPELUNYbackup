@@ -935,6 +935,8 @@ const BookingManagement: React.FC = () => {
 
             // ===== HANDLE STATUS BORROWED =====
             if (roomChanged && originalStatus === 'borrowed') {
+                console.log('🔄 Room transfer detected for borrowed booking');
+
                 // STEP 1: Pisahkan mandatory vs optional
                 const mandatoryEquipmentOld = originalEquipmentSelections.filter(e => e.is_mandatory);
                 const optionalEquipmentOld = originalEquipmentSelections.filter(e => !e.is_mandatory);
@@ -942,45 +944,64 @@ const BookingManagement: React.FC = () => {
                 const mandatoryEquipmentNew = equipmentSelections.filter(e => e.is_mandatory);
                 const optionalEquipmentNew = equipmentSelections.filter(e => !e.is_mandatory);
 
-                // STEP 2: Insert checkout HANYA untuk MANDATORY equipment LAMA
+                console.log('📦 Equipment breakdown:', {
+                    mandatoryOld: mandatoryEquipmentOld.length,
+                    optionalOld: optionalEquipmentOld.length,
+                    mandatoryNew: mandatoryEquipmentNew.length,
+                    optionalNew: optionalEquipmentNew.length
+                });
+
+                // STEP 2: Buat checkout untuk perpindahan ruangan + MANDATORY equipment LAMA SAJA
                 if (mandatoryEquipmentOld.length > 0) {
+                    console.log('🏢 Creating room transfer checkout...');
+
                     const checkoutData = {
                         user_id: selectedBooking.user_id,
                         booking_id: selectedBooking.id,
-                        room_id: originalRoomId, // Ruang LAMA
+                        room_id: originalRoomId, // ⭐ RUANGAN LAMA disimpan di checkout
                         checkout_date: new Date().toISOString(),
                         expected_return_date: selectedBooking.end_time,
                         status: 'returned',
                         type: 'room',
+                        is_room_transfer: true, // ⭐ TANDAI sebagai perpindahan ruangan
                         total_items: mandatoryEquipmentOld.length,
-                        checkout_notes: `AUTO-CHECKOUT: Perpindahan ruangan. Equipment mandatory dari ruang lama.`,
+                        checkout_notes: `AUTO-CHECKOUT: Perpindahan ruangan dari room_id ${originalRoomId} ke ${editFormData.room_id}. Equipment mandatory dari ruangan lama.`,
                         created_at: new Date().toISOString()
                     };
 
-                    const { data: checkoutResult } = await supabase
+                    const { data: checkoutResult, error: checkoutError } = await supabase
                         .from('checkouts')
                         .insert(checkoutData)
                         .select()
                         .single();
 
-                    // Insert checkout_items (HANYA mandatory)
-                    const equipmentRequested = mandatoryEquipmentOld.map(e => e.equipment_id);
-                    const equipmentQuantities = mandatoryEquipmentOld.map(e => e.quantity);
+                    if (checkoutError) throw checkoutError;
 
-                    await supabase.from('checkout_items').insert({
+                    console.log('✅ Checkout created:', checkoutResult.id);
+
+                    // Insert checkout_items - HANYA equipment MANDATORY LAMA
+                    // Equipment ini akan divalidasi di Validation Queue untuk dikembalikan stocknya
+                    const checkoutItems = mandatoryEquipmentOld.map(eq => ({
                         checkout_id: checkoutResult.id,
-                        equipment_requested: equipmentRequested,
-                        equipment_quantities: equipmentQuantities,
-                        equipment_back: [],
-                        quantities_back: [],
-                        status: 'pending'
-                    });
+                        equipment_id: eq.equipment_id,
+                        quantity: eq.quantity,
+                        condition_notes: `Equipment mandatory dari ruangan lama (${originalRoomId})`
+                    }));
 
-                    console.log(`✅ Checkout created for ${mandatoryEquipmentOld.length} mandatory equipment`);
+                    const { error: itemsError } = await supabase
+                        .from('checkout_items')
+                        .insert(checkoutItems);
+
+                    if (itemsError) throw itemsError;
+
+                    console.log(`✅ ${checkoutItems.length} mandatory items added to checkout_items`);
                 }
 
                 // STEP 3: Kurangi stock MANDATORY BARU (dari ruang baru)
+                // Equipment mandatory baru langsung dikurangi stocknya
                 if (mandatoryEquipmentNew.length > 0) {
+                    console.log('📦 Processing new mandatory equipment...');
+
                     for (const eq of mandatoryEquipmentNew) {
                         // Cek apakah ini equipment baru atau sudah ada di lama
                         const existsInOld = mandatoryEquipmentOld.some(e => e.equipment_id === eq.equipment_id);
@@ -1006,12 +1027,14 @@ const BookingManagement: React.FC = () => {
                                 equipment_name: eq.equipment_name,
                                 quantity: eq.quantity
                             }], 'borrow');
+
+                            console.log(`✅ Borrowed new equipment: ${eq.equipment_name} (${eq.quantity})`);
                         }
                     }
                 }
 
                 // STEP 4: Handle OPTIONAL equipment changes
-                // Optional equipment changes mengikuti logic normal (borrow/return)
+                // Optional equipment TETAP di equipment_requested (tidak masuk checkout_items)
                 const optionalChanges = getEquipmentChanges(optionalEquipmentOld, optionalEquipmentNew);
 
                 // Return optional yang dikurangi
@@ -1025,6 +1048,7 @@ const BookingManagement: React.FC = () => {
                         })),
                         'return'
                     );
+                    console.log(`✅ Returned ${optionalReturn.length} optional equipment`);
                 }
 
                 // Borrow optional yang ditambah
@@ -1038,18 +1062,19 @@ const BookingManagement: React.FC = () => {
                         })),
                         'borrow'
                     );
+                    console.log(`✅ Borrowed ${optionalBorrow.length} additional optional equipment`);
                 }
 
-                // STEP 5: Update finalEquipmentRequested untuk mandatory baru + optional
-                finalEquipmentRequested = [
-                    ...mandatoryEquipmentNew.map(e => e.equipment_id),
-                    ...optionalEquipmentNew.map(e => e.equipment_id)
-                ];
+                // STEP 5: Update finalEquipmentRequested
+                // ⭐ HANYA optional equipment yang masuk ke bookings.equipment_requested
+                // ⭐ Mandatory TIDAK masuk karena sudah masuk checkout_items
+                finalEquipmentRequested = optionalEquipmentNew.map(e => e.equipment_id);
+                finalEquipmentQuantities = optionalEquipmentNew.map(e => e.quantity);
 
-                finalEquipmentQuantities = [
-                    ...mandatoryEquipmentNew.map(e => e.quantity),
-                    ...optionalEquipmentNew.map(e => e.quantity)
-                ];
+                console.log('📝 Final equipment for bookings table (optional only):', {
+                    count: finalEquipmentRequested.length,
+                    items: optionalEquipmentNew.map(e => e.equipment_name)
+                });
             }
             // ===== STATUS APPROVED + ROOM CHANGE =====
             // TIDAK perlu buat checkout karena approved belum mengurangi stok

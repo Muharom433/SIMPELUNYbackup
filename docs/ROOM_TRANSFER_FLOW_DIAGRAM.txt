@@ -1,0 +1,265 @@
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     ROOM TRANSFER FLOW - DETAIL                              │
+│                     Status: BORROWED, Room: A → B                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+SEBELUM TRANSFER:
+═══════════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ BOOKINGS TABLE                                                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ id: booking-123                                                              │
+│ room_id: room-A                                                              │
+│ status: borrowed                                                             │
+│ equipment_requested: [projector-id, ac-id, hdmi-id, laptop-id]              │
+│ equipment_quantities: [1, 1, 2, 1]                                           │
+│                                                                              │
+│ Equipment Detail:                                                            │
+│   📍 Projector (mandatory) - qty: 1                                         │
+│   📍 AC Remote (mandatory) - qty: 1                                         │
+│   🔧 HDMI Cable (optional) - qty: 2                                         │
+│   🔧 Laptop (optional) - qty: 1                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ STOCK - ROOM A                            │ STOCK - ROOM B                  │
+├────────────────────────────────────────── ├──────────────────────────────────┤
+│ Projector: 5 (borrowed 1 → available: 4) │ Projector: 10                   │
+│ AC Remote: 10 (borrowed 1 → available: 9)│ AC Remote: 8                    │
+│ HDMI Cable: 20 (borrowed 2 → available:18)│ HDMI Cable: 15                  │
+│ Laptop: 5 (borrowed 1 → available: 4)    │ Laptop: 12                      │
+└─────────────────────────────────────────── └──────────────────────────────────┘
+
+
+SAAT USER PINDAH KE ROOM B:
+═══════════════════════════════════════════════════════════════════════════════
+
+        ┌──────────────────────────────────────────────┐
+        │  USER ACTION: Change room to Room B          │
+        │  BookingManagement.handleUpdateBooking()     │
+        └──────────────────────────────────────────────┘
+                            │
+                            ↓
+        ┌──────────────────────────────────────────────┐
+        │  STEP 1: Detect Room Transfer                │
+        │  roomChanged = true                          │
+        │  originalStatus = 'borrowed'                 │
+        └──────────────────────────────────────────────┘
+                            │
+                            ↓
+        ┌──────────────────────────────────────────────┐
+        │  STEP 2: Categorize Equipment                │
+        │                                              │
+        │  Mandatory Old (Room A):                     │
+        │  ├─ Projector (1)                            │
+        │  └─ AC Remote (1)                            │
+        │                                              │
+        │  Optional Old:                               │
+        │  ├─ HDMI Cable (2)                           │
+        │  └─ Laptop (1)                               │
+        │                                              │
+        │  Mandatory New (Room B):                     │
+        │  ├─ Projector (1)                            │
+        │  └─ AC Remote (1)                            │
+        │                                              │
+        │  Optional New:                               │
+        │  ├─ HDMI Cable (2)                           │
+        │  └─ Laptop (1)                               │
+        └──────────────────────────────────────────────┘
+                            │
+                            ↓
+        ┌──────────────────────────────────────────────┐
+        │  STEP 3: Create Checkout (ROOM TRANSFER)     │
+        │                                              │
+        │  ╔═══════════════════════════════════════╗   │
+        │  ║ CHECKOUTS TABLE                      ║   │
+        │  ╠═══════════════════════════════════════╣   │
+        │  ║ id: checkout-999                     ║   │
+        │  ║ booking_id: booking-123              ║   │
+        │  ║ room_id: room-A  ← OLD ROOM! ⭐      ║   │
+        │  ║ status: 'returned'                   ║   │
+        │  ║ type: 'room'                         ║   │
+        │  ║ is_room_transfer: true  ← FLAG! ⭐   ║   │
+        │  ║ notes: "AUTO: Room A → Room B"       ║   │
+        │  ╚═══════════════════════════════════════╝   │
+        └──────────────────────────────────────────────┘
+                            │
+                            ↓
+        ┌──────────────────────────────────────────────┐
+        │  STEP 4: Insert to CHECKOUT_ITEMS            │
+        │  (MANDATORY ONLY! ⭐)                         │
+        │                                              │
+        │  ╔═══════════════════════════════════════╗   │
+        │  ║ Item 1:                              ║   │
+        │  ║ - checkout_id: checkout-999          ║   │
+        │  ║ - equipment_id: projector-id         ║   │
+        │  ║ - quantity: 1                        ║   │
+        │  ║ - notes: "From Room A"               ║   │
+        │  ╠═══════════════════════════════════════╣   │
+        │  ║ Item 2:                              ║   │
+        │  ║ - checkout_id: checkout-999          ║   │
+        │  ║ - equipment_id: ac-id                ║   │
+        │  ║ - quantity: 1                        ║   │
+        │  ║ - notes: "From Room A"               ║   │
+        │  ╚═══════════════════════════════════════╝   │
+        └──────────────────────────────────────────────┘
+                            │
+                            ↓
+        ┌──────────────────────────────────────────────┐
+        │  STEP 5: Borrow NEW Mandatory from Room B    │
+        │                                              │
+        │  Room B Stock Changes:                       │
+        │  ├─ Projector: 10 → 9 (borrowed 1)           │
+        │  └─ AC Remote: 8 → 7 (borrowed 1)            │
+        └──────────────────────────────────────────────┘
+                            │
+                            ↓
+        ┌──────────────────────────────────────────────┐
+        │  STEP 6: Handle Optional Equipment           │
+        │  (No changes needed in this example)         │
+        │                                              │
+        │  HDMI Cable: 2 → 2 (same)                    │
+        │  Laptop: 1 → 1 (same)                        │
+        └──────────────────────────────────────────────┘
+                            │
+                            ↓
+        ┌──────────────────────────────────────────────┐
+        │  STEP 7: Update BOOKINGS Table               │
+        │                                              │
+        │  ╔═══════════════════════════════════════╗   │
+        │  ║ id: booking-123                      ║   │
+        │  ║ room_id: room-B  ← NEW ROOM! ⭐      ║   │
+        │  ║ status: borrowed (unchanged)         ║   │
+        │  ║ equipment_requested: [hdmi, laptop]  ║   │
+        │  ║ equipment_quantities: [2, 1]         ║   │
+        │  ║                                      ║   │
+        │  ║ ⚠️ NO MORE MANDATORY in this array!  ║   │
+        │  ║    Moved to checkout_items           ║   │
+        │  ╚═══════════════════════════════════════╝   │
+        └──────────────────────────────────────────────┘
+
+
+SETELAH TRANSFER:
+═══════════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ DATABASE STATE                                                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ BOOKINGS TABLE                                                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ id: booking-123                                                              │
+│ room_id: room-B  ⭐ (CHANGED)                                                │
+│ status: borrowed (UNCHANGED)                                                 │
+│ equipment_requested: [hdmi-id, laptop-id]  ⭐ (OPTIONAL ONLY!)              │
+│ equipment_quantities: [2, 1]                                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ CHECKOUTS TABLE                                                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ id: checkout-999                                                             │
+│ booking_id: booking-123                                                      │
+│ room_id: room-A  ⭐ (OLD ROOM FOR TRACKING)                                 │
+│ status: returned                                                             │
+│ type: room                                                                   │
+│ is_room_transfer: true  ⭐                                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ CHECKOUT_ITEMS TABLE                                                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Item 1:                                                                      │
+│ ├─ checkout_id: checkout-999                                                │
+│ ├─ equipment_id: projector-id  ⭐ (MANDATORY FROM ROOM A)                   │
+│ └─ quantity: 1                                                               │
+│                                                                              │
+│ Item 2:                                                                      │
+│ ├─ checkout_id: checkout-999                                                │
+│ ├─ equipment_id: ac-id  ⭐ (MANDATORY FROM ROOM A)                          │
+│ └─ quantity: 1                                                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ STOCK STATUS                                                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ ROOM A:                                   │ ROOM B:                          │
+│ ├─ Projector: 4 (still borrowed) ⚠️      │ ├─ Projector: 9 (newly borrowed) │
+│ ├─ AC Remote: 9 (still borrowed) ⚠️      │ ├─ AC Remote: 7 (newly borrowed) │
+│ ├─ HDMI Cable: 18 (returned)             │ ├─ HDMI Cable: 13 (borrowed)     │
+│ └─ Laptop: 4 (returned)                  │ └─ Laptop: 11 (borrowed)         │
+│                                           │                                  │
+│ ⚠️ Stock Room A will be returned when    │                                  │
+│    admin validates in Validation Queue   │                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+VALIDATION QUEUE PROCESS:
+═══════════════════════════════════════════════════════════════════════════════
+
+        ┌──────────────────────────────────────────────┐
+        │  VALIDATION QUEUE SHOWS:                     │
+        │                                              │
+        │  🏢 Room Transfer Checkout                   │
+        │  └─ From: Room A → Room B                    │
+        │  └─ Status: Waiting Validation               │
+        │                                              │
+        │  Equipment to Return (Room A):               │
+        │  ├─ ✅ Projector (1)                         │
+        │  └─ ✅ AC Remote (1)                         │
+        └──────────────────────────────────────────────┘
+                            │
+                            ↓
+        ┌──────────────────────────────────────────────┐
+        │  ADMIN VALIDATES                             │
+        │  (Click "Validate Return")                   │
+        └──────────────────────────────────────────────┘
+                            │
+                            ↓
+        ┌──────────────────────────────────────────────┐
+        │  SYSTEM RETURNS STOCK TO ROOM A:             │
+        │                                              │
+        │  Room A Stock Changes:                       │
+        │  ├─ Projector: 4 → 5 ✅                      │
+        │  └─ AC Remote: 9 → 10 ✅                     │
+        │                                              │
+        │  Checkout Status: 'completed' ✅             │
+        └──────────────────────────────────────────────┘
+
+
+FINAL STATE (After Validation):
+═══════════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ STOCK STATUS - FINAL                                                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ ROOM A:                                   │ ROOM B:                          │
+│ ├─ Projector: 5 ✅ (returned)            │ ├─ Projector: 9 (borrowed)       │
+│ ├─ AC Remote: 10 ✅ (returned)           │ ├─ AC Remote: 7 (borrowed)       │
+│ ├─ HDMI Cable: 18                        │ ├─ HDMI Cable: 13 (borrowed)     │
+│ └─ Laptop: 4                             │ └─ Laptop: 11 (borrowed)         │
+│                                           │                                  │
+│ All mandatory equipment returned! ✅      │ Using new mandatory equipment ✅ │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ CHECKOUTS TABLE                                                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ id: checkout-999                                                             │
+│ status: completed ✅                                                         │
+│ is_room_transfer: true                                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+KEY TAKEAWAYS:
+═══════════════════════════════════════════════════════════════════════════════
+
+✅ Equipment mandatory LAMA masuk checkout_items
+✅ Equipment mandatory BARU langsung dikurangi stocknya
+✅ Equipment optional TETAP di bookings.equipment_requested
+✅ room_id di checkout adalah ruangan LAMA (untuk tracking)
+✅ room_id di booking adalah ruangan BARU (current location)
+✅ Stock mandatory lama dikembalikan setelah admin validasi
+✅ is_room_transfer flag memudahkan identifikasi

@@ -819,6 +819,7 @@ const LectureSchedules: React.FC = () => {
   };
 
   // UPDATE USER'S FULL_NAME BASED ON SCHEDULE LECTURER NAME (Excel is master)
+  // ✅ FIXED: Also update lecture_schedules.lecturer_user_id to link schedules
   const handleBulkUpdateLecturer = async (scheduleLecturerName: string, selectedUserId: string) => {
     try {
       setMatchingLoading(true);
@@ -829,17 +830,29 @@ const LectureSchedules: React.FC = () => {
         throw new Error('User not found');
       }
 
-      // Update user's full_name to match the schedule lecturer name
-      const { error } = await supabase
+      // Step 1: Update user's full_name to match the schedule lecturer name
+      const { error: userError } = await supabase
         .from('users')
         .update({ full_name: scheduleLecturerName })
         .eq('id', selectedUserId);
 
-      if (error) throw error;
+      if (userError) throw userError;
+
+      // ✅ Step 2: Link all schedules with this lecturer name to the user
+      // This is critical for DosenPresensi to find schedules via lecturer_user_id
+      const { data: updatedSchedules, error: scheduleError } = await supabase
+        .from('lecture_schedules')
+        .update({ lecturer_user_id: selectedUserId })
+        .eq('lecturer', scheduleLecturerName)
+        .select('id');
+
+      if (scheduleError) throw scheduleError;
+
+      const countUpdated = updatedSchedules?.length || 0;
 
       alert.success(getText(
-        `Successfully updated user "${selectedUser.full_name}" to "${scheduleLecturerName}"`,
-        `Berhasil memperbarui nama user "${selectedUser.full_name}" menjadi "${scheduleLecturerName}"`
+        `Successfully updated user "${selectedUser.full_name}" to "${scheduleLecturerName}" and linked ${countUpdated} schedule(s)`,
+        `Berhasil memperbarui nama user "${selectedUser.full_name}" menjadi "${scheduleLecturerName}" dan menghubungkan ${countUpdated} jadwal`
       ));
 
       // Refresh lecturers list and re-analyze data
@@ -853,8 +866,8 @@ const LectureSchedules: React.FC = () => {
       await analyzeUnmatchedData();
 
     } catch (error: any) {
-      console.error('Error updating user name:', error);
-      alert.error(error.message || getText('Failed to update user name', 'Gagal memperbarui nama user'));
+      console.error('Error updating lecturer:', error);
+      alert.error(error.message || getText('Failed to update lecturer', 'Gagal memperbarui dosen'));
     } finally {
       setMatchingLoading(false);
     }
@@ -902,6 +915,7 @@ const LectureSchedules: React.FC = () => {
   };
 
   // Batch update all lecturers that have mappings defined
+  // ✅ FIXED: Also update lecture_schedules.lecturer_user_id for each mapping
   const handleBatchUpdateAllLecturers = async () => {
     // Get all lecturers that have a mapping defined
     const lecturersWithMappings = Object.entries(lecturerMappings).filter(([_, target]) => target);
@@ -913,24 +927,36 @@ const LectureSchedules: React.FC = () => {
 
     try {
       setMatchingLoading(true);
+      let totalSchedulesUpdated = 0;
 
-      // For each lecturer mapping, update the user's full_name
+      // For each lecturer mapping, update the user's full_name AND link schedules
       for (const [scheduleLecturerName, userId] of lecturersWithMappings) {
         const selectedUser = lecturers.find(l => l.id === userId);
         if (!selectedUser) continue;
 
-        // Update user's full_name to match the schedule lecturer name
-        const { error } = await supabase
+        // Step 1: Update user's full_name to match the schedule lecturer name
+        const { error: userError } = await supabase
           .from('users')
           .update({ full_name: scheduleLecturerName })
           .eq('id', userId);
 
-        if (error) throw error;
+        if (userError) throw userError;
+
+        // ✅ Step 2: Link all schedules with this lecturer name to the user
+        const { data: updatedSchedules, error: scheduleError } = await supabase
+          .from('lecture_schedules')
+          .update({ lecturer_user_id: userId })
+          .eq('lecturer', scheduleLecturerName)
+          .select('id');
+
+        if (scheduleError) throw scheduleError;
+
+        totalSchedulesUpdated += updatedSchedules?.length || 0;
       }
 
       alert.success(getText(
-        `Successfully updated ${lecturersWithMappings.length} user names`,
-        `Berhasil memperbarui ${lecturersWithMappings.length} nama user`
+        `Successfully updated ${lecturersWithMappings.length} user names and linked ${totalSchedulesUpdated} schedules`,
+        `Berhasil memperbarui ${lecturersWithMappings.length} nama user dan menghubungkan ${totalSchedulesUpdated} jadwal`
       ));
 
       // Refresh lecturers list

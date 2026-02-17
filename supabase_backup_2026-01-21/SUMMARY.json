@@ -1,0 +1,136 @@
+{
+  "timestamp": "2026-01-21T10:43:07.820Z",
+  "database": "https://nfoarhurrdelgkrxnwnn.supabase.co",
+  "tables": [
+    {
+      "table": "users",
+      "success": true,
+      "rowCount": 1068,
+      "filename": "./supabase_backup_2026-01-21/users.json"
+    },
+    {
+      "table": "lecture_schedules",
+      "success": true,
+      "rowCount": 1724,
+      "filename": "./supabase_backup_2026-01-21/lecture_schedules.json"
+    },
+    {
+      "table": "lecturer_attendance",
+      "success": true,
+      "rowCount": 2,
+      "filename": "./supabase_backup_2026-01-21/lecturer_attendance.json"
+    },
+    {
+      "table": "lecturer_attendance_details",
+      "success": true,
+      "rowCount": 4,
+      "filename": "./supabase_backup_2026-01-21/lecturer_attendance_details.json"
+    },
+    {
+      "table": "rooms",
+      "success": false,
+      "error": "canceling statement due to statement timeout"
+    },
+    {
+      "table": "study_programs",
+      "success": true,
+      "rowCount": 15,
+      "filename": "./supabase_backup_2026-01-21/study_programs.json"
+    },
+    {
+      "table": "departments",
+      "success": true,
+      "rowCount": 7,
+      "filename": "./supabase_backup_2026-01-21/departments.json"
+    },
+    {
+      "table": "attendance_payment_rates",
+      "success": true,
+      "rowCount": 2,
+      "filename": "./supabase_backup_2026-01-21/attendance_payment_rates.json"
+    },
+    {
+      "table": "attendance_special_dates",
+      "success": true,
+      "rowCount": 1,
+      "filename": "./supabase_backup_2026-01-21/attendance_special_dates.json"
+    },
+    {
+      "table": "attendance_week_settings",
+      "success": true,
+      "rowCount": 5,
+      "filename": "./supabase_backup_2026-01-21/attendance_week_settings.json"
+    },
+    {
+      "table": "attendance_global_settings",
+      "success": true,
+      "rowCount": 1,
+      "filename": "./supabase_backup_2026-01-21/attendance_global_settings.json"
+    },
+    {
+      "table": "final_sessions",
+      "success": true,
+      "rowCount": 343,
+      "filename": "./supabase_backup_2026-01-21/final_sessions.json"
+    },
+    {
+      "table": "reschedule",
+      "success": true,
+      "rowCount": 0,
+      "filename": "./supabase_backup_2026-01-21/reschedule.json"
+    },
+    {
+      "table": "equipment",
+      "success": false,
+      "error": "canceling statement due to statement timeout"
+    },
+    {
+      "table": "equipment_details",
+      "success": false,
+      "error": "relation \"public.equipment_details\" does not exist"
+    },
+    {
+      "table": "equipment_quantity_logs",
+      "success": false,
+      "error": "relation \"public.equipment_quantity_logs\" does not exist"
+    },
+    {
+      "table": "bookings",
+      "success": true,
+      "rowCount": 436,
+      "filename": "./supabase_backup_2026-01-21/bookings.json"
+    },
+    {
+      "table": "checkout_items",
+      "success": true,
+      "rowCount": 483,
+      "filename": "./supabase_backup_2026-01-21/checkout_items.json"
+    },
+    {
+      "table": "checkouts",
+      "success": true,
+      "rowCount": 438,
+      "filename": "./supabase_backup_2026-01-21/checkouts.json"
+    },
+    {
+      "table": "borrowings",
+      "success": false,
+      "error": "relation \"public.borrowings\" does not exist"
+    },
+    {
+      "table": "exam_bookings",
+      "success": false,
+      "error": "relation \"public.exam_bookings\" does not exist"
+    },
+    {
+      "table": "buildings",
+      "success": false,
+      "error": "relation \"public.buildings\" does not exist"
+    },
+    {
+      "table": "campus_locations",
+      "success": false,
+      "error": "relation \"public.campus_locations\" does not exist"
+    }
+  ]
+}
