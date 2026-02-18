@@ -1,15 +1,14 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-    Calendar, Clock, User, Building, CheckCircle, XCircle, AlertTriangle,
-    Eye, Edit, Trash2, RefreshCw, Filter, Search, ChevronDown, ChevronUp,
-    Package, Plus, Minus, X, Check, ArrowRight, FileText, Users, Info,
-    AlertCircle, Phone, MapPin, BookOpen, Timer, Zap, Settings, Save, Download, Loader2
+    Calendar, Clock, User, Building, XCircle, AlertTriangle,
+    Eye, Edit, Trash2, RefreshCw, Search, ChevronDown, ChevronUp,
+    Package, Plus, Minus, X, Check, ArrowRight, FileText, Info,
+    AlertCircle, Save, Download, Loader2
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
-import { useLanguage } from '../contexts/LanguageContext';
 
 // ==================== HELPER COMPONENTS ====================
 const PhotoPlaceholder = ({ title, subtitle, isSmall = false }: { title?: string, subtitle?: string, isSmall?: boolean }) => (
@@ -938,8 +937,9 @@ const BookingManagement: React.FC = () => {
             toast.success(`Status berhasil diubah ke ${newStatus}`);
             await fetchBookings();
 
-            // Open WhatsApp after successful status change (approved, borrowed, rejected)
-            if (newStatus === 'approved' || newStatus === 'borrowed' || newStatus === 'rejected') {
+            // Open WhatsApp after successful status change (approved, borrowed)
+            // NOTE: 'rejected' is now handled separately via handleRejectWithReason with rejection reason modal
+            if (newStatus === 'approved' || newStatus === 'borrowed') {
                 setTimeout(() => {
                     // Build academic message based on status
                     let message = '';
@@ -971,18 +971,6 @@ const BookingManagement: React.FC = () => {
                             `3. Mengembalikan peralatan dalam kondisi baik\n` +
                             `4. Melaporkan jika ada kerusakan\n\n` +
                             `Terima kasih atas perhatian dan kerja samanya.\n\n` +
-                            `Hormat kami,\n` +
-                            `Tim Manajemen Fasilitas`;
-                    } else if (newStatus === 'rejected') {
-                        // For rejection, we need the reason - for now use generic message
-                        // This will be updated when called from reject modal
-                        message = `Yth. ${booking?.user?.full_name || 'Bapak/Ibu'},\n\n` +
-                            `Dengan hormat,\n\n` +
-                            `Kami informasikan bahwa permohonan peminjaman ruangan Anda tidak dapat kami setujui dengan rincian sebagai berikut:\n\n` +
-                            `📍 Ruangan: ${roomName}\n` +
-                            `📅 Waktu: ${startDate} - ${endDate}\n\n` +
-                            `Alasan penolakan: Mohon hubungi admin untuk informasi lebih lanjut.\n\n` +
-                            `Kami mohon maaf atas ketidaknyamanan ini.\n\n` +
                             `Hormat kami,\n` +
                             `Tim Manajemen Fasilitas`;
                     }

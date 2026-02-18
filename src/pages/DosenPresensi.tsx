@@ -731,7 +731,11 @@ const DosenPresensi: React.FC = () => {
             canvas.height = video.videoHeight;
             const ctx = canvas.getContext('2d');
             if (ctx) {
+                // Mirror the captured photo to match the mirrored preview (front camera selfie)
+                ctx.translate(canvas.width, 0);
+                ctx.scale(-1, 1);
                 ctx.drawImage(video, 0, 0);
+                ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
                 return canvas.toDataURL('image/jpeg', 0.8);
             }
         }
@@ -1558,47 +1562,6 @@ const DosenPresensi: React.FC = () => {
                                     </div>
                                 )}
                             </div>
-
-                            {/* Step 2: Camera Preview - Mobile Only */}
-                            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:hidden">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">2</div>
-                                    <h2 className="text-lg font-semibold text-gray-900">Preview Kamera</h2>
-
-                                </div>
-
-                                <div className="relative w-full bg-gray-900 rounded-xl overflow-hidden" style={{ height: '350px' }}>
-                                    {cameraError ? (
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center text-white p-4">
-                                            <AlertCircle className="w-12 h-12 text-red-400 mb-3" />
-                                            <p className="text-center text-sm">{cameraError}</p>
-                                            <button
-                                                onClick={initCamera}
-                                                className="mt-4 px-4 py-2 bg-blue-600 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-                                            >
-                                                Coba Lagi
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <video
-                                                ref={videoRef}
-                                                autoPlay
-                                                playsInline
-                                                muted
-                                                className="w-full h-full"
-                                                style={{ objectFit: 'cover', height: '350px' }}
-                                            />
-                                            {/* Live indicator */}
-                                            <div className="absolute top-4 left-4 flex items-center gap-2 bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-full">
-                                                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                                                <span className="text-white text-xs font-medium">LIVE</span>
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                                <canvas ref={canvasRef} className="hidden" />
-                            </div>
                         </div>
 
                         <div className="space-y-6">
@@ -1613,15 +1576,14 @@ const DosenPresensi: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* Step 2: Camera Preview - Desktop Only */}
-                            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hidden lg:block">
+                            {/* Step 2: Camera Preview */}
+                            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                                 <div className="flex items-center gap-3 mb-4">
                                     <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">2</div>
                                     <h2 className="text-lg font-semibold text-gray-900">Preview Kamera</h2>
-
                                 </div>
 
-                                <div className="relative aspect-[4/3] bg-gray-900 rounded-xl overflow-hidden">
+                                <div className="relative bg-gray-900 rounded-xl overflow-hidden" style={{ minHeight: '300px' }}>
                                     {cameraError ? (
                                         <div className="absolute inset-0 flex flex-col items-center justify-center text-white p-4">
                                             <AlertCircle className="w-12 h-12 text-red-400 mb-3" />
@@ -1640,7 +1602,8 @@ const DosenPresensi: React.FC = () => {
                                                 autoPlay
                                                 playsInline
                                                 muted
-                                                className="w-full h-full object-cover"
+                                                className="w-full object-cover"
+                                                style={{ transform: 'scaleX(-1)', minHeight: '300px' }}
                                             />
                                             {/* Live indicator */}
                                             <div className="absolute top-4 left-4 flex items-center gap-2 bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-full">
