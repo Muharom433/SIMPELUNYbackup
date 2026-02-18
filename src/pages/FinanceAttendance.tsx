@@ -3,7 +3,7 @@ import {
     ClipboardCheck, BarChart3, FileText, Search, CheckCircle, XCircle,
     AlertCircle, User, Clock, Download, RefreshCw, ChevronLeft, ChevronRight,
     Eye, X, Building, Loader2, FileSpreadsheet, Users, TrendingUp, PieChart, Trash2, ChevronDown, ChevronUp,
-    BookOpen, GraduationCap, Settings, Calendar, DollarSign, Plus, Save, CalendarOff
+    BookOpen, GraduationCap, Settings, Calendar, DollarSign, Plus, Save, CalendarOff, SlidersHorizontal, UserPlus
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -168,7 +168,7 @@ const FinanceAttendance: React.FC = () => {
 
     // Attendance Settings States
     const [showSettingsModal, setShowSettingsModal] = useState(false);
-    const [settingsTab, setSettingsTab] = useState<'weeks' | 'holidays' | 'rates'>('weeks');
+    const [settingsTab, setSettingsTab] = useState<'weeks' | 'holidays' | 'rates' | 'limits'>('weeks');
     const [weekSettings, setWeekSettings] = useState<WeekSetting[]>([]);
     const [specialDates, setSpecialDates] = useState<SpecialDate[]>([]);
     const [paymentRates, setPaymentRates] = useState<PaymentRate[]>([]);
@@ -198,12 +198,41 @@ const FinanceAttendance: React.FC = () => {
         is_attendance_disabled: boolean;
         disabled_from_date: string | null;
         disabled_message: string;
+        max_weekly_attendance_hbv: number;
+        max_weekly_attendance_nhbv: number;
     }>({
         is_attendance_disabled: false,
         disabled_from_date: null,
-        disabled_message: 'Presensi transport sedang ditutup'
+        disabled_message: 'Presensi transport sedang ditutup',
+        max_weekly_attendance_hbv: 3,
+        max_weekly_attendance_nhbv: 2
     });
 
+    // Manual Attendance Modal
+    const [showManualAttendanceModal, setShowManualAttendanceModal] = useState(false);
+    const [manualAttendance, setManualAttendance] = useState({
+        lecturer_user_id: '',
+        attendance_date: format(new Date(), 'yyyy-MM-dd'),
+        attendance_time: format(new Date(), 'HH:mm'),
+        purpose: 'mengajar' as 'mengajar' | 'sidang' | 'lainnya',
+        purpose_description: '',
+        additional_notes: ''
+    });
+    const [savingManualAttendance, setSavingManualAttendance] = useState(false);
+    const [lecturerSearchTerm, setLecturerSearchTerm] = useState('');
+    const [showLecturerDropdown, setShowLecturerDropdown] = useState(false);
+    const lecturerDropdownRef = React.useRef<HTMLDivElement>(null);
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (lecturerDropdownRef.current && !lecturerDropdownRef.current.contains(e.target as Node)) {
+                setShowLecturerDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
 
     // Fetch data on mount and filter changes
@@ -393,13 +422,36 @@ const FinanceAttendance: React.FC = () => {
 
     const fetchLectureSchedules = async () => {
         try {
-            const { data, error } = await supabase
-                .from('lecture_schedules')
-                .select('id, lecturer, lecturer_user_id, day, course_name, course_code, subject_study');
+            // Supabase defaults to max 1000 rows per query
+            // We need to paginate to get ALL lecture schedules
+            const PAGE_SIZE = 1000;
+            let allData: LectureSchedule[] = [];
+            let page = 0;
+            let hasMore = true;
 
-            if (error) throw error;
-            console.log('📅 Fetched lecture schedules:', data?.length, 'records');
-            setLectureSchedules(data || []);
+            while (hasMore) {
+                const from = page * PAGE_SIZE;
+                const to = from + PAGE_SIZE - 1;
+
+                const { data, error } = await supabase
+                    .from('lecture_schedules')
+                    .select('id, lecturer, lecturer_user_id, day, course_name, course_code, subject_study')
+                    .range(from, to);
+
+                if (error) throw error;
+
+                if (data && data.length > 0) {
+                    allData = [...allData, ...data];
+                    // If we got less than PAGE_SIZE, we've reached the end
+                    hasMore = data.length === PAGE_SIZE;
+                    page++;
+                } else {
+                    hasMore = false;
+                }
+            }
+
+            console.log('📅 Fetched ALL lecture schedules:', allData.length, 'records (in', page, 'pages)');
+            setLectureSchedules(allData);
         } catch (error) {
             console.error('Error fetching lecture schedules:', error);
         }
@@ -525,7 +577,9 @@ const FinanceAttendance: React.FC = () => {
                 setGlobalSettings({
                     is_attendance_disabled: data.is_attendance_disabled || false,
                     disabled_from_date: data.disabled_from_date || null,
-                    disabled_message: data.disabled_message || 'Presensi transport sedang ditutup'
+                    disabled_message: data.disabled_message || 'Presensi transport sedang ditutup',
+                    max_weekly_attendance_hbv: data.max_weekly_attendance_hbv ?? 3,
+                    max_weekly_attendance_nhbv: data.max_weekly_attendance_nhbv ?? 2
                 });
             }
         } catch (error) {
@@ -553,6 +607,8 @@ const FinanceAttendance: React.FC = () => {
                         is_attendance_disabled: globalSettings.is_attendance_disabled,
                         disabled_from_date: globalSettings.disabled_from_date,
                         disabled_message: globalSettings.disabled_message,
+                        max_weekly_attendance_hbv: globalSettings.max_weekly_attendance_hbv,
+                        max_weekly_attendance_nhbv: globalSettings.max_weekly_attendance_nhbv,
                         updated_by: profile?.id,
                         updated_at: new Date().toISOString()
                     })
@@ -567,6 +623,8 @@ const FinanceAttendance: React.FC = () => {
                         is_attendance_disabled: globalSettings.is_attendance_disabled,
                         disabled_from_date: globalSettings.disabled_from_date,
                         disabled_message: globalSettings.disabled_message,
+                        max_weekly_attendance_hbv: globalSettings.max_weekly_attendance_hbv,
+                        max_weekly_attendance_nhbv: globalSettings.max_weekly_attendance_nhbv,
                         updated_by: profile?.id
                     });
 
@@ -579,6 +637,70 @@ const FinanceAttendance: React.FC = () => {
             toast.error('Gagal menyimpan pengaturan');
         } finally {
             setSavingSettings(false);
+        }
+    };
+
+    // Handle Manual Attendance Save
+    const handleSaveManualAttendance = async () => {
+        if (!manualAttendance.lecturer_user_id) {
+            toast.error('Pilih dosen terlebih dahulu');
+            return;
+        }
+        if (!manualAttendance.attendance_date || !manualAttendance.attendance_time) {
+            toast.error('Tanggal dan waktu harus diisi');
+            return;
+        }
+
+        try {
+            setSavingManualAttendance(true);
+
+            // Find selected lecturer info
+            const selectedLecturer = allLecturers.find(l => l.id === manualAttendance.lecturer_user_id);
+            if (!selectedLecturer) {
+                toast.error('Dosen tidak ditemukan');
+                return;
+            }
+
+            const { error } = await supabase
+                .from('lecturer_attendance')
+                .insert({
+                    lecturer_user_id: manualAttendance.lecturer_user_id,
+                    lecturer_name: selectedLecturer.full_name,
+                    attendance_date: manualAttendance.attendance_date,
+                    attendance_time: manualAttendance.attendance_time + ':00',
+                    purpose: manualAttendance.purpose,
+                    purpose_description: manualAttendance.purpose_description || null,
+                    additional_notes: manualAttendance.additional_notes
+                        ? `[Input Manual oleh Admin] ${manualAttendance.additional_notes}`
+                        : '[Input Manual oleh Admin]',
+                    study_program_id: selectedLecturer.study_program_id || null,
+                    verification_status: 'verified',
+                    verified_by: profile?.id,
+                    verified_at: new Date().toISOString(),
+                    verified_notes: 'Input manual oleh admin',
+                    is_included_in_recap: true,
+                    schedule_type: 'manual'
+                });
+
+            if (error) throw error;
+
+            toast.success(`Presensi ${selectedLecturer.full_name} berhasil ditambahkan`);
+            setShowManualAttendanceModal(false);
+            setLecturerSearchTerm('');
+            setManualAttendance({
+                lecturer_user_id: '',
+                attendance_date: format(new Date(), 'yyyy-MM-dd'),
+                attendance_time: format(new Date(), 'HH:mm'),
+                purpose: 'mengajar',
+                purpose_description: '',
+                additional_notes: ''
+            });
+            fetchAttendanceRecords();
+        } catch (error: any) {
+            console.error('Error saving manual attendance:', error);
+            toast.error('Gagal menyimpan presensi manual');
+        } finally {
+            setSavingManualAttendance(false);
         }
     };
 
@@ -2003,6 +2125,13 @@ const FinanceAttendance: React.FC = () => {
                     </div>
                     <div className="flex gap-2">
                         <button
+                            onClick={() => setShowManualAttendanceModal(true)}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                        >
+                            <UserPlus className="w-4 h-4" />
+                            {getText('Add Attendance', 'Tambah Presensi')}
+                        </button>
+                        <button
                             onClick={fetchAttendanceRecords}
                             className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex items-center gap-2"
                         >
@@ -2791,6 +2920,13 @@ const FinanceAttendance: React.FC = () => {
                                         <DollarSign className="w-4 h-4" />
                                         {getText('Payment Rates', 'Tarif Pembayaran')}
                                     </button>
+                                    <button
+                                        onClick={() => setSettingsTab('limits')}
+                                        className={`flex-1 py-3 px-4 font-medium text-sm border-b-2 transition-colors flex items-center justify-center gap-2 ${settingsTab === 'limits' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                                    >
+                                        <SlidersHorizontal className="w-4 h-4" />
+                                        {getText('Attendance Limits', 'Batas Presensi')}
+                                    </button>
                                 </div>
                             </div>
 
@@ -3080,8 +3216,301 @@ const FinanceAttendance: React.FC = () => {
                                                 </button>
                                             </div>
                                         </div>
+
                                     </div>
                                 )}
+
+                                {/* Attendance Limits Tab */}
+                                {settingsTab === 'limits' && (
+                                    <div className="space-y-6">
+                                        <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-4 rounded-xl border border-indigo-200">
+                                            <h3 className="text-base font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                                                <SlidersHorizontal className="w-5 h-5 text-indigo-600" />
+                                                {getText('Maximum Weekly Attendance Limits', 'Batas Maksimal Presensi Per Minggu')}
+                                            </h3>
+                                            <p className="text-sm text-gray-500">
+                                                {getText(
+                                                    'Set the maximum number of attendance submissions per week for each lecturer type. This limit is applied separately for homebase and non-homebase lecturers.',
+                                                    'Atur jumlah maksimal presensi per minggu untuk masing-masing tipe dosen. Batas ini berlaku terpisah untuk dosen homebase dan non-homebase.'
+                                                )}
+                                            </p>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {/* HBV Max Weekly */}
+                                            <div className="bg-blue-50 p-5 rounded-xl border border-blue-200">
+                                                <div className="flex items-center gap-3 mb-4">
+                                                    <div className="w-10 h-10 bg-blue-200 rounded-lg flex items-center justify-center">
+                                                        <Users className="w-5 h-5 text-blue-700" />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="font-semibold text-blue-900">HBV (Homebase Vokasi)</h4>
+                                                        <p className="text-xs text-blue-600">Dosen tetap / homebase</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-gray-600 text-sm font-medium">Maksimal:</span>
+                                                    <select
+                                                        value={globalSettings.max_weekly_attendance_hbv}
+                                                        onChange={(e) => setGlobalSettings(prev => ({
+                                                            ...prev,
+                                                            max_weekly_attendance_hbv: parseInt(e.target.value)
+                                                        }))}
+                                                        className="flex-1 px-3 py-2.5 border border-blue-300 rounded-lg bg-white text-blue-900 font-medium focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                                                    >
+                                                        {[1, 2, 3, 4, 5, 6, 7].map(n => (
+                                                            <option key={n} value={n}>{n}x per minggu</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div className="mt-3 p-2 bg-blue-100 rounded-lg">
+                                                    <p className="text-xs text-blue-700 text-center">
+                                                        ✅ Dosen homebase dapat presensi maksimal <strong>{globalSettings.max_weekly_attendance_hbv}x</strong> per minggu
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {/* NHBV Max Weekly */}
+                                            <div className="bg-orange-50 p-5 rounded-xl border border-orange-200">
+                                                <div className="flex items-center gap-3 mb-4">
+                                                    <div className="w-10 h-10 bg-orange-200 rounded-lg flex items-center justify-center">
+                                                        <Users className="w-5 h-5 text-orange-700" />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="font-semibold text-orange-900">NHBV (Non Homebase Vokasi)</h4>
+                                                        <p className="text-xs text-orange-600">Dosen luar biasa / non-homebase</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-gray-600 text-sm font-medium">Maksimal:</span>
+                                                    <select
+                                                        value={globalSettings.max_weekly_attendance_nhbv}
+                                                        onChange={(e) => setGlobalSettings(prev => ({
+                                                            ...prev,
+                                                            max_weekly_attendance_nhbv: parseInt(e.target.value)
+                                                        }))}
+                                                        className="flex-1 px-3 py-2.5 border border-orange-300 rounded-lg bg-white text-orange-900 font-medium focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
+                                                    >
+                                                        {[1, 2, 3, 4, 5, 6, 7].map(n => (
+                                                            <option key={n} value={n}>{n}x per minggu</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div className="mt-3 p-2 bg-orange-100 rounded-lg">
+                                                    <p className="text-xs text-orange-700 text-center">
+                                                        ✅ Dosen non-homebase dapat presensi maksimal <strong>{globalSettings.max_weekly_attendance_nhbv}x</strong> per minggu
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Summary & Info */}
+                                        <div className="bg-amber-50 p-4 rounded-xl border border-amber-200">
+                                            <div className="flex items-start gap-3">
+                                                <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                                                <div className="text-sm text-amber-800">
+                                                    <p className="font-medium mb-1">Informasi Penting:</p>
+                                                    <ul className="list-disc list-inside space-y-1 text-xs">
+                                                        <li>Batas ini dihitung berdasarkan minggu aktif yang sudah diatur di tab "Pengaturan Minggu"</li>
+                                                        <li>Dosen yang sudah mencapai batas tidak akan bisa melakukan presensi lagi di minggu tersebut</li>
+                                                        <li>Perubahan berlaku segera setelah disimpan</li>
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <button
+                                            onClick={handleSaveGlobalSettings}
+                                            disabled={savingSettings}
+                                            className="w-full px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 flex items-center justify-center gap-2 font-medium shadow-lg shadow-indigo-200 transition-all"
+                                        >
+                                            <Save className="w-4 h-4" />
+                                            {savingSettings ? 'Menyimpan...' : 'Simpan Batas Presensi Mingguan'}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Manual Attendance Modal */}
+            {showManualAttendanceModal && (
+                <div className="fixed inset-0 z-50 overflow-y-auto">
+                    <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20">
+                        <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={() => setShowManualAttendanceModal(false)} />
+                        <div className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
+                            {/* Modal Header */}
+                            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4">
+                                <div className="flex items-center justify-between">
+                                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                                        <UserPlus className="w-5 h-5" />
+                                        {getText('Manual Attendance Input', 'Input Presensi Manual')}
+                                    </h2>
+                                    <button onClick={() => setShowManualAttendanceModal(false)} className="p-2 text-white hover:bg-white/20 rounded-full">
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                </div>
+                                <p className="text-blue-100 text-sm mt-1">Untuk backup - otomatis terverifikasi</p>
+                            </div>
+
+                            {/* Modal Content */}
+                            <div className="p-6 space-y-4">
+                                {/* Lecturer Selection - Searchable Dropdown */}
+                                <div ref={lecturerDropdownRef} className="relative">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        {getText('Lecturer', 'Dosen')} <span className="text-red-500">*</span>
+                                    </label>
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                        <input
+                                            type="text"
+                                            value={lecturerSearchTerm}
+                                            onChange={(e) => {
+                                                setLecturerSearchTerm(e.target.value);
+                                                setShowLecturerDropdown(true);
+                                                if (e.target.value === '') {
+                                                    setManualAttendance(prev => ({ ...prev, lecturer_user_id: '' }));
+                                                }
+                                            }}
+                                            onFocus={() => setShowLecturerDropdown(true)}
+                                            placeholder="Ketik nama dosen untuk mencari..."
+                                            className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        {manualAttendance.lecturer_user_id && (
+                                            <button
+                                                onClick={() => {
+                                                    setLecturerSearchTerm('');
+                                                    setManualAttendance(prev => ({ ...prev, lecturer_user_id: '' }));
+                                                    setShowLecturerDropdown(false);
+                                                }}
+                                                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                    </div>
+                                    {showLecturerDropdown && (
+                                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                                            {allLecturers
+                                                .filter(l => {
+                                                    if (!lecturerSearchTerm) return true;
+                                                    return l.full_name.toLowerCase().includes(lecturerSearchTerm.toLowerCase());
+                                                })
+                                                .map(l => (
+                                                    <button
+                                                        key={l.id}
+                                                        onClick={() => {
+                                                            setManualAttendance(prev => ({ ...prev, lecturer_user_id: l.id }));
+                                                            setLecturerSearchTerm(l.full_name + (l.is_homebase === false ? ' (Non-HB)' : ''));
+                                                            setShowLecturerDropdown(false);
+                                                        }}
+                                                        className={`w-full text-left px-4 py-2.5 text-sm hover:bg-blue-50 transition-colors flex items-center justify-between ${manualAttendance.lecturer_user_id === l.id ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                                                            }`}
+                                                    >
+                                                        <span>{l.full_name}</span>
+                                                        {l.is_homebase === false && (
+                                                            <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">Non-HB</span>
+                                                        )}
+                                                    </button>
+                                                ))}
+                                            {allLecturers.filter(l => !lecturerSearchTerm || l.full_name.toLowerCase().includes(lecturerSearchTerm.toLowerCase())).length === 0 && (
+                                                <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                                                    Tidak ada dosen ditemukan
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Date & Time */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            {getText('Date', 'Tanggal')} <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={manualAttendance.attendance_date}
+                                            onChange={(e) => setManualAttendance(prev => ({ ...prev, attendance_date: e.target.value }))}
+                                            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            {getText('Time', 'Waktu')} <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="time"
+                                            value={manualAttendance.attendance_time}
+                                            onChange={(e) => setManualAttendance(prev => ({ ...prev, attendance_time: e.target.value }))}
+                                            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Purpose */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        {getText('Purpose', 'Tujuan')}
+                                    </label>
+                                    <select
+                                        value={manualAttendance.purpose}
+                                        onChange={(e) => setManualAttendance(prev => ({ ...prev, purpose: e.target.value as any }))}
+                                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                        <option value="mengajar">Mengajar</option>
+                                        <option value="sidang">Sidang</option>
+                                        <option value="lainnya">Lainnya</option>
+                                    </select>
+                                </div>
+
+                                {/* Notes */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        {getText('Notes', 'Catatan')} <span className="text-gray-400 text-xs">(Opsional)</span>
+                                    </label>
+                                    <textarea
+                                        value={manualAttendance.additional_notes}
+                                        onChange={(e) => setManualAttendance(prev => ({ ...prev, additional_notes: e.target.value }))}
+                                        placeholder="Catatan tambahan..."
+                                        rows={2}
+                                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                                    />
+                                </div>
+
+                                {/* Info Box */}
+                                <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                                    <div className="flex items-start gap-2">
+                                        <AlertCircle className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                                        <div className="text-xs text-blue-700">
+                                            <p>Presensi manual otomatis berstatus <strong>Terverifikasi</strong> dan akan ditandai sebagai input admin.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex gap-3">
+                                <button
+                                    onClick={() => setShowManualAttendanceModal(false)}
+                                    className="flex-1 px-4 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                                >
+                                    {getText('Cancel', 'Batal')}
+                                </button>
+                                <button
+                                    onClick={handleSaveManualAttendance}
+                                    disabled={savingManualAttendance || !manualAttendance.lecturer_user_id}
+                                    className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 font-medium"
+                                >
+                                    {savingManualAttendance ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        <Save className="w-4 h-4" />
+                                    )}
+                                    {savingManualAttendance ? 'Menyimpan...' : getText('Save', 'Simpan')}
+                                </button>
                             </div>
                         </div>
                     </div>

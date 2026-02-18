@@ -40,6 +40,7 @@ interface Lecturer {
     identity_number: string;
     attachments?: string | null;
     study_program?: { id: string; name: string } | null;
+    is_homebase?: boolean;
 }
 
 // Extended schedule interface with full details for denormalization
@@ -212,6 +213,11 @@ const DosenPresensi: React.FC = () => {
     const [hasAttendedToday, setHasAttendedToday] = useState(false);
     const [checkingAttendance, setCheckingAttendance] = useState(false);
     const [lastAttendanceTime, setLastAttendanceTime] = useState<string | null>(null);
+
+    // Weekly attendance limit (from global settings)
+    const [weeklyAttendanceCount, setWeeklyAttendanceCount] = useState(0);
+    const [maxWeeklyAttendance, setMaxWeeklyAttendance] = useState(3); // default for homebase
+    const [hasReachedWeeklyLimit, setHasReachedWeeklyLimit] = useState(false);
 
     // Camera states
     const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
@@ -542,31 +548,51 @@ const DosenPresensi: React.FC = () => {
         };
     }, [activeTab, scannedRoomId]);
 
-    // Check if lecturer already attended today
+    // Check if lecturer already attended today AND weekly limit
     useEffect(() => {
         const checkAttendance = async () => {
             if (!selectedLecturerId) {
                 setHasAttendedToday(false);
                 setLastAttendanceTime(null);
+                setWeeklyAttendanceCount(0);
+                setHasReachedWeeklyLimit(false);
                 return;
             }
 
             setCheckingAttendance(true);
             try {
-                const today = format(new Date(), 'yyyy-MM-dd');
-                const { data, error } = await supabase
+                const today = new Date();
+                const todayStr = format(today, 'yyyy-MM-dd');
+
+                // Get the selected lecturer's homebase status
+                const lecturer = lecturers.find(l => l.id === selectedLecturerId);
+                const isHomebase = lecturer?.is_homebase ?? true;
+
+                // Fetch max weekly attendance from global settings
+                const { data: globalData } = await supabase
+                    .from('attendance_global_settings')
+                    .select('max_weekly_attendance_hbv, max_weekly_attendance_nhbv')
+                    .limit(1)
+                    .maybeSingle();
+
+                const maxWeekly = isHomebase
+                    ? (globalData?.max_weekly_attendance_hbv ?? 3)
+                    : (globalData?.max_weekly_attendance_nhbv ?? 2);
+                setMaxWeeklyAttendance(maxWeekly);
+
+                // Check today's attendance
+                const { data: todayData, error: todayError } = await supabase
                     .from('lecturer_attendance')
                     .select('id, attendance_time')
                     .eq('lecturer_user_id', selectedLecturerId)
-                    .eq('attendance_date', today)
+                    .eq('attendance_date', todayStr)
                     .limit(1);
 
-                if (error) throw error;
+                if (todayError) throw todayError;
 
-                if (data && data.length > 0) {
+                if (todayData && todayData.length > 0) {
                     setHasAttendedToday(true);
-                    setLastAttendanceTime(data[0].attendance_time?.substring(0, 5) || null);
-                    // Clear schedules if already attended
+                    setLastAttendanceTime(todayData[0].attendance_time?.substring(0, 5) || null);
                     setAvailableSchedules([]);
                     setSelectedSchedules([]);
                     setCustomPurpose('');
@@ -574,6 +600,33 @@ const DosenPresensi: React.FC = () => {
                     setHasAttendedToday(false);
                     setLastAttendanceTime(null);
                 }
+
+                // Check this week's attendance count (Monday to Sunday)
+                const dayOfWeek = today.getDay(); // 0=Sun, 1=Mon, ...
+                const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+                const monday = new Date(today);
+                monday.setDate(today.getDate() + mondayOffset);
+                const sunday = new Date(monday);
+                sunday.setDate(monday.getDate() + 6);
+
+                const weekStart = format(monday, 'yyyy-MM-dd');
+                const weekEnd = format(sunday, 'yyyy-MM-dd');
+
+                const { data: weekData, error: weekError } = await supabase
+                    .from('lecturer_attendance')
+                    .select('id')
+                    .eq('lecturer_user_id', selectedLecturerId)
+                    .gte('attendance_date', weekStart)
+                    .lte('attendance_date', weekEnd);
+
+                if (weekError) throw weekError;
+
+                const weekCount = weekData?.length || 0;
+                setWeeklyAttendanceCount(weekCount);
+                setHasReachedWeeklyLimit(weekCount >= maxWeekly);
+
+                console.log(`[Attendance] Lecturer: ${lecturer?.full_name}, Homebase: ${isHomebase}, Weekly: ${weekCount}/${maxWeekly}`);
+
             } catch (error) {
                 console.error('Error checking attendance:', error);
             } finally {
@@ -582,7 +635,7 @@ const DosenPresensi: React.FC = () => {
         };
 
         checkAttendance();
-    }, [selectedLecturerId]);
+    }, [selectedLecturerId, lecturers]);
 
     // Detect ALL schedules when lecturer OR selectedDay changes
     useEffect(() => {
@@ -680,7 +733,7 @@ const DosenPresensi: React.FC = () => {
             setLoading(true);
             const { data, error } = await supabase
                 .from('users')
-                .select('id, full_name, identity_number, attachments, study_program:study_programs(id, name)')
+                .select('id, full_name, identity_number, attachments, is_homebase, study_program:study_programs(id, name)')
                 .eq('role', 'lecturer')
                 .order('full_name');
 
@@ -689,6 +742,7 @@ const DosenPresensi: React.FC = () => {
             // Transform data to handle Supabase's array return for single relations
             const transformedData = (data || []).map((item: any) => ({
                 ...item,
+                is_homebase: item.is_homebase ?? true, // Default to homebase if not set
                 study_program: Array.isArray(item.study_program) ? item.study_program[0] || null : item.study_program
             }));
             setLecturers(transformedData);
@@ -1280,7 +1334,25 @@ const DosenPresensi: React.FC = () => {
                                         <Loader2 className="w-5 h-5 animate-spin" />
                                         <span className="text-sm">Memeriksa status presensi...</span>
                                     </div>
-                                ) : hasAttendedToday && (
+                                ) : hasReachedWeeklyLimit ? (
+                                    <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 animate-fadeIn">
+                                        <div className="p-2 bg-red-100 rounded-lg">
+                                            <AlertCircle className="w-6 h-6 text-red-600" />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-semibold text-red-900">
+                                                Batas Presensi Mingguan Tercapai
+                                            </h3>
+                                            <p className="text-sm text-red-700">
+                                                {(() => {
+                                                    const lecturer = lecturers.find(l => l.id === selectedLecturerId);
+                                                    const isHB = lecturer?.is_homebase ?? true;
+                                                    return `Dosen ${isHB ? 'Homebase' : 'Non-Homebase'} maksimal ${maxWeeklyAttendance}x presensi per minggu. Anda sudah presensi ${weeklyAttendanceCount}x minggu ini.`;
+                                                })()}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ) : hasAttendedToday ? (
                                     <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 animate-fadeIn">
                                         <div className="p-2 bg-amber-100 rounded-lg">
                                             <Clock className="w-6 h-6 text-amber-600" />
@@ -1292,11 +1364,25 @@ const DosenPresensi: React.FC = () => {
                                             </p>
                                         </div>
                                     </div>
-                                )}
+                                ) : selectedLecturerId && weeklyAttendanceCount > 0 ? (
+                                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-3 animate-fadeIn">
+                                        <div className="p-1.5 bg-blue-100 rounded-lg">
+                                            <Clock className="w-5 h-5 text-blue-600" />
+                                        </div>
+                                        <p className="text-sm text-blue-700">
+                                            {(() => {
+                                                const lecturer = lecturers.find(l => l.id === selectedLecturerId);
+                                                const isHB = lecturer?.is_homebase ?? true;
+                                                const remaining = maxWeeklyAttendance - weeklyAttendanceCount;
+                                                return `Dosen ${isHB ? 'Homebase' : 'Non-Homebase'} — Sisa kuota minggu ini: ${remaining}x dari ${maxWeeklyAttendance}x`;
+                                            })()}
+                                        </p>
+                                    </div>
+                                ) : null}
                             </div>
 
                             {/* Step 1.5: Schedule Selection (Multiple) - Auto Day */}
-                            {selectedLecturerId && !hasAttendedToday && (
+                            {selectedLecturerId && !hasAttendedToday && !hasReachedWeeklyLimit && (
                                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                                     <div className="flex items-center gap-3 mb-4">
                                         <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 font-bold">
@@ -1655,6 +1741,7 @@ const DosenPresensi: React.FC = () => {
                                     (selectedSchedules.length === 0 && !customPurpose.trim()) ||
                                     !cameraStream ||
                                     hasAttendedToday ||
+                                    hasReachedWeeklyLimit ||
                                     (!ALLOW_OUTSIDE_LOCATION && geolocation && !geolocation.isWithinAllowedLocation) ||
                                     (!ALLOW_OUTSIDE_LOCATION && !geolocation)
                                 }
