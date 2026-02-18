@@ -1567,7 +1567,7 @@ const DosenPresensi: React.FC = () => {
 
                                 </div>
 
-                                <div className="relative aspect-[4/3] bg-gray-900 rounded-xl overflow-hidden">
+                                <div className="relative w-full bg-gray-900 rounded-xl overflow-hidden" style={{ height: '350px' }}>
                                     {cameraError ? (
                                         <div className="absolute inset-0 flex flex-col items-center justify-center text-white p-4">
                                             <AlertCircle className="w-12 h-12 text-red-400 mb-3" />
@@ -1586,7 +1586,8 @@ const DosenPresensi: React.FC = () => {
                                                 autoPlay
                                                 playsInline
                                                 muted
-                                                className="w-full h-full object-cover"
+                                                className="w-full h-full"
+                                                style={{ objectFit: 'cover', height: '350px' }}
                                             />
                                             {/* Live indicator */}
                                             <div className="absolute top-4 left-4 flex items-center gap-2 bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-full">
