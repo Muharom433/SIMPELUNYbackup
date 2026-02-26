@@ -6,6 +6,7 @@ import {
     BookOpen, GraduationCap, Settings, Calendar, DollarSign, Plus, Save, CalendarOff, SlidersHorizontal, UserPlus
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { withRetry, deduplicatedFetch, AbortManager, appCache } from '../lib/queryUtils';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
@@ -150,11 +151,13 @@ const FinanceAttendance: React.FC = () => {
     // Pagination
     const [currentPage, setCurrentPage] = useState(1);
     const rowsPerPage = 10;
+    const [totalCount, setTotalCount] = useState(0); // eslint-disable-line @typescript-eslint/no-unused-vars
 
     // Modal states
     const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null);
     const [selectedRecordDetails, setSelectedRecordDetails] = useState<AttendanceDetail[]>([]);
     const [loadingDetails, setLoadingDetails] = useState(false);
+    const [loadingPhoto, setLoadingPhoto] = useState(false); // Lazy load photo state
     const [showImageModal, setShowImageModal] = useState(false);
     const [verificationNotes, setVerificationNotes] = useState('');
     const [processing, setProcessing] = useState(false);
@@ -222,6 +225,8 @@ const FinanceAttendance: React.FC = () => {
     const [lecturerSearchTerm, setLecturerSearchTerm] = useState('');
     const [showLecturerDropdown, setShowLecturerDropdown] = useState(false);
     const lecturerDropdownRef = React.useRef<HTMLDivElement>(null);
+    // AbortManager: cancel stale requests saat filter berubah sebelum response tiba
+    const abortManager = React.useRef(new AbortManager()).current;
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -267,12 +272,15 @@ const FinanceAttendance: React.FC = () => {
     }, [attendanceRecords]);
 
     const fetchStudyPrograms = async () => {
+        // Cek cache dulu (TTL 10 menit) — list prodi jarang berubah
+        const cached = appCache.get<StudyProgram[]>('study_programs');
+        if (cached) { setStudyPrograms(cached); return; }
         try {
-            const { data, error } = await supabase
-                .from('study_programs')
-                .select('id, name, code')
-                .order('name');
+            const { data, error } = await withRetry(() =>
+                supabase.from('study_programs').select('id, name, code').order('name')
+            );
             if (error) throw error;
+            appCache.set('study_programs', data || [], 10 * 60 * 1000); // cache 10 menit
             setStudyPrograms(data || []);
         } catch (error) {
             console.error('Error fetching study programs:', error);
@@ -280,38 +288,78 @@ const FinanceAttendance: React.FC = () => {
     };
 
     const fetchAttendanceRecords = async () => {
+        // Cancel request sebelumnya jika ada (cegah race condition)
+        abortManager.abort('fetchAttendance');
+
         try {
             setLoading(true);
 
-            let query = supabase
-                .from('lecturer_attendance')
-                .select(`
-                    *, 
-                    study_program:study_programs(id, name), 
-                    details:lecturer_attendance_details(*),
-                    scanned_room:rooms(
-                        id, 
-                        name, 
-                        building:building(id, name, campus_id)
-                    )
-                `)
-                .gte('attendance_date', dateRange.start)
-                .lte('attendance_date', dateRange.end)
-                .order('attendance_date', { ascending: false })
-                .order('attendance_time', { ascending: false });
+            // deduplicatedFetch: bila dipanggil 2x bersamaan, hanya 1 request yg jalan
+            const cacheKey = `attendance_${dateRange.start}_${dateRange.end}_${studyProgramFilter}_${statusFilter}_${campusFilter}`;
 
-            if (studyProgramFilter !== 'all' && studyProgramFilter !== 'non_homebase') {
-                query = query.eq('study_program_id', studyProgramFilter);
-            }
+            const { data, count } = await deduplicatedFetch(cacheKey, () =>
+                withRetry(
+                    async () => {
+                        let query = supabase
+                            .from('lecturer_attendance')
+                            .select(`
+                                id,
+                                lecturer_user_id,
+                                lecturer_name,
+                                attendance_date,
+                                attendance_time,
+                                purpose,
+                                purpose_description,
+                                schedule_type,
+                                schedule_id,
+                                verification_status,
+                                verified_by,
+                                verified_at,
+                                verified_notes,
+                                is_included_in_recap,
+                                study_program_id,
+                                scanned_room_id,
+                                additional_notes,
+                                created_at,
+                                study_program:study_programs(id, name),
+                                scanned_room:rooms(
+                                    id,
+                                    name,
+                                    building:building(id, name, campus_id)
+                                )
+                            `)
+                            .gte('attendance_date', dateRange.start)
+                            .lte('attendance_date', dateRange.end)
+                            .order('attendance_date', { ascending: false })
+                            .order('attendance_time', { ascending: false });
+                        // TIDAK ADA .range() — semua data dalam rentang tanggal diambil
+                        // Paginasi 10/hal hanya untuk tampilan tabel, bukan batasan pengambilan
 
-            if (statusFilter !== 'all') {
-                query = query.eq('verification_status', statusFilter);
-            }
+                        if (studyProgramFilter !== 'all' && studyProgramFilter !== 'non_homebase') {
+                            query = query.eq('study_program_id', studyProgramFilter);
+                        }
+                        if (statusFilter !== 'all') {
+                            query = query.eq('verification_status', statusFilter);
+                        }
 
-            const { data, error } = await query;
-            if (error) throw error;
+                        const result = await query;
+                        if (result.error) throw result.error;
+                        return { data: result.data };
+                    },
+                    {
+                        maxRetries: 2,
+                        baseDelayMs: 1500,
+                        onRetry: (attempt, err) => {
+                            console.warn(`[Attendance] Retry ${attempt} karena:`, (err as any)?.message || err);
+                            toast.loading(`Mencoba ulang... (${attempt}/2)`, { id: 'retry-toast' });
+                        },
+                    }
+                )
+            ) as { data: any[] | null };
 
-            // Fetch is_homebase status for each lecturer
+            toast.dismiss('retry-toast');
+
+            // Fetch is_homebase untuk unique lecturer IDs
             const lecturerIds = [...new Set((data || []).map(r => r.lecturer_user_id).filter(Boolean))];
             let homebaseMap: Record<string, boolean> = {};
 
@@ -323,35 +371,40 @@ const FinanceAttendance: React.FC = () => {
 
                 if (usersData) {
                     usersData.forEach(u => {
-                        homebaseMap[u.id] = u.is_homebase ?? true; // Default to true if null
+                        homebaseMap[u.id] = u.is_homebase ?? true;
                     });
                 }
             }
 
-            // Enrich records with homebase status
             let enrichedData = (data || []).map(r => ({
                 ...r,
                 is_homebase: homebaseMap[r.lecturer_user_id] ?? true
             }));
 
-            // Filter for non-homebase if selected
             if (studyProgramFilter === 'non_homebase') {
                 enrichedData = enrichedData.filter(r => r.is_homebase === false);
             }
 
-            // Filter by campus if selected
             if (campusFilter !== 'all') {
                 enrichedData = enrichedData.filter(r => {
-                    // Access campus_id from nested building object
                     const scannedRoom = r.scanned_room as any;
                     return scannedRoom?.building?.campus_id === campusFilter;
                 });
             }
 
-            setAttendanceRecords(enrichedData);
+            setAttendanceRecords(enrichedData as unknown as AttendanceRecord[]);
+            setTotalCount(enrichedData.length); // eslint-disable-line @typescript-eslint/no-unused-vars
+            setCurrentPage(1);
         } catch (error: any) {
+            toast.dismiss('retry-toast');
+            // Abaikan error AbortError (request di-cancel karena filter berubah)
+            if (error?.name === 'AbortError') return;
             console.error('Error fetching attendance:', error);
-            toast.error('Gagal memuat data presensi');
+            toast.error(
+                error?.code === '57014'
+                    ? 'Query timeout — coba perkecil rentang tanggal atau gunakan filter'
+                    : 'Gagal memuat data presensi'
+            );
         } finally {
             setLoading(false);
         }
@@ -871,12 +924,31 @@ const FinanceAttendance: React.FC = () => {
         }
     };
 
-    // Handle selecting a record (fetch details too)
+    // Handle selecting a record (fetch details + photo lazily)
     const handleSelectRecord = async (record: AttendanceRecord) => {
         setSelectedRecord(record);
-        setVerificationNotes(record.verified_notes || ''); // Load existing notes if available
-        // Fetch details for this record
-        await fetchAttendanceDetails(record.id);
+        setVerificationNotes(record.verified_notes || '');
+        setLoadingPhoto(true); // Mulai skeleton foto
+
+        // Fetch details dan photo secara parallel — keduanya lazy
+        await Promise.all([
+            fetchAttendanceDetails(record.id),
+
+            // Lazy fetch photo_capture — hanya dipanggil saat modal dibuka
+            supabase
+                .from('lecturer_attendance')
+                .select('id, photo_capture')
+                .eq('id', record.id)
+                .maybeSingle()
+                .then(({ data: photoData }) => {
+                    if (photoData?.photo_capture) {
+                        setSelectedRecord(prev =>
+                            prev ? { ...prev, photo_capture: photoData.photo_capture } : prev
+                        );
+                    }
+                })
+                .finally(() => setLoadingPhoto(false))
+        ]);
     };
 
     const handleVerify = async (status: 'verified' | 'rejected') => {
@@ -2199,18 +2271,17 @@ const FinanceAttendance: React.FC = () => {
                                                                 : '📍 Lokasi tidak tercatat';
                                                         })()}
                                                     </span>
-                                                    {record.photo_capture ? (
-                                                        <img
-                                                            src={record.photo_capture}
-                                                            alt=""
-                                                            className="w-12 h-12 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                                                            onClick={() => { setSelectedRecord(record); setShowImageModal(true); }}
-                                                        />
-                                                    ) : (
-                                                        <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
-                                                            <User className="w-5 h-5 text-gray-400" />
-                                                        </div>
-                                                    )}
+                                                    {/* Foto thumbnail — lazy loaded saat klik buka modal */}
+                                                    <button
+                                                        onClick={() => handleSelectRecord(record)}
+                                                        className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center hover:bg-blue-50 hover:ring-2 hover:ring-blue-300 transition-all group"
+                                                        title="Klik untuk lihat detail & foto"
+                                                    >
+                                                        <svg className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                        </svg>
+                                                    </button>
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <div className="flex items-center gap-2">
@@ -2650,15 +2721,41 @@ const FinanceAttendance: React.FC = () => {
                                             ? getText('Verify Attendance', 'Verifikasi Presensi')
                                             : getText('Attendance Detail', 'Detail Presensi')}
                                     </h3>
-                                    <button onClick={() => { setSelectedRecord(null); setVerificationNotes(''); }} className="p-2 hover:bg-gray-100 rounded-lg">
+                                    <button onClick={() => { setSelectedRecord(null); setVerificationNotes(''); setLoadingPhoto(false); }} className="p-2 hover:bg-gray-100 rounded-lg">
                                         <X className="w-5 h-5 text-gray-500" />
                                     </button>
                                 </div>
                             </div>
                             <div className="p-6 space-y-4">
-                                {selectedRecord.photo_capture && (
-                                    <img src={selectedRecord.photo_capture} alt="" className="w-full h-48 object-cover rounded-xl" />
-                                )}
+                                {/* Foto — Lazy Loaded (hanya saat modal dibuka) */}
+                                <div className="relative w-full h-48 rounded-xl overflow-hidden bg-gray-100">
+                                    {loadingPhoto ? (
+                                        /* Skeleton loader saat foto sedang di-fetch */
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 animate-pulse">
+                                            <div className="w-12 h-12 bg-gray-300 rounded-full" />
+                                            <div className="w-24 h-3 bg-gray-300 rounded" />
+                                            <p className="text-xs text-gray-400 mt-1">Memuat foto...</p>
+                                        </div>
+                                    ) : selectedRecord.photo_capture ? (
+                                        /* Foto sudah tersedia */
+                                        <img
+                                            src={selectedRecord.photo_capture}
+                                            alt="Foto presensi"
+                                            className="w-full h-full object-cover cursor-zoom-in hover:scale-105 transition-transform duration-300"
+                                            onClick={() => setShowImageModal(true)}
+                                            title="Klik untuk perbesar"
+                                        />
+                                    ) : (
+                                        /* Tidak ada foto */
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-gray-400">
+                                            <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                            </svg>
+                                            <span className="text-xs">Tidak ada foto</span>
+                                        </div>
+                                    )}
+                                </div>
                                 <div className="grid grid-cols-2 gap-4 text-sm">
                                     <div>
                                         <label className="text-gray-500">Nama Dosen</label>

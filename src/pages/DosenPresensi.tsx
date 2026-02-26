@@ -1328,29 +1328,11 @@ const DosenPresensi: React.FC = () => {
                                     />
                                 )}
 
-                                {/* Attendance Warning */}
+                                {/* Attendance Info/Warning */}
                                 {checkingAttendance ? (
                                     <div className="mt-4 flex items-center justify-center p-4 text-gray-500 gap-2">
                                         <Loader2 className="w-5 h-5 animate-spin" />
                                         <span className="text-sm">Memeriksa status presensi...</span>
-                                    </div>
-                                ) : hasReachedWeeklyLimit ? (
-                                    <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 animate-fadeIn">
-                                        <div className="p-2 bg-red-100 rounded-lg">
-                                            <AlertCircle className="w-6 h-6 text-red-600" />
-                                        </div>
-                                        <div>
-                                            <h3 className="font-semibold text-red-900">
-                                                Batas Presensi Mingguan Tercapai
-                                            </h3>
-                                            <p className="text-sm text-red-700">
-                                                {(() => {
-                                                    const lecturer = lecturers.find(l => l.id === selectedLecturerId);
-                                                    const isHB = lecturer?.is_homebase ?? true;
-                                                    return `Dosen ${isHB ? 'Homebase' : 'Non-Homebase'} maksimal ${maxWeeklyAttendance}x presensi per minggu. Anda sudah presensi ${weeklyAttendanceCount}x minggu ini.`;
-                                                })()}
-                                            </p>
-                                        </div>
                                     </div>
                                 ) : hasAttendedToday ? (
                                     <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 animate-fadeIn">
@@ -1364,6 +1346,26 @@ const DosenPresensi: React.FC = () => {
                                             </p>
                                         </div>
                                     </div>
+                                ) : hasReachedWeeklyLimit ? (
+                                    // Informasi saja — bukan blokir. Presensi tetap bisa dilakukan.
+                                    // Kelebihan dari batas hanya tidak dihitung dalam pembayaran.
+                                    <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3 animate-fadeIn">
+                                        <div className="p-2 bg-amber-100 rounded-lg flex-shrink-0">
+                                            <AlertCircle className="w-5 h-5 text-amber-600" />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-semibold text-amber-900">
+                                                ℹ️ Info Kuota Pembayaran Mingguan
+                                            </h3>
+                                            <p className="text-sm text-amber-700 mt-0.5">
+                                                {(() => {
+                                                    const lecturer = lecturers.find(l => l.id === selectedLecturerId);
+                                                    const isHB = lecturer?.is_homebase ?? true;
+                                                    return `Dosen ${isHB ? 'Homebase' : 'Non-Homebase'} maksimal ${maxWeeklyAttendance}x dihitung dalam pembayaran per minggu. Anda sudah presensi ${weeklyAttendanceCount}x minggu ini — presensi selanjutnya tetap tercatat namun tidak dihitung dalam pembayaran transport.`;
+                                                })()}
+                                            </p>
+                                        </div>
+                                    </div>
                                 ) : selectedLecturerId && weeklyAttendanceCount > 0 ? (
                                     <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-3 animate-fadeIn">
                                         <div className="p-1.5 bg-blue-100 rounded-lg">
@@ -1374,7 +1376,7 @@ const DosenPresensi: React.FC = () => {
                                                 const lecturer = lecturers.find(l => l.id === selectedLecturerId);
                                                 const isHB = lecturer?.is_homebase ?? true;
                                                 const remaining = maxWeeklyAttendance - weeklyAttendanceCount;
-                                                return `Dosen ${isHB ? 'Homebase' : 'Non-Homebase'} — Sisa kuota minggu ini: ${remaining}x dari ${maxWeeklyAttendance}x`;
+                                                return `Dosen ${isHB ? 'Homebase' : 'Non-Homebase'} — Sisa kuota bayar minggu ini: ${remaining}x dari ${maxWeeklyAttendance}x`;
                                             })()}
                                         </p>
                                     </div>
@@ -1382,7 +1384,7 @@ const DosenPresensi: React.FC = () => {
                             </div>
 
                             {/* Step 1.5: Schedule Selection (Multiple) - Auto Day */}
-                            {selectedLecturerId && !hasAttendedToday && !hasReachedWeeklyLimit && (
+                            {selectedLecturerId && !hasAttendedToday && (
                                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                                     <div className="flex items-center gap-3 mb-4">
                                         <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 font-bold">
@@ -1741,7 +1743,6 @@ const DosenPresensi: React.FC = () => {
                                     (selectedSchedules.length === 0 && !customPurpose.trim()) ||
                                     !cameraStream ||
                                     hasAttendedToday ||
-                                    hasReachedWeeklyLimit ||
                                     (!ALLOW_OUTSIDE_LOCATION && geolocation && !geolocation.isWithinAllowedLocation) ||
                                     (!ALLOW_OUTSIDE_LOCATION && !geolocation)
                                 }
@@ -1761,6 +1762,11 @@ const DosenPresensi: React.FC = () => {
                                     <>
                                         <AlertCircle className="w-5 h-5" />
                                         Lokasi Di Luar Area Kampus
+                                    </>
+                                ) : hasReachedWeeklyLimit ? (
+                                    <>
+                                        <Camera className="w-5 h-5" />
+                                        Submit Presensi (Di luar kuota bayar)
                                     </>
                                 ) : (
                                     <>
