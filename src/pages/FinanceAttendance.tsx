@@ -1392,7 +1392,26 @@ const FinanceAttendance: React.FC = () => {
                 return;
             }
 
-            // Fetch special dates (holidays) for the current month
+            // ─── FETCH BATAS MINGGUAN LANGSUNG DARI DATABASE ──────────────
+            // Jangan pakai state globalSettings — mungkin belum ter-load
+            // jika admin belum buka modal settings sebelum export.
+            const { data: dbSettings, error: settingsError } = await supabase
+                .from('attendance_global_settings')
+                .select('max_weekly_attendance_hbv, max_weekly_attendance_nhbv')
+                .limit(1)
+                .maybeSingle();
+
+            if (settingsError) {
+                console.error('Gagal fetch batas mingguan dari DB:', settingsError);
+            }
+
+            // Gunakan nilai DB, fallback ke 3/2 jika belum ada setting
+            const maxWeeklyHBV: number = dbSettings?.max_weekly_attendance_hbv ?? 3;
+            const maxWeeklyNHBV: number = dbSettings?.max_weekly_attendance_nhbv ?? 2;
+
+            console.log(`📋 Batas minggu dari DB: HBV=${maxWeeklyHBV}x, NHBV=${maxWeeklyNHBV}x`);
+
+            // ─── FETCH HARI LIBUR (SPECIAL DATES) ─────────────────────────
             const exportMonth = dateRange.start ? new Date(dateRange.start).getMonth() + 1 : new Date().getMonth() + 1;
             const exportYear = dateRange.start ? new Date(dateRange.start).getFullYear() : new Date().getFullYear();
 
@@ -1417,6 +1436,7 @@ const FinanceAttendance: React.FC = () => {
 
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('Rekap Kehadiran');
+
 
             // --- DATA PREPARATION ---
             // Helper to get day abbreviation
@@ -1479,10 +1499,11 @@ const FinanceAttendance: React.FC = () => {
                 lecturerMap.get(key)!.dates.push(r.attendance_date);
             });
 
-            // Helper: Calculate paid attendance per week (max 3 per week)
-            const calculatePaidAttendancePerWeek = (dates: string[], weeks: WeekSetting[]): {
+            // Helper: Calculate paid attendance per week
+            // maxPerWeek: dari global settings (3 untuk HBV, 2 untuk NHBV)
+            const calculatePaidAttendancePerWeek = (dates: string[], weeks: WeekSetting[], maxPerWeek: number): {
                 paidDatesPerWeek: Map<number, string[]>;  // weekNumber -> paid dates
-                unpaidDates: string[];  // dates beyond 3 per week
+                unpaidDates: string[];  // dates beyond maxPerWeek per week
                 totalPaidDays: number;
             } => {
                 const paidDatesPerWeek = new Map<number, string[]>();
@@ -1513,13 +1534,13 @@ const FinanceAttendance: React.FC = () => {
                         const week = weeks[weekIdx];
                         const weekDates = paidDatesPerWeek.get(week.week_number) || [];
 
-                        if (weekDates.length < 3) {
-                            // Still within 3 days limit - paid
+                        if (weekDates.length < maxPerWeek) {
+                            // Masih dalam batas maxPerWeek — dihitung bayar
                             weekDates.push(dateStr);
                             paidDatesPerWeek.set(week.week_number, weekDates);
                             totalPaidDays++;
                         } else {
-                            // Beyond 3 days - NOT paid (but still recorded)
+                            // Melebihi batas — tidak dibayar (tapi tetap tercatat / ditandai merah)
                             unpaidDates.push(dateStr);
                         }
                     }
@@ -1681,10 +1702,15 @@ const FinanceAttendance: React.FC = () => {
             lecturerMap.forEach((lecturer) => {
                 const row = worksheet.getRow(rowIndex);
 
-                // Calculate paid vs unpaid dates (max 3 per week)
+                // Tentukan batas maksimal per minggu berdasarkan tipe dosen
+                // Nilai diambil langsung dari database (bukan state)
+                const maxPerWeek = lecturer.is_homebase ? maxWeeklyHBV : maxWeeklyNHBV;
+
+                // Calculate paid vs unpaid dates berdasarkan maxPerWeek dosen ini
                 const { paidDatesPerWeek, unpaidDates, totalPaidDays } = calculatePaidAttendancePerWeek(
                     lecturer.dates,
-                    sortedWeeks
+                    sortedWeeks,
+                    maxPerWeek
                 );
                 const unpaidDatesSet = new Set(unpaidDates);
 
@@ -1834,23 +1860,23 @@ const FinanceAttendance: React.FC = () => {
                 const totalAttendance = lecturer.dates.length;
                 row.getCell(statsColsStart + 1).value = totalAttendance;
 
-                // If there are unpaid dates, add note
+                // Catatan jika melebihi batas
                 if (unpaidDates.length > 0) {
-                    row.getCell(statsColsStart + 1).note = `Melebihi 3x/minggu: ${unpaidDates.length} hari tidak dibayar`;
+                    row.getCell(statsColsStart + 1).note = `Melebihi ${maxPerWeek}x/minggu: ${unpaidDates.length} hari tidak dibayar (${lecturer.is_homebase ? 'HBV' : 'NHBV'})`;
                 }
 
                 const rate = lecturer.is_homebase ? hbvRate : nhbvRate;
                 row.getCell(statsColsStart + 2).value = rate;
                 row.getCell(statsColsStart + 2).numFmt = '#,##0';
 
-                // JUMLAH - Only count PAID days (max 3 per week)
+                // JUMLAH - Only count PAID days (max per week sesuai tipe dosen)
                 const totalPayment = totalPaidDays * rate;
                 row.getCell(statsColsStart + 3).value = totalPayment;
                 row.getCell(statsColsStart + 3).numFmt = '#,##0';
 
-                // Highlight if there are unpaid dates
+                // Catatan jika ada hari yang tidak dibayar
                 if (unpaidDates.length > 0) {
-                    row.getCell(statsColsStart + 3).note = `Dibayar ${totalPaidDays} dari ${totalAttendance} hari (maks 3x/minggu)`;
+                    row.getCell(statsColsStart + 3).note = `Dibayar ${totalPaidDays} dari ${totalAttendance} hari (maks ${maxPerWeek}x/minggu — ${lecturer.is_homebase ? 'HBV' : 'NHBV'})`;
                 }
 
                 // JADWAL Columns - Robust name matching
@@ -1914,15 +1940,19 @@ const FinanceAttendance: React.FC = () => {
             totalLabelCell.font = { bold: true };
             totalLabelCell.alignment = { vertical: 'middle', horizontal: 'center' };
 
-            // Calculate Grand Total Sum (only PAID days - max 3 per week)
+            // Calculate Grand Total Sum (berdasarkan maxPerWeek tiap tipe dosen)
             let totalAmount = 0;
             let totalPaidDaysAll = 0;
             let totalUnpaidDaysAll = 0;
 
             lecturerMap.forEach(l => {
+                // Tiap dosen punya batas berbeda: HBV/NHBV dari DB
+                const maxPerWeekL = l.is_homebase ? maxWeeklyHBV : maxWeeklyNHBV;
+
                 const { totalPaidDays: paidDays, unpaidDates } = calculatePaidAttendancePerWeek(
                     l.dates,
-                    sortedWeeks
+                    sortedWeeks,
+                    maxPerWeekL
                 );
                 const rate = l.is_homebase ? hbvRate : nhbvRate;
                 totalAmount += paidDays * rate;
@@ -1930,9 +1960,9 @@ const FinanceAttendance: React.FC = () => {
                 totalUnpaidDaysAll += unpaidDates.length;
             });
 
-            // Add note about unpaid days if any
+            // Log ringkasan
             if (totalUnpaidDaysAll > 0) {
-                console.log(`📊 Grand Total: ${totalPaidDaysAll} hari dibayar, ${totalUnpaidDaysAll} hari melebihi batas 3x/minggu`);
+                console.log(`📊 Grand Total: ${totalPaidDaysAll} hari dibayar, ${totalUnpaidDaysAll} hari melebihi batas (HBV:${maxWeeklyHBV}x | NHBV:${maxWeeklyNHBV}x per minggu)`);
             }
 
             const totalValueCell = worksheet.getCell(lastRowIdx, footStatsStartCol + 3);
