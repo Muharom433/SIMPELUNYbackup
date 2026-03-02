@@ -1349,37 +1349,21 @@ const DosenPresensi: React.FC = () => {
                                 ) : hasReachedWeeklyLimit ? (
                                     // Informasi saja — bukan blokir. Presensi tetap bisa dilakukan.
                                     // Kelebihan dari batas hanya tidak dihitung dalam pembayaran.
-                                    <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3 animate-fadeIn">
-                                        <div className="p-2 bg-amber-100 rounded-lg flex-shrink-0">
-                                            <AlertCircle className="w-5 h-5 text-amber-600" />
-                                        </div>
-                                        <div>
-                                            <h3 className="font-semibold text-amber-900">
-                                                ℹ️ Info Kuota Pembayaran Mingguan
-                                            </h3>
-                                            <p className="text-sm text-amber-700 mt-0.5">
-                                                {(() => {
-                                                    const lecturer = lecturers.find(l => l.id === selectedLecturerId);
-                                                    const isHB = lecturer?.is_homebase ?? true;
-                                                    return `Dosen ${isHB ? 'Homebase' : 'Non-Homebase'} maksimal ${maxWeeklyAttendance}x dihitung dalam pembayaran per minggu. Anda sudah presensi ${weeklyAttendanceCount}x minggu ini — presensi selanjutnya tetap tercatat namun tidak dihitung dalam pembayaran transport.`;
-                                                })()}
-                                            </p>
-                                        </div>
+
+                                ): selectedLecturerId && weeklyAttendanceCount > 0 ? (
+                                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-3 animate-fadeIn">
+                                    <div className="p-1.5 bg-blue-100 rounded-lg">
+                                        <Clock className="w-5 h-5 text-blue-600" />
                                     </div>
-                                ) : selectedLecturerId && weeklyAttendanceCount > 0 ? (
-                                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-3 animate-fadeIn">
-                                        <div className="p-1.5 bg-blue-100 rounded-lg">
-                                            <Clock className="w-5 h-5 text-blue-600" />
-                                        </div>
-                                        <p className="text-sm text-blue-700">
-                                            {(() => {
-                                                const lecturer = lecturers.find(l => l.id === selectedLecturerId);
-                                                const isHB = lecturer?.is_homebase ?? true;
-                                                const remaining = maxWeeklyAttendance - weeklyAttendanceCount;
-                                                return `Dosen ${isHB ? 'Homebase' : 'Non-Homebase'} — Sisa kuota bayar minggu ini: ${remaining}x dari ${maxWeeklyAttendance}x`;
-                                            })()}
-                                        </p>
-                                    </div>
+                                    <p className="text-sm text-blue-700">
+                                        {(() => {
+                                            const lecturer = lecturers.find(l => l.id === selectedLecturerId);
+                                            const isHB = lecturer?.is_homebase ?? true;
+                                            const remaining = maxWeeklyAttendance - weeklyAttendanceCount;
+                                            return `Dosen ${isHB ? 'Homebase' : 'Non-Homebase'} — Sisa kuota bayar minggu ini: ${remaining}x dari ${maxWeeklyAttendance}x`;
+                                        })()}
+                                    </p>
+                                </div>
                                 ) : null}
                             </div>
 

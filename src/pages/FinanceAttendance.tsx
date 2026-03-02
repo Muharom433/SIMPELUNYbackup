@@ -1424,11 +1424,45 @@ const FinanceAttendance: React.FC = () => {
 
             const currentSpecialDates = holidayData || [];
 
+            // ─── FETCH WEEK SETTINGS LANGSUNG DARI DB (berdasarkan bulan export) ──
+            // PENTING: Jangan pakai state weekSettings — state itu mengikuti settingsMonth
+            // yang defaultnya = bulan saat ini. Saat export bulan lalu, weekSettings state
+            // akan berisi data bulan ini → kolom tanggal tidak muncul / salah bulan.
+            const { data: weekSettingsData, error: weekSettingsError } = await supabase
+                .from('attendance_week_settings')
+                .select('*')
+                .eq('month', exportMonth)
+                .eq('year', exportYear)
+                .order('week_number');
+
+            if (weekSettingsError) {
+                console.error('Gagal fetch week settings dari DB:', weekSettingsError);
+            }
+
+            const exportWeekSettings: WeekSetting[] = weekSettingsData || [];
+            console.log(`📅 Week settings dari DB untuk ${exportMonth}/${exportYear}:`, exportWeekSettings.length, 'minggu');
+
+            if (exportWeekSettings.length === 0) {
+                toast.error(`Tidak ada pengaturan minggu untuk bulan ${exportMonth}/${exportYear}. Silakan atur di menu Pengaturan terlebih dahulu.`);
+                return;
+            }
+
+            // ─── FETCH PAYMENT RATES LANGSUNG DARI DB (berdasarkan bulan export) ──
+            // Sama seperti weekSettings, paymentRates state bisa berisi data bulan lain.
+            const { data: paymentRatesData } = await supabase
+                .from('attendance_payment_rates')
+                .select('*')
+                .eq('effective_month', exportMonth)
+                .eq('effective_year', exportYear);
+
+            const exportPaymentRates: PaymentRate[] = paymentRatesData || [];
+            console.log(`💰 Payment rates dari DB untuk ${exportMonth}/${exportYear}:`, exportPaymentRates);
+
             // 🔍 DEBUG: Comprehensive logging
             console.log('📊 Export Excel Debug:');
             console.log('- Lecture Schedules Count:', lectureSchedules.length);
-            console.log('- Week Settings Count:', weekSettings.length);
-            console.log('- Week Settings:', weekSettings);
+            console.log('- Week Settings Count (DB):', exportWeekSettings.length);
+            console.log('- Week Settings (DB):', exportWeekSettings);
             console.log('- Special Dates Count:', currentSpecialDates.length);
             console.log('- Special Dates:', currentSpecialDates);
             console.log('- Verified Records Count:', verifiedRecords.length);
@@ -1454,8 +1488,8 @@ const FinanceAttendance: React.FC = () => {
                 return romans[num - 1] || num.toString();
             };
 
-            // Sort week settings
-            const sortedWeeks = [...weekSettings].sort((a, b) => a.week_number - b.week_number);
+            // Sort week settings — gunakan data dari DB langsung (exportWeekSettings)
+            const sortedWeeks = [...exportWeekSettings].sort((a, b) => a.week_number - b.week_number);
 
             // If no weeks defined, create a default structure (not ideal but fallback)
             // But user said "Based on Finance Settings", so we rely on sortedWeeks being populated.
@@ -1549,8 +1583,13 @@ const FinanceAttendance: React.FC = () => {
                 return { paidDatesPerWeek, unpaidDates, totalPaidDays };
             };
 
-            const hbvRate = paymentRates.find(r => r.lecturer_type === 'HBV')?.rate || 75000;
-            const nhbvRate = paymentRates.find(r => r.lecturer_type === 'NHBV')?.rate || 75000;
+            // Gunakan payment rates dari DB (exportPaymentRates), fallback ke state jika kosong
+            const hbvRate = exportPaymentRates.find(r => r.lecturer_type === 'HBV')?.rate
+                ?? paymentRates.find(r => r.lecturer_type === 'HBV')?.rate
+                ?? 75000;
+            const nhbvRate = exportPaymentRates.find(r => r.lecturer_type === 'NHBV')?.rate
+                ?? paymentRates.find(r => r.lecturer_type === 'NHBV')?.rate
+                ?? 75000;
 
             // --- HEADER CONSTRUCTION ---
 
