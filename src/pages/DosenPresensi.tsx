@@ -1349,8 +1349,8 @@ const DosenPresensi: React.FC = () => {
                                 ) : hasReachedWeeklyLimit ? (
                                     // Informasi saja — bukan blokir. Presensi tetap bisa dilakukan.
                                     // Kelebihan dari batas hanya tidak dihitung dalam pembayaran.
-
-                                ): selectedLecturerId && weeklyAttendanceCount > 0 ? (
+                                    null
+                                ) : selectedLecturerId && weeklyAttendanceCount > 0 ? (
                                 <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-3 animate-fadeIn">
                                     <div className="p-1.5 bg-blue-100 rounded-lg">
                                         <Clock className="w-5 h-5 text-blue-600" />
