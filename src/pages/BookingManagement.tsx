@@ -848,11 +848,116 @@ const BookingManagement: React.FC = () => {
             if ((booking.status === 'pending' || booking.status === 'approved') && newStatus === 'borrowed') {
                 console.log('🔍 Processing change to borrowed status - deducting equipment...');
 
+                // === AUTO-COMPLETE: Cek apakah ada booking lain di ruangan yang sama dengan status 'borrowed' ===
+                const { data: existingBorrowedBookings, error: existingError } = await supabase
+                    .from('bookings')
+                    .select('id, equipment_requested, equipment_quantities, user:users!bookings_user_id_fkey(full_name)')
+                    .eq('room_id', booking.room_id)
+                    .eq('status', 'borrowed')
+                    .neq('id', bookingId);
+
+                if (existingError) {
+                    console.error('Error checking existing borrowed bookings:', existingError);
+                }
+
+                let transferredEquipmentIds: string[] = [...(booking.equipment_requested || [])];
+                let transferredEquipmentQtys: number[] = [...(booking.equipment_quantities || [])];
+
+                if (existingBorrowedBookings && existingBorrowedBookings.length > 0) {
+                    console.log(`🔄 Found ${existingBorrowedBookings.length} existing borrowed booking(s) in room ${booking.room_id}`);
+
+                    for (const oldBooking of existingBorrowedBookings) {
+                        const oldUserName = (oldBooking.user as any)?.full_name || 'Unknown';
+                        console.log(`  📦 Auto-completing old booking: ${oldBooking.id} (${oldUserName})`);
+
+                        // Transfer equipment dari peminjaman lama ke peminjaman baru
+                        // Hanya tambahkan equipment yang belum ada di peminjaman baru
+                        if (oldBooking.equipment_requested && oldBooking.equipment_requested.length > 0) {
+                            for (let i = 0; i < oldBooking.equipment_requested.length; i++) {
+                                const oldEqId = oldBooking.equipment_requested[i];
+                                const oldQty = oldBooking.equipment_quantities?.[i] || 1;
+
+                                // Cek apakah equipment ini sudah ada di peminjaman baru
+                                const existingIndex = transferredEquipmentIds.indexOf(oldEqId);
+                                if (existingIndex === -1) {
+                                    // Equipment belum ada, tambahkan
+                                    transferredEquipmentIds.push(oldEqId);
+                                    transferredEquipmentQtys.push(oldQty);
+                                    console.log(`    ➕ Transferred equipment ${oldEqId} (qty: ${oldQty}) to new booking`);
+                                } else {
+                                    // Equipment sudah ada, tambahkan quantity
+                                    transferredEquipmentQtys[existingIndex] += oldQty;
+                                    console.log(`    ➕ Added qty ${oldQty} to existing equipment ${oldEqId} (total: ${transferredEquipmentQtys[existingIndex]})`);
+                                }
+                            }
+                        }
+
+                        // Set peminjaman lama ke completed (TANPA kembalikan stok karena equipment dipindah)
+                        const { error: completeError } = await supabase
+                            .from('bookings')
+                            .update({
+                                status: 'completed',
+                                notes: `Otomatis diselesaikan karena ruangan dipinjam oleh pemesanan baru. Equipment dipindahkan.`,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', oldBooking.id);
+
+                        if (completeError) {
+                            console.error(`Error auto-completing booking ${oldBooking.id}:`, completeError);
+                        } else {
+                            toast.success(`Peminjaman ${oldUserName} otomatis diselesaikan, equipment dipindahkan.`);
+                        }
+                    }
+                }
+
+                // Update booking baru dengan equipment yang sudah digabung (termasuk transfer dari yang lama)
+                if (transferredEquipmentIds.length !== (booking.equipment_requested?.length || 0) ||
+                    JSON.stringify(transferredEquipmentQtys) !== JSON.stringify(booking.equipment_quantities || [])) {
+                    // Ada perubahan dari transfer, update booking dulu
+                    const { error: transferUpdateError } = await supabase
+                        .from('bookings')
+                        .update({
+                            equipment_requested: transferredEquipmentIds,
+                            equipment_quantities: transferredEquipmentQtys,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', bookingId);
+
+                    if (transferUpdateError) {
+                        console.error('Error updating transferred equipment:', transferUpdateError);
+                    } else {
+                        console.log('✅ Equipment transferred to new booking successfully');
+                    }
+                }
+
+                // Sekarang proses pengurangan stok hanya untuk equipment BARU yang belum dipinjam dari booking lama
+                // Equipment yang sudah dipinjam dari booking lama TIDAK perlu dikurangi lagi (sudah dikurangi sebelumnya)
+                const alreadyBorrowedEqIds = new Set<string>();
+                if (existingBorrowedBookings) {
+                    for (const oldBooking of existingBorrowedBookings) {
+                        oldBooking.equipment_requested?.forEach((eqId: string) => {
+                            alreadyBorrowedEqIds.add(eqId);
+                        });
+                    }
+                }
+
                 const equipmentChanges = [];
 
                 for (let i = 0; i < (booking.equipment_requested?.length || 0); i++) {
                     const eqId = booking.equipment_requested[i];
                     const qty = booking.equipment_quantities?.[i] || 1;
+
+                    // Skip jika quantity 0
+                    if (qty <= 0) {
+                        console.log(`  ⏭️ Skipping equipment ${eqId} - quantity is 0`);
+                        continue;
+                    }
+
+                    // Skip jika equipment ini sudah dipinjam dari booking lama (sudah dikurangi stoknya)
+                    if (alreadyBorrowedEqIds.has(eqId)) {
+                        console.log(`  ⏭️ Skipping equipment ${eqId} - already borrowed from previous booking (transferred)`);
+                        continue;
+                    }
 
                     const { data: currentEq, error: fetchError } = await supabase
                         .from('equipment')
@@ -879,7 +984,7 @@ const BookingManagement: React.FC = () => {
                     });
                 }
 
-                // Kurangi stok equipment
+                // Kurangi stok equipment (hanya yang belum dipinjam dari booking sebelumnya)
                 if (equipmentChanges.length > 0) {
                     await updateEquipmentQuantities(equipmentChanges, 'borrow');
                 }

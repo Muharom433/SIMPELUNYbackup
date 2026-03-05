@@ -1346,24 +1346,6 @@ const DosenPresensi: React.FC = () => {
                                             </p>
                                         </div>
                                     </div>
-                                ) : hasReachedWeeklyLimit ? (
-                                    // Informasi saja — bukan blokir. Presensi tetap bisa dilakukan.
-                                    // Kelebihan dari batas hanya tidak dihitung dalam pembayaran.
-                                    null
-                                ) : selectedLecturerId && weeklyAttendanceCount > 0 ? (
-                                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-3 animate-fadeIn">
-                                    <div className="p-1.5 bg-blue-100 rounded-lg">
-                                        <Clock className="w-5 h-5 text-blue-600" />
-                                    </div>
-                                    <p className="text-sm text-blue-700">
-                                        {(() => {
-                                            const lecturer = lecturers.find(l => l.id === selectedLecturerId);
-                                            const isHB = lecturer?.is_homebase ?? true;
-                                            const remaining = maxWeeklyAttendance - weeklyAttendanceCount;
-                                            return `Dosen ${isHB ? 'Homebase' : 'Non-Homebase'} — Sisa kuota bayar minggu ini: ${remaining}x dari ${maxWeeklyAttendance}x`;
-                                        })()}
-                                    </p>
-                                </div>
                                 ) : null}
                             </div>
 
@@ -1750,7 +1732,7 @@ const DosenPresensi: React.FC = () => {
                                 ) : hasReachedWeeklyLimit ? (
                                     <>
                                         <Camera className="w-5 h-5" />
-                                        Submit Presensi (Di luar kuota bayar)
+                                        Submit Presensi {selectedSchedules.length > 0 && `(${selectedSchedules.length} kegiatan)`}
                                     </>
                                 ) : (
                                     <>
