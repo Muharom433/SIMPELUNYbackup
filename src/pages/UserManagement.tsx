@@ -56,6 +56,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
+import ExcelJS from 'exceljs';
 
 // Zod schema - password optional/empty for edit mode
 const userSchema = z.object({
@@ -421,6 +422,7 @@ const UserManagement: React.FC = () => {
   const [cleanupNimPrefix, setCleanupNimPrefix] = useState('');
   const [cleanupPreviewCount, setCleanupPreviewCount] = useState<number | null>(null);
   const [isCleaning, setIsCleaning] = useState(false);
+  const [isExportingUsers, setIsExportingUsers] = useState(false);
 
   const itemsPerPage = 10;
   const [currentPage, setCurrentPage] = useState(1);
@@ -989,6 +991,193 @@ const UserManagement: React.FC = () => {
     }
   };
 
+  // Export filtered users to Excel using ExcelJS
+  const handleExportUsers = async () => {
+    try {
+      setIsExportingUsers(true);
+      const toastId = toast.loading(getText('Exporting users...', 'Mengekspor pengguna...'));
+
+      // Build query without pagination to get ALL filtered users
+      let query = supabase.from('users').select(`
+        *,
+        department:departments(id, name, code),
+        study_program:study_programs(id, name, code)
+      `);
+
+      if (debouncedSearchTerm) {
+        const term = debouncedSearchTerm.toLowerCase();
+        query = query.or(`username.ilike.%${term}%,full_name.ilike.%${term}%,email.ilike.%${term}%,identity_number.ilike.%${term}%,phone_number.ilike.%${term}%,jabatan.ilike.%${term}%`);
+      }
+      if (roleFilter !== 'all') {
+        query = query.eq('role', roleFilter);
+      } else if (profile?.role === 'department_admin' && profile.department_id) {
+        // already filtered by department below
+      }
+      if (departmentFilter !== 'all') {
+        query = query.eq('department_id', departmentFilter);
+      } else if (profile?.role === 'department_admin' && profile.department_id) {
+        query = query.eq('department_id', profile.department_id);
+      }
+      if (homebaseFilter === 'homebase') {
+        query = query.eq('is_homebase', true);
+      } else if (homebaseFilter === 'non-homebase') {
+        query = query.eq('is_homebase', false);
+      }
+      query = query.order('created_at', { ascending: false });
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      const exportData = data || [];
+
+      // Create ExcelJS workbook
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'SIMPELUNY';
+      workbook.created = new Date();
+
+      const sheet = workbook.addWorksheet('Data Pengguna', {
+        pageSetup: { paperSize: 9, orientation: 'landscape' },
+      });
+
+      // ---- Header info rows ----
+      const filterInfo: string[] = [];
+      if (roleFilter !== 'all') filterInfo.push(`Role: ${getRoleDisplayName(roleFilter)}`);
+      if (departmentFilter !== 'all') {
+        const dept = departments.find(d => d.id === departmentFilter);
+        if (dept) filterInfo.push(`Departemen: ${dept.name}`);
+      }
+      if (homebaseFilter === 'homebase') filterInfo.push('Status: Homebase');
+      if (homebaseFilter === 'non-homebase') filterInfo.push('Status: Non-Homebase');
+      if (debouncedSearchTerm) filterInfo.push(`Pencarian: "${debouncedSearchTerm}"`);
+
+      sheet.addRow(['LAPORAN DATA PENGGUNA - SIMPELUNY']);
+      sheet.addRow([`Tanggal Export: ${format(new Date(), 'dd MMMM yyyy HH:mm')}`]);
+      sheet.addRow([filterInfo.length > 0 ? `Filter: ${filterInfo.join(' | ')}` : 'Filter: Semua Pengguna']);
+      sheet.addRow([`Total: ${exportData.length} pengguna`]);
+      sheet.addRow([]);
+
+      // Style title rows
+      const titleRow = sheet.getRow(1);
+      titleRow.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
+      titleRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3B5998' } };
+      titleRow.alignment = { vertical: 'middle', horizontal: 'center' };
+      titleRow.height = 24;
+
+      [2, 3, 4].forEach(rowNum => {
+        const r = sheet.getRow(rowNum);
+        r.font = { italic: true, size: 10, color: { argb: 'FF444444' } };
+        r.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF2FF' } };
+      });
+
+      // ---- Column headers ----
+      const headers = [
+        { header: 'No', key: 'no', width: 5 },
+        { header: 'Nama Lengkap', key: 'full_name', width: 28 },
+        { header: 'Username', key: 'username', width: 18 },
+        { header: 'Email', key: 'email', width: 28 },
+        { header: 'No. Identitas', key: 'identity_number', width: 18 },
+        { header: 'No. HP', key: 'phone_number', width: 16 },
+        { header: 'Jabatan', key: 'jabatan', width: 20 },
+        { header: 'Peran', key: 'role', width: 18 },
+        { header: 'Departemen', key: 'department', width: 24 },
+        { header: 'Program Studi', key: 'study_program', width: 28 },
+        { header: 'Homebase', key: 'is_homebase', width: 12 },
+        { header: 'Terdaftar', key: 'created_at', width: 18 },
+      ];
+
+      sheet.columns = headers;
+
+      const headerRow = sheet.getRow(6);
+      headerRow.values = headers.map(h => h.header);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
+      headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      headerRow.height = 22;
+      headers.forEach((h, i) => {
+        sheet.getColumn(i + 1).width = h.width;
+      });
+
+      // Merge title across all columns
+      sheet.mergeCells(1, 1, 1, headers.length);
+      sheet.mergeCells(2, 1, 2, headers.length);
+      sheet.mergeCells(3, 1, 3, headers.length);
+      sheet.mergeCells(4, 1, 4, headers.length);
+
+      // ---- Data rows ----
+      exportData.forEach((user, idx) => {
+        const rowData = [
+          idx + 1,
+          user.full_name || '',
+          user.username || '',
+          user.email || '',
+          user.identity_number || '',
+          user.phone_number || '',
+          user.jabatan || '',
+          getRoleDisplayName(user.role),
+          (user.department as any)?.name || '',
+          (user.study_program as any)?.name || '',
+          user.is_homebase ? 'Homebase' : 'Non-Homebase',
+          user.created_at ? format(new Date(user.created_at), 'dd/MM/yyyy') : '',
+        ];
+
+        const dataRow = sheet.getRow(6 + idx + 1);
+        dataRow.values = rowData;
+        dataRow.alignment = { vertical: 'middle', wrapText: false };
+        dataRow.height = 18;
+
+        // Alternating row color
+        const bgColor = idx % 2 === 0 ? 'FFFFFFFF' : 'FFF5F7FF';
+        dataRow.eachCell({ includeEmpty: true }, (cell) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          };
+        });
+
+        // Center 'No' and 'Homebase' columns
+        dataRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+        dataRow.getCell(11).alignment = { horizontal: 'center', vertical: 'middle' };
+        dataRow.getCell(12).alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+
+      // Border on header row
+      headerRow.eachCell({ includeEmpty: true }, (cell) => {
+        cell.border = {
+          top: { style: 'medium', color: { argb: 'FF3730A3' } },
+          left: { style: 'thin', color: { argb: 'FF3730A3' } },
+          bottom: { style: 'medium', color: { argb: 'FF3730A3' } },
+          right: { style: 'thin', color: { argb: 'FF3730A3' } },
+        };
+      });
+
+      // ---- Write file ----
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const rolePart = roleFilter !== 'all' ? `_${roleFilter}` : '';
+      link.download = `SIMPELUNY_Users${rolePart}_${format(new Date(), 'yyyy-MM-dd_HHmm')}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.dismiss(toastId);
+      toast.success(getText(`Exported ${exportData.length} users successfully`, `Berhasil mengekspor ${exportData.length} pengguna`));
+    } catch (err: any) {
+      console.error('Export error:', err);
+      toast.error(getText('Failed to export users', 'Gagal mengekspor pengguna'));
+    } finally {
+      setIsExportingUsers(false);
+    }
+  };
+
   // useEffect hooks
   useEffect(() => {
     if (profile) {
@@ -1394,6 +1583,26 @@ const UserManagement: React.FC = () => {
               title={getText('Refresh', 'Refresh')}
             >
               <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+
+            {/* Export Button */}
+            <button
+              onClick={handleExportUsers}
+              disabled={isExportingUsers || loading}
+              className="flex items-center space-x-2 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors duration-200 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+              title={getText('Export filtered users to Excel', 'Ekspor pengguna terfilter ke Excel')}
+            >
+              {isExportingUsers ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Download className="h-5 w-5" />
+              )}
+              <span className="hidden sm:inline">
+                {isExportingUsers
+                  ? getText('Exporting...', 'Mengekspor...')
+                  : getText('Export Excel', 'Ekspor Excel')
+                }
+              </span>
             </button>
 
             {/* Cleanup Button (Admin Only) */}

@@ -13,14 +13,17 @@ import {
     HardDrive
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import * as XLSX from 'xlsx';
-import { format, subMonths, subYears } from 'date-fns';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
+import { format, subMonths } from 'date-fns';
 
 export default function StorageManagement() {
     const { getText } = useLanguage();
     const [loading, setLoading] = useState(false);
     const [analyzing, setAnalyzing] = useState(false);
-    const [cutoffOption, setCutoffOption] = useState('3_months'); // 1_month, 3_months, 6_months, 1_year
+    // Date range: default 3 bulan terakhir s/d hari ini
+    const [startDate, setStartDate] = useState<string>(() => format(subMonths(new Date(), 3), 'yyyy-MM-dd'));
+    const [endDate, setEndDate] = useState<string>(() => format(new Date(), 'yyyy-MM-dd'));
 
     // Stats
     const [stats, setStats] = useState({
@@ -50,22 +53,19 @@ export default function StorageManagement() {
     const [showConfirm, setShowConfirm] = useState(false);
     const [confirmText, setConfirmText] = useState('');
 
-    const getCutoffDate = () => {
-        const now = new Date();
-        switch (cutoffOption) {
-            case '1_month': return subMonths(now, 1);
-            case '3_months': return subMonths(now, 3);
-            case '6_months': return subMonths(now, 6);
-            case '1_year': return subYears(now, 1);
-            case '2_years': return subYears(now, 2);
-            default: return subMonths(now, 3);
-        }
+    // Kembalikan ISO string dari startDate & endDate
+    const getDateRange = () => {
+        // startDate: awal hari (00:00:00)
+        const start = new Date(startDate + 'T00:00:00');
+        // endDate: akhir hari (23:59:59)
+        const end = new Date(endDate + 'T23:59:59');
+        return { startISO: start.toISOString(), endISO: end.toISOString() };
     };
 
     const analyzeData = async () => {
         setAnalyzing(true);
         try {
-            const cutoff = getCutoffDate().toISOString();
+            const { startISO, endISO } = getDateRange();
 
             // We can't use the secure RPC for analysis (it deletes), so we run count queries
             // Note: This matches the logic in the RPC function
@@ -87,7 +87,8 @@ export default function StorageManagement() {
                 const { count } = await supabase
                     .from('bookings')
                     .select('id', { count: 'exact', head: true })
-                    .gte('end_time', cutoff) // Data DARI cutoff SAMPAI SEKARANG
+                    .gte('end_time', startISO)
+                    .lte('end_time', endISO)
                     .in('status', ['completed', 'rejected', 'cancelled', 'pending', 'approved']);
                 bookingsCount = count || 0;
             }
@@ -96,24 +97,25 @@ export default function StorageManagement() {
                 const { count } = await supabase
                     .from('checkouts')
                     .select('id', { count: 'exact', head: true })
-                    .gte('created_at', cutoff) // Data DARI cutoff SAMPAI SEKARANG
+                    .gte('created_at', startISO)
+                    .lte('created_at', endISO)
                     .in('status', ['returned', 'completed', 'lost', 'damaged', 'pending', 'rejected', 'active', 'overdue', 'approved']);
                 checkoutsCount = count || 0;
             }
-            console.log('Analysis cutoff:', cutoff);
+            console.log('Analysis range:', startISO, '->', endISO);
 
             if (targets.notifications) {
                 try {
                     const { count, error } = await supabase
                         .from('notifications')
                         .select('id', { count: 'exact', head: true })
-                        .gte('created_at', cutoff); // Data DARI cutoff SAMPAI SEKARANG
+                        .gte('created_at', startISO)
+                        .lte('created_at', endISO);
 
                     if (!error || error.code === '42P01') {
                         notifsCount = count || 0;
                     }
                 } catch (e) {
-                    // Tabel notifications tidak ada, skip
                     console.warn('Tabel notifications tidak ditemukan');
                     notifsCount = 0;
                 }
@@ -126,7 +128,8 @@ export default function StorageManagement() {
                     const { count, error } = await supabase
                         .from('reports')
                         .select('id', { count: 'exact', head: true })
-                        .gte('created_at', cutoff);
+                        .gte('created_at', startISO)
+                        .lte('created_at', endISO);
 
                     if (!error || error.code === '42P01') {
                         reportsCount = count || 0;
@@ -144,7 +147,8 @@ export default function StorageManagement() {
                     const { count, error } = await supabase
                         .from('lecturer_attendance')
                         .select('id', { count: 'exact', head: true })
-                        .gte('created_at', cutoff)
+                        .gte('created_at', startISO)
+                        .lte('created_at', endISO)
                         .in('verification_status', ['verified', 'pending', 'rejected']);
 
                     if (!error || error.code === '42P01') {
@@ -163,7 +167,8 @@ export default function StorageManagement() {
                     const { count, error } = await supabase
                         .from('lending_tool')
                         .select('id', { count: 'exact', head: true })
-                        .gte('date', cutoff)
+                        .gte('date', startISO)
+                        .lte('date', endISO)
                         .in('status', ['returned', 'completed', 'rejected', 'cancelled', 'pending', 'approved', 'active']);
 
                     if (!error) {
@@ -182,8 +187,8 @@ export default function StorageManagement() {
                     const { count, error } = await supabase
                         .from('technician_tasks')
                         .select('id', { count: 'exact', head: true })
-                        .gte('created_at', cutoff);
-                    // .eq('status', 'completed'); // Count ALL tasks for debug/broadening
+                        .gte('created_at', startISO)
+                        .lte('created_at', endISO);
 
                     if (!error || error.code === '42P01') {
                         todosCount = count || 0;
@@ -201,7 +206,8 @@ export default function StorageManagement() {
                     const { count, error } = await supabase
                         .from('forms')
                         .select('id', { count: 'exact', head: true })
-                        .gte('created_at', cutoff);
+                        .gte('created_at', startISO)
+                        .lte('created_at', endISO);
 
                     if (!error || error.code === '42P01') {
                         formsCount = count || 0;
@@ -231,19 +237,14 @@ export default function StorageManagement() {
         }
     };
 
-    // Re-analyze when options change
+    // Re-analyze when date range or targets change
     useEffect(() => {
         analyzeData();
-    }, [cutoffOption, targets]);
+    }, [startDate, endDate, targets]);
 
     const handleDownloadBackup = async () => {
         const toastId = toast.loading('Menyiapkan backup data...');
 
-        // DEBUG: Inspect checkouts table structure
-        const { data: debugCheckouts } = await supabase.from('checkouts').select('*').limit(1);
-        if (debugCheckouts && debugCheckouts.length > 0) {
-            console.log('DEBUG: Checkouts Columns:', Object.keys(debugCheckouts[0]));
-        }
         const sanitizeForExcel = (data: any[]) => {
             return data.map(item => {
                 const newItem: any = { ...item };
@@ -265,79 +266,70 @@ export default function StorageManagement() {
         };
 
         try {
-            const cutoff = getCutoffDate().toISOString();
-            const wb = XLSX.utils.book_new();
+            const { startISO, endISO } = getDateRange();
+
+            // ── ExcelJS Workbook ──────────────────────────────────────────────
+            const workbook = new ExcelJS.Workbook();
+            workbook.creator = 'SIMPELUNY';
+            workbook.created = new Date();
             let hasData = false;
+
+            // Helper: tambah sheet dengan header bold & auto-width
+            const addSheet = (name: string, rows: Record<string, any>[]) => {
+                if (!rows || rows.length === 0) return;
+                const ws = workbook.addWorksheet(name);
+                // Header dari key baris pertama
+                const headers = Object.keys(rows[0]);
+                ws.columns = headers.map(h => ({
+                    header: h,
+                    key: h,
+                    width: Math.min(Math.max(h.length + 4, 12), 40)
+                }));
+                // Bold header row
+                ws.getRow(1).font = { bold: true };
+                ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD0EAE8' } };
+                // Tambah data
+                rows.forEach(r => ws.addRow(r));
+                hasData = true;
+            };
 
             // 1. Export Bookings
             if (targets.bookings) {
                 const { data: bookings } = await supabase
                     .from('bookings')
-                    .select(`
-            *,
-            users (full_name, identity_number),
-            rooms (name, code)
-          `)
-                    .gte('end_time', cutoff) // Data DARI cutoff SAMPAI SEKARANG
+                    .select('*, users(full_name, identity_number), rooms(name, code)')
+                    .gte('end_time', startISO).lte('end_time', endISO)
                     .in('status', ['completed', 'rejected', 'cancelled', 'pending', 'approved']);
-
                 if (bookings && bookings.length > 0) {
-                    const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(bookings.map(b => ({
-                        ID: b.id,
-                        User: b.users?.full_name,
-                        NIP: b.users?.identity_number,
-                        Room: b.rooms?.name,
-                        Start: b.start_time,
-                        End: b.end_time,
-                        Status: b.status,
-                        Purpose: b.purpose
+                    addSheet('Bookings History', sanitizeForExcel(bookings.map(b => ({
+                        ID: b.id, User: b.users?.full_name, NIP: b.users?.identity_number,
+                        Room: b.rooms?.name, Start: b.start_time, End: b.end_time,
+                        Status: b.status, Purpose: b.purpose
                     }))));
-                    XLSX.utils.book_append_sheet(wb, ws, "Bookings History");
-                    hasData = true;
                 }
             }
 
             // 2. Export Checkouts & Items
             if (targets.checkouts) {
                 const { data: checkouts } = await supabase
-                    .from('checkouts')
-                    .select(`
-            *
-          `); // Filter REMOVED, Join REMOVED for debug
-
+                    .from('checkouts').select('*')
+                    .gte('created_at', startISO).lte('created_at', endISO);
                 if (checkouts && checkouts.length > 0) {
-                    console.log('Checkouts found for backup:', checkouts.length);
-                    const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(checkouts.map(c => ({
-                        ID: c.id,
-                        User: c.users?.full_name,
-                        Date: c.checkout_date,
-                        ReturnDate: c.actual_return_date,
-                        Status: c.status,
-                        TotalItems: c.total_items
+                    addSheet('Checkouts History', sanitizeForExcel(checkouts.map(c => ({
+                        ID: c.id, Date: c.checkout_date, ReturnDate: c.actual_return_date,
+                        Status: c.status, TotalItems: c.total_items
                     }))));
-                    XLSX.utils.book_append_sheet(wb, ws, "Checkouts History");
-                    hasData = true;
-
-                    // Export Checkout Items (Child)
                     const checkoutIds = checkouts.map(c => c.id);
                     const { data: checkoutItems } = await supabase
-                        .from('checkout_items')
-                        .select('*, equipment(name, code)')
+                        .from('checkout_items').select('*, equipment(name, code)')
                         .in('checkout_id', checkoutIds);
-
-                    // Always create sheet for items
-                    const itemsData = checkoutItems && checkoutItems.length > 0
-                        ? sanitizeForExcel(checkoutItems.map(i => ({
-                            CheckoutID: i.checkout_id,
-                            EquipmentName: i.equipment?.name,
+                    addSheet('Checkout Items', sanitizeForExcel(
+                        (checkoutItems || []).map(i => ({
+                            CheckoutID: i.checkout_id, EquipmentName: i.equipment?.name,
                             EquipmentCode: i.equipment?.code,
-                            ConditionBefore: i.condition_before,
-                            ConditionAfter: i.condition_after
-                        })))
-                        : [{ Status: "Tidak ada data detail item" }];
-
-                    const wsItems = XLSX.utils.json_to_sheet(itemsData);
-                    XLSX.utils.book_append_sheet(wb, wsItems, "Checkout Items");
+                            ConditionBefore: i.condition_before, ConditionAfter: i.condition_after
+                        }))
+                    ));
                 }
             }
 
@@ -345,69 +337,99 @@ export default function StorageManagement() {
             if (targets.notifications) {
                 try {
                     const { data: notifs, error } = await supabase
-                        .from('notifications')
-                        .select('*')
-                        .gte('created_at', cutoff);
-
-                    if (!error && notifs && notifs.length > 0) {
-                        const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(notifs));
-                        XLSX.utils.book_append_sheet(wb, ws, "Notifications");
-                        hasData = true;
-                    }
-                } catch (e: any) {
-                    if (e.code !== '42P01') console.error('Error exporting notifications:', e);
-                }
+                        .from('notifications').select('id, title, message, type, is_read, created_at, user_id')
+                        .gte('created_at', startISO).lte('created_at', endISO);
+                    if (!error && notifs && notifs.length > 0) addSheet('Notifications', sanitizeForExcel(notifs));
+                } catch (e: any) { console.error('Error exporting notifications:', e); }
             }
 
             // 4. Export Reports
             if (targets.reports) {
                 try {
                     const { data: reports, error } = await supabase
-                        .from('reports')
-                        .select('*')
-                        .gte('created_at', cutoff);
-
-                    if (!error && reports && reports.length > 0) {
-                        const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(reports));
-                        XLSX.utils.book_append_sheet(wb, ws, "Reports");
-                        hasData = true;
-                    }
-                } catch (e: any) {
-                    if (e.code !== '42P01') console.error('Error exporting reports:', e);
-                }
+                        .from('reports').select('*')
+                        .gte('created_at', startISO).lte('created_at', endISO);
+                    if (!error && reports && reports.length > 0) addSheet('Reports', sanitizeForExcel(reports));
+                } catch (e: any) { console.error('Error exporting reports:', e); }
             }
 
-            // 5. Export Attendance & Details
+            // 5. Export Attendance — Exclude photo/signature (kolom base64 besar)
             if (targets.attendance) {
                 try {
-                    const { data: attendance, error } = await supabase
-                        .from('lecturer_attendance')
-                        .select('*')
-                        .gte('created_at', cutoff)
-                        .in('verification_status', ['verified', 'pending', 'rejected']);
+                    // 5. Export Attendance — Strip photo/signature field secara JavaScript (bukan via Supabase select)
+                    // Menggunakan select('*') karena nama kolom bisa berbeda per instalasi DB.
+                    // photo_capture & signature_url di-strip via destructuring SEBELUM akumulasi
+                    // untuk menjaga payload tiap request tetap kecil.
+                    let allAttendance: any[] = [];
+                    let page = 0;
+                    const CHUNK = 50; // kecil (50 baris) agar payload aman walau ada foto base64
+                    const LARGE_FIELDS = ['photo_capture', 'signature_url', 'signature', 'image_url', 'attachment'];
 
-                    if (!error && attendance && attendance.length > 0) {
-                        const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(attendance));
-                        XLSX.utils.book_append_sheet(wb, ws, "Attendance");
-                        hasData = true;
-
-                        // Export Attendance Details (Child)
-                        const attendanceIds = attendance.map(a => a.id);
-                        const { data: attendanceDetails } = await supabase
-                            .from('lecturer_attendance_details')
+                    while (true) {
+                        const { data: chunk, error: chunkErr } = await supabase
+                            .from('lecturer_attendance')
                             .select('*')
-                            .in('attendance_id', attendanceIds);
+                            .gte('created_at', startISO).lte('created_at', endISO)
+                            .in('verification_status', ['verified', 'pending', 'rejected'])
+                            .order('created_at', { ascending: true })
+                            .range(page * CHUNK, (page + 1) * CHUNK - 1);
 
-                        // Always create sheet for details
-                        const detailsData = attendanceDetails && attendanceDetails.length > 0
-                            ? sanitizeForExcel(attendanceDetails)
-                            : [{ Status: "Tidak ada data detail presensi (Mata Kuliah/Sidang) untuk data terpilih" }];
+                        if (chunkErr) {
+                            console.error('Attendance chunk error:', chunkErr.message);
+                            toast(`⚠️ Query presensi gagal (hal.${page + 1}): ${chunkErr.message}`, { icon: '⚠️' });
+                            break;
+                        }
+                        if (!chunk || chunk.length === 0) break;
 
-                        const wsDetails = XLSX.utils.json_to_sheet(detailsData);
-                        XLSX.utils.book_append_sheet(wb, wsDetails, "Attendance Details");
+                        // Strip field foto langsung sebelum akumulasi agar tidak memakan memori
+                        const stripped = chunk.map((row: any) => {
+                            const clean: any = { ...row };
+                            LARGE_FIELDS.forEach(f => { if (f in clean) delete clean[f]; });
+                            return clean;
+                        });
+
+                        allAttendance = [...allAttendance, ...stripped];
+                        if (chunk.length < CHUNK) break;
+                        page++;
                     }
+
+                    if (allAttendance.length > 0) {
+                        addSheet('Attendance', sanitizeForExcel(allAttendance));
+                        // Fetch details in batches of 100 IDs
+                        const attendanceIds = allAttendance.map((a: any) => a.id);
+                        let allDetails: any[] = [];
+                        for (let i = 0; i < attendanceIds.length; i += 100) {
+                            const { data: dc } = await supabase
+                                .from('lecturer_attendance_details')
+                                .select('*')
+                                .in('attendance_id', attendanceIds.slice(i, i + 100));
+                            if (dc) {
+                                const dcStripped = dc.map((r: any) => {
+                                    const c: any = { ...r };
+                                    LARGE_FIELDS.forEach(f => { if (f in c) delete c[f]; });
+                                    return c;
+                                });
+                                allDetails = [...allDetails, ...dcStripped];
+                            }
+                        }
+                        if (allDetails.length > 0) addSheet('Attendance Details', sanitizeForExcel(allDetails));
+                    } else {
+                        // Coba tanpa filter verification_status sebagai fallback
+                        console.warn('Attendance: no data with status filter, trying without...');
+                        const { data: fallback, error: fbErr } = await supabase
+                            .from('lecturer_attendance')
+                            .select('id, created_at, updated_at, lecturer_user_id, attendance_date, verification_status, notes')
+                            .gte('created_at', startISO).lte('created_at', endISO)
+                            .order('created_at', { ascending: true })
+                            .limit(1000);
+                        if (!fbErr && fallback && fallback.length > 0) {
+                            addSheet('Attendance', sanitizeForExcel(fallback));
+                        }
+                    }
+
                 } catch (e: any) {
-                    if (e.code !== '42P01') console.error('Error exporting attendance:', e);
+                    console.error('Error exporting attendance:', e);
+                    toast('⚠️ Backup presensi sebagian gagal: ' + (e.message || ''), { icon: '⚠️' });
                 }
             }
 
@@ -415,71 +437,37 @@ export default function StorageManagement() {
             if (targets.lending_tools) {
                 try {
                     const { data: lendingTools, error } = await supabase
-                        .from('lending_tool')
-                        .select('*')
-                        .gte('date', cutoff)
+                        .from('lending_tool').select('*')
+                        .gte('date', startISO).lte('date', endISO)
                         .in('status', ['returned', 'completed', 'rejected', 'cancelled', 'pending', 'approved', 'active']);
-
-                    if (!error && lendingTools && lendingTools.length > 0) {
-                        const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(lendingTools));
-                        XLSX.utils.book_append_sheet(wb, ws, "Lending Tools");
-                        hasData = true;
-                    }
-                } catch (e: any) {
-                    console.error('Error exporting lending tools:', e);
-                }
+                    if (!error && lendingTools && lendingTools.length > 0) addSheet('Lending Tools', sanitizeForExcel(lendingTools));
+                } catch (e: any) { console.error('Error exporting lending tools:', e); }
             }
 
-            // 6. Export To-Do Lists
+            // 7. Export To-Do Lists
             if (targets.todos) {
                 try {
                     const { data: todos, error } = await supabase
-                        .from('technician_tasks')
-                        .select('*')
-                        .gte('created_at', cutoff);
-                    // .eq('status', 'completed');
-
-                    if (!error && todos && todos.length > 0) {
-                        const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(todos));
-                        XLSX.utils.book_append_sheet(wb, ws, "ToDo Lists");
-                        hasData = true;
-                    }
-                } catch (e: any) {
-                    if (e.code !== '42P01') console.error('Error exporting todos:', e);
-                }
+                        .from('technician_tasks').select('*')
+                        .gte('created_at', startISO).lte('created_at', endISO);
+                    if (!error && todos && todos.length > 0) addSheet('ToDo Lists', sanitizeForExcel(todos));
+                } catch (e: any) { console.error('Error exporting todos:', e); }
             }
 
-            // 7. Export Forms & Responses
+            // 8. Export Forms & Responses
             if (targets.forms) {
                 try {
                     const { data: forms, error } = await supabase
-                        .from('forms')
-                        .select('*')
-                        .gte('created_at', cutoff);
-
+                        .from('forms').select('*')
+                        .gte('created_at', startISO).lte('created_at', endISO);
                     if (!error && forms && forms.length > 0) {
-                        const ws = XLSX.utils.json_to_sheet(sanitizeForExcel(forms));
-                        XLSX.utils.book_append_sheet(wb, ws, "Forms");
-                        hasData = true;
-
-                        // Export Form Responses (Child)
+                        addSheet('Forms', sanitizeForExcel(forms));
                         const formIds = forms.map(f => f.id);
                         const { data: responses } = await supabase
-                            .from('form_responses')
-                            .select('*')
-                            .in('form_id', formIds);
-
-                        // Always create sheet for responses
-                        const responsesData = responses && responses.length > 0
-                            ? sanitizeForExcel(responses)
-                            : [{ Status: "Tidak ada data respon di form terpilih" }];
-
-                        const wsResponses = XLSX.utils.json_to_sheet(responsesData);
-                        XLSX.utils.book_append_sheet(wb, wsResponses, "Form Responses");
+                            .from('form_responses').select('*').in('form_id', formIds);
+                        if (responses && responses.length > 0) addSheet('Form Responses', sanitizeForExcel(responses));
                     }
-                } catch (e: any) {
-                    if (e.code !== '42P01') console.error('Error exporting forms:', e);
-                }
+                } catch (e: any) { console.error('Error exporting forms:', e); }
             }
 
             if (!hasData) {
@@ -488,15 +476,15 @@ export default function StorageManagement() {
                 return;
             }
 
-            // Save file
-            const fileName = `SIMPELUNY_Backup_${format(new Date(), 'yyyy-MM-dd')}_older_than_${cutoffOption}.xlsx`;
-            XLSX.writeFile(wb, fileName);
+            // ── Save dengan ExcelJS + file-saver ─────────────────────────────
+            const fileName = `SIMPELUNY_Backup_${startDate}_sd_${endDate}.xlsx`;
+            const buffer = await workbook.xlsx.writeBuffer();
+            saveAs(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), fileName);
 
             toast.success('Backup berhasil diunduh!', { id: toastId });
 
         } catch (error: any) {
             console.error('Download error:', error);
-            // Show detailed error if available
             toast.error(`Gagal mengunduh backup: ${error.message || 'Unknown error'}`, { id: toastId });
         }
     };
@@ -511,61 +499,142 @@ export default function StorageManagement() {
         const toastId = toast.loading('Sedang membersihkan data...');
 
         try {
-            const cutoff = getCutoffDate().toISOString();
+            const { startISO, endISO } = getDateRange();
             let totalDeleted = 0;
 
-            // USE RPC FUNCTION FOR ROBUST CLEANUP
-            const targetTables: string[] = [];
-            if (targets.checkouts) targetTables.push('checkouts');
-            if (targets.bookings) targetTables.push('bookings');
-            if (targets.notifications) targetTables.push('notifications');
-            if (targets.reports) targetTables.push('reports'); // Note: RPC might not handle reports yet, but good to add if updated
-            if (targets.attendance) targetTables.push('attendance');
-            if (targets.lending_tools) targetTables.push('lending_tools'); // Changed Key for RPC
-            if (targets.todos) targetTables.push('todos'); // Note: RPC might not handle todos
+            // ── Manual delete per tabel dengan filter date range ──────────────
+            // Tidak menggunakan RPC karena fungsi database tidak mendukung end_date.
+            // Semua penghapusan dilakukan langsung dengan .gte(start).lte(end).
 
-            // NOTE: admin_cleanup_data_v2 handles dependencies (checkout_items, duplicates, violations) automatically.
-            // We use 'within_period' mode to match the .gte logic used in this component.
-            const { data: cleanupResult, error: cleanupError } = await supabase.rpc('admin_cleanup_data_v2', {
-                cutoff_date: cutoff,
-                target_tables: targetTables,
-                cleanup_mode: 'within_period'
-            });
+            // 1. DELETE CHECKOUTS + Cascade (checkout_items, validation_queue, violations)
+            if (targets.checkouts) {
+                // Fetch semua IDs tanpa filter status agar tidak ada yang terlewat
+                let allCheckoutIds: string[] = [];
+                let coPage = 0;
+                while (true) {
+                    const { data: coIds, error: coErr } = await supabase
+                        .from('checkouts').select('id')
+                        .gte('created_at', startISO).lte('created_at', endISO)
+                        .order('created_at', { ascending: true })
+                        .range(coPage * 500, (coPage + 1) * 500 - 1);
+                    if (coErr || !coIds || coIds.length === 0) break;
+                    allCheckoutIds = [...allCheckoutIds, ...coIds.map(r => r.id)];
+                    if (coIds.length < 500) break;
+                    coPage++;
+                }
+                if (allCheckoutIds.length > 0) {
+                    for (let i = 0; i < allCheckoutIds.length; i += 100) {
+                        const batch = allCheckoutIds.slice(i, i + 100);
+                        await supabase.from('checkout_items').delete().in('checkout_id', batch);
+                        try { await supabase.from('checkout_validations').delete().in('checkout_id', batch); } catch (_) { }
+                        try { await supabase.from('checkout_violations').delete().in('checkout_id', batch); } catch (_) { }
+                    }
+                    for (let i = 0; i < allCheckoutIds.length; i += 100) {
+                        const { count: bCount } = await supabase.from('checkouts')
+                            .delete({ count: 'exact' }).in('id', allCheckoutIds.slice(i, i + 100));
+                        totalDeleted += bCount || 0;
+                    }
+                }
+            }
 
-            if (cleanupError) throw cleanupError;
+            // 2. DELETE BOOKINGS
+            if (targets.bookings) {
+                const { count } = await supabase.from('bookings').delete({ count: 'exact' })
+                    .gte('end_time', startISO)
+                    .lte('end_time', endISO)
+                    .in('status', ['completed', 'rejected', 'cancelled', 'pending', 'approved']);
+                totalDeleted += count || 0;
+            }
 
-            // Handle non-RPC cleanup manually if needed (e.g. reports, todos, forms if RPC doesn't cover them yet)
-            // But for now we trust the RPC or accept that some might not be covered if not in RPC params.
-            // Based on migration, RPC handles: checkouts, bookings, notifications, attendance, lending_tools.
+            // 3. DELETE NOTIFICATIONS
+            if (targets.notifications) {
+                try {
+                    // Coba hapus, abaikan jika tabel tidak ada (404)
+                    const { count } = await supabase.from('notifications').delete({ count: 'exact' })
+                        .gte('created_at', startISO)
+                        .lte('created_at', endISO)
+                        .neq('id', '00000000-0000-0000-0000-000000000000'); // dummy filter to satisfy no-filter policy
+                    totalDeleted += count || 0;
+                } catch (_) { /* skip jika tabel notifications tidak ada */ }
+            }
 
-            // Manual fallback for tables NOT in RPC yet:
-
-            // DELETE REPORTS (Manual)
+            // 4. DELETE REPORTS
             if (targets.reports) {
-                const { count } = await supabase.from('reports').delete({ count: 'exact' }).gte('created_at', cutoff);
+                const { count } = await supabase.from('reports').delete({ count: 'exact' })
+                    .gte('created_at', startISO).lte('created_at', endISO);
                 totalDeleted += count || 0;
             }
-            // DELETE TODOS (Manual)
+
+            // 5. DELETE ATTENDANCE + Cascade (lecturer_attendance_details)
+            // Pakai batch 100 ID karena 900+ IDs dalam .in() satu request menyebabkan 400 (URL too long)
+            if (targets.attendance) {
+                // Fetch semua IDs dulu — gunakan date range saja, tanpa filter status
+                // supaya tidak ada yang terlewat akibat case-sensitivity / nilai berbeda
+                let attendancePage = 0;
+                let allAttendanceIds: string[] = [];
+                while (true) {
+                    const { data: pageIds, error: pageErr } = await supabase
+                        .from('lecturer_attendance')
+                        .select('id')
+                        .gte('created_at', startISO)
+                        .lte('created_at', endISO)
+                        .order('created_at', { ascending: true })
+                        .range(attendancePage * 500, (attendancePage + 1) * 500 - 1);
+                    if (pageErr || !pageIds || pageIds.length === 0) break;
+                    allAttendanceIds = [...allAttendanceIds, ...pageIds.map(r => r.id)];
+                    if (pageIds.length < 500) break;
+                    attendancePage++;
+                }
+
+                if (allAttendanceIds.length > 0) {
+                    // Hapus details dulu dalam batch 100 IDs
+                    for (let i = 0; i < allAttendanceIds.length; i += 100) {
+                        const batch = allAttendanceIds.slice(i, i + 100);
+                        try {
+                            await supabase.from('lecturer_attendance_details')
+                                .delete().in('attendance_id', batch);
+                        } catch (_) { /* skip jika tabel/kolom tidak ada */ }
+                    }
+                    // Hapus parent dalam batch 100 IDs
+                    let deletedCount = 0;
+                    for (let i = 0; i < allAttendanceIds.length; i += 100) {
+                        const batch = allAttendanceIds.slice(i, i + 100);
+                        const { count: bCount } = await supabase
+                            .from('lecturer_attendance')
+                            .delete({ count: 'exact' })
+                            .in('id', batch);
+                        deletedCount += bCount || 0;
+                    }
+                    totalDeleted += deletedCount;
+                }
+            }
+
+            // 6. DELETE LENDING TOOLS
+            if (targets.lending_tools) {
+                const { count } = await supabase.from('lending_tool').delete({ count: 'exact' })
+                    .gte('date', startISO)
+                    .lte('date', endISO)
+                    .in('status', ['returned', 'completed', 'rejected', 'cancelled', 'pending', 'approved', 'active']);
+                totalDeleted += count || 0;
+            }
+
+            // 7. DELETE TODOS
             if (targets.todos) {
-                const { count } = await supabase.from('technician_tasks').delete({ count: 'exact' }).gte('created_at', cutoff); // Remove status check to clean ALL
+                const { count } = await supabase.from('technician_tasks').delete({ count: 'exact' })
+                    .gte('created_at', startISO).lte('created_at', endISO);
                 totalDeleted += count || 0;
             }
-            // DELETE FORMS (Manual)
+
+            // 8. DELETE FORMS + Cascade (form_responses)
             if (targets.forms) {
-                // Forms cleanup needs dependency handling, best done manually here if not in RPC
-                const { data: forms } = await supabase.from('forms').select('id').gte('created_at', cutoff);
+                const { data: forms } = await supabase.from('forms').select('id')
+                    .gte('created_at', startISO).lte('created_at', endISO);
                 if (forms && forms.length > 0) {
                     const fIds = forms.map(f => f.id);
                     await supabase.from('form_responses').delete().in('form_id', fIds);
                     const { count } = await supabase.from('forms').delete({ count: 'exact' }).in('id', fIds);
                     totalDeleted += count || 0;
                 }
-            }
-
-            if (cleanupResult) {
-                // Sum up RPC results
-                const res = cleanupResult as any;
-                totalDeleted += (res.checkouts || 0) + (res.bookings || 0) + (res.lending_tools || 0) + (res.notifications || 0) + (res.attendance || 0);
             }
 
             toast.success(`Berhasil menghapus data!`, { id: toastId });
@@ -608,29 +677,61 @@ export default function StorageManagement() {
                 <div className="grid md:grid-cols-2 gap-8">
                     <div className="space-y-4">
                         <div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Pilih Periode Data (Terhitung Mundur):
-                                </label>
-                                <select
-                                    value={cutoffOption}
-                                    onChange={(e) => setCutoffOption(e.target.value)}
-                                    className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 p-2.5 bg-gray-50"
-                                >
-                                    <option value="1_month">1 Bulan Terakhir</option>
-                                    <option value="3_months">3 Bulan Terakhir</option>
-                                    <option value="6_months">6 Bulan Terakhir</option>
-                                    <option value="1_year">1 Tahun Terakhir</option>
-                                    <option value="2_years">2 Tahun Terakhir</option>
-                                </select>
-                                <div className="mt-2 p-3 bg-red-50 rounded-lg border border-red-100">
-                                    <p className="text-xs text-red-800">
-                                        <span className="font-bold">PERHATIAN:</span> Anda akan menghapus data <span className="font-bold">DARI</span> <span className="font-bold underline">{format(getCutoffDate(), 'dd MMMM yyyy')}</span> <span className="font-bold">SAMPAI HARI INI</span>.
-                                    </p>
-                                    <p className="text-xs text-red-600 mt-1">
-                                        Data <span className="font-bold">DALAM RENTANG WAKTU TERSEBUT</span> akan <span className="font-bold">DIHAPUS (DIBERSIHKAN)</span> atau <span className="font-bold">DI-BACKUP</span>.
-                                    </p>
+                            <label className="block text-sm font-medium text-gray-700 mb-3">
+                                Rentang Tanggal Data:
+                            </label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Tanggal Mulai</label>
+                                    <input
+                                        type="date"
+                                        value={startDate}
+                                        max={endDate}
+                                        onChange={(e) => setStartDate(e.target.value)}
+                                        className="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 p-2.5 bg-gray-50 text-sm"
+                                    />
                                 </div>
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Tanggal Akhir</label>
+                                    <input
+                                        type="date"
+                                        value={endDate}
+                                        min={startDate}
+                                        max={format(new Date(), 'yyyy-MM-dd')}
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                        className="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 p-2.5 bg-gray-50 text-sm"
+                                    />
+                                </div>
+                            </div>
+                            {/* Shortcut presets */}
+                            <div className="flex flex-wrap gap-2 mt-2">
+                                {[
+                                    { label: '1 Bln', months: 1 },
+                                    { label: '3 Bln', months: 3 },
+                                    { label: '6 Bln', months: 6 },
+                                    { label: '1 Thn', months: 12 },
+                                ].map(({ label, months }) => (
+                                    <button
+                                        key={label}
+                                        type="button"
+                                        onClick={() => {
+                                            setStartDate(format(subMonths(new Date(), months), 'yyyy-MM-dd'));
+                                            setEndDate(format(new Date(), 'yyyy-MM-dd'));
+                                        }}
+                                        className="px-3 py-1 text-xs rounded-full border border-blue-300 text-blue-700 hover:bg-blue-50 transition font-medium"
+                                    >
+                                        {label} Terakhir
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="mt-3 p-3 bg-red-50 rounded-lg border border-red-100">
+                                <p className="text-xs text-red-800">
+                                    <span className="font-bold">PERHATIAN:</span> Data dari{' '}
+                                    <span className="font-bold underline">{format(new Date(startDate + 'T00:00:00'), 'dd/MM/yyyy')}</span>{' '}
+                                    s/d{' '}
+                                    <span className="font-bold underline">{format(new Date(endDate + 'T00:00:00'), 'dd/MM/yyyy')}</span>{' '}
+                                    akan <span className="font-bold">DIHAPUS</span> atau <span className="font-bold">DI-BACKUP</span>.
+                                </p>
                             </div>
                         </div>
 

@@ -35,7 +35,8 @@ import {
   Link,
   Check,
   Copy,
-  UserPlus
+  UserPlus,
+  Printer
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line } from 'recharts';
 import { supabase } from '../lib/supabase';
@@ -46,6 +47,16 @@ import ExcelUploadModal from '../components/ExcelUpload/ExcelUploadModal';
 import AppendScheduleExcelModal from '../components/ExcelUpload/AppendScheduleExcelModal';
 import { useLanguage } from '../contexts/LanguageContext';
 import jsPDF from 'jspdf';
+
+// ── Interface: Room ───────────────────────────────────────────────────────────
+interface Room {
+  id: string;
+  name: string;
+  code: string;
+  capacity: number;
+  department_id: string | null;
+  is_available: boolean;
+}
 
 // Reusable Searchable Dropdown Component (returns name)
 const SearchableDropdown = ({
@@ -145,6 +156,106 @@ const SearchableDropdown = ({
                 >
                   <div className="font-medium">{option.name}</div>
                   {option.code && <div className="text-xs text-gray-500">{option.code}</div>}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ✅ RoomFilterDropdown: Searchable dropdown untuk filter ruangan (returns room name)
+const RoomFilterDropdown = ({
+  rooms,
+  value,
+  onChange,
+}: {
+  rooms: Room[];
+  value: string; // 'all' or room name
+  onChange: (roomName: string) => void;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return rooms;
+    const s = search.toLowerCase();
+    return rooms.filter(r =>
+      r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s)
+    );
+  }, [rooms, search]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setIsOpen(false);
+        setSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const selectedLabel = value === 'all'
+    ? 'Semua Ruangan'
+    : (rooms.find(r => r.name === value)?.name || value);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm bg-white min-w-[160px] max-w-[220px] transition-colors"
+      >
+        <MapPin className="h-3.5 w-3.5 text-teal-500 flex-shrink-0" />
+        <span className="flex-1 text-left truncate text-gray-800">{selectedLabel}</span>
+        <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg w-64 overflow-hidden">
+          {/* Search input */}
+          <div className="p-2 border-b border-gray-100">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Cari ruangan..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-teal-400"
+                autoFocus
+              />
+            </div>
+          </div>
+          {/* Options list */}
+          <div className="max-h-52 overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => { onChange('all'); setIsOpen(false); setSearch(''); }}
+              className={`w-full px-3 py-2 text-left text-sm transition-colors flex items-center gap-2 ${value === 'all' ? 'bg-teal-50 text-teal-700 font-semibold' : 'hover:bg-gray-50 text-gray-700'}`}
+            >
+              <span className="w-4 text-center">{value === 'all' && <Check className="h-3.5 w-3.5 inline text-teal-600" />}</span>
+              Semua Ruangan
+            </button>
+            {filtered.length === 0 ? (
+              <div className="px-3 py-4 text-sm text-gray-400 text-center">Ruangan tidak ditemukan</div>
+            ) : (
+              filtered.map(room => (
+                <button
+                  key={room.id}
+                  type="button"
+                  onClick={() => { onChange(room.name); setIsOpen(false); setSearch(''); }}
+                  className={`w-full px-3 py-2 text-left text-sm transition-colors flex items-center gap-2 ${value === room.name ? 'bg-teal-50 text-teal-700 font-semibold' : 'hover:bg-gray-50 text-gray-700'}`}
+                >
+                  <span className="w-4 text-center">{value === room.name && <Check className="h-3.5 w-3.5 inline text-teal-600" />}</span>
+                  <div>
+                    <div className="font-medium text-sm">{room.name}</div>
+                    <div className="text-xs text-gray-400">{room.code} · Kapasitas {room.capacity}</div>
+                  </div>
                 </button>
               ))
             )}
@@ -314,14 +425,6 @@ interface LectureSchedule {
   updated_at: string;
 }
 
-interface Room {
-  id: string;
-  name: string;
-  code: string;
-  capacity: number;
-  department_id: string | null;
-  is_available: boolean;
-}
 
 interface RescheduleRequest {
   course_code: string;
@@ -1402,6 +1505,163 @@ const LectureSchedules: React.FC = () => {
     }
   };
 
+  // ✅ Cetak Jadwal Kuliah ke PDF
+  const handlePrintSchedulePDF = async () => {
+    const toastId = toast.loading('Menyiapkan PDF jadwal kuliah...');
+    try {
+      // Fetch ALL schedules for the current filter (no pagination)
+      let query = supabase.from('lecture_schedules').select('*');
+
+      if (debouncedSearchTerm) {
+        const escapedTerm = debouncedSearchTerm
+          .replace(/\\/g, '\\\\')
+          .replace(/,/g, '\\,')
+          .replace(/\(/g, '\\(')
+          .replace(/\)/g, '\\)')
+          .replace(/\*/g, '\\*');
+        const term = `*${escapedTerm}*`;
+        query = query.or(
+          `course_name.ilike.${term},course_code.ilike.${term},lecturer.ilike.${term},room.ilike.${term}`
+        );
+      }
+      if (roomFilter !== 'all') {
+        query = query.ilike('room', roomFilter);
+      }
+      if (dayFilter !== 'all') {
+        query = query.eq('day', dayFilter);
+      }
+      query = query.order('day', { ascending: true }).order('start_time', { ascending: true });
+
+      const { data: allSchedules, error } = await query;
+      if (error) throw error;
+
+      if (!allSchedules || allSchedules.length === 0) {
+        toast.dismiss(toastId);
+        toast('Tidak ada jadwal untuk dicetak.', { icon: 'ℹ️' });
+        return;
+      }
+
+      const doc = new jsPDF({ orientation: 'landscape' });
+      const pageW = doc.internal.pageSize.getWidth();
+
+      // ── Header ──────────────────────────────────────────────────────
+      doc.setFillColor(13, 148, 136); // teal-600
+      doc.rect(0, 0, pageW, 22, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('SIMPELUNY - Jadwal Kuliah', 14, 10);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      const filterDesc = [
+        roomFilter !== 'all' ? `Ruangan: ${roomFilter}` : 'Semua Ruangan',
+        dayFilter !== 'all' ? `Hari: ${dayFilter}` : 'Semua Hari',
+        debouncedSearchTerm ? `Pencarian: "${debouncedSearchTerm}"` : '',
+      ].filter(Boolean).join('  |  ');
+      doc.text(filterDesc, 14, 17);
+      const nowStr = new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      doc.text(`Dicetak: ${nowStr}`, pageW - 14, 17, { align: 'right' });
+
+      // ── Table header ─────────────────────────────────────────────────
+      let y = 32;
+      const cols = [
+        { label: 'No', x: 14, w: 9 },
+        { label: 'Mata Kuliah', x: 23, w: 48 },
+        { label: 'Program Studi', x: 71, w: 35 },
+        { label: 'Dosen', x: 106, w: 40 },
+        { label: 'Ruangan', x: 146, w: 35 },
+        { label: 'Hari', x: 181, w: 16 },
+        { label: 'Waktu', x: 197, w: 24 },
+        { label: 'Kelas', x: 221, w: 14 },
+        { label: 'Smt', x: 235, w: 10 },
+        { label: 'Tipe', x: 245, w: 15 },
+        { label: 'Jml. Mhs', x: 260, w: 18 },
+      ];
+      const rowH = 8;
+
+      doc.setFillColor(13, 148, 136);
+      doc.rect(14, y - 5, pageW - 28, rowH, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      cols.forEach(col => doc.text(col.label, col.x + 1, y));
+
+      // ── Rows ─────────────────────────────────────────────────────────
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+
+      allSchedules.forEach((s, idx) => {
+        y += rowH;
+        if (y > doc.internal.pageSize.getHeight() - 18) {
+          doc.addPage();
+          y = 15;
+          // Repeat header on new page
+          doc.setFillColor(13, 148, 136);
+          doc.rect(14, y - 5, pageW - 28, rowH, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(7.5);
+          doc.setFont('helvetica', 'bold');
+          cols.forEach(col => doc.text(col.label, col.x + 1, y));
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7);
+          y += rowH;
+        }
+
+        if (idx % 2 === 0) {
+          doc.setFillColor(240, 253, 250);
+          doc.rect(14, y - 5, pageW - 28, rowH, 'F');
+        }
+        doc.setTextColor(30, 30, 30);
+
+        const truncate = (str: string | null, maxW: number) => {
+          if (!str) return '-';
+          // Rough truncation by character width (~1.6px/char at 7pt)
+          const maxChars = Math.floor(maxW / 1.55);
+          return str.length > maxChars ? str.substring(0, maxChars - 1) + '…' : str;
+        };
+
+        const rows: [string, number, number][] = [
+          [(idx + 1).toString(), cols[0].x + 1, y],
+          [truncate(s.course_name, cols[1].w - 2), cols[1].x + 1, y],
+          [truncate(s.subject_study, cols[2].w - 2), cols[2].x + 1, y],
+          [truncate(s.lecturer, cols[3].w - 2), cols[3].x + 1, y],
+          [truncate(s.room, cols[4].w - 2), cols[4].x + 1, y],
+          [s.day || '-', cols[5].x + 1, y],
+          [`${s.start_time?.substring(0, 5) || ''}-${s.end_time?.substring(0, 5) || ''}`, cols[6].x + 1, y],
+          [s.class || '-', cols[7].x + 1, y],
+          [(s.semester?.toString()) || '-', cols[8].x + 1, y],
+          [s.type === 'theory' ? 'Teori' : 'Praktik', cols[9].x + 1, y],
+          [(s.amount !== null && s.amount !== undefined ? s.amount.toString() : '-'), cols[10].x + 1, y],
+        ];
+        rows.forEach(([text, x, yy]) => doc.text(text, x, yy));
+
+        // Separator line
+        doc.setDrawColor(220, 220, 220);
+        doc.line(14, y + 2, pageW - 14, y + 2);
+      });
+
+      // ── Footer ──────────────────────────────────────────────────────
+      const pageCount = doc.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7);
+        doc.setTextColor(150, 150, 150);
+        doc.text(
+          `Halaman ${i} dari ${pageCount}  •  Total ${allSchedules.length} jadwal  •  SIMPELUNY`,
+          pageW / 2, doc.internal.pageSize.getHeight() - 8, { align: 'center' }
+        );
+      }
+
+      const roomLabel = roomFilter !== 'all' ? `_${roomFilter.replace(/\s+/g, '_')}` : '';
+      const dayLabel = dayFilter !== 'all' ? `_${dayFilter}` : '';
+      doc.save(`JadwalKuliah${roomLabel}${dayLabel}_${new Date().toISOString().split('T')[0]}.pdf`);
+      toast.success(`PDF berhasil dibuat! (${allSchedules.length} jadwal)`, { id: toastId });
+    } catch (error: any) {
+      console.error('Error generating schedule PDF:', error);
+      toast.error('Gagal membuat PDF: ' + (error.message || 'Unknown error'), { id: toastId });
+    }
+  };
+
   // Server-side pagination calculation
   const totalPages = Math.ceil(totalSchedules / rowsPerPage);
   const startIndex = (currentPage - 1) * rowsPerPage;
@@ -1685,17 +1945,16 @@ const LectureSchedules: React.FC = () => {
               />
             </div>
             <div className="flex flex-wrap gap-2">
-              <select
-                value={roomFilter}
-                onChange={(e) => setRoomFilter(e.target.value)}
-                aria-label={getText('Filter by room', 'Filter berdasarkan ruangan')}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
-              >
-                <option value="all">{getText('All Rooms', 'Semua Ruangan')}</option>
-                {uniqueRooms.map((room) => (
-                  <option key={room} value={room}>{room}</option>
-                ))}
-              </select>
+              {/* Searchable Room Filter Dropdown dari tabel rooms */}
+              <div className="relative" ref={(el) => {
+                if (el) el.dataset.roomDropdown = 'true';
+              }}>
+                <RoomFilterDropdown
+                  rooms={rooms}
+                  value={roomFilter}
+                  onChange={(val) => { setRoomFilter(val); setCurrentPage(1); }}
+                />
+              </div>
               <select
                 value={dayFilter}
                 onChange={(e) => setDayFilter(e.target.value)}
@@ -1717,6 +1976,17 @@ const LectureSchedules: React.FC = () => {
               title={getText('Refresh', 'Muat Ulang')}
             >
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+
+            {/* Cetak PDF Jadwal */}
+            <button
+              onClick={handlePrintSchedulePDF}
+              disabled={loading || totalSchedules === 0}
+              className="flex items-center gap-2 px-3 py-2 text-indigo-700 border border-indigo-300 rounded-lg hover:bg-indigo-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Cetak jadwal kuliah saat ini ke PDF"
+            >
+              <Printer className="h-4 w-4" />
+              <span className="hidden sm:inline">Cetak PDF</span>
             </button>
 
             {/* Department Admin Actions */}
