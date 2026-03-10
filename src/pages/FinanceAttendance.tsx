@@ -1101,6 +1101,51 @@ const FinanceAttendance: React.FC = () => {
                 return;
             }
 
+            // ─── FETCH DETAILS & SIGNATURE URL LANGSUNG DARI DB ──────────────
+            // fetchAttendanceRecords utama tidak mengambil details maupun signature_url,
+            // sehingga kita perlu fetch secara terpisah di sini agar KELAS dan TTD muncul.
+            const attendanceIds = recordsForDate.map(r => r.id).filter(Boolean);
+
+            // 1. Fetch details (class_group, course_name, dsb) dari lecturer_attendance_details
+            let detailsMap: Record<string, any[]> = {};
+            if (attendanceIds.length > 0) {
+                const { data: detailsData } = await supabase
+                    .from('lecturer_attendance_details')
+                    .select('*')
+                    .in('attendance_id', attendanceIds);
+
+                if (detailsData) {
+                    detailsData.forEach((d: any) => {
+                        if (!detailsMap[d.attendance_id]) detailsMap[d.attendance_id] = [];
+                        detailsMap[d.attendance_id].push(d);
+                    });
+                }
+            }
+
+            // 2. Fetch signature_url dari tabel lecturer_attendance
+            let signatureMap: Record<string, string | null> = {};
+            if (attendanceIds.length > 0) {
+                const { data: sigData } = await supabase
+                    .from('lecturer_attendance')
+                    .select('id, signature_url')
+                    .in('id', attendanceIds);
+
+                if (sigData) {
+                    sigData.forEach((s: any) => {
+                        signatureMap[s.id] = s.signature_url || null;
+                    });
+                }
+            }
+
+            // Enrich recordsForDate dengan details dan signature_url
+            const enrichedRecords = recordsForDate.map(r => ({
+                ...r,
+                details: detailsMap[r.id] || (r.details ?? []),
+                signature_url: signatureMap[r.id] ?? (r as any).signature_url ?? null,
+            }));
+
+            console.log(`Enriched ${enrichedRecords.length} records with details & signatures`);
+
             // Group records
             const lecturerMap = new Map<string, {
                 lecturerId: string;
@@ -1112,13 +1157,13 @@ const FinanceAttendance: React.FC = () => {
                 isHomebase: boolean;
             }>();
 
-            recordsForDate.forEach(record => {
+            enrichedRecords.forEach(record => {
                 const isHomebase = record.is_homebase ?? true;
                 if (type === 'homebase' && !isHomebase) return;
                 if (type === 'non_homebase' && isHomebase) return;
 
                 const key = record.lecturer_user_id;
-                const details = record.details || [];
+                const details = (record as any).details || [];
 
                 let courses = details.map((d: any) => d?.course_name).filter(Boolean);
                 // Deduplicate courses immediately
