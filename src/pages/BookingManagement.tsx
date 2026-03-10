@@ -3,7 +3,7 @@ import {
     Calendar, Clock, User, Building, XCircle, AlertTriangle,
     Eye, Edit, Trash2, RefreshCw, Search, ChevronDown, ChevronUp,
     Package, Plus, Minus, X, Check, ArrowRight, FileText, Info,
-    AlertCircle, Save, Download, Loader2
+    AlertCircle, Save, Download, Loader2, MapPin
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -410,6 +410,13 @@ const BookingManagement: React.FC = () => {
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [rejectReason, setRejectReason] = useState('');
     const [bookingToReject, setBookingToReject] = useState<Booking | null>(null);
+
+    // Room recommendation modal states (conflict on approve)
+    const [showRoomRecommendModal, setShowRoomRecommendModal] = useState(false);
+    const [conflictBooking, setConflictBooking] = useState<Booking | null>(null);
+    const [conflictingBookings, setConflictingBookings] = useState<any[]>([]);
+    const [availableRooms, setAvailableRooms] = useState<Room[]>([]);
+    const [loadingRooms, setLoadingRooms] = useState(false);
 
 
     // ===== FETCH BOOKINGS =====
@@ -835,6 +842,244 @@ const BookingManagement: React.FC = () => {
      * TIDAK ADA:
      * - borrowed → completed (ini dilakukan di ValidationQueue setelah checkout diverifikasi)
      */
+    // ===== HANDLE APPROVE WITH CONFLICT CHECK =====
+    const handleApprove = async (bookingId: string) => {
+        const booking = bookings.find(b => b.id === bookingId);
+        if (!booking) return;
+
+        setProcessingIds(prev => new Set(prev).add(bookingId));
+        try {
+            const bookingStartObj = new Date(booking.start_time);
+            const bookingEndObj = new Date(booking.end_time);
+            const bookingStart = bookingStartObj.getTime();
+            const bookingEnd = bookingEndObj.getTime();
+            const bookingStartMinutes = bookingStartObj.getHours() * 60 + bookingStartObj.getMinutes();
+            const bookingEndMinutes = bookingEndObj.getHours() * 60 + bookingEndObj.getMinutes();
+
+            // Helper: parse "HH:mm:ss" / "HH:mm" to minutes
+            const parseTimeToMinutes = (t: string): number | null => {
+                if (!t) return null;
+                const parts = t.split(':');
+                if (parts.length < 2) return null;
+                const h = parseInt(parts[0], 10);
+                const m = parseInt(parts[1], 10);
+                if (isNaN(h) || isNaN(m)) return null;
+                return h * 60 + m;
+            };
+
+            // Helper: overlap check (minutes)
+            const hasTimeOverlap = (s1: number, e1: number, s2: number, e2: number) =>
+                !(e2 <= s1 || s2 >= e1);
+
+            // Nama hari dalam Bahasa Indonesia
+            const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+            const dayNameIndonesian = dayNames[bookingStartObj.getDay()];
+            const dateStr = `${bookingStartObj.getFullYear()}-${String(bookingStartObj.getMonth() + 1).padStart(2, '0')}-${String(bookingStartObj.getDate()).padStart(2, '0')}`;
+
+            // Fetch semua data jadwal & booking secara paralel
+            const [approvedResult, lecturesResult, examsResult, sessionsResult] = await Promise.all([
+                supabase
+                    .from('bookings')
+                    .select('id, start_time, end_time, purpose, user:users!bookings_user_id_fkey(full_name)')
+                    .eq('room_id', booking.room_id)
+                    .eq('status', 'approved')
+                    .neq('id', bookingId),
+                supabase
+                    .from('lecture_schedules')
+                    .select('id, room, day, start_time, end_time, course_name')
+                    .eq('day', dayNameIndonesian),
+                supabase
+                    .from('exams')
+                    .select('id, room_id, date, start_time, end_time, course_name, is_take_home')
+                    .eq('date', dateStr),
+                supabase
+                    .from('final_sessions')
+                    .select('id, room_id, date, start_time, end_time')
+                    .eq('date', dateStr),
+            ]);
+
+            if (approvedResult.error) throw approvedResult.error;
+
+            const approvedBookings = approvedResult.data || [];
+            const allLectures = lecturesResult.data || [];
+            const allExams = examsResult.data || [];
+            const allSessions = sessionsResult.data || [];
+
+            const roomName = booking.room?.name || '';
+
+            // Kuliah yang ada di ruangan ini (match by name)
+            const roomLectures = allLectures.filter((l: any) =>
+                l.room && roomName &&
+                (l.room.toLowerCase().includes(roomName.toLowerCase()) ||
+                    roomName.toLowerCase().includes(l.room.toLowerCase()))
+            );
+
+            // Konflik booking approved
+            const bookingConflicts = approvedBookings.filter((other: any) => {
+                const otherStart = new Date(other.start_time).getTime();
+                const otherEnd = new Date(other.end_time).getTime();
+                return !(otherEnd <= bookingStart || otherStart >= bookingEnd);
+            });
+
+            // Konflik jadwal kuliah
+            const lectureConflicts = roomLectures.filter((l: any) => {
+                const ls = parseTimeToMinutes(l.start_time);
+                const le = parseTimeToMinutes(l.end_time);
+                if (ls === null || le === null) return false;
+                return hasTimeOverlap(bookingStartMinutes, bookingEndMinutes, ls, le);
+            });
+
+            // Konflik ujian
+            const examConflicts = allExams.filter((e: any) => {
+                if (e.room_id !== booking.room_id || e.is_take_home) return false;
+                const es = parseTimeToMinutes(e.start_time);
+                const ee = parseTimeToMinutes(e.end_time);
+                if (es === null || ee === null) return false;
+                return hasTimeOverlap(bookingStartMinutes, bookingEndMinutes, es, ee);
+            });
+
+            // Konflik sidang
+            const sessionConflicts = allSessions.filter((s: any) => {
+                if (s.room_id !== booking.room_id) return false;
+                const ss = parseTimeToMinutes(s.start_time);
+                const se = parseTimeToMinutes(s.end_time);
+                if (ss === null || se === null) return false;
+                return hasTimeOverlap(bookingStartMinutes, bookingEndMinutes, ss, se);
+            });
+
+            // Gabungkan semua konflik
+            const allConflicts: any[] = [
+                ...bookingConflicts.map((c: any) => ({
+                    ...c,
+                    conflictType: 'booking',
+                })),
+                ...lectureConflicts.map((l: any) => ({
+                    id: l.id,
+                    conflictType: 'lecture',
+                    start_time: l.start_time,
+                    end_time: l.end_time,
+                    purpose: `Kuliah: ${l.course_name || '-'}`,
+                    user: { full_name: `📚 Kuliah: ${l.course_name || '-'}` }
+                })),
+                ...examConflicts.map((e: any) => ({
+                    id: e.id,
+                    conflictType: 'exam',
+                    start_time: `${dateStr}T${e.start_time}`,
+                    end_time: `${dateStr}T${e.end_time}`,
+                    purpose: `Ujian: ${e.course_name || '-'}`,
+                    user: { full_name: `📝 Ujian: ${e.course_name || '-'}` }
+                })),
+                ...sessionConflicts.map((s: any) => ({
+                    id: s.id,
+                    conflictType: 'session',
+                    start_time: `${dateStr}T${s.start_time}`,
+                    end_time: `${dateStr}T${s.end_time}`,
+                    purpose: 'Sidang Akhir',
+                    user: { full_name: '🎓 Sidang Akhir' }
+                })),
+            ];
+
+            if (allConflicts.length > 0) {
+                setConflictBooking(booking);
+                setConflictingBookings(allConflicts);
+                setLoadingRooms(true);
+                setShowRoomRecommendModal(true);
+
+                // Fetch semua ruangan aktif
+                const { data: allRoomsData, error: roomsError } = await supabase
+                    .from('rooms')
+                    .select('id, name, code, capacity, department_id, department:departments(name)')
+                    .eq('is_available', true)
+                    .order('name');
+
+                if (roomsError) throw roomsError;
+
+                // Fetch booking approved/borrowed di tanggal yang sama
+                const startOfDayUTC = `${dateStr}T00:00:00+07:00`;
+                const endOfDayUTC = `${dateStr}T23:59:59+07:00`;
+
+                const { data: busyBookingsData } = await supabase
+                    .from('bookings')
+                    .select('room_id, start_time, end_time')
+                    .in('status', ['approved', 'borrowed'])
+                    .gte('start_time', startOfDayUTC)
+                    .lte('start_time', endOfDayUTC);
+
+                const busyBookings = busyBookingsData || [];
+
+                const freeRooms = (allRoomsData || []).filter((room: any) => {
+                    if (room.id === booking.room_id) return false;
+
+                    // Cek booking conflict
+                    const hasBookingConflict = busyBookings.some((b: any) => {
+                        if (b.room_id !== room.id) return false;
+                        const bStart = new Date(b.start_time).getTime();
+                        const bEnd = new Date(b.end_time).getTime();
+                        return !(bEnd <= bookingStart || bStart >= bookingEnd);
+                    });
+                    if (hasBookingConflict) return false;
+
+                    // Cek jadwal kuliah conflict
+                    const roomL = allLectures.filter((l: any) =>
+                        l.room && room.name &&
+                        (l.room.toLowerCase().includes(room.name.toLowerCase()) ||
+                            room.name.toLowerCase().includes(l.room.toLowerCase()))
+                    );
+                    const hasLectureConflict = roomL.some((l: any) => {
+                        const ls = parseTimeToMinutes(l.start_time);
+                        const le = parseTimeToMinutes(l.end_time);
+                        if (ls === null || le === null) return false;
+                        return hasTimeOverlap(bookingStartMinutes, bookingEndMinutes, ls, le);
+                    });
+                    if (hasLectureConflict) return false;
+
+                    // Cek ujian conflict
+                    const hasExamConflict = allExams.some((e: any) => {
+                        if (e.room_id !== room.id || e.is_take_home) return false;
+                        const es = parseTimeToMinutes(e.start_time);
+                        const ee = parseTimeToMinutes(e.end_time);
+                        if (es === null || ee === null) return false;
+                        return hasTimeOverlap(bookingStartMinutes, bookingEndMinutes, es, ee);
+                    });
+                    if (hasExamConflict) return false;
+
+                    // Cek sidang conflict
+                    const hasSessionConflict = allSessions.some((s: any) => {
+                        if (s.room_id !== room.id) return false;
+                        const ss = parseTimeToMinutes(s.start_time);
+                        const se = parseTimeToMinutes(s.end_time);
+                        if (ss === null || se === null) return false;
+                        return hasTimeOverlap(bookingStartMinutes, bookingEndMinutes, ss, se);
+                    });
+                    if (hasSessionConflict) return false;
+
+                    return true;
+                });
+
+                setAvailableRooms(freeRooms as any);
+                setLoadingRooms(false);
+                return;
+            }
+
+            // Tidak ada konflik sama sekali, langsung approve
+            await handleStatusChange(bookingId, 'approved');
+        } catch (error: any) {
+            console.error('Error checking approval conflict:', error);
+            toast.error(`Gagal memeriksa jadwal: ${error.message}`);
+            setProcessingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(bookingId);
+                return newSet;
+            });
+        } finally {
+            setProcessingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(bookingId);
+                return newSet;
+            });
+        }
+    };
+
     const handleStatusChange = async (bookingId: string, newStatus: string) => {
         try {
             setProcessingIds(prev => new Set(prev).add(bookingId));
@@ -942,6 +1187,8 @@ const BookingManagement: React.FC = () => {
                 }
 
                 const equipmentChanges = [];
+                // Track equipment yang kurang stoknya (diborrow tanpa kurangi stok)
+                const insufficientEquipment: string[] = [];
 
                 for (let i = 0; i < (booking.equipment_requested?.length || 0); i++) {
                     const eqId = booking.equipment_requested[i];
@@ -970,11 +1217,17 @@ const BookingManagement: React.FC = () => {
                     }
 
                     if (!currentEq.is_available) {
-                        throw new Error(`Peralatan "${currentEq.name}" tidak tersedia.`);
+                        // Tidak tersedia sama sekali -> skip, catat sebagai insufficient
+                        insufficientEquipment.push(currentEq.name);
+                        console.log(`  ⚠️ Equipment "${currentEq.name}" tidak tersedia - borrow tanpa kurangi stok`);
+                        continue;
                     }
 
                     if (currentEq.quantity < qty) {
-                        throw new Error(`Stok "${currentEq.name}" tidak cukup. Tersedia: ${currentEq.quantity}, Diminta: ${qty}`);
+                        // Stok kurang -> allow borrow tapi JANGAN kurangi stok
+                        insufficientEquipment.push(`${currentEq.name} (stok: ${currentEq.quantity}, diminta: ${qty})`);
+                        console.log(`  ⚠️ Stok "${currentEq.name}" tidak cukup (tersedia: ${currentEq.quantity}, diminta: ${qty}) - borrow tanpa kurangi stok`);
+                        continue;
                     }
 
                     equipmentChanges.push({
@@ -984,9 +1237,13 @@ const BookingManagement: React.FC = () => {
                     });
                 }
 
-                // Kurangi stok equipment (hanya yang belum dipinjam dari booking sebelumnya)
+                // Kurangi stok equipment (hanya yang stoknya cukup)
                 if (equipmentChanges.length > 0) {
                     await updateEquipmentQuantities(equipmentChanges, 'borrow');
+                }
+
+                if (insufficientEquipment.length > 0) {
+                    toast(`⚠️ Beberapa peralatan stoknya kurang, status tetap diubah ke borrowed tanpa pengurangan stok: ${insufficientEquipment.join(', ')}`, { duration: 6000 });
                 }
             }
 
@@ -1564,7 +1821,7 @@ const BookingManagement: React.FC = () => {
                         </button>
 
                         <button
-                            onClick={() => handleStatusChange(booking.id, 'approved')}
+                            onClick={() => handleApprove(booking.id)}
                             disabled={isProcessing}
                             className="p-2 bg-green-100 text-green-600 hover:bg-green-200 rounded-lg disabled:opacity-50"
                             title="Approve"
@@ -2572,6 +2829,132 @@ const BookingManagement: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            {/* ===== ROOM RECOMMENDATION MODAL (Konflik Approve) ===== */}
+            {showRoomRecommendModal && conflictBooking && (() => {
+                // local search state managed via closure trick using state
+                const conflictSummary = [
+                    conflictingBookings.filter((c: any) => c.conflictType === 'booking' || !c.conflictType).length > 0 && 'Booking',
+                    conflictingBookings.filter((c: any) => c.conflictType === 'lecture').length > 0 && 'Jadwal Kuliah',
+                    conflictingBookings.filter((c: any) => c.conflictType === 'exam').length > 0 && 'Ujian',
+                    conflictingBookings.filter((c: any) => c.conflictType === 'session').length > 0 && 'Sidang',
+                ].filter(Boolean).join(', ');
+
+                return (
+                    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden">
+
+                            {/* Header */}
+                            <div className="bg-gradient-to-r from-indigo-600 to-blue-600 p-5 text-white flex-shrink-0">
+                                <div className="flex items-start justify-between">
+                                    <div className="flex-1 min-w-0">
+                                        <h2 className="text-xl font-bold flex items-center space-x-2">
+                                            <MapPin className="h-5 w-5 flex-shrink-0" />
+                                            <span>Pilih Ruangan Pengganti</span>
+                                        </h2>
+                                        {/* Waktu yang diminta */}
+                                        <p className="mt-1 text-sm opacity-90">
+                                            {format(parseISO(conflictBooking.start_time), 'EEEE, dd MMM yyyy')} •{' '}
+                                            {format(parseISO(conflictBooking.start_time), 'HH:mm')} – {format(parseISO(conflictBooking.end_time), 'HH:mm')}
+                                        </p>
+                                        {/* Pesan konflik ringkas */}
+                                        <div className="mt-2 flex flex-wrap gap-1 items-center">
+                                            <span className="px-2 py-0.5 bg-white bg-opacity-20 rounded-full text-xs font-medium">
+                                                ⚠️ {conflictBooking.room?.name} konflik ({conflictSummary})
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            setShowRoomRecommendModal(false);
+                                            setConflictBooking(null);
+                                            setConflictingBookings([]);
+                                            setAvailableRooms([]);
+                                        }}
+                                        className="ml-3 p-1.5 hover:bg-white hover:bg-opacity-20 rounded-lg transition flex-shrink-0"
+                                    >
+                                        <X className="h-5 w-5" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Body: daftar ruangan tersedia */}
+                            <div className="flex-1 overflow-y-auto p-5">
+                                {loadingRooms ? (
+                                    <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+                                        <RefreshCw className="h-8 w-8 animate-spin text-indigo-500 mb-3" />
+                                        <p>Mencari ruangan tersedia...</p>
+                                    </div>
+                                ) : availableRooms.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                                        <div className="h-16 w-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                                            <Building className="h-8 w-8 text-gray-400" />
+                                        </div>
+                                        <p className="text-gray-700 font-semibold text-lg">Tidak Ada Ruangan Tersedia</p>
+                                        <p className="text-gray-500 text-sm mt-1 max-w-xs">
+                                            Semua ruangan terpakai pada waktu tersebut. Coba waktu yang berbeda.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <p className="text-sm text-gray-500 mb-3">
+                                            <span className="font-semibold text-green-700">{availableRooms.length} ruangan</span> bebas di waktu yang diminta:
+                                        </p>
+                                        <div className="space-y-2">
+                                            {availableRooms.map((room) => (
+                                                <div
+                                                    key={room.id}
+                                                    className="flex items-center justify-between bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4 hover:shadow-md hover:border-green-400 transition-all duration-200 cursor-default"
+                                                >
+                                                    <div className="flex items-center space-x-3 min-w-0">
+                                                        <div className="h-10 w-10 bg-green-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                                                            <Building className="h-5 w-5 text-white" />
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <p className="font-bold text-gray-900 truncate">{room.name}</p>
+                                                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                                                                {room.code && (
+                                                                    <span className="text-xs text-gray-500">Kode: <span className="font-mono font-medium text-gray-700">{room.code}</span></span>
+                                                                )}
+                                                                {room.capacity && (
+                                                                    <span className="text-xs text-gray-500">Kapasitas: <span className="font-medium text-gray-700">{room.capacity}</span></span>
+                                                                )}
+                                                                {(room.department as any)?.name && (
+                                                                    <span className="text-xs text-gray-500">{(room.department as any).name}</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <span className="ml-3 flex-shrink-0 flex items-center space-x-1 px-3 py-1.5 bg-green-500 text-white text-xs rounded-full font-semibold">
+                                                        <Check className="h-3 w-3" />
+                                                        <span>Bebas</span>
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+
+                            {/* Footer */}
+                            <div className="px-5 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between flex-shrink-0">
+                                <p className="text-xs text-gray-500">Edit booking → pilih ruangan di atas</p>
+                                <button
+                                    onClick={() => {
+                                        setShowRoomRecommendModal(false);
+                                        setConflictBooking(null);
+                                        setConflictingBookings([]);
+                                        setAvailableRooms([]);
+                                    }}
+                                    className="px-5 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition font-medium text-sm"
+                                >
+                                    Tutup
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 };
