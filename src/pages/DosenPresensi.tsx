@@ -931,7 +931,10 @@ const DosenPresensi: React.FC = () => {
             console.error('[detectAllSchedules] Error in lecture query:', error);
         }
 
-        // 2. Fetch ALL final sessions (sidang) for today (in separate try-catch)
+        // 2. DISABLED: Final sessions (sidang) are no longer displayed in the schedule list
+        // Only lecture schedules (mengajar) are shown to lecturers
+        // If sidang needs to be re-enabled in the future, uncomment the block below
+        /*
         try {
             const { data: sessionData, error: sessionError } = await supabase
                 .from('final_sessions')
@@ -947,7 +950,6 @@ const DosenPresensi: React.FC = () => {
                     title
                 `)
                 .eq('date', todayStr)
-                // Use double quotes around the pattern to handle commas in names/titles
                 .or(`supervisor.ilike."%${lecturerName}%",examiner.ilike."%${lecturerName}%",secretary.ilike."%${lecturerName}%"`);
 
             console.log('[detectAllSchedules] Final sessions query result:', { sessionData, sessionError });
@@ -983,6 +985,7 @@ const DosenPresensi: React.FC = () => {
         } catch (error) {
             console.warn('[detectAllSchedules] Session schedules query failed (table may not exist):', error);
         }
+        */
 
         console.log('[detectAllSchedules] Total schedules found:', allSchedules.length);
         setAvailableSchedules(allSchedules);
