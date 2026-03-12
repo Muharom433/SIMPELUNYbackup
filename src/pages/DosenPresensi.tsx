@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Camera, User, Clock, BookOpen, Users, CheckCircle, AlertCircle, ChevronDown, Loader2, ExternalLink, PartyPopper, GraduationCap, MapPin, Navigation, CalendarX, X, PenTool, QrCode } from 'lucide-react';
+import { Search, Camera, User, Clock, BookOpen, Users, CheckCircle, AlertCircle, ChevronDown, Loader2, ExternalLink, PartyPopper, GraduationCap, MapPin, Navigation, CalendarX, X, PenTool, QrCode, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
@@ -208,6 +208,7 @@ const DosenPresensi: React.FC = () => {
     const [selectedDay, setSelectedDay] = useState<string>(dayNames[new Date().getDay()]);
     const signatureRef = useRef<any>(null);
     const [signatureError, setSignatureError] = useState<string | null>(null);
+    const [hasSignatureContent, setHasSignatureContent] = useState(false);
 
     // Attendance limit states
     const [hasAttendedToday, setHasAttendedToday] = useState(false);
@@ -261,6 +262,9 @@ const DosenPresensi: React.FC = () => {
     // Global Disable Attendance State
     const [isAttendanceDisabledGlobally, setIsAttendanceDisabledGlobally] = useState<{ isDisabled: boolean; message: string; fromDate: string | null } | null>(null);
     const [showGlobalDisableModal, setShowGlobalDisableModal] = useState(false);
+
+    // Course required modal state
+    const [showCourseRequiredModal, setShowCourseRequiredModal] = useState(false);
 
     // Calculate distance between two coordinates using Haversine formula
     const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -651,65 +655,107 @@ const DosenPresensi: React.FC = () => {
         }
     }, [selectedLecturerId, lecturers, hasAttendedToday, selectedDay]);
 
-    // QR Scanner Effect - AUTO START, NO UI SELECTION
+    // QR Scanner Effect - AUTO START, WITH CAMERA FALLBACK
     useEffect(() => {
         if (activeTab === 'presensi' && !scannedRoomId && !showSpecialDateModal && !showNoActiveWeekModal && !showGlobalDisableModal) {
 
             const html5QrCode = new Html5Qrcode("qr-reader");
+            let isMounted = true;
 
             const startScanning = async () => {
-                try {
-                    // Priority: Environment (Back) Camera
-                    const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+                const config = { fps: 10, qrbox: { width: 250, height: 250 } };
 
-                    await html5QrCode.start(
-                        { facingMode: "environment" },
-                        config,
-                        (decodedText: string) => {
-                            // SUCCESS
-                            console.log("Scanned:", decodedText);
+                // Callback saat QR berhasil dibaca
+                const onScanSuccess = (decodedText: string) => {
+                    console.log("Scanned:", decodedText);
+                    html5QrCode.stop().then(async () => {
+                        const toastId = toast.loading('Memverifikasi QR Code...');
+                        try {
+                            const { data, error } = await supabase
+                                .from('rooms')
+                                .select('id, name')
+                                .eq('id', decodedText)
+                                .single();
 
-                            // Stop scanning immediately after success
-                            html5QrCode.stop().then(async () => {
-                                // VALIDATE ROOM FIRST
-                                const toastId = toast.loading('Memverifikasi QR Code...');
-
-                                try {
-                                    const { data, error } = await supabase
-                                        .from('rooms')
-                                        .select('id, name')
-                                        .eq('id', decodedText)
-                                        .single();
-
-                                    if (error || !data) {
-                                        console.error("Invalid Room QR:", decodedText, error);
-                                        toast.error('QR Code TIDAK VALID! Ini bukan QR Ruangan.', { id: toastId });
-
-                                        // Restart scanner after short delay
-                                        setTimeout(() => {
-                                            setScanRetry(prev => prev + 1);
-                                        }, 2000);
-                                    } else {
-                                        setScannedRoomId(data.id);
-                                        setScannedRoomName(data.name);
-                                        toast.success(`Terverifikasi: ${data.name}`, { id: toastId });
-                                    }
-                                } catch (err) {
-                                    console.error("Validation error:", err);
-                                    toast.error('Terjadi kesalahan verifikasi.', { id: toastId });
-                                    setTimeout(() => {
-                                        setScanRetry(prev => prev + 1);
-                                    }, 2000);
+                            if (error || !data) {
+                                console.error("Invalid Room QR:", decodedText, error);
+                                toast.error('QR Code TIDAK VALID! Ini bukan QR Ruangan.', { id: toastId });
+                                setTimeout(() => {
+                                    if (isMounted) setScanRetry(prev => prev + 1);
+                                }, 2000);
+                            } else {
+                                if (isMounted) {
+                                    setScannedRoomId(data.id);
+                                    setScannedRoomName(data.name);
                                 }
-                            }).catch((err: any) => console.error("Failed to stop scanner", err));
-                        },
-                        (errorMessage: any) => {
-                            // parse error, ignore to avoid spamming console
+                                toast.success(`Terverifikasi: ${data.name}`, { id: toastId });
+                            }
+                        } catch (err) {
+                            console.error("Validation error:", err);
+                            toast.error('Terjadi kesalahan verifikasi.', { id: toastId });
+                            setTimeout(() => {
+                                if (isMounted) setScanRetry(prev => prev + 1);
+                            }, 2000);
                         }
+                    }).catch((err: any) => console.error("Failed to stop scanner", err));
+                };
+
+                const onScanError = (_errorMessage: any) => {
+                    // parse error, ignore to avoid spamming console
+                };
+
+                // STRATEGY: Detect cameras first, then pick the best one directly
+                // This avoids long timeouts from requesting facingMode that doesn't exist
+                try {
+                    const devices = await Html5Qrcode.getCameras();
+                    console.log('[QR] Available cameras:', devices.map(d => d.label));
+
+                    if (devices && devices.length > 0) {
+                        // Pick camera: prefer back/environment camera, fallback to any
+                        const backCamera = devices.find(d =>
+                            d.label.toLowerCase().includes('back') ||
+                            d.label.toLowerCase().includes('rear') ||
+                            d.label.toLowerCase().includes('environment') ||
+                            d.label.toLowerCase().includes('belakang')
+                        );
+
+                        const selectedCamera = backCamera || devices[0];
+                        console.log(`[QR] Using camera: ${selectedCamera.label || selectedCamera.id}`);
+
+                        await html5QrCode.start(
+                            selectedCamera.id,
+                            config,
+                            onScanSuccess,
+                            onScanError
+                        );
+                        console.log('[QR] Camera started successfully');
+                        if (isMounted) setCameraError(null);
+                        return;
+                    }
+                } catch (enumErr) {
+                    console.warn('[QR] Camera enumeration/start by ID failed:', enumErr);
+                }
+
+                // Fallback: if enumeration failed, try facingMode generically
+                try {
+                    console.log('[QR] Fallback: trying facingMode user...');
+                    await html5QrCode.start(
+                        { facingMode: "user" },
+                        config,
+                        onScanSuccess,
+                        onScanError
                     );
-                } catch (err) {
-                    console.error("Error starting QR scanner:", err);
-                    setCameraError("Gagal memulai kamera. Pastikan izin diberikan.");
+                    console.log('[QR] Fallback camera started successfully');
+                    if (isMounted) setCameraError(null);
+                    return;
+                } catch (fallbackErr) {
+                    console.warn('[QR] Fallback facingMode user failed:', fallbackErr);
+                }
+
+                // All failed
+                console.error("[QR] All camera strategies failed");
+                if (isMounted) {
+                    setCameraError("Gagal memulai kamera. Pastikan izin kamera diberikan dan tidak ada aplikasi lain yang menggunakan kamera.");
                 }
             };
 
@@ -720,6 +766,7 @@ const DosenPresensi: React.FC = () => {
 
             // Cleanup
             return () => {
+                isMounted = false;
                 clearTimeout(timeoutId);
                 if (html5QrCode && html5QrCode.isScanning) {
                     html5QrCode.stop().catch((err: any) => console.error("Failed to stop on cleanup", err));
@@ -999,6 +1046,14 @@ const DosenPresensi: React.FC = () => {
             toast.error('Silakan pilih jadwal atau masukkan tujuan kehadiran');
             return;
         }
+
+        // Wajib pilih minimal 1 jadwal mengajar (lecture) jika ada jadwal lecture tersedia
+        const availableLectures = availableSchedules.filter(s => s.type === 'lecture');
+        const selectedLectures = selectedSchedules.filter(s => s.type === 'lecture');
+        if (availableLectures.length > 0 && selectedLectures.length === 0) {
+            setShowCourseRequiredModal(true);
+            return;
+        }
         if (!cameraStream) {
             toast.error('Kamera tidak tersedia');
             return;
@@ -1069,39 +1124,54 @@ const DosenPresensi: React.FC = () => {
             let purposeDesc = customPurpose;
 
             if (selectedSchedules.length > 0) {
-                const hasLecture = selectedSchedules.some(s => s.type === 'lecture');
-                const hasSession = selectedSchedules.some(s => s.type === 'session');
+                const lectureSchedules = selectedSchedules.filter(s => s.type === 'lecture');
+                const sessionSchedules = selectedSchedules.filter(s => s.type === 'session');
+                const hasLecture = lectureSchedules.length > 0;
+                const hasSession = sessionSchedules.length > 0;
+
+                // Build lecture names list
+                const lectureNames = lectureSchedules.map(s => s.course_name || 'Mata Kuliah').join(', ');
 
                 if (hasLecture && hasSession) {
                     purposeValue = 'mengajar'; // Default to mengajar if mixed
-                    purposeDesc = `${selectedSchedules.length} kegiatan (Mengajar & Sidang)`;
+                    // Always include course names in description
+                    const isToday = selectedDay === dayNames[currentTime.getDay()];
+                    if (isToday) {
+                        purposeDesc = `Mengajar: ${lectureNames}`;
+                        if (sessionSchedules.length > 0) {
+                            purposeDesc += ` + ${sessionSchedules.length} sidang`;
+                        }
+                    } else {
+                        // Kelas pengganti
+                        purposeDesc = `Kelas pengganti: ${lectureNames}`;
+                        if (sessionSchedules.length > 0) {
+                            purposeDesc += ` + ${sessionSchedules.length} sidang`;
+                        }
+                    }
                 } else if (hasLecture) {
                     purposeValue = 'mengajar';
-                    // GENERATE PURPOSE DESCRIPTION
+                    // GENERATE PURPOSE DESCRIPTION - Always include course names
                     const isToday = selectedDay === dayNames[currentTime.getDay()];
 
-                    if (selectedSchedules[0]) {
-                        const s = selectedSchedules[0];
-
-                        if (isToday) {
-                            // Regular Schedule - Course Name
-                            purposeDesc = selectedSchedules.length === 1
-                                ? s.course_name || 'Mengajar'
-                                : `${selectedSchedules.length} mata kuliah`;
-                        } else {
-                            // Substitute Schedule - Formatted Sentence
+                    if (isToday) {
+                        // Regular Schedule - Always include course names
+                        purposeDesc = lectureSchedules.length === 1
+                            ? (lectureSchedules[0].course_name || 'Mengajar')
+                            : `Mengajar: ${lectureNames}`;
+                    } else {
+                        // Substitute Schedule - Include course names
+                        if (lectureSchedules.length === 1) {
+                            const s = lectureSchedules[0];
                             purposeDesc = `Saya mengajar kelas pengganti mata kuliah ${s.course_name} kelas ${s.class_group || '-'} semester ${s.semester?.replace('Semester ', '') || '-'}`;
-
-                            if (selectedSchedules.length > 1) {
-                                purposeDesc += ` dan ${selectedSchedules.length - 1} matkul lainnya`;
-                            }
+                        } else {
+                            purposeDesc = `Kelas pengganti: ${lectureNames}`;
                         }
                     }
                 } else if (hasSession) {
                     purposeValue = 'sidang';
-                    purposeDesc = selectedSchedules.length === 1
-                        ? `Sidang - ${selectedSchedules[0].student_name}`
-                        : `${selectedSchedules.length} sidang`;
+                    purposeDesc = sessionSchedules.length === 1
+                        ? `Sidang - ${sessionSchedules[0].student_name}`
+                        : `${sessionSchedules.length} sidang (${sessionSchedules.map(s => s.student_name || 'Mahasiswa').join(', ')})`;
                 }
             } else if (customPurpose.toLowerCase().includes('mengajar') || customPurpose.toLowerCase().includes('kuliah')) {
                 purposeValue = 'mengajar';
@@ -1212,6 +1282,7 @@ const DosenPresensi: React.FC = () => {
             setSelectedSchedules([]);
             // Clear signature canvas
             signatureRef.current?.clear();
+            setHasSignatureContent(false);
 
         } catch (error: any) {
             console.error('Error submitting attendance:', error);
@@ -1283,9 +1354,34 @@ const DosenPresensi: React.FC = () => {
                         <div className="max-w-sm mx-auto bg-gray-900 rounded-2xl overflow-hidden shadow-lg border-4 border-white mb-6">
                             <div id="qr-reader" className="w-full"></div>
                         </div>
-                        <div className="text-sm text-gray-400">
-                            Arahkan kamera ke kode QR ruangan
-                        </div>
+                        {cameraError ? (
+                            <div className="space-y-3">
+                                <div className="bg-red-50 border border-red-200 rounded-xl p-4 max-w-sm mx-auto">
+                                    <div className="flex items-center gap-2 text-red-700 mb-2">
+                                        <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                                        <p className="font-medium text-sm">Kamera Tidak Tersedia</p>
+                                    </div>
+                                    <p className="text-xs text-red-600">{cameraError}</p>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setCameraError(null);
+                                        setScanRetry(prev => prev + 1);
+                                    }}
+                                    className="px-6 py-2.5 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors flex items-center gap-2 mx-auto"
+                                >
+                                    <RefreshCw className="w-4 h-4" />
+                                    Coba Lagi
+                                </button>
+                                <p className="text-xs text-gray-400">
+                                    Pastikan izin kamera sudah diberikan dan tidak ada aplikasi lain yang menggunakan kamera.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="text-sm text-gray-400">
+                                Arahkan kamera ke kode QR ruangan
+                            </div>
+                        )}
                     </div>
                 ) : activeTab === 'presensi' ? (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -1590,13 +1686,9 @@ const DosenPresensi: React.FC = () => {
                                                 }
                                             </span>
                                         </div>
-                                        <div className="text-sm space-y-1">
+                                        <div className="text-sm">
                                             <p className={geolocation.isWithinAllowedLocation ? 'text-emerald-700' : 'text-amber-700'}>
-                                                📍 <strong>{geolocation.nearestLocation}</strong> - Jarak: {geolocation.distanceToNearest}m
-                                            </p>
-                                            <p className="text-gray-500 text-xs">
-                                                Koordinat: {geolocation.latitude.toFixed(6)}, {geolocation.longitude.toFixed(6)}
-                                                {geolocation.accuracy && ` (Akurasi: ${Math.round(geolocation.accuracy)}m)`}
+                                                📍 Kampus: <strong>{geolocation.nearestLocation}</strong>
                                             </p>
                                         </div>
                                         {!geolocation.isWithinAllowedLocation && !ALLOW_OUTSIDE_LOCATION && (
@@ -1681,13 +1773,25 @@ const DosenPresensi: React.FC = () => {
                                         ref={signatureRef}
                                         penColor="#000000"
                                         backgroundColor="white"
-                                        onChange={() => setSignatureError(null)}
+                                        onChange={(dataUrl: string) => {
+                                            setSignatureError(null);
+                                            // dataUrl kosong berarti canvas di-clear, ada isi berarti ada coretan
+                                            setHasSignatureContent(!!dataUrl);
+                                        }}
                                     />
                                 </div>
                                 <div className="flex justify-between items-center mt-2">
-                                    <p className="text-xs text-gray-500">Tanda tangan pada area di atas</p>
+                                    <p className="text-xs text-gray-500">
+                                        {hasSignatureContent
+                                            ? <span className="text-emerald-600 font-medium flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Tanda tangan terisi</span>
+                                            : <span className="text-amber-600">⚠️ Wajib — tanda tangan pada area di atas</span>
+                                        }
+                                    </p>
                                     <button
-                                        onClick={() => signatureRef.current?.clear()}
+                                        onClick={() => {
+                                            signatureRef.current?.clear();
+                                            setHasSignatureContent(false);
+                                        }}
                                         className="text-xs text-red-600 hover:text-red-700 font-medium"
                                     >
                                         Hapus & Ulangi
@@ -1709,6 +1813,7 @@ const DosenPresensi: React.FC = () => {
                                     (selectedSchedules.length === 0 && !customPurpose.trim()) ||
                                     !cameraStream ||
                                     hasAttendedToday ||
+                                    !hasSignatureContent ||
                                     (!ALLOW_OUTSIDE_LOCATION && geolocation && !geolocation.isWithinAllowedLocation) ||
                                     (!ALLOW_OUTSIDE_LOCATION && !geolocation)
                                 }
@@ -1728,6 +1833,11 @@ const DosenPresensi: React.FC = () => {
                                     <>
                                         <AlertCircle className="w-5 h-5" />
                                         Lokasi Di Luar Area Kampus
+                                    </>
+                                ) : !hasSignatureContent ? (
+                                    <>
+                                        <PenTool className="w-5 h-5" />
+                                        Tanda Tangan Belum Diisi
                                     </>
                                 ) : hasReachedWeeklyLimit ? (
                                     <>
@@ -2006,6 +2116,63 @@ const DosenPresensi: React.FC = () => {
                                 >
                                     <X className="w-5 h-5" />
                                     Tutup
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Course Required Modal - Wajib pilih minimal 1 mata kuliah */}
+            {
+                showCourseRequiredModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowCourseRequiredModal(false)} />
+                        <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+                            {/* Header */}
+                            <div className="bg-gradient-to-r from-amber-500 to-yellow-500 p-6 text-center">
+                                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <BookOpen className="w-8 h-8 text-white" />
+                                </div>
+                                <h2 className="text-xl font-bold text-white">Pilih Mata Kuliah</h2>
+                                <p className="text-white/80 text-sm mt-1">
+                                    Wajib memilih minimal 1 mata kuliah
+                                </p>
+                            </div>
+                            {/* Content */}
+                            <div className="p-6">
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+                                    <p className="text-amber-800 font-medium text-center">
+                                        Anda belum memilih jadwal mata kuliah yang diampu.
+                                    </p>
+                                </div>
+                                <p className="text-gray-600 text-center text-sm mb-4">
+                                    Silakan kembali dan pilih minimal <span className="font-bold text-amber-700">1 jadwal mata kuliah</span> dari daftar jadwal yang tersedia sebelum melakukan presensi.
+                                </p>
+                                {/* Show available lecture schedules */}
+                                {availableSchedules.filter(s => s.type === 'lecture').length > 0 && (
+                                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+                                        <p className="text-xs font-semibold text-blue-800 uppercase tracking-wider mb-2">Mata Kuliah Tersedia:</p>
+                                        <div className="space-y-1">
+                                            {availableSchedules.filter(s => s.type === 'lecture').map((s, idx) => (
+                                                <div key={idx} className="flex items-center gap-2 text-sm text-blue-700">
+                                                    <BookOpen className="w-3 h-3 flex-shrink-0" />
+                                                    <span className="font-medium">{s.course_name}</span>
+                                                    {s.class_group && <span className="text-xs text-blue-500">({s.class_group})</span>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            {/* Footer */}
+                            <div className="px-6 pb-6">
+                                <button
+                                    onClick={() => setShowCourseRequiredModal(false)}
+                                    className="w-full py-3 bg-gradient-to-r from-amber-500 to-yellow-500 text-white font-semibold rounded-xl hover:from-amber-600 hover:to-yellow-600 transition-all flex items-center justify-center gap-2"
+                                >
+                                    <CheckCircle className="w-5 h-5" />
+                                    Kembali Pilih Mata Kuliah
                                 </button>
                             </div>
                         </div>
