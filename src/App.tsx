@@ -22,6 +22,7 @@ import ExamManagement from './pages/ExamManagement';
 import SessionSchedule from './pages/SessionSchedule';
 import Reports from './pages/Reports';
 import TendikDirectory from './pages/TendikDirectory';
+import DosenDirectory from './pages/DosenDirectory';
 import SystemSettings from './pages/SystemSettings';
 import LocationManagement from './pages/LocationManagement';
 import LaboratoryLocationManagement from './pages/LaboratoryLocationManagement';
@@ -132,6 +133,7 @@ const AppContent = () => {
         {/* Public Form View - Standalone without Layout */}
         <Route path="form/:id" element={<Suspense fallback={<LazyLoadingFallback />}><FormView /></Suspense>} />
         <Route path="tendik" element={<Suspense fallback={<LazyLoadingFallback />}><TendikDirectory /></Suspense>} />
+        <Route path="dosen" element={<Suspense fallback={<LazyLoadingFallback />}><DosenDirectory /></Suspense>} />
         <Route path="presensi-dosen" element={<Suspense fallback={<LazyLoadingFallback />}><DosenPresensi /></Suspense>} />
         <Route path="attendance-daily-detail" element={<Suspense fallback={<LazyLoadingFallback />}><AttendanceDailyDetail /></Suspense>} />
 

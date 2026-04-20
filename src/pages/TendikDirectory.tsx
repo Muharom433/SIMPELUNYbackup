@@ -79,6 +79,13 @@ const StaffCard: React.FC<{ staff: Staff }> = ({ staff }) => {
             </p>
           )}
         </div>
+
+        {/* NIP / Nomor Identitas */}
+        {staff.identity_number && (
+          <p className="mt-2 text-[10px] sm:text-xs text-slate-400 font-mono tracking-wide">
+            NIP. {staff.identity_number}
+          </p>
+        )}
       </div>
     </div>
   );
