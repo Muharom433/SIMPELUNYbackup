@@ -780,7 +780,7 @@ const DosenPresensi: React.FC = () => {
             setLoading(true);
             const { data, error } = await supabase
                 .from('users')
-                .select('id, full_name, identity_number, attachments, is_homebase, study_program:study_programs(id, name)')
+                .select('id, full_name, identity_number, is_homebase, study_program:study_programs(id, name)')
                 .eq('role', 'lecturer')
                 .order('full_name');
 
