@@ -13,7 +13,7 @@ interface Staff {
   id: string;
   full_name: string;
   identity_number: string;
-  attachments: string | null;
+  attachments?: string | null;
   role: string;
   department_id: string | null;
   department?: DeptInfo[] | DeptInfo | null;
@@ -59,7 +59,36 @@ const SkeletonCard: React.FC = () => (
 // ─── Staff Card ───────────────────────────────────────────────────────────────
 const StaffCard: React.FC<{ staff: Staff }> = ({ staff }) => {
   const [imageError, setImageError] = useState(false);
-  const hasPhoto = staff.attachments && !imageError;
+  const [photoData, setPhotoData] = useState<string | null>(null);
+  const [hasFetched, setHasFetched] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let observer: IntersectionObserver | null = null;
+    if (cardRef.current) {
+      observer = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && !hasFetched) {
+          setHasFetched(true);
+          supabase
+            .from('users')
+            .select('attachments')
+            .eq('id', staff.id)
+            .single()
+            .then(({ data }) => {
+              if (data?.attachments) {
+                setPhotoData(data.attachments);
+              }
+            });
+        }
+      }, { rootMargin: '100px' });
+      observer.observe(cardRef.current);
+    }
+    return () => {
+      if (observer) observer.disconnect();
+    };
+  }, [staff.id, hasFetched]);
+
+  const hasPhoto = photoData && !imageError;
 
   const deptName = staff.department
     ? Array.isArray(staff.department)
@@ -68,14 +97,17 @@ const StaffCard: React.FC<{ staff: Staff }> = ({ staff }) => {
     : null;
 
   return (
-    <div className="group text-center bg-white rounded-xl border border-gray-200 shadow-md hover:shadow-2xl transition-all duration-300 flex flex-col overflow-hidden h-full hover:-translate-y-1">
+    <div ref={cardRef} className="group text-center bg-white rounded-xl border border-gray-200 shadow-md hover:shadow-2xl transition-all duration-300 flex flex-col overflow-hidden h-full hover:-translate-y-1">
       {/* Photo area */}
       <div className="relative w-full aspect-[3/4] overflow-hidden bg-gray-100">
-        {hasPhoto ? (
+        {!hasFetched ? (
+          <div className="w-full h-full bg-gray-200 animate-pulse" />
+        ) : hasPhoto ? (
           <img
-            src={staff.attachments!}
+            src={photoData!}
             alt={staff.full_name}
             onError={() => setImageError(true)}
+            loading="lazy"
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           />
         ) : (
@@ -334,7 +366,7 @@ const TendikDirectory: React.FC = () => {
         setLoading(true);
         const { data, error } = await supabase
           .from('users')
-          .select('id, full_name, identity_number, attachments, role, department_id, department:departments(id, name, code)')
+          .select('id, full_name, identity_number, role, department_id, department:departments(id, name, code)')
           .in('role', ['staff', 'laboratory', 'technician', 'staffing', 'purchasing', 'frontdesk', 'finance'])
           .order('full_name');
 

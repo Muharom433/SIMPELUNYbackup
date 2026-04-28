@@ -20,7 +20,7 @@ interface Lecturer {
   id: string;
   full_name: string;
   identity_number: string;
-  attachments: string | null;
+  attachments?: string | null;
   role: string;
   is_homebase: boolean | null;
   study_program_id: string | null;
@@ -43,7 +43,36 @@ const SkeletonCard: React.FC = () => (
 // ─── Lecturer Card ────────────────────────────────────────────────────────────
 const LecturerCard: React.FC<{ lecturer: Lecturer }> = ({ lecturer }) => {
   const [imageError, setImageError] = useState(false);
-  const hasPhoto = lecturer.attachments && !imageError;
+  const [photoData, setPhotoData] = useState<string | null>(null);
+  const [hasFetched, setHasFetched] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let observer: IntersectionObserver | null = null;
+    if (cardRef.current) {
+      observer = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && !hasFetched) {
+          setHasFetched(true);
+          supabase
+            .from('users')
+            .select('attachments')
+            .eq('id', lecturer.id)
+            .single()
+            .then(({ data }) => {
+              if (data?.attachments) {
+                setPhotoData(data.attachments);
+              }
+            });
+        }
+      }, { rootMargin: '100px' });
+      observer.observe(cardRef.current);
+    }
+    return () => {
+      if (observer) observer.disconnect();
+    };
+  }, [lecturer.id, hasFetched]);
+
+  const hasPhoto = photoData && !imageError;
 
   const studyProgramName = lecturer.study_program
     ? Array.isArray(lecturer.study_program)
@@ -52,13 +81,16 @@ const LecturerCard: React.FC<{ lecturer: Lecturer }> = ({ lecturer }) => {
     : null;
 
   return (
-    <div className="group text-center bg-white rounded-xl border border-gray-200 shadow-md hover:shadow-2xl transition-all duration-300 flex flex-col overflow-hidden h-full hover:-translate-y-1">
+    <div ref={cardRef} className="group text-center bg-white rounded-xl border border-gray-200 shadow-md hover:shadow-2xl transition-all duration-300 flex flex-col overflow-hidden h-full hover:-translate-y-1">
       <div className="relative w-full aspect-[3/4] overflow-hidden bg-gray-100">
-        {hasPhoto ? (
+        {!hasFetched ? (
+          <div className="w-full h-full bg-gray-200 animate-pulse" />
+        ) : hasPhoto ? (
           <img
-            src={lecturer.attachments!}
+            src={photoData!}
             alt={lecturer.full_name}
             onError={() => setImageError(true)}
+            loading="lazy"
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           />
         ) : (
@@ -313,7 +345,7 @@ const DosenDirectory: React.FC = () => {
         const { data, error } = await supabase
           .from('users')
           .select(`
-            id, full_name, identity_number, attachments, role,
+            id, full_name, identity_number, role,
             is_homebase, study_program_id, department_id,
             study_program:study_programs(id, name, code, department_id, status)
           `)
