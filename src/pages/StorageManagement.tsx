@@ -539,11 +539,43 @@ export default function StorageManagement() {
 
             // 2. DELETE BOOKINGS
             if (targets.bookings) {
-                const { count } = await supabase.from('bookings').delete({ count: 'exact' })
-                    .gte('end_time', startISO)
-                    .lte('end_time', endISO)
-                    .in('status', ['completed', 'rejected', 'cancelled', 'pending', 'approved']);
-                totalDeleted += count || 0;
+                let allBookingIds: string[] = [];
+                let bPage = 0;
+                while (true) {
+                    const { data: bIds, error: bErr } = await supabase
+                        .from('bookings').select('id')
+                        .gte('end_time', startISO).lte('end_time', endISO)
+                        .in('status', ['completed', 'rejected', 'cancelled', 'pending', 'approved'])
+                        .order('created_at', { ascending: true })
+                        .range(bPage * 500, (bPage + 1) * 500 - 1);
+                    if (bErr || !bIds || bIds.length === 0) break;
+                    allBookingIds = [...allBookingIds, ...bIds.map(r => r.id)];
+                    if (bIds.length < 500) break;
+                    bPage++;
+                }
+
+                if (allBookingIds.length > 0) {
+                    for (let i = 0; i < allBookingIds.length; i += 100) {
+                        const batch = allBookingIds.slice(i, i + 100);
+                        
+                        const { data: relatedCheckouts } = await supabase
+                            .from('checkouts').select('id').in('booking_id', batch);
+                            
+                        if (relatedCheckouts && relatedCheckouts.length > 0) {
+                            const cIds = relatedCheckouts.map(c => c.id);
+                            for (let j = 0; j < cIds.length; j += 100) {
+                                const cBatch = cIds.slice(j, j + 100);
+                                await supabase.from('checkout_items').delete().in('checkout_id', cBatch);
+                                try { await supabase.from('checkout_validations').delete().in('checkout_id', cBatch); } catch (_) {}
+                                try { await supabase.from('checkout_violations').delete().in('checkout_id', cBatch); } catch (_) {}
+                                await supabase.from('checkouts').delete().in('id', cBatch);
+                            }
+                        }
+
+                        const { count: bCount } = await supabase.from('bookings').delete({ count: 'exact' }).in('id', batch);
+                        totalDeleted += bCount || 0;
+                    }
+                }
             }
 
             // 3. DELETE NOTIFICATIONS
