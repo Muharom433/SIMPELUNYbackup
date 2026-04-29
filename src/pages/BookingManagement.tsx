@@ -1402,12 +1402,10 @@ const BookingManagement: React.FC = () => {
                     const checkoutData = {
                         user_id: selectedBooking.user_id,
                         booking_id: selectedBooking.id,
-                        room_id: originalRoomId, // ⭐ RUANGAN LAMA disimpan di checkout
                         checkout_date: new Date().toISOString(),
                         expected_return_date: selectedBooking.end_time,
                         status: 'returned',
                         type: 'room',
-                        is_room_transfer: true, // ⭐ TANDAI sebagai perpindahan ruangan
                         total_items: mandatoryEquipmentOld.length,
                         checkout_notes: `AUTO-CHECKOUT: Perpindahan ruangan dari room_id ${originalRoomId} ke ${editFormData.room_id}. Equipment mandatory dari ruangan lama.`,
                         created_at: new Date().toISOString()
