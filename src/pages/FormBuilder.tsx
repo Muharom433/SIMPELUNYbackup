@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import {
     Save,
     Eye,
@@ -29,6 +30,7 @@ import {
     ChevronUp,
     Link,
     HelpCircle,
+    Upload,
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -104,6 +106,69 @@ interface LocalField extends Omit<FormField, 'id' | 'form_id' | 'created_at'> {
 }
 
 const FormBuilder: React.FC = () => {
+    // Ref untuk file input import Excel
+    const excelImportRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+    // Handler import dari Excel untuk dropdown field
+    const handleExcelImport = (fieldId: string, fieldLabel: string, file: File) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = e.target?.result;
+                const workbook = XLSX.read(data, { type: 'binary' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                const jsonData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '' });
+
+                if (jsonData.length === 0) {
+                    toast.error('File Excel kosong atau tidak dapat dibaca');
+                    return;
+                }
+
+                // Cari kolom yang namanya sama (case-insensitive) dengan label field
+                const headers = Object.keys(jsonData[0]);
+                const matchedHeader = headers.find(
+                    (h) => h.trim().toLowerCase() === fieldLabel.trim().toLowerCase()
+                );
+
+                if (!matchedHeader) {
+                    toast.error(
+                        `Kolom "${fieldLabel}" tidak ditemukan di Excel.\nKolom tersedia: ${headers.join(', ')}`
+                    );
+                    return;
+                }
+
+                // Ambil nilai unik dan non-kosong dari kolom tersebut
+                const uniqueValues = Array.from(
+                    new Set(
+                        jsonData
+                            .map((row) => String(row[matchedHeader]).trim())
+                            .filter((v) => v !== '' && v !== 'undefined' && v !== 'null')
+                    )
+                );
+
+                if (uniqueValues.length === 0) {
+                    toast.error(`Kolom "${matchedHeader}" tidak memiliki nilai yang valid`);
+                    return;
+                }
+
+                // Buat opsi dari nilai unik
+                const newOptions: FieldOption[] = uniqueValues.map((v) => ({
+                    value: v,
+                    label: v,
+                }));
+
+                updateField(fieldId, { options: newOptions });
+                toast.success(
+                    `${newOptions.length} opsi berhasil diimpor dari kolom "${matchedHeader}"`
+                );
+            } catch (err) {
+                console.error('Excel import error:', err);
+                toast.error('Gagal membaca file Excel. Pastikan format file benar.');
+            }
+        };
+        reader.readAsBinaryString(file);
+    };
     const { id: formId } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { profile } = useAuth();
@@ -773,13 +838,42 @@ const FormBuilder: React.FC = () => {
                                                                     )}
                                                                 </div>
                                                             ))}
-                                                            <button
-                                                                onClick={() => addOption(field.id)}
-                                                                className="flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-700"
-                                                            >
-                                                                <Plus className="h-4 w-4" />
-                                                                <span>{getText('Add option', 'Tambah opsi')}</span>
-                                                            </button>
+                                                            <div className="flex items-center gap-3 flex-wrap">
+                                                                <button
+                                                                    onClick={() => addOption(field.id)}
+                                                                    className="flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-700"
+                                                                >
+                                                                    <Plus className="h-4 w-4" />
+                                                                    <span>{getText('Add option', 'Tambah opsi')}</span>
+                                                                </button>
+
+                                                                {/* Import dari Excel */}
+                                                                {field.field_type === 'dropdown' && (
+                                                                    <>
+                                                                        <input
+                                                                            type="file"
+                                                                            accept=".xlsx,.xls"
+                                                                            ref={(el) => { excelImportRefs.current[field.id] = el; }}
+                                                                            style={{ display: 'none' }}
+                                                                            onChange={(e) => {
+                                                                                const file = e.target.files?.[0];
+                                                                                if (file) {
+                                                                                    handleExcelImport(field.id, field.label, file);
+                                                                                }
+                                                                                e.target.value = '';
+                                                                            }}
+                                                                        />
+                                                                        <button
+                                                                            onClick={() => excelImportRefs.current[field.id]?.click()}
+                                                                            className="flex items-center space-x-1 text-sm text-emerald-600 hover:text-emerald-700"
+                                                                            title={`Import opsi dari kolom "${field.label}" di file Excel`}
+                                                                        >
+                                                                            <Upload className="h-4 w-4" />
+                                                                            <span>Import dari Excel</span>
+                                                                        </button>
+                                                                    </>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     )}
 

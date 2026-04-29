@@ -158,7 +158,8 @@ const updateEquipmentQuantities = async (
             if (action === 'borrow') {
                 newQuantity = currentEq.quantity - change.quantity;
                 if (newQuantity < 0) {
-                    throw new Error(`Stok "${change.equipment_name}" tidak cukup. Tersedia: ${currentEq.quantity}, Diminta: ${change.quantity}`);
+                    console.log(`⚠️ Stok "${change.equipment_name}" tidak cukup (tersedia: ${currentEq.quantity}, diminta: ${change.quantity}) - borrow tanpa kurangi stok`);
+                    continue;
                 }
             } else {
                 newQuantity = currentEq.quantity + change.quantity;
@@ -1461,16 +1462,16 @@ const BookingManagement: React.FC = () => {
                             }
 
                             if (currentEq.quantity < eq.quantity) {
-                                throw new Error(`Stock "${currentEq.name}" tidak cukup. Tersedia: ${currentEq.quantity}, Dibutuhkan: ${eq.quantity}`);
+                                console.log(`⚠️ Stock "${currentEq.name}" tidak cukup. Tersedia: ${currentEq.quantity}, Dibutuhkan: ${eq.quantity} - borrow tanpa kurangi stok`);
+                            } else {
+                                await updateEquipmentQuantities([{
+                                    equipment_id: eq.equipment_id,
+                                    equipment_name: eq.equipment_name,
+                                    quantity: eq.quantity
+                                }], 'borrow');
+
+                                console.log(`✅ Borrowed new equipment: ${eq.equipment_name} (${eq.quantity})`);
                             }
-
-                            await updateEquipmentQuantities([{
-                                equipment_id: eq.equipment_id,
-                                equipment_name: eq.equipment_name,
-                                quantity: eq.quantity
-                            }], 'borrow');
-
-                            console.log(`✅ Borrowed new equipment: ${eq.equipment_name} (${eq.quantity})`);
                         }
                     }
                 }
