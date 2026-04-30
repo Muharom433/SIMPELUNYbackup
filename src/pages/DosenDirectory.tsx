@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, User, Users, GraduationCap, ChevronDown, X, Building2, SlidersHorizontal } from 'lucide-react';
+import { Search, User, Users, GraduationCap, ChevronDown, X, Building2, SlidersHorizontal, MapPin, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -26,6 +26,27 @@ interface Lecturer {
   study_program_id: string | null;
   department_id: string | null;
   study_program?: { id: string; name: string; code: string; department_id: string; status: string }[] | { id: string; name: string; code: string; department_id: string; status: string } | null;
+  room_users?: {
+    room: {
+      id: string;
+      name: string;
+      floor: string | null;
+      building: {
+        name: string;
+        campus: { name: string } | null;
+      } | null;
+    } | null;
+  }[] | null;
+}
+
+interface RoomDetails {
+  id: string;
+  name: string;
+  floor: string | null;
+  building: string | null;
+  campus: string | null;
+  attachments: string | null;
+  lecturerName: string;
 }
 
 // ─── Skeleton Card ────────────────────────────────────────────────────────────
@@ -41,7 +62,7 @@ const SkeletonCard: React.FC = () => (
 );
 
 // ─── Lecturer Card ────────────────────────────────────────────────────────────
-const LecturerCard: React.FC<{ lecturer: Lecturer }> = ({ lecturer }) => {
+const LecturerCard: React.FC<{ lecturer: Lecturer; onShowRoom: (room: RoomDetails) => void }> = ({ lecturer, onShowRoom }) => {
   const [imageError, setImageError] = useState(false);
   const [photoData, setPhotoData] = useState<string | null>(null);
   const [hasFetched, setHasFetched] = useState(false);
@@ -80,6 +101,23 @@ const LecturerCard: React.FC<{ lecturer: Lecturer }> = ({ lecturer }) => {
       : lecturer.study_program.name
     : null;
 
+  // Extract detailed assigned room information
+  let roomDetails = null;
+  if (lecturer.room_users && lecturer.room_users.length > 0) {
+    const assignedRoom = lecturer.room_users[0]?.room;
+    if (assignedRoom) {
+      roomDetails = {
+        id: assignedRoom.id,
+        name: assignedRoom.name,
+        building: assignedRoom.building?.name || null,
+        campus: assignedRoom.building?.campus?.name || null,
+        floor: assignedRoom.floor || null,
+        attachments: null,
+        lecturerName: lecturer.full_name
+      };
+    }
+  }
+
   return (
     <div ref={cardRef} className="group text-center bg-white rounded-xl border border-gray-200 shadow-md hover:shadow-2xl transition-all duration-300 flex flex-col overflow-hidden h-full hover:-translate-y-1">
       <div className="relative w-full aspect-[3/4] overflow-hidden bg-gray-100">
@@ -114,6 +152,21 @@ const LecturerCard: React.FC<{ lecturer: Lecturer }> = ({ lecturer }) => {
           <p className="text-[10px] sm:text-xs text-slate-500 font-mono tracking-wide">
             NIP. {lecturer.identity_number}
           </p>
+        )}
+        {roomDetails ? (
+          <div className="mt-2 w-full">
+            <button 
+              onClick={() => onShowRoom(roomDetails)}
+              className="w-full py-2 px-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg transition-colors text-[10px] sm:text-[11px] font-bold text-center shadow-sm flex items-center justify-center gap-1.5"
+            >
+              <MapPin className="w-3.5 h-3.5" />
+              Ruangan
+            </button>
+          </div>
+        ) : (
+          <div className="mt-2 text-[11px] sm:text-xs text-gray-400 bg-gray-50/50 rounded-lg p-3 border border-gray-100 flex items-center justify-center italic">
+            Belum ada data ruangan
+          </div>
         )}
       </div>
     </div>
@@ -330,6 +383,19 @@ const DosenDirectory: React.FC = () => {
   const [selectedDept, setSelectedDept] = useState<string>('all');
   const [selectedProdi, setSelectedProdi] = useState<string>('all');
   const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [selectedRoomModal, setSelectedRoomModal] = useState<RoomDetails | null>(null);
+
+  const handleShowRoomModal = async (room: RoomDetails) => {
+    setSelectedRoomModal({ ...room, attachments: null });
+    try {
+      const { data } = await supabase.from('rooms').select('attachments').eq('id', room.id).single();
+      if (data) {
+        setSelectedRoomModal(prev => prev?.id === room.id ? { ...prev, attachments: data.attachments } : prev);
+      }
+    } catch (err) {
+      console.error('Error fetching room attachments:', err);
+    }
+  };
 
   // Debounce search
   useEffect(() => {
@@ -347,7 +413,18 @@ const DosenDirectory: React.FC = () => {
           .select(`
             id, full_name, identity_number, role,
             is_homebase, study_program_id, department_id,
-            study_program:study_programs(id, name, code, department_id, status)
+            study_program:study_programs(id, name, code, department_id, status),
+            room_users(
+              room:rooms(
+                id,
+                name,
+                floor,
+                building:building_id(
+                  name,
+                  campus:campus_id(name)
+                )
+              )
+            )
           `)
           .eq('role', 'lecturer')
           .eq('is_homebase', true)
@@ -748,10 +825,73 @@ const DosenDirectory: React.FC = () => {
         {/* Grid */}
         {!loading && filteredLecturers.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '1.5rem 2.5rem' }}>
-            {filteredLecturers.map(l => <LecturerCard key={l.id} lecturer={l} />)}
+            {filteredLecturers.map(l => <LecturerCard key={l.id} lecturer={l} onShowRoom={handleShowRoomModal} />)}
           </div>
         )}
       </div>
+
+      {selectedRoomModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+              <h3 className="font-bold text-gray-800">Detail Ruangan</h3>
+              <button onClick={() => setSelectedRoomModal(null)} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] text-gray-500 font-medium uppercase tracking-wider">Dosen</span>
+                <span className="font-bold text-gray-900 text-base">{selectedRoomModal.lecturerName}</span>
+              </div>
+              
+              <div className="p-4 bg-orange-50 rounded-xl border border-orange-100 flex flex-col gap-3 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-orange-500" />
+                  <span className="font-bold text-orange-900 text-lg leading-tight">{selectedRoomModal.name}</span>
+                </div>
+                
+                <div className="flex flex-col gap-2 pl-7">
+                  {selectedRoomModal.building && (
+                    <div className="flex flex-col">
+                      <span className="text-[10px] text-orange-600/80 font-bold uppercase tracking-wider">Gedung</span>
+                      <span className="font-medium text-orange-800 text-sm">{selectedRoomModal.building} {selectedRoomModal.campus ? `(${selectedRoomModal.campus})` : ''}</span>
+                    </div>
+                  )}
+                  {selectedRoomModal.floor && (
+                    <div className="flex flex-col">
+                      <span className="text-[10px] text-orange-600/80 font-bold uppercase tracking-wider">Lantai</span>
+                      <span className="font-medium text-orange-800 text-sm">{selectedRoomModal.floor}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11px] text-gray-500 font-medium uppercase tracking-wider">Foto Ruangan</span>
+                {selectedRoomModal.attachments ? (
+                  <div className="rounded-xl overflow-hidden border border-gray-200 aspect-video relative bg-gray-100 shadow-sm">
+                    <img src={selectedRoomModal.attachments} alt={selectedRoomModal.name} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-gray-200 aspect-video flex flex-col items-center justify-center bg-gray-50 text-gray-400 gap-2">
+                    <ImageIcon className="w-8 h-8 opacity-40" />
+                    <span className="text-sm font-medium">Belum ada foto ruangan</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="p-4 bg-gray-50 border-t border-gray-100">
+              <button 
+                onClick={() => setSelectedRoomModal(null)}
+                className="w-full py-2.5 bg-white border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-100 transition-colors"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="py-8 text-center text-sm text-gray-400">
         SIMPEL Kuliah © {new Date().getFullYear()}
