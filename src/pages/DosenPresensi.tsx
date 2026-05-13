@@ -1235,7 +1235,7 @@ const DosenPresensi: React.FC = () => {
             // 1. Insert main attendance record
             const attendanceData: any = {
                 lecturer_user_id: selectedLecturerId,
-                lecturer_name: lecturer.full_name,
+                lecturer_name: lecturer.full_name.trim(),
                 attendance_date: todayStr,
                 attendance_time: format(new Date(), 'HH:mm:ss'),
                 photo_capture: photoData,
@@ -1317,7 +1317,7 @@ const DosenPresensi: React.FC = () => {
             }
 
             setSuccessData({
-                lecturerName: lecturer.full_name,
+                lecturerName: lecturer.full_name.trim(),
                 scheduleInfo,
                 purpose: purposeValue === 'mengajar' ? 'Mengajar' : purposeValue === 'sidang' ? 'Sidang' : 'Lainnya',
                 time: format(new Date(), 'HH:mm'),

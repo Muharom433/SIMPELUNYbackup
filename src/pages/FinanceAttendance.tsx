@@ -294,68 +294,74 @@ const FinanceAttendance: React.FC = () => {
         try {
             setLoading(true);
 
-            // deduplicatedFetch: bila dipanggil 2x bersamaan, hanya 1 request yg jalan
-            const cacheKey = `attendance_${dateRange.start}_${dateRange.end}_${studyProgramFilter}_${statusFilter}_${campusFilter}`;
+            // ─── PAGINATION: Supabase default limit = 1000 baris.
+            // Tanpa pagination, data awal bulan (tgl 1-8) bisa terpotong jika total > 1000
+            // karena sort descending mengambil terbaru dulu.
+            // Solusi: loop range() sampai semua data habis.
+            const PAGE_SIZE = 1000;
+            let allData: any[] = [];
+            let page = 0;
+            let hasMore = true;
 
-            const { data, count } = await deduplicatedFetch(cacheKey, () =>
-                withRetry(
-                    async () => {
-                        let query = supabase
-                            .from('lecturer_attendance')
-                            .select(`
-                                id,
-                                lecturer_user_id,
-                                lecturer_name,
-                                attendance_date,
-                                attendance_time,
-                                purpose,
-                                purpose_description,
-                                schedule_type,
-                                schedule_id,
-                                verification_status,
-                                verified_by,
-                                verified_at,
-                                verified_notes,
-                                is_included_in_recap,
-                                study_program_id,
-                                scanned_room_id,
-                                additional_notes,
-                                created_at,
-                                study_program:study_programs(id, name),
-                                scanned_room:rooms(
-                                    id,
-                                    name,
-                                    building:building(id, name, campus_id)
-                                )
-                            `)
-                            .gte('attendance_date', dateRange.start)
-                            .lte('attendance_date', dateRange.end)
-                            .order('attendance_date', { ascending: false })
-                            .order('attendance_time', { ascending: false });
-                        // TIDAK ADA .range() — semua data dalam rentang tanggal diambil
-                        // Paginasi 10/hal hanya untuk tampilan tabel, bukan batasan pengambilan
+            while (hasMore) {
+                const from = page * PAGE_SIZE;
+                const to = from + PAGE_SIZE - 1;
 
-                        if (studyProgramFilter !== 'all' && studyProgramFilter !== 'non_homebase') {
-                            query = query.eq('study_program_id', studyProgramFilter);
-                        }
-                        if (statusFilter !== 'all') {
-                            query = query.eq('verification_status', statusFilter);
-                        }
+                let query = supabase
+                    .from('lecturer_attendance')
+                    .select(`
+                        id,
+                        lecturer_user_id,
+                        lecturer_name,
+                        attendance_date,
+                        attendance_time,
+                        purpose,
+                        purpose_description,
+                        schedule_type,
+                        schedule_id,
+                        verification_status,
+                        verified_by,
+                        verified_at,
+                        verified_notes,
+                        is_included_in_recap,
+                        study_program_id,
+                        scanned_room_id,
+                        additional_notes,
+                        created_at,
+                        study_program:study_programs(id, name),
+                        scanned_room:rooms(
+                            id,
+                            name,
+                            building:building(id, name, campus_id)
+                        )
+                    `)
+                    .gte('attendance_date', dateRange.start)
+                    .lte('attendance_date', dateRange.end)
+                    .order('attendance_date', { ascending: true })
+                    .order('attendance_time', { ascending: true })
+                    .range(from, to);
 
-                        const result = await query;
-                        if (result.error) throw result.error;
-                        return { data: result.data };
-                    },
-                    {
-                        maxRetries: 2,
-                        baseDelayMs: 1500,
-                        onRetry: (attempt, err) => {
-                            console.warn(`[Attendance] Retry ${attempt} karena:`, (err as any)?.message || err);
-                            toast.loading(`Mencoba ulang... (${attempt}/2)`, { id: 'retry-toast' });
-                        },
-                    }
-                )
-            ) as { data: any[] | null };
+                if (studyProgramFilter !== 'all' && studyProgramFilter !== 'non_homebase') {
+                    query = query.eq('study_program_id', studyProgramFilter);
+                }
+                if (statusFilter !== 'all') {
+                    query = query.eq('verification_status', statusFilter);
+                }
+
+                const result = await query;
+                if (result.error) throw result.error;
+
+                const pageData = result.data || [];
+                allData = [...allData, ...pageData];
+                hasMore = pageData.length === PAGE_SIZE;
+                page++;
+            }
+
+            console.log(`📋 FinanceAttendance: Fetched ${allData.length} records in ${page} page(s)`);
+
+            // Bungkus dalam object agar kompatibel dengan kode di bawahnya
+            const data = allData;
+            const count = allData.length;
 
             toast.dismiss('retry-toast');
 
@@ -1431,8 +1437,9 @@ const FinanceAttendance: React.FC = () => {
 
     const exportToExcel = async () => {
         try {
-            const verifiedRecords = attendanceRecords.filter(r => r.verification_status === 'verified');
-            if (verifiedRecords.length === 0) {
+            // ─── QUICK CHECK: Apakah ada data verified di state ──────────────
+            // (Hanya untuk pesan awal; data sebenarnya di-fetch fresh dari DB di bawah)
+            if (attendanceRecords.filter(r => r.verification_status === 'verified').length === 0) {
                 toast.error('Tidak ada data terverifikasi untuk diekspor');
                 return;
             }
@@ -1503,6 +1510,82 @@ const FinanceAttendance: React.FC = () => {
             const exportPaymentRates: PaymentRate[] = paymentRatesData || [];
             console.log(`💰 Payment rates dari DB untuk ${exportMonth}/${exportYear}:`, exportPaymentRates);
 
+            // ─── FETCH SEMUA VERIFIED RECORDS LANGSUNG DARI DB (PAGINATION) ──────
+            // PENTING: attendanceRecords state bisa terpotong di 1000 baris (Supabase default).
+            // Jika total data bulan ini > 1000 dan sort=DESC, data tgl 1-8 tidak masuk state.
+            // Solusi: fetch ulang semua data langsung dari DB dengan loop range().
+            toast.loading('Mengambil semua data presensi...', { id: 'export-fetch-toast' });
+            const EXPORT_PAGE_SIZE = 1000;
+            let allVerifiedRecordsRaw: any[] = [];
+            let exportPage = 0;
+            let exportHasMore = true;
+
+            while (exportHasMore) {
+                const exportFrom = exportPage * EXPORT_PAGE_SIZE;
+                const exportTo = exportFrom + EXPORT_PAGE_SIZE - 1;
+
+                const { data: pageData, error: pageError } = await supabase
+                    .from('lecturer_attendance')
+                    .select(`
+                        id,
+                        lecturer_user_id,
+                        lecturer_name,
+                        attendance_date,
+                        attendance_time,
+                        purpose,
+                        purpose_description,
+                        verification_status,
+                        study_program_id,
+                        study_program:study_programs(id, name),
+                        details:lecturer_attendance_details(
+                            activity_type,
+                            course_name,
+                            study_program_name,
+                            class_group
+                        )
+                    `)
+                    .gte('attendance_date', dateRange.start)
+                    .lte('attendance_date', dateRange.end)
+                    .eq('verification_status', 'verified')
+                    .order('attendance_date', { ascending: true })
+                    .order('attendance_time', { ascending: true })
+                    .range(exportFrom, exportTo);
+
+                if (pageError) throw pageError;
+
+                const records = pageData || [];
+                allVerifiedRecordsRaw = [...allVerifiedRecordsRaw, ...records];
+                exportHasMore = records.length === EXPORT_PAGE_SIZE;
+                exportPage++;
+            }
+
+            toast.dismiss('export-fetch-toast');
+            console.log(`✅ Export: Fetched ${allVerifiedRecordsRaw.length} verified records in ${exportPage} page(s)`);
+
+            // Enrich with is_homebase from users table
+            const exportLecturerIds = [...new Set(allVerifiedRecordsRaw.map((r: any) => r.lecturer_user_id).filter(Boolean))];
+            let exportHomebaseMap: Record<string, boolean> = {};
+            if (exportLecturerIds.length > 0) {
+                const { data: exportUsersData } = await supabase
+                    .from('users')
+                    .select('id, is_homebase')
+                    .in('id', exportLecturerIds);
+                if (exportUsersData) {
+                    exportUsersData.forEach((u: any) => { exportHomebaseMap[u.id] = u.is_homebase ?? true; });
+                }
+            }
+
+            // verifiedRecords = sumber data utama export (fresh dari DB, sudah di-enrich)
+            const verifiedRecords = allVerifiedRecordsRaw.map((r: any) => ({
+                ...r,
+                is_homebase: exportHomebaseMap[r.lecturer_user_id] ?? true
+            }));
+
+            if (verifiedRecords.length === 0) {
+                toast.error('Tidak ada data terverifikasi untuk diekspor');
+                return;
+            }
+
             // 🔍 DEBUG: Comprehensive logging
             console.log('📊 Export Excel Debug:');
             console.log('- Lecture Schedules Count:', lectureSchedules.length);
@@ -1510,8 +1593,8 @@ const FinanceAttendance: React.FC = () => {
             console.log('- Week Settings (DB):', exportWeekSettings);
             console.log('- Special Dates Count:', currentSpecialDates.length);
             console.log('- Special Dates:', currentSpecialDates);
-            console.log('- Verified Records Count:', verifiedRecords.length);
-            console.log('- Sample Verified Records:', verifiedRecords.slice(0, 3).map(r => ({ name: r.lecturer_name, date: r.attendance_date })));
+            console.log('- All Verified Records (fresh from DB):', verifiedRecords.length);
+            console.log('- Sample Verified Records:', verifiedRecords.slice(0, 3).map((r: any) => ({ name: r.lecturer_name, date: r.attendance_date })));
 
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('Rekap Kehadiran');
@@ -1747,7 +1830,7 @@ const FinanceAttendance: React.FC = () => {
             worksheet.getColumn(statsStartCol).width = 8;
 
             worksheet.mergeCells(3, statsStartCol + 1, 4, statsStartCol + 1);
-            headerRow3.getCell(statsStartCol + 1).value = 'JML HDR';
+            headerRow3.getCell(statsStartCol + 1).value = 'JML DBY';  // Jumlah Dibayar (bukan total hadir)
             worksheet.getColumn(statsStartCol + 1).width = 8;
 
             worksheet.mergeCells(3, statsStartCol + 2, 4, statsStartCol + 2);
@@ -1927,11 +2010,15 @@ const FinanceAttendance: React.FC = () => {
                     }
                 });
 
-                // Highlight Holiday Columns in this row
+                // Highlight Holiday Columns in this row — HANYA ubah warna background
+                // JANGAN set cell.value = '' karena akan menimpa data presensi yang sudah ditulis!
                 holidayCols.forEach(colIdx => {
                     const cell = row.getCell(colIdx);
-                    cell.value = '';
-                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+                    // Hanya warnai kuning jika sel KOSONG (tidak ada presensi di hari libur ini)
+                    if (!cell.value) {
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+                    }
+                    // Jika ada presensi di hari libur, biarkan warna merah/hitam dari langkah sebelumnya
                 });
 
                 // End Stats Columns
@@ -1940,27 +2027,27 @@ const FinanceAttendance: React.FC = () => {
                 const ket = lecturer.is_homebase ? 'HBV' : 'NHBV';
                 row.getCell(statsColsStart).value = ket;
 
-                // JML HDR - Total attendance (ALL, including unpaid)
-                const totalAttendance = lecturer.dates.length;
-                row.getCell(statsColsStart + 1).value = totalAttendance;
+                // JML HDR - Hanya tampilkan hari yang DIBAYAR (bukan total semua kehadiran)
+                // Hari merah (melebihi batas) tidak dihitung di sini agar sesuai rumus: JML × SATUAN = JUMLAH
+                row.getCell(statsColsStart + 1).value = totalPaidDays;
 
-                // Catatan jika melebihi batas
+                // Tambahkan catatan jika ada hari yang di-skip (merah / tidak dibayar)
                 if (unpaidDates.length > 0) {
-                    row.getCell(statsColsStart + 1).note = `Melebihi ${maxPerWeek}x/minggu: ${unpaidDates.length} hari tidak dibayar (${lecturer.is_homebase ? 'HBV' : 'NHBV'})`;
+                    row.getCell(statsColsStart + 1).note = `Total hadir: ${lecturer.dates.length} hari\nDibayar: ${totalPaidDays} hari\nMerah (tidak dibayar): ${unpaidDates.length} hari (maks ${maxPerWeek}x/minggu — ${lecturer.is_homebase ? 'HBV' : 'NHBV'})`;
                 }
 
                 const rate = lecturer.is_homebase ? hbvRate : nhbvRate;
                 row.getCell(statsColsStart + 2).value = rate;
                 row.getCell(statsColsStart + 2).numFmt = '#,##0';
 
-                // JUMLAH - Only count PAID days (max per week sesuai tipe dosen)
+                // JUMLAH - hanya hari yang DIBAYAR × rate (konsisten dengan JML HDR di atas)
                 const totalPayment = totalPaidDays * rate;
                 row.getCell(statsColsStart + 3).value = totalPayment;
                 row.getCell(statsColsStart + 3).numFmt = '#,##0';
 
-                // Catatan jika ada hari yang tidak dibayar
+                // Catatan ringkasan pembayaran
                 if (unpaidDates.length > 0) {
-                    row.getCell(statsColsStart + 3).note = `Dibayar ${totalPaidDays} dari ${totalAttendance} hari (maks ${maxPerWeek}x/minggu — ${lecturer.is_homebase ? 'HBV' : 'NHBV'})`;
+                    row.getCell(statsColsStart + 3).note = `${totalPaidDays} hari × Rp ${rate.toLocaleString('id-ID')} = Rp ${totalPayment.toLocaleString('id-ID')}\n(${unpaidDates.length} hari merah tidak dihitung)`;
                 }
 
                 // JADWAL Columns - Robust name matching

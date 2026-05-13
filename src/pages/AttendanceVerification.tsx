@@ -16,6 +16,15 @@ const AttendanceVerification: React.FC = () => {
     const [selectedCampusId, setSelectedCampusId] = useState<string>('all');
     const [data, setData] = useState<any[]>([]);
 
+    // Global attendance limits from attendance_global_settings
+    const [attendanceLimits, setAttendanceLimits] = useState<{
+        max_weekly_attendance_hbv: number;
+        max_weekly_attendance_nhbv: number;
+    }>({
+        max_weekly_attendance_hbv: 3,
+        max_weekly_attendance_nhbv: 2,
+    });
+
     const months = [
         'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
         'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
@@ -26,6 +35,7 @@ const AttendanceVerification: React.FC = () => {
 
     useEffect(() => {
         fetchCampuses();
+        fetchAttendanceLimits();
     }, []);
 
     useEffect(() => {
@@ -46,40 +56,99 @@ const AttendanceVerification: React.FC = () => {
         }
     };
 
+    /** Ambil batas kehadiran per minggu (HBV & NHBV) dari database */
+    const fetchAttendanceLimits = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('attendance_global_settings')
+                .select('max_weekly_attendance_hbv, max_weekly_attendance_nhbv')
+                .limit(1)
+                .maybeSingle();
+
+            if (error) {
+                console.error('Error fetching attendance limits:', error);
+                return;
+            }
+
+            if (data) {
+                setAttendanceLimits({
+                    max_weekly_attendance_hbv: data.max_weekly_attendance_hbv ?? 3,
+                    max_weekly_attendance_nhbv: data.max_weekly_attendance_nhbv ?? 2,
+                });
+            }
+        } catch (error) {
+            console.error('Error fetching attendance limits:', error);
+        }
+    };
+
     const fetchData = async () => {
         setLoading(true);
         try {
             const startDate = format(startOfMonth(new Date(selectedYear, selectedMonth)), 'yyyy-MM-dd');
             const endDate = format(endOfMonth(new Date(selectedYear, selectedMonth)), 'yyyy-MM-dd');
 
-            // 1. Fetch Attendance Records
-            let query = supabase
-                .from('lecturer_attendance')
-                .select(`
-                    *,
-                    lecturer:users!lecturer_user_id (
-                        id, full_name, identity_number
-                    ),
-                    details:lecturer_attendance_details (*),
-                    scanned_room:rooms!scanned_room_id (
-                        id, name, campus_id
-                    )
-                `)
-                .gte('attendance_date', startDate)
-                .lte('attendance_date', endDate)
-                .order('attendance_date', { ascending: true });
+            // -------------------------------------------------------
+            // Pagination untuk melewati batas default Supabase (1000 baris)
+            // Ambil semua data sampai habis menggunakan .range()
+            // -------------------------------------------------------
+            const PAGE_SIZE = 1000;
+            let allRecords: any[] = [];
+            let page = 0;
+            let hasMore = true;
 
-            const { data: records, error } = await query;
+            while (hasMore) {
+                const from = page * PAGE_SIZE;
+                const to = from + PAGE_SIZE - 1;
 
-            if (error) throw error;
+                let query = supabase
+                    .from('lecturer_attendance')
+                    .select(`
+                        *,
+                        lecturer:users!lecturer_user_id (
+                            id, full_name, identity_number, is_homebase
+                        ),
+                        details:lecturer_attendance_details (*),
+                        scanned_room:rooms!scanned_room_id (
+                            id, name, campus_id
+                        )
+                    `)
+                    .gte('attendance_date', startDate)
+                    .lte('attendance_date', endDate)
+                    .order('attendance_date', { ascending: true })
+                    .range(from, to);
+
+                const { data: records, error } = await query;
+
+                if (error) throw error;
+
+                if (records && records.length > 0) {
+                    allRecords = [...allRecords, ...records];
+                    hasMore = records.length === PAGE_SIZE;
+                    page++;
+                } else {
+                    hasMore = false;
+                }
+            }
+
+            console.log(`📋 AttendanceVerification: Fetched ${allRecords.length} records (${page} page(s))`);
 
             // Filter by campus if selected
-            let filteredRecords = records || [];
+            let filteredRecords = allRecords;
             if (selectedCampusId !== 'all') {
                 filteredRecords = filteredRecords.filter((record: any) => {
-                    // Check if the scanned room belongs to the selected campus
                     return record.scanned_room?.campus_id === selectedCampusId;
                 });
+            }
+
+            // Filter by lecturer type (homebase / non-homebase)
+            if (lecturerType === 'homebase') {
+                filteredRecords = filteredRecords.filter((record: any) =>
+                    record.lecturer?.is_homebase !== false
+                );
+            } else if (lecturerType === 'external') {
+                filteredRecords = filteredRecords.filter((record: any) =>
+                    record.lecturer?.is_homebase === false
+                );
             }
 
             setData(filteredRecords);
@@ -91,9 +160,60 @@ const AttendanceVerification: React.FC = () => {
         }
     };
 
+    /**
+     * Hitung jumlah presensi yang sudah dicetak per dosen dalam satu bulan.
+     * Limit diambil dari database: max_weekly_attendance_hbv (homebase) dan
+     * max_weekly_attendance_nhbv (non-homebase).
+     * Fungsi ini mengembalikan data yang sudah di-cap sesuai limit bulanan.
+     *
+     * Catatan: limit di database disimpan per MINGGU (weekly).
+     * Jumlah minggu dalam sebulan dihitung dari jumlah hari / 7 (dibulatkan ke atas).
+     */
+    const applyMonthlyLimitPerLecturer = (records: any[]): any[] => {
+        const daysInMonth = eachDayOfInterval({
+            start: startOfMonth(new Date(selectedYear, selectedMonth)),
+            end: endOfMonth(new Date(selectedYear, selectedMonth))
+        });
+
+        // Hitung jumlah minggu dalam bulan yang dipilih
+        const weeksInMonth = Math.ceil(daysInMonth.length / 7);
+
+        // Hitung batas bulanan untuk masing-masing jenis dosen
+        const monthlyLimitHBV = attendanceLimits.max_weekly_attendance_hbv * weeksInMonth;
+        const monthlyLimitNHBV = attendanceLimits.max_weekly_attendance_nhbv * weeksInMonth;
+
+        // Group records by lecturer
+        const lecturerCountMap: Record<string, number> = {};
+        const limitedRecords: any[] = [];
+
+        for (const record of records) {
+            const lecturerId = record.lecturer_user_id || record.lecturer?.id || record.lecturer_name;
+            const isHomebase = record.lecturer?.is_homebase !== false; // default ke homebase jika tidak diketahui
+            const limit = isHomebase ? monthlyLimitHBV : monthlyLimitNHBV;
+
+            const currentCount = lecturerCountMap[lecturerId] || 0;
+
+            if (currentCount < limit) {
+                limitedRecords.push(record);
+                lecturerCountMap[lecturerId] = currentCount + 1;
+            }
+            // Jika sudah mencapai limit, record dilewati (tidak dicetak)
+        }
+
+        return limitedRecords;
+    };
+
     const generatePDF = () => {
         if (data.length === 0) {
             toast.error('Tidak ada data untuk dicetak');
+            return;
+        }
+
+        // Terapkan limit per dosen sebelum cetak
+        const limitedData = applyMonthlyLimitPerLecturer(data);
+
+        if (limitedData.length === 0) {
+            toast.error('Tidak ada data dalam batas yang diizinkan untuk dicetak');
             return;
         }
 
@@ -107,8 +227,8 @@ const AttendanceVerification: React.FC = () => {
 
         daysInMonth.forEach((date) => {
             const dateStr = format(date, 'yyyy-MM-dd');
-            // Filter records for this day
-            const dailyRecords = data.filter(r => r.attendance_date === dateStr);
+            // Filter records for this day (dari limitedData)
+            const dailyRecords = limitedData.filter(r => r.attendance_date === dateStr);
 
             if (dailyRecords.length === 0) return;
 
@@ -219,8 +339,17 @@ const AttendanceVerification: React.FC = () => {
         });
 
         doc.save(`Laporan_LPJ_${months[selectedMonth]}_${selectedYear}.pdf`);
-        toast.success('Laporan berhasil diunduh');
+        toast.success(`Laporan berhasil diunduh (${limitedData.length} dari ${data.length} data tercetak)`);
     };
+
+    // Hitung batas bulanan untuk ditampilkan di UI
+    const daysInSelectedMonth = eachDayOfInterval({
+        start: startOfMonth(new Date(selectedYear, selectedMonth)),
+        end: endOfMonth(new Date(selectedYear, selectedMonth))
+    });
+    const weeksInSelectedMonth = Math.ceil(daysInSelectedMonth.length / 7);
+    const monthlyLimitHBV = attendanceLimits.max_weekly_attendance_hbv * weeksInSelectedMonth;
+    const monthlyLimitNHBV = attendanceLimits.max_weekly_attendance_nhbv * weeksInSelectedMonth;
 
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
@@ -236,6 +365,21 @@ const AttendanceVerification: React.FC = () => {
                     <Download className="w-4 h-4" />
                     Download Laporan LPJ
                 </button>
+            </div>
+
+            {/* Info Batas Presensi */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-4 text-sm text-blue-800 flex flex-wrap gap-4">
+                <span>
+                    <strong>Batas Cetak Homebase (HBV):</strong>{' '}
+                    {attendanceLimits.max_weekly_attendance_hbv}x/minggu × {weeksInSelectedMonth} minggu = <strong>{monthlyLimitHBV}x/bulan</strong>
+                </span>
+                <span>
+                    <strong>Batas Cetak Non-Homebase (NHBV):</strong>{' '}
+                    {attendanceLimits.max_weekly_attendance_nhbv}x/minggu × {weeksInSelectedMonth} minggu = <strong>{monthlyLimitNHBV}x/bulan</strong>
+                </span>
+                <span className="text-blue-600 italic">
+                    Presensi melebihi batas tidak akan dicetak dalam PDF.
+                </span>
             </div>
 
             {/* Filters */}
@@ -296,7 +440,7 @@ const AttendanceVerification: React.FC = () => {
                 </div>
             </div>
 
-            {/* Content Table Placeholder - or Summary */}
+            {/* Content Table */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 {loading ? (
                     <div className="flex justify-center py-12">
@@ -309,6 +453,11 @@ const AttendanceVerification: React.FC = () => {
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
+                        {/* Summary */}
+                        <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 text-sm text-gray-600 flex gap-6">
+                            <span>Total data fetched: <strong>{data.length}</strong></span>
+                            <span>Yang akan dicetak (setelah limit): <strong>{applyMonthlyLimitPerLecturer(data).length}</strong></span>
+                        </div>
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
@@ -328,6 +477,9 @@ const AttendanceVerification: React.FC = () => {
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                             {record.lecturer_name}
+                                            {record.lecturer?.is_homebase === false && (
+                                                <span className="ml-1 text-xs bg-orange-100 text-orange-700 px-1 rounded">DLB</span>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                             {record.details?.map((d: any) => d.course_name || d.activity_type).join(', ') || record.purpose}
@@ -348,7 +500,7 @@ const AttendanceVerification: React.FC = () => {
                                 {data.length > 10 && (
                                     <tr>
                                         <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
-                                            ... dan {data.length - 10} data lainnya
+                                            ... dan {data.length - 10} data lainnya (total {data.length} data)
                                         </td>
                                     </tr>
                                 )}
