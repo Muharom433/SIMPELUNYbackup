@@ -138,6 +138,7 @@ const RoomManagement: React.FC = () => {
     const [selectedRoomForQR, setSelectedRoomForQR] = useState<EnhancedRoomStatus | null>(null);
     const [isDownloadingQR, setIsDownloadingQR] = useState(false);
     const [isDownloadingUsers, setIsDownloadingUsers] = useState(false);
+    const [isPrintingEquipment, setIsPrintingEquipment] = useState(false);
 
 
 
@@ -558,12 +559,12 @@ const RoomManagement: React.FC = () => {
     };
 
     const getEquipmentConditionChip = (status: string | undefined) => {
-        switch (status) {
-            case 'broken':
+        switch (status?.toUpperCase()) {
+            case 'BROKEN':
                 return <span className="text-xs font-medium text-red-800 bg-red-100 px-2 py-0.5 rounded-full">{getText('BROKEN', 'RUSAK')}</span>;
-            case 'under_maintenance':
+            case 'MAINTENANCE':
                 return <span className="text-xs font-medium text-yellow-800 bg-yellow-100 px-2 py-0.5 rounded-full">{getText('MAINTENANCE', 'PERAWATAN')}</span>;
-            case 'available':
+            case 'GOOD':
             default:
                 return <span className="text-xs font-medium text-green-800 bg-green-100 px-2 py-0.5 rounded-full">{getText('GOOD', 'BAIK')}</span>;
         }
@@ -833,6 +834,284 @@ const RoomManagement: React.FC = () => {
             }
         }, 500);
     };
+    const printEquipmentPDF = () => {
+        if (!showRoomDetail || selectedRoomEquipment.length === 0) return;
+
+        setIsPrintingEquipment(true);
+
+        const room = showRoomDetail;
+        const equipment = selectedRoomEquipment;
+        const printDate = new Date().toLocaleDateString('id-ID', {
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+        });
+
+        const getStatusLabel = (status: string | undefined) => {
+            switch (status?.toUpperCase()) {
+                case 'BROKEN': return 'RUSAK';
+                case 'MAINTENANCE': return 'PERAWATAN';
+                case 'GOOD':
+                default: return 'BAIK';
+            }
+        };
+
+        const getStatusColor = (status: string | undefined) => {
+            switch (status?.toUpperCase()) {
+                case 'BROKEN': return '#dc2626';
+                case 'MAINTENANCE': return '#d97706';
+                default: return '#16a34a';
+            }
+        };
+
+        const rows = equipment.map((eq, index) => `
+            <tr style="background: ${index % 2 === 0 ? '#ffffff' : '#f8fafc'}">
+                <td style="padding: 10px 14px; border: 1px solid #e2e8f0; text-align: center; font-weight: 600; color: #64748b;">${index + 1}</td>
+                <td style="padding: 10px 14px; border: 1px solid #e2e8f0; font-weight: 600; color: #1e293b;">${eq.name}</td>
+                <td style="padding: 10px 14px; border: 1px solid #e2e8f0; color: #475569; font-family: monospace; font-size: 13px;">${eq.code || '-'}</td>
+                <td style="padding: 10px 14px; border: 1px solid #e2e8f0; color: #475569; font-size: 13px;">${eq.Spesification || '-'}</td>
+                <td style="padding: 10px 14px; border: 1px solid #e2e8f0; text-align: center;">
+                    <span style="
+                        background: ${getStatusColor(eq.condition)}20;
+                        color: ${getStatusColor(eq.condition)};
+                        padding: 3px 10px;
+                        border-radius: 20px;
+                        font-size: 11px;
+                        font-weight: 700;
+                        letter-spacing: 0.5px;
+                        border: 1px solid ${getStatusColor(eq.condition)}40;
+                    ">${getStatusLabel(eq.condition)}</span>
+                </td>
+                <td style="padding: 10px 14px; border: 1px solid #e2e8f0; color: #64748b; font-size: 13px;">${(eq as any).description || '-'}</td>
+            </tr>
+        `).join('');
+
+        const locationText = [
+            room.building?.campus?.name,
+            room.building?.name
+        ].filter(Boolean).join(' • ') || room.department?.name || 'Umum';
+
+        const htmlContent = `
+        <!DOCTYPE html>
+        <html lang="id">
+        <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>Daftar Barang - ${room.name}</title>
+            <style>
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body {
+                    font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+                    color: #1e293b;
+                    background: #ffffff;
+                    padding: 32px 40px;
+                    font-size: 14px;
+                }
+                .header {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    border-bottom: 3px solid #1e40af;
+                    padding-bottom: 20px;
+                    margin-bottom: 28px;
+                }
+                .header-left h1 {
+                    font-size: 22px;
+                    font-weight: 800;
+                    color: #1e40af;
+                    letter-spacing: -0.5px;
+                    margin-bottom: 4px;
+                }
+                .header-left h2 {
+                    font-size: 18px;
+                    font-weight: 700;
+                    color: #1e293b;
+                    margin-bottom: 6px;
+                }
+                .header-left .meta {
+                    font-size: 12px;
+                    color: #64748b;
+                    line-height: 1.6;
+                }
+                .header-right {
+                    text-align: right;
+                }
+                .badge {
+                    display: inline-block;
+                    background: #dbeafe;
+                    color: #1e40af;
+                    padding: 4px 12px;
+                    border-radius: 20px;
+                    font-size: 12px;
+                    font-weight: 700;
+                    letter-spacing: 0.3px;
+                    margin-bottom: 8px;
+                }
+                .info-grid {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 12px;
+                    margin-bottom: 28px;
+                }
+                .info-card {
+                    background: #f8fafc;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 8px;
+                    padding: 12px 16px;
+                }
+                .info-card .label {
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: #94a3b8;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    margin-bottom: 4px;
+                }
+                .info-card .value {
+                    font-size: 14px;
+                    font-weight: 700;
+                    color: #1e293b;
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    border-radius: 8px;
+                    overflow: hidden;
+                    border: 1px solid #e2e8f0;
+                }
+                thead tr {
+                    background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+                }
+                thead th {
+                    padding: 12px 14px;
+                    text-align: left;
+                    font-size: 12px;
+                    font-weight: 700;
+                    color: #ffffff;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    border: 1px solid rgba(255,255,255,0.2);
+                }
+                thead th:first-child { text-align: center; width: 50px; }
+                thead th:nth-child(4) { width: 200px; }
+                thead th:nth-child(5) { text-align: center; width: 110px; }
+                .footer {
+                    margin-top: 32px;
+                    padding-top: 16px;
+                    border-top: 1px solid #e2e8f0;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    font-size: 11px;
+                    color: #94a3b8;
+                }
+                .summary-bar {
+                    display: flex;
+                    gap: 16px;
+                    margin-bottom: 20px;
+                    padding: 12px 16px;
+                    background: #eff6ff;
+                    border: 1px solid #bfdbfe;
+                    border-radius: 8px;
+                }
+                .summary-item { text-align: center; }
+                .summary-item .num { font-size: 20px; font-weight: 800; color: #1e40af; }
+                .summary-item .lbl { font-size: 11px; color: #64748b; }
+                .divider { width: 1px; background: #bfdbfe; }
+                @media print {
+                    body { padding: 20px 28px; }
+                    @page { size: A4; margin: 15mm 20mm; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div class="header-left">
+                    <h1>SIMPEL Kuliah</h1>
+                    <h2>Daftar Barang / Peralatan</h2>
+                    <div class="meta">
+                        Ruangan: <strong>${room.name}</strong> &bull; Kode: <strong>${room.code}</strong><br/>
+                        Lokasi: ${locationText}
+                    </div>
+                </div>
+                <div class="header-right">
+                    <div class="badge">INVENTARIS RUANGAN</div>
+                </div>
+            </div>
+
+            <div class="info-grid">
+                <div class="info-card">
+                    <div class="label">Kapasitas</div>
+                    <div class="value">${room.capacity} kursi</div>
+                </div>
+                <div class="info-card">
+                    <div class="label">Total Barang</div>
+                    <div class="value">${equipment.length} item</div>
+                </div>
+            </div>
+
+            <div class="summary-bar">
+                <div class="summary-item">
+                    <div class="num">${equipment.length}</div>
+                    <div class="lbl">Total</div>
+                </div>
+                <div class="divider"></div>
+                <div class="summary-item">
+                    <div class="num" style="color: #16a34a;">${equipment.filter(e => !e.condition || e.condition.toUpperCase() === 'GOOD').length}</div>
+                    <div class="lbl">Baik</div>
+                </div>
+                <div class="divider"></div>
+                <div class="summary-item">
+                    <div class="num" style="color: #d97706;">${equipment.filter(e => e.condition?.toUpperCase() === 'MAINTENANCE').length}</div>
+                    <div class="lbl">Perawatan</div>
+                </div>
+                <div class="divider"></div>
+                <div class="summary-item">
+                    <div class="num" style="color: #dc2626;">${equipment.filter(e => e.condition?.toUpperCase() === 'BROKEN').length}</div>
+                    <div class="lbl">Rusak</div>
+                </div>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>No.</th>
+                        <th>Nama Barang</th>
+                        <th>Kode / ID</th>
+                        <th>Spesifikasi</th>
+                        <th>Kondisi</th>
+                        <th>Keterangan</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows}
+                </tbody>
+            </table>
+
+            <div class="footer">
+                <span>SIMPEL Kuliah &bull; Sistem Manajemen Kampus Cerdas</span>
+                <span>Fakultas Vokasi, Universitas Negeri Yogyakarta</span>
+            </div>
+        </body>
+        </html>
+        `;
+
+        const printWindow = window.open('', '_blank', 'width=900,height=700');
+        if (printWindow) {
+            printWindow.document.write(htmlContent);
+            printWindow.document.close();
+            printWindow.onload = () => {
+                setTimeout(() => {
+                    printWindow.focus();
+                    printWindow.print();
+                    setIsPrintingEquipment(false);
+                }, 800);
+            };
+        } else {
+            alert.error(getText('Failed to open print window. Please allow popups.', 'Gagal membuka jendela cetak. Harap izinkan popup.'));
+            setIsPrintingEquipment(false);
+        }
+    };
+
     const getRoleColor = (role: string) => {
         switch (role) {
             case 'student': return 'from-blue-500 to-indigo-500';
@@ -2010,7 +2289,25 @@ const RoomManagement: React.FC = () => {
 
                                     {/* Equipment in Room */}
                                     <div>
-                                        <h3 className="text-lg font-semibold text-gray-800 mb-3">{getText('Equipment in Room', 'Peralatan di Ruangan')}</h3>
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h3 className="text-lg font-semibold text-gray-800">{getText('Equipment in Room', 'Peralatan di Ruangan')}</h3>
+                                            <button
+                                                onClick={printEquipmentPDF}
+                                                disabled={isPrintingEquipment || selectedRoomEquipment.length === 0}
+                                                className={`flex items-center space-x-1 px-3 py-1 text-white rounded-lg transition-colors text-sm ${
+                                                    isPrintingEquipment || selectedRoomEquipment.length === 0
+                                                        ? 'bg-emerald-400 cursor-not-allowed'
+                                                        : 'bg-emerald-600 hover:bg-emerald-700'
+                                                }`}
+                                                title={getText('Print Equipment List as PDF', 'Cetak Daftar Barang sebagai PDF')}
+                                            >
+                                                {isPrintingEquipment
+                                                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                                                    : <Download className="h-4 w-4" />
+                                                }
+                                                <span className="hidden sm:inline">{getText('Print PDF', 'Cetak PDF')}</span>
+                                            </button>
+                                        </div>
                                         <div className="space-y-2 max-h-40 overflow-y-auto">
                                             {loadingEquipment ? (
                                                 <div className="flex justify-center p-4">
@@ -2023,7 +2320,7 @@ const RoomManagement: React.FC = () => {
                                                             <p className="font-medium text-gray-800">{eq.name}</p>
                                                             <p className="text-xs text-gray-500">{eq.code}</p>
                                                         </div>
-                                                        {getEquipmentConditionChip(eq.status)}
+                                                        {getEquipmentConditionChip(eq.condition)}
                                                     </div>
                                                 ))
                                             ) : (

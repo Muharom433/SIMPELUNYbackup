@@ -923,6 +923,11 @@ const BookRoom: React.FC = () => {
   } | null>(null);
 
 
+  // Room Recommendation Modal State
+  const [showRoomRecommendModal, setShowRoomRecommendModal] = useState(false);
+  const [conflictRoom, setConflictRoom] = useState<Room | null>(null);
+  const [conflictDetailsState, setConflictDetailsState] = useState<string[]>([]);
+
   // Refs
   const identityInputRef = useRef<HTMLInputElement | null>(null);
   const fullNameInputRef = useRef<HTMLInputElement | null>(null);
@@ -1339,7 +1344,7 @@ const BookRoom: React.FC = () => {
             `)
             .gte('start_time', startOfDayUTC)
             .lte('start_time', endOfDayUTC)
-            .in('status', ['approved', 'borrowed']);
+            .in('status', ['approved', 'borrowed', 'pending']);
 
           if (error) {
             console.error("Error fetching bookings:", error);
@@ -1903,10 +1908,16 @@ const BookRoom: React.FC = () => {
   function handleRoomSelect(room: Room) {
     const status = getOptimizedRoomStatus(room);
     if (!status.isAvailable) {
-      alert.error(
-        getText("This room is not available for the selected time", "Ruangan ini tidak tersedia untuk waktu yang dipilih"),
-        ""
-      );
+      if (status.status === 'Conflict' || status.status === 'In Use') {
+        setConflictRoom(room);
+        setConflictDetailsState(status.conflictDetails || []);
+        setShowRoomRecommendModal(true);
+      } else {
+        alert.error(
+          getText("This room is not available for the selected time", "Ruangan ini tidak tersedia untuk waktu yang dipilih"),
+          status.reason || ""
+        );
+      }
       return;
     }
 
@@ -2038,18 +2049,13 @@ const BookRoom: React.FC = () => {
     }
 
     if (activeTab === 'normal' && startDateTime && endDateTime) {
-      filtered = filtered.filter(room => {
-        const status = getOptimizedRoomStatus(room);
-        return status.status === 'Available' || status.status === 'Scheduled';
-      });
-
       filtered.sort((a, b) => {
         const statusA = getOptimizedRoomStatus(a);
         const statusB = getOptimizedRoomStatus(b);
 
-        const statusPriority = { 'Available': 0, 'Scheduled': 1 };
-        const statusDiff = (statusPriority[statusA.status as keyof typeof statusPriority] ?? 2) -
-          (statusPriority[statusB.status as keyof typeof statusPriority] ?? 2);
+        const statusPriority = { 'Available': 0, 'Scheduled': 1, 'Conflict': 2, 'In Use': 2, 'Unavailable': 3 };
+        const statusDiff = (statusPriority[statusA.status as keyof typeof statusPriority] ?? 3) -
+          (statusPriority[statusB.status as keyof typeof statusPriority] ?? 3);
 
         if (statusDiff !== 0) return statusDiff;
 
@@ -2853,8 +2859,8 @@ const BookRoom: React.FC = () => {
                               <Info className="h-4 w-4" />
                               <span>
                                 {getText(
-                                  'Showing rooms that are Available or Scheduled (no time conflict). Rooms with conflicts are hidden.',
-                                  'Menampilkan ruangan yang Tersedia atau Terjadwal (tidak bentrok waktu). Ruangan yang bentrok disembunyikan.'
+                                  'Showing all rooms. If a room has a time conflict, it will show a recommendation for another available room.',
+                                  'Menampilkan semua ruangan. Jika ruangan memiliki bentrok jadwal, sistem akan memberikan rekomendasi ruangan lain yang tersedia.'
                                 )}
                               </span>
                             </div>
@@ -3100,6 +3106,16 @@ const BookRoom: React.FC = () => {
                                           <p className="text-xs text-yellow-800">
                                             <Info className="h-3 w-3 inline mr-1" />
                                             {getText('Has other schedules today but no conflict with your selected time', 'Ada jadwal lain hari ini tapi tidak bentrok dengan waktu yang Anda pilih')}
+                                          </p>
+                                        </div>
+                                      )}
+
+                                      {/* Show info for Conflict rooms */}
+                                      {(status.status === 'Conflict' || status.status === 'In Use') && (
+                                        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
+                                          <p className="text-xs text-red-800">
+                                            <AlertTriangle className="h-3 w-3 inline mr-1" />
+                                            {status.reason}
                                           </p>
                                         </div>
                                       )}
@@ -3642,6 +3658,132 @@ const BookRoom: React.FC = () => {
             />
           </div>
         )}
+
+        {/* Room Recommendation Modal */}
+        {showRoomRecommendModal && conflictRoom && (() => {
+          const conflictSummary = conflictDetailsState.join(', ');
+          const availableRoomsList = rooms.filter(r => {
+            if (activeTab === 'normal' && selectedCampusId) {
+              const building = (r as any).buildingData;
+              if (building?.campus_id !== selectedCampusId) return false;
+            }
+            const status = getOptimizedRoomStatus(r);
+            return status.status === 'Available' || status.status === 'Scheduled';
+          });
+
+          return (
+            <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden">
+                <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-5 text-white flex-shrink-0">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <h2 className="text-xl font-bold flex items-center space-x-2">
+                        <MapPin className="h-5 w-5 flex-shrink-0" />
+                        <span>{getText('Select Substitute Room', 'Pilih Ruangan Pengganti')}</span>
+                      </h2>
+                      <p className="mt-1 text-sm opacity-90">
+                        {startDateTime && format(new Date(startDateTime), 'EEEE, dd MMM yyyy')} •{' '}
+                        {startDateTime && format(new Date(startDateTime), 'HH:mm')} – {endDateTime && format(new Date(endDateTime), 'HH:mm')}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-1 items-center">
+                        <span className="px-2 py-0.5 bg-white bg-opacity-20 rounded-full text-xs font-medium">
+                          ⚠️ {conflictRoom.name} {getText('conflict', 'konflik')} ({conflictSummary || getText('Booked', 'Terpesan')})
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowRoomRecommendModal(false);
+                        setConflictRoom(null);
+                        setConflictDetailsState([]);
+                      }}
+                      className="ml-3 p-1.5 hover:bg-white hover:bg-opacity-20 rounded-lg transition flex-shrink-0"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-5">
+                  {loadingRooms ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+                      <RefreshCw className="h-8 w-8 animate-spin text-blue-500 mb-3" />
+                      <p>{getText('Searching available rooms...', 'Mencari ruangan tersedia...')}</p>
+                    </div>
+                  ) : availableRoomsList.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                      <div className="h-16 w-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                        <Building className="h-8 w-8 text-gray-400" />
+                      </div>
+                      <p className="text-gray-700 font-semibold text-lg">{getText('No Rooms Available', 'Tidak Ada Ruangan Tersedia')}</p>
+                      <p className="text-gray-500 text-sm mt-1 max-w-xs">
+                        {getText('All rooms are booked at this time. Try a different time.', 'Semua ruangan terpakai pada waktu tersebut. Coba waktu yang berbeda.')}
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-sm text-gray-500 mb-3">
+                        <span className="font-semibold text-green-700">{availableRoomsList.length} {getText('rooms', 'ruangan')}</span> {getText('available for the requested time:', 'bebas di waktu yang diminta:')}
+                      </p>
+                      <div className="space-y-2">
+                        {availableRoomsList.map((room) => (
+                          <div
+                            key={room.id}
+                            onClick={() => {
+                              handleRoomSelect(room);
+                              setShowRoomRecommendModal(false);
+                              setConflictRoom(null);
+                              setConflictDetailsState([]);
+                            }}
+                            className="flex items-center justify-between bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4 hover:shadow-md hover:border-green-400 transition-all duration-200 cursor-pointer"
+                          >
+                            <div className="flex items-center space-x-3 min-w-0">
+                              <div className="h-10 w-10 bg-green-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                                <Building className="h-5 w-5 text-white" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-bold text-gray-900 truncate">{room.name}</p>
+                                <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                                  {room.code && (
+                                    <span className="text-xs text-gray-500">{getText('Code:', 'Kode:')} <span className="font-mono font-medium text-gray-700">{room.code}</span></span>
+                                  )}
+                                  {room.capacity && (
+                                    <span className="text-xs text-gray-500">{getText('Capacity:', 'Kapasitas:')} <span className="font-medium text-gray-700">{room.capacity}</span></span>
+                                  )}
+                                  {room.department?.name && (
+                                    <span className="text-xs text-gray-500">{room.department.name}</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <span className="ml-3 flex-shrink-0 flex items-center space-x-1 px-3 py-1.5 bg-green-500 text-white text-xs rounded-full font-semibold">
+                              <CheckCircle className="h-3 w-3" />
+                              <span>{getText('Available', 'Bebas')}</span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="px-5 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between flex-shrink-0">
+                  <p className="text-xs text-gray-500">{getText('Click a room above to select it', 'Pilih ruangan di atas untuk menggunakan ruangan tersebut')}</p>
+                  <button
+                    onClick={() => {
+                      setShowRoomRecommendModal(false);
+                      setConflictRoom(null);
+                      setConflictDetailsState([]);
+                    }}
+                    className="px-5 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition font-medium text-sm"
+                  >
+                    {getText('Close', 'Tutup')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Booking Success Modal */}
         {showSuccessModal && submittedBookingInfo && (
