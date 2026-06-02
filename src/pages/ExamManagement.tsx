@@ -327,7 +327,7 @@ const ExamManagement = () => {
         try {
             let query = supabase
                 .from('users')
-                .select('*')
+                .select('id, full_name, department_id, study_program_id, identity_number')
                 .eq('role', 'lecturer');
             if (profile?.role === 'department_admin' && profile?.department_id) {
                 query = query.eq('department_id', profile.department_id);
@@ -461,6 +461,13 @@ const ExamManagement = () => {
             // Get inspector name from ID
             const inspectorInfo = lecturers.find(l => l.id === data.inspector);
 
+            // For super_admin, get department_id from the selected study_program
+            let departmentId = profile.department_id;
+            if (profile?.role === 'super_admin') {
+                const selectedProgram = studyPrograms.find(p => p.id === data.study_program_id);
+                departmentId = selectedProgram?.department_id || null;
+            }
+
             const examData = {
                 day,
                 date: data.date,
@@ -475,7 +482,7 @@ const ExamManagement = () => {
                 room_id: data.is_take_home ? null : data.room_id,
                 lecturer_id: data.lecturer_id,
                 inspector: inspectorInfo?.full_name || null,
-                department_id: profile.department_id,
+                department_id: departmentId,
                 study_program_id: data.study_program_id,
             };
 
@@ -561,40 +568,17 @@ const ExamManagement = () => {
         return matchesSearch && matchesDate && matchesTime && matchesSemester;
     });
 
-    const getAvailableRooms = () => {
-        if (watchIsTakeHome) {
-            console.log('🏠 Take home exam - showing all rooms');
-            return rooms;
+    const getConflictingRoomIds = () => {
+        if (watchIsTakeHome || !watchStartTime || !watchEndTime || !watchDate) {
+            return [];
         }
-
-        if (!watchStartTime || !watchEndTime || !watchDate) {
-            console.log('⏰ Incomplete time/date data - showing all rooms');
-            return rooms;
-        }
-
         const timeSlotKey = `${watchDate}-${watchStartTime}-${watchEndTime}`;
-        const conflictingRoomIds = bookedRooms[timeSlotKey] || [];
+        return bookedRooms[timeSlotKey] || [];
+    };
 
-        console.log('🔑 Checking availability with key:', timeSlotKey);
-        console.log('🚫 Conflicting rooms:', conflictingRoomIds);
-
-        const availableRooms = rooms.filter(room => {
-            // Don't filter out the current room if editing
-            if (editingExam && editingExam.room_id === room.id) {
-                console.log('✅ Keeping current room for editing:', room.name);
-                return true;
-            }
-
-            // Filter out rooms that have conflicts
-            const isAvailable = !conflictingRoomIds.includes(room.id);
-            if (!isAvailable) {
-                console.log('❌ Room unavailable:', room.name);
-            }
-            return isAvailable;
-        });
-
-        console.log(`📊 Available rooms: ${availableRooms.length}/${rooms.length}`);
-        return availableRooms;
+    // Returns all rooms (no filtering), but marks conflicting ones
+    const getAvailableRooms = () => {
+        return rooms;
     };
 
     const handlePrint = async (formData: PrintFormData) => {
@@ -863,7 +847,7 @@ const ExamManagement = () => {
                             <Printer className="h-4 w-4" />
                             <span>{getText("Print", "Cetak")}</span>
                         </button>
-                        {isDepartmentAdmin && (
+                        {(isDepartmentAdmin || isSuperAdmin) && (
                             <button
                                 onClick={() => {
                                     setEditingExam(null);
@@ -950,7 +934,7 @@ const ExamManagement = () => {
                                         <span>{getText("Students", "Mahasiswa")}</span>
                                     </div>
                                 </th>
-                                {isDepartmentAdmin && (
+                                {(isDepartmentAdmin || isSuperAdmin) && (
                                     <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                         {getText("Actions", "Aksi")}
                                     </th>
@@ -1075,7 +1059,7 @@ const ExamManagement = () => {
                                                     </div>
                                                 </div>
                                             </td>
-                                            {isDepartmentAdmin && (
+                                            {(isDepartmentAdmin || isSuperAdmin) && (
                                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                     <div className="flex items-center justify-end space-x-2">
                                                         <button
@@ -1184,7 +1168,7 @@ const ExamManagement = () => {
             {pageContent}
 
             {/* Modal Form - Updated with multilingual support */}
-            {showModal && isDepartmentAdmin && (
+            {showModal && (isDepartmentAdmin || isSuperAdmin) && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
                         <div className="p-6">
@@ -1464,10 +1448,21 @@ const ExamManagement = () => {
                                         name="room_id"
                                         control={form.control}
                                         render={({ field }) => {
-                                            const roomOptions = getAvailableRooms().map(r => ({
-                                                value: r.id,
-                                                label: `${r.name} (${r.code}) - ${getText("Cap:", "Kapasitas:")} ${r.capacity}`
-                                            }));
+                                            const conflictingIds = getConflictingRoomIds();
+                                            const conflictCount = conflictingIds.filter(
+                                                id => id !== (editingExam?.room_id)
+                                            ).length;
+                                            const roomOptions = getAvailableRooms().map(r => {
+                                                const isCurrentEditRoom = editingExam && editingExam.room_id === r.id;
+                                                const isConflict = !isCurrentEditRoom && conflictingIds.includes(r.id);
+                                                return {
+                                                    value: r.id,
+                                                    label: isConflict
+                                                        ? `⚠️ ${r.name} (${r.code}) - ${getText("Cap:", "Kapasitas:")} ${r.capacity} [${getText("CONFLICT", "BENTROK")}]`
+                                                        : `${r.name} (${r.code}) - ${getText("Cap:", "Kapasitas:")} ${r.capacity}`,
+                                                    isConflict,
+                                                };
+                                            });
                                             const selectedValue = roomOptions.find(o => o.value === field.value);
                                             return (
                                                 <Select
@@ -1485,6 +1480,14 @@ const ExamManagement = () => {
                                                             borderColor: '#d1d5db',
                                                             backgroundColor: watchIsTakeHome ? '#f9fafb' : 'white',
                                                         }),
+                                                        option: (provided, state) => ({
+                                                            ...provided,
+                                                            color: (state.data as any).isConflict ? '#b91c1c' : provided.color,
+                                                            backgroundColor: (state.data as any).isConflict
+                                                                ? (state.isFocused ? '#fee2e2' : '#fff1f1')
+                                                                : provided.backgroundColor,
+                                                            fontWeight: (state.data as any).isConflict ? 600 : provided.fontWeight,
+                                                        }),
                                                     }}
                                                 />
                                             );
@@ -1495,7 +1498,10 @@ const ExamManagement = () => {
                                     )}
                                     {!watchIsTakeHome && watchStartTime && watchEndTime && watchDate && (
                                         <p className="mt-2 text-sm text-gray-600">
-                                            💡 {getText(`Showing ${getAvailableRooms().length} available rooms for ${watchDate} from ${watchStartTime} to ${watchEndTime}`, `Menampilkan ${getAvailableRooms().length} ruangan tersedia untuk ${watchDate} dari ${watchStartTime} sampai ${watchEndTime}`)}
+                                            💡 {getText(
+                                                `Showing all ${rooms.length} rooms. Rooms marked ⚠️ CONFLICT have overlapping schedules.`,
+                                                `Menampilkan semua ${rooms.length} ruangan. Ruangan bertanda ⚠️ BENTROK memiliki jadwal yang tumpang tindih.`
+                                            )}
                                         </p>
                                     )}
                                 </div>
@@ -1534,7 +1540,7 @@ const ExamManagement = () => {
             )}
 
             {/* Enhanced Delete Confirmation Modal */}
-            {showDeleteConfirm && isDepartmentAdmin && (
+            {showDeleteConfirm && (isDepartmentAdmin || isSuperAdmin) && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
                         <div className="p-6">

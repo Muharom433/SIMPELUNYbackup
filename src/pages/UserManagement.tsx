@@ -519,7 +519,9 @@ const UserManagement: React.FC = () => {
 
       // Start building the query
       let query = supabase.from('users').select(`
-        *,
+        id, username, email, full_name, identity_number, phone_number,
+        role, jabatan, department_id, study_program_id, is_homebase,
+        created_at, attachments,
         department:departments(id, name, code),
         study_program:study_programs(id, name, code)
       `, { count: 'exact' });
@@ -594,7 +596,7 @@ const UserManagement: React.FC = () => {
 
   const fetchStudyPrograms = useCallback(async () => {
     try {
-      let query = supabase.from('study_programs').select('*');
+      let query = supabase.from('study_programs').select('id, name, code, department_id, status');
 
       if (profile?.role === 'department_admin' && profile.department_id) {
         query = query.eq('department_id', profile.department_id);
@@ -613,7 +615,7 @@ const UserManagement: React.FC = () => {
     try {
       const { data, error } = await supabase
         .from('study_programs')
-        .select('*')
+        .select('id, name, code, department_id, status')
         .eq('department_id', departmentId);
 
       if (error) throw error;
@@ -633,7 +635,7 @@ const UserManagement: React.FC = () => {
   // Fetch ALL study programs (both show and hide) for non-homebase users
   const fetchAllStudyPrograms = useCallback(async (departmentId?: string) => {
     try {
-      let query = supabase.from('study_programs').select('*'); // All programs (show and hide)
+      let query = supabase.from('study_programs').select('id, name, code, department_id, status'); // All programs (show and hide)
 
       if (departmentId) {
         query = query.eq('department_id', departmentId);

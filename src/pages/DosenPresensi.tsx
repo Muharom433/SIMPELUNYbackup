@@ -356,7 +356,7 @@ const DosenPresensi: React.FC = () => {
             // Fetch week settings for current month
             const { data, error } = await supabase
                 .from('attendance_week_settings')
-                .select('*')
+                .select('week_number, start_date, end_date, is_active, month, year')
                 .eq('month', currentMonth)
                 .eq('year', currentYear)
                 .eq('is_active', true);
@@ -408,7 +408,7 @@ const DosenPresensi: React.FC = () => {
         try {
             const { data, error } = await supabase
                 .from('attendance_global_settings')
-                .select('*')
+                .select('is_attendance_disabled, disabled_message, disabled_from_date')
                 .limit(1)
                 .maybeSingle();
 

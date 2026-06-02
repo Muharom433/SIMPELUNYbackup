@@ -838,26 +838,32 @@ const CheckOut: React.FC = () => {
     }
   };
 
-  // ===== FILTER RECORDS =====
   const filteredRecords = useMemo(() => {
     if (!searchTerm.trim()) return allRecords;
 
     const searchLower = searchTerm.toLowerCase();
 
     return allRecords.filter(record => {
+      const equipmentMatch = record.equipment_details?.some(eq => 
+        eq.name.toLowerCase().includes(searchLower) || 
+        (eq.code && eq.code.toLowerCase().includes(searchLower))
+      );
+
       if (record.record_type === 'booking') {
         const booking = record as BookingWithDetails;
         return (
           booking.user?.full_name?.toLowerCase().includes(searchLower) ||
           booking.user?.identity_number?.toLowerCase().includes(searchLower) ||
           booking.room?.name?.toLowerCase().includes(searchLower) ||
-          booking.room?.code?.toLowerCase().includes(searchLower)
+          booking.room?.code?.toLowerCase().includes(searchLower) ||
+          equipmentMatch
         );
       } else {
         const lending = record as LendingToolWithDetails;
         return (
           lending.user?.full_name?.toLowerCase().includes(searchLower) ||
-          lending.user?.identity_number?.toLowerCase().includes(searchLower)
+          lending.user?.identity_number?.toLowerCase().includes(searchLower) ||
+          equipmentMatch
         );
       }
     });
@@ -1012,6 +1018,19 @@ const CheckOut: React.FC = () => {
                                     <div className="flex items-center text-xs text-gray-500">
                                       <Wrench className="h-3 w-3 mr-1" />
                                       <span>{(record as LendingToolWithDetails).equipment_details?.length || 0} jenis peralatan</span>
+                                    </div>
+                                  )}
+
+                                  {record.equipment_details && record.equipment_details.length > 0 && (
+                                    <div className="mt-2 text-xs text-gray-500">
+                                      <div className="font-medium mb-1">Peralatan:</div>
+                                      <div className="flex flex-wrap gap-1">
+                                        {record.equipment_details.map(eq => (
+                                          <span key={eq.id} className="inline-block px-1.5 py-0.5 bg-gray-100 rounded text-gray-600 border border-gray-200 truncate max-w-[120px]">
+                                            {eq.name}
+                                          </span>
+                                        ))}
+                                      </div>
                                     </div>
                                   )}
                                 </div>

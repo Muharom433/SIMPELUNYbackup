@@ -151,6 +151,26 @@ const AttendanceVerification: React.FC = () => {
                 );
             }
 
+            // Deduplicate per day per lecturer to avoid double entries
+            const uniqueRecordsMap = new Map();
+            for (const record of filteredRecords) {
+                const lecturerId = record.lecturer_user_id || record.lecturer?.id || record.lecturer_name;
+                const key = `${record.attendance_date}_${lecturerId}`;
+                
+                if (!uniqueRecordsMap.has(key)) {
+                    // Clone record to avoid mutating original state
+                    uniqueRecordsMap.set(key, { ...record, details: record.details ? [...record.details] : [] });
+                } else {
+                    const existing = uniqueRecordsMap.get(key);
+                    // Merge details so we don't lose activities/classes from multiple check-ins
+                    if (record.details && record.details.length > 0) {
+                        existing.details = [...(existing.details || []), ...record.details];
+                    }
+                }
+            }
+            
+            filteredRecords = Array.from(uniqueRecordsMap.values());
+
             setData(filteredRecords);
         } catch (error) {
             console.error('Error fetching data:', error);
