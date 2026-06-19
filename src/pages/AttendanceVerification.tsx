@@ -152,24 +152,53 @@ const AttendanceVerification: React.FC = () => {
             }
 
             // Deduplicate per day per lecturer to avoid double entries
-            const uniqueRecordsMap = new Map();
+            // Gunakan normalisasi ID: prioritas lecturer_user_id > lecturer.id > nama (trim+lowercase)
+            const getLecturerKey = (record: any): string => {
+                if (record.lecturer_user_id) return `uid_${record.lecturer_user_id}`;
+                if (record.lecturer?.id)     return `uid_${record.lecturer?.id}`;
+                // Fallback: normalisasi nama agar perbedaan spasi/kapital tidak menyebabkan double
+                const normalizedName = (record.lecturer_name || '')
+                    .trim()
+                    .toLowerCase()
+                    .replace(/\s+/g, ' ');
+                return `name_${normalizedName}`;
+            };
+
+            const uniqueRecordsMap = new Map<string, any>();
             for (const record of filteredRecords) {
-                const lecturerId = record.lecturer_user_id || record.lecturer?.id || record.lecturer_name;
+                const lecturerId = getLecturerKey(record);
                 const key = `${record.attendance_date}_${lecturerId}`;
-                
+
                 if (!uniqueRecordsMap.has(key)) {
                     // Clone record to avoid mutating original state
                     uniqueRecordsMap.set(key, { ...record, details: record.details ? [...record.details] : [] });
                 } else {
-                    const existing = uniqueRecordsMap.get(key);
-                    // Merge details so we don't lose activities/classes from multiple check-ins
+                    const existing = uniqueRecordsMap.get(key)!;
+                    // Merge details agar aktivitas/kelas dari multiple check-in tidak hilang
                     if (record.details && record.details.length > 0) {
-                        existing.details = [...(existing.details || []), ...record.details];
+                        // Deduplikasi detail berdasarkan course_name + activity_type agar tidak ada detail double
+                        const existingDetailKeys = new Set(
+                            (existing.details || []).map((d: any) =>
+                                `${d.course_name || ''}_${d.activity_type || ''}_${d.class_group || ''}`
+                            )
+                        );
+                        const newDetails = record.details.filter((d: any) => {
+                            const dKey = `${d.course_name || ''}_${d.activity_type || ''}_${d.class_group || ''}`;
+                            return !existingDetailKeys.has(dKey);
+                        });
+                        existing.details = [...(existing.details || []), ...newDetails];
+                    }
+                    // Gunakan record yang lebih lengkap (punya lecturer_user_id atau data lebih banyak)
+                    if (!existing.lecturer_user_id && record.lecturer_user_id) {
+                        const mergedDetails = existing.details;
+                        uniqueRecordsMap.set(key, { ...record, details: mergedDetails });
                     }
                 }
             }
-            
+
+            const beforeDedup = filteredRecords.length;
             filteredRecords = Array.from(uniqueRecordsMap.values());
+            console.log(`🔍 Dedup: ${beforeDedup} → ${filteredRecords.length} records (${beforeDedup - filteredRecords.length} duplikat dihapus)`);
 
             setData(filteredRecords);
         } catch (error) {
@@ -206,8 +235,19 @@ const AttendanceVerification: React.FC = () => {
         const lecturerCountMap: Record<string, number> = {};
         const limitedRecords: any[] = [];
 
+        // Gunakan key normalisasi yang sama seperti saat deduplikasi
+        const getLecturerKeyForLimit = (record: any): string => {
+            if (record.lecturer_user_id) return `uid_${record.lecturer_user_id}`;
+            if (record.lecturer?.id)     return `uid_${record.lecturer?.id}`;
+            const normalizedName = (record.lecturer_name || '')
+                .trim()
+                .toLowerCase()
+                .replace(/\s+/g, ' ');
+            return `name_${normalizedName}`;
+        };
+
         for (const record of records) {
-            const lecturerId = record.lecturer_user_id || record.lecturer?.id || record.lecturer_name;
+            const lecturerId = getLecturerKeyForLimit(record);
             const isHomebase = record.lecturer?.is_homebase !== false; // default ke homebase jika tidak diketahui
             const limit = isHomebase ? monthlyLimitHBV : monthlyLimitNHBV;
 

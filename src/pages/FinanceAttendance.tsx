@@ -1633,7 +1633,15 @@ const FinanceAttendance: React.FC = () => {
             }>();
 
             verifiedRecords.forEach(r => {
-                const key = r.lecturer_name;
+                // ─── PERBAIKAN: Gunakan lecturer_user_id sebagai key utama ───
+                // Sebelumnya memakai lecturer_name → menyebabkan dosen yang sama
+                // bisa muncul 2x jika namanya sedikit berbeda (spasi, gelar, kapital).
+                // Prioritas: lecturer_user_id → normalisasi nama (trim + lowercase)
+                const normalizedName = (r.lecturer_name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+                const key = r.lecturer_user_id
+                    ? `uid_${r.lecturer_user_id}`
+                    : `name_${normalizedName}`;
+
                 const homebaseProdiName = r.study_program?.name || '-';
 
                 if (!lecturerMap.has(key)) {
@@ -1646,7 +1654,12 @@ const FinanceAttendance: React.FC = () => {
                         lecturer_user_id: r.lecturer_user_id || null
                     });
                 } else {
-                    lecturerMap.get(key)!.prodiSet.add(homebaseProdiName);
+                    const existing = lecturerMap.get(key)!;
+                    existing.prodiSet.add(homebaseProdiName);
+                    // Jika sebelumnya key pakai nama (belum ada ID), update ID-nya
+                    if (!existing.lecturer_user_id && r.lecturer_user_id) {
+                        existing.lecturer_user_id = r.lecturer_user_id;
+                    }
                 }
 
                 // Collect Teaching Prodis from details
@@ -1658,7 +1671,11 @@ const FinanceAttendance: React.FC = () => {
                     });
                 }
 
-                lecturerMap.get(key)!.dates.push(r.attendance_date);
+                // Deduplikasi tanggal: jangan push tanggal yang sudah ada
+                const existingDates = lecturerMap.get(key)!.dates;
+                if (!existingDates.includes(r.attendance_date)) {
+                    existingDates.push(r.attendance_date);
+                }
             });
 
             // Helper: Calculate paid attendance per week
