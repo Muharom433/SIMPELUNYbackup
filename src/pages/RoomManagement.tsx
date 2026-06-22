@@ -19,6 +19,21 @@ import { EnhancedRoomStatus } from '../stores/roomStore';
 import { useLanguage } from '../contexts/LanguageContext';
 import { alert } from '../components/Alert/AlertHelper'; // Still importing for success/error alerts
 
+export const parseEquipmentSpec = (spec: string | null) => {
+    if (!spec) return { serials: [], specs: '' };
+    const snMatch = spec.match(/\[Nomor Seri\]:\s*([^\n]*)/);
+    const specMatch = spec.match(/\[Spesifikasi\]:\s*([\s\S]*)/);
+
+    const serials = snMatch && snMatch[1] 
+        ? snMatch[1].split(',').map(s => s.trim()).filter(Boolean) 
+        : [];
+    const specs = specMatch && specMatch[1] 
+        ? specMatch[1].trim() 
+        : (snMatch ? '' : spec.trim());
+
+    return { serials, specs };
+};
+
 // ========================
 // TIMEZONE UTILITY FUNCTIONS
 // ========================
@@ -2315,12 +2330,28 @@ const RoomManagement: React.FC = () => {
                                                 </div>
                                             ) : selectedRoomEquipment.length > 0 ? (
                                                 selectedRoomEquipment.map((eq) => (
-                                                    <div key={eq.id} className="flex items-center justify-between p-3 bg-white rounded-lg border">
-                                                        <div>
-                                                            <p className="font-medium text-gray-800">{eq.name}</p>
-                                                            <p className="text-xs text-gray-500">{eq.code}</p>
+                                                    <div key={eq.id} className="p-3 bg-white rounded-lg border space-y-2">
+                                                        <div className="flex items-center justify-between">
+                                                            <div>
+                                                                <p className="font-medium text-gray-800">{eq.name}</p>
+                                                                <p className="text-xs text-gray-500">{eq.code}</p>
+                                                            </div>
+                                                            {getEquipmentConditionChip(eq.condition)}
                                                         </div>
-                                                        {getEquipmentConditionChip(eq.condition)}
+                                                        {(() => {
+                                                            const { serials } = parseEquipmentSpec(eq.Spesification || '');
+                                                            if (serials.length === 0) return null;
+                                                            return (
+                                                                <div className="text-[10px]">
+                                                                    <span className="text-gray-400 block mb-0.5">{getText('Serial Numbers:', 'Nomor Seri:')}</span>
+                                                                    <select className="w-full bg-gray-55 border border-gray-200 rounded-md p-1 focus:outline-none focus:border-blue-500 font-mono text-[9px] text-gray-600 cursor-pointer">
+                                                                        {serials.map((sn, idx) => (
+                                                                            <option key={idx} value={sn}>{sn}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                            );
+                                                        })()}
                                                     </div>
                                                 ))
                                             ) : (

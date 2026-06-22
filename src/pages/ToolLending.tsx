@@ -13,6 +13,7 @@ import { StudyProgram } from '../types';
 import toast from 'react-hot-toast';
 import { format, isBefore, startOfDay, isSameDay } from 'date-fns';
 import { useThrottledSubmit } from '../hooks/useThrottledSubmit';
+import { useSearchParams } from 'react-router-dom';
 
 // Types
 interface EquipmentWithDetails {
@@ -62,6 +63,21 @@ interface IdentitySuggestion {
     study_program_id?: string;
     study_program_name?: string;
 }
+
+export const parseEquipmentSpec = (spec: string | null) => {
+    if (!spec) return { serials: [], specs: '' };
+    const snMatch = spec.match(/\[Nomor Seri\]:\s*([^\n]*)/);
+    const specMatch = spec.match(/\[Spesifikasi\]:\s*([\s\S]*)/);
+
+    const serials = snMatch && snMatch[1] 
+        ? snMatch[1].split(',').map(s => s.trim()).filter(Boolean) 
+        : [];
+    const specs = specMatch && specMatch[1] 
+        ? specMatch[1].trim() 
+        : (snMatch ? '' : spec.trim());
+
+    return { serials, specs };
+};
 
 // =====================================================
 // IMAGE WITH LOADER - Same as Tool Administration
@@ -594,6 +610,44 @@ const ToolLending: React.FC = () => {
     const [detailEquipment, setDetailEquipment] = useState<EquipmentWithDetails | null>(null);
     const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
 
+    // URL scan/ID handling
+    const [searchParams] = useSearchParams();
+    const processedUrlIdRef = useRef<string | null>(null);
+
+    const openDetailById = useCallback(async (id: string) => {
+        try {
+            const { data: fullEq, error } = await supabase
+                .from('equipment')
+                .select(`
+                    *,
+                    rooms:rooms_id(
+                        id, name, code, department_id, floor,
+                        department:departments(id, name, code),
+                        building:building_id(name, campus:campus_id(name))
+                    )
+                `)
+                .eq('id', id)
+                .single();
+
+            if (error) throw error;
+            if (fullEq) {
+                setDetailEquipment(fullEq);
+                setShowDetailModal(true);
+            }
+        } catch (err) {
+            console.error("Error fetching details for URL query:", err);
+            toast.error(getText('Failed to load details', 'Gagal memuat detail'));
+        }
+    }, [getText]);
+
+    useEffect(() => {
+        const scanId = searchParams.get('id');
+        if (scanId && scanId !== processedUrlIdRef.current) {
+            processedUrlIdRef.current = scanId;
+            openDetailById(scanId);
+        }
+    }, [searchParams, openDetailById]);
+
     // Form
     const [purpose, setPurpose] = useState<'Class/Lecture' | 'Other'>('Class/Lecture');
     const [returnDate, setReturnDate] = useState('');
@@ -865,8 +919,14 @@ const ToolLending: React.FC = () => {
             filtered = filtered.filter(eq => eq.category === categoryFilter);
         }
 
+        // Then apply stockId filter if scanned/present in URL
+        const stockId = searchParams.get('stockId');
+        if (stockId) {
+            filtered = filtered.filter(eq => (eq as any).stock_id === stockId);
+        }
+
         setFilteredEquipment(filtered);
-    }, [allEquipment, searchTerm, categoryFilter, selectedStudyProgramId, studyPrograms, equipmentTab]);
+    }, [allEquipment, searchTerm, categoryFilter, selectedStudyProgramId, studyPrograms, equipmentTab, searchParams]);
 
     const categories = [...new Set((allEquipment as EquipmentWithDetails[]).map(eq => eq.category).filter(Boolean))];
 
@@ -1301,13 +1361,30 @@ const ToolLending: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Specification */}
-                        {eq.Spesification && (
-                            <div className="bg-gray-50 p-4 rounded-xl">
-                                <h3 className="font-semibold text-gray-800 mb-2">{getText('Specifications', 'Spesifikasi')}</h3>
-                                <p className="text-gray-600 text-sm whitespace-pre-wrap">{eq.Spesification}</p>
-                            </div>
-                        )}
+                        {/* Specification & Serial Numbers */}
+                        {eq.Spesification && (() => {
+                            const { serials, specs } = parseEquipmentSpec(eq.Spesification);
+                            return (
+                                <div className="space-y-3">
+                                    {serials.length > 0 && (
+                                        <div className="bg-gray-55 p-4 rounded-xl border border-gray-100">
+                                            <h3 className="font-semibold text-gray-800 mb-2">{getText('Serial Numbers', 'Nomor Seri')}</h3>
+                                            <select className="w-full bg-white border border-gray-200 rounded-lg p-2 focus:outline-none focus:border-blue-500 font-mono text-sm text-gray-700 cursor-pointer">
+                                                {serials.map((sn, idx) => (
+                                                    <option key={idx} value={sn}>{sn}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+                                    {specs && (
+                                        <div className="bg-gray-55 p-4 rounded-xl border border-gray-100">
+                                            <h3 className="font-semibold text-gray-800 mb-2">{getText('Specifications', 'Spesifikasi')}</h3>
+                                            <p className="text-gray-600 text-sm whitespace-pre-wrap">{specs}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
 
                         {/* Action Buttons */}
                         <div className="flex gap-3 pt-4 border-t">
@@ -1656,6 +1733,21 @@ const ToolLending: React.FC = () => {
                                                                                 <span className="truncate">{getLocationPath(eq)}</span>
                                                                             </div>
                                                                         </div>
+
+                                                                        {(() => {
+                                                                            const { serials } = parseEquipmentSpec(eq.Spesification || '');
+                                                                            if (serials.length === 0) return null;
+                                                                            return (
+                                                                                <div className="mb-2 text-[10px]">
+                                                                                    <span className="text-gray-400 block mb-0.5">{getText('Serial Numbers:', 'Nomor Seri:')}</span>
+                                                                                    <select className="w-full bg-gray-55 border border-gray-200 rounded-md p-1 focus:outline-none focus:border-blue-500 font-mono text-[9px] text-gray-600 cursor-pointer">
+                                                                                        {serials.map((sn, idx) => (
+                                                                                            <option key={idx} value={sn}>{sn}</option>
+                                                                                        ))}
+                                                                                    </select>
+                                                                                </div>
+                                                                            );
+                                                                        })()}
 
                                                                         {/* Action Row */}
                                                                         <div className="flex items-center gap-3">

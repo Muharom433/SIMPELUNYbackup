@@ -47,6 +47,7 @@ const DosenPresensi = React.lazy(() => import('./pages/DosenPresensi'));
 const FinanceAttendance = React.lazy(() => import('./pages/FinanceAttendance'));
 const AttendanceDailyDetail = React.lazy(() => import('./pages/AttendanceDailyDetail'));
 const StorageManagement = React.lazy(() => import('./pages/StorageManagement'));
+const RoomInfo = React.lazy(() => import('./pages/RoomInfo'));
 
 // Loading component for Suspense fallback
 const LazyLoadingFallback = () => (
@@ -93,6 +94,7 @@ const AppContent = () => {
           <Route path="permit-letter" element={<PermitLetter />} />
 
           {/* Public/Student Routes */}
+          <Route path="room-info" element={<Suspense fallback={<LazyLoadingFallback />}><RoomInfo /></Suspense>} />
           <Route path="tools" element={<Suspense fallback={<LazyLoadingFallback />}><ToolLending /></Suspense>} />
           <Route path="profile" element={<Profile />} />
           <Route path="exams" element={<ExamManagement />} />

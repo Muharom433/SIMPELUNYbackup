@@ -165,6 +165,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
         // Base public items untuk semua user (termasuk yang belum login)
         const publicItems = [
             { icon: Home, label: getText('About SIMPEL', 'Tutorial SIMPEL'), path: '/' },
+            { icon: Building, label: getText('Room & Equipment Info', 'Keterangan Ruang & Alat'), path: '/room-info' },
             { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book' },
             { icon: Package, label: getText('Tool Lending', 'Peminjaman Alat'), path: '/tools' },
             { icon: CheckCircle, label: getText('Check Out', 'Pengembalian'), path: '/checkout' },
@@ -218,6 +219,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' },
                 { icon: HandHelping, label: getText('Tool Lending Management', 'Manajemen Peminjaman Alat'), path: '/tool-lending-management', badge: pendingToolLendingCount > 0 ? pendingToolLendingCount : null },
                 { icon: Building, label: getText('Room Management', 'Manajemen Ruangan'), path: '/rooms' },
+                { icon: Building, label: getText('Room & Equipment Info', 'Keterangan Ruang & Alat'), path: '/room-info' },
                 { icon: Map, label: getText('Location Management', 'Manajemen Lokasi'), path: '/laboratory-locations' },
                 { icon: Calendar, label: getText('Booking Management', 'Manajemen Pemesanan'), path: '/bookings', badge: pendingBookingsCount > 0 ? pendingBookingsCount : null },
                 { icon: ClipboardCheck, label: getText('Validation Queue', 'Antrian Validasi'), path: '/validation', badge: pendingCheckoutsCount > 0 ? pendingCheckoutsCount : null },
@@ -230,6 +232,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
             return [
                 { icon: Users, label: getText('User Management', 'Manajemen Pengguna'), path: '/users' },
                 { icon: Building, label: getText('Room Management', 'Manajemen Ruangan'), path: '/rooms' },
+                { icon: Building, label: getText('Room & Equipment Info', 'Keterangan Ruang & Alat'), path: '/room-info' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
         }
@@ -239,6 +242,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
             return [
                 { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' },
                 { icon: Map, label: getText('Location Management', 'Manajemen Lokasi'), path: '/locations' },
+                { icon: Building, label: getText('Room & Equipment Info', 'Keterangan Ruang & Alat'), path: '/room-info' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
         }
@@ -248,6 +252,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
             return [
                 { icon: CheckSquare, label: getText('To-Do List', 'Daftar Tugas'), path: '/technician-todo', badge: pendingTodosCount > 0 ? pendingTodosCount : null },
                 { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' },
+                { icon: Building, label: getText('Room & Equipment Info', 'Keterangan Ruang & Alat'), path: '/room-info' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
         }
@@ -257,6 +262,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
             return [
                 { icon: CalendarCheck, label: getText('Schedule Calendar', 'Kalender Jadwal'), path: '/schedule-calendar' },
                 { icon: Calendar, label: getText('Book Room', 'Pesan Ruangan'), path: '/book' },
+                { icon: Building, label: getText('Room & Equipment Info', 'Keterangan Ruang & Alat'), path: '/room-info' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
         }
@@ -264,6 +270,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
         // Jika user adalah staff (Tenaga Kependidikan) - hanya akses Profile
         if (user.role === 'staff') {
             return [
+                { icon: Building, label: getText('Room & Equipment Info', 'Keterangan Ruang & Alat'), path: '/room-info' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
         }
@@ -274,6 +281,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: Users, label: getText('User Management', 'Manajemen Pengguna'), path: '/users' },
                 { icon: ClipboardCheck, label: getText('Attendance Verification', 'Verifikasi Presensi'), path: '/attendance-verification' },
                 { icon: Camera, label: getText('Attendance', 'Presensi'), path: '/presensi-dosen' },
+                { icon: Building, label: getText('Room & Equipment Info', 'Keterangan Ruang & Alat'), path: '/room-info' },
                 { icon: User, label: getText('Profile', 'Profil'), path: '/Profile' },
             ];
         }

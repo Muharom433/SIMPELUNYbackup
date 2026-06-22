@@ -32,6 +32,28 @@ import * as XLSX from 'xlsx';
 import EquipmentImportModal from '../components/EquipmentImport/EquipmentImportModal';
 import { useDebouncedCallback } from 'use-debounce';
 import logoUNY from '../assets/logouny.png';
+import QRCode from 'react-qr-code';
+import html2canvas from 'html2canvas';
+
+export const parseEquipmentSpec = (spec: string | null) => {
+    if (!spec) return { serials: [], specs: '' };
+    const snMatch = spec.match(/\[Nomor Seri\]:\s*([^\n]*)/);
+    const specMatch = spec.match(/\[Spesifikasi\]:\s*([\s\S]*)/);
+
+    const serials = snMatch && snMatch[1] 
+        ? snMatch[1].split(',').map(s => s.trim()).filter(Boolean) 
+        : [];
+    const specs = specMatch && specMatch[1] 
+        ? specMatch[1].trim() 
+        : (snMatch ? '' : spec.trim());
+
+    return { serials, specs };
+};
+
+export const formatEquipmentSpec = (serials: string[], specs: string) => {
+    if (serials.length === 0 && !specs) return '';
+    return `[Nomor Seri]: ${serials.join(', ')}\n[Spesifikasi]: ${specs}`;
+};
 
 const getImageDataUrl = async (url: string): Promise<string> => {
     const response = await fetch(url);
@@ -309,6 +331,7 @@ const createEquipmentClaimSchema = (maxQuantity: number, userRole: string) => {
         is_available: z.boolean().optional(),
         condition: z.enum(['GOOD', 'BROKEN', 'MAINTENANCE']).default('GOOD'),
         Spesification: z.string().optional(),
+        serial_numbers: z.string().optional(),
         table_id: z.string().optional(),
         rack_id: z.string().optional(),
         box_id: z.string().optional(),
@@ -325,6 +348,7 @@ const createEquipmentEditSchema = (userRole: string) => {
         is_available: z.boolean().optional(),
         condition: z.enum(['GOOD', 'BROKEN', 'MAINTENANCE']).default('GOOD'),
         Spesification: z.string().optional(),
+        serial_numbers: z.string().optional(),
         quantity: z.number().min(0, 'Quantity cannot be negative'),
         unit: z.string().min(1, 'Unit is required'),
         table_id: z.string().optional(),
@@ -426,6 +450,14 @@ const ToolAdministration: React.FC = () => {
     const [showDirectAddModal, setShowDirectAddModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
     const [loadingDetailModal, setLoadingDetailModal] = useState(false);
+    const [showStockQRModal, setShowStockQRModal] = useState(false);
+    const [selectedStockForQR, setSelectedStockForQR] = useState<Stock | null>(null);
+    const [isDownloadingStockQR, setIsDownloadingStockQR] = useState(false);
+
+    // Equipment QR Code State
+    const [showEquipmentQRModal, setShowEquipmentQRModal] = useState(false);
+    const [selectedEquipmentForQR, setSelectedEquipmentForQR] = useState<EquipmentWithDetails | null>(null);
+    const [isDownloadingEquipmentQR, setIsDownloadingEquipmentQR] = useState(false);
 
     // Selected items
     const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
@@ -1335,6 +1367,72 @@ const ToolAdministration: React.FC = () => {
         setPhotoExplicitlyRemoved(true);
     };
 
+    const handleOpenQRModal = (stock: Stock) => {
+        setSelectedStockForQR(stock);
+        setShowStockQRModal(true);
+    };
+
+    const downloadStockQR = async () => {
+        const element = document.getElementById('stock-qr-card-element');
+        if (!element || !selectedStockForQR) return;
+
+        setIsDownloadingStockQR(true);
+
+        setTimeout(async () => {
+            try {
+                const canvas = await html2canvas(element, {
+                    backgroundColor: '#ffffff',
+                    scale: 2
+                });
+
+                const link = document.createElement('a');
+                link.download = `QR-STOK-${selectedStockForQR.nama.replace(/\s+/g, '-')}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+
+                toast.success(getText('QR Code downloaded successfully', 'QR Code berhasil diunduh'));
+            } catch (error) {
+                console.error('Error downloading QR:', error);
+                toast.error(getText('Failed to download QR Code', 'Gagal mengunduh QR Code'));
+            } finally {
+                setIsDownloadingStockQR(false);
+            }
+        }, 500);
+    };
+
+    const handleOpenEquipmentQRModal = (eq: EquipmentWithDetails) => {
+        setSelectedEquipmentForQR(eq);
+        setShowEquipmentQRModal(true);
+    };
+
+    const downloadEquipmentQR = async () => {
+        const element = document.getElementById('equipment-qr-card-element');
+        if (!element || !selectedEquipmentForQR) return;
+
+        setIsDownloadingEquipmentQR(true);
+
+        setTimeout(async () => {
+            try {
+                const canvas = await html2canvas(element, {
+                    backgroundColor: '#ffffff',
+                    scale: 2
+                });
+
+                const link = document.createElement('a');
+                link.download = `QR-ALAT-${selectedEquipmentForQR.name.replace(/\s+/g, '-')}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+
+                toast.success(getText('QR Code downloaded successfully', 'QR Code berhasil diunduh'));
+            } catch (error) {
+                console.error('Error downloading QR:', error);
+                toast.error(getText('Failed to download QR Code', 'Gagal mengunduh QR Code'));
+            } finally {
+                setIsDownloadingEquipmentQR(false);
+            }
+        }, 500);
+    };
+
     // ==================== MODAL HANDLERS ====================
     const handleOpenStockModal = async (stock?: Stock) => {
         setEditingStock(stock || null);
@@ -1427,10 +1525,12 @@ const ToolAdministration: React.FC = () => {
         const effectiveRoomsId = equipmentItem.rooms_id || equipmentItem.rooms?.id || '';
         console.log('Effective rooms_id:', effectiveRoomsId);
 
+        const { serials, specs } = parseEquipmentSpec(equipmentItem.Spesification || '');
         const formValues = {
             name: equipmentItem.name, code: equipmentItem.code, category: equipmentItem.category,
             is_mandatory: equipmentItem.is_mandatory ?? false, is_available: equipmentItem.is_available ?? true,
-            condition: (equipmentItem.condition as any) || 'GOOD', Spesification: equipmentItem.Spesification || '',
+            condition: (equipmentItem.condition as any) || 'GOOD', Spesification: specs,
+            serial_numbers: serials.join(', '),
             quantity: equipmentItem.quantity, unit: equipmentItem.unit, rooms_id: effectiveRoomsId,
             table_id: tableId || '', rack_id: rackId || '', box_id: equipmentItem.box_id || '',
         };
@@ -1478,12 +1578,15 @@ const ToolAdministration: React.FC = () => {
             if (isDepartmentAdmin && !selectedRoomForClaim) { toast.error('Room selection is required'); return; }
 
             setLoadingEquipment(true);
+            const serials = (data as any).serial_numbers ? (data as any).serial_numbers.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+            const finalSpec = formatEquipmentSpec(serials, data.Spesification || selectedStockForClaim.spesification || '');
+
             const equipmentData = {
                 name: data.name, code: data.code.toUpperCase(), category: selectedStockForClaim.category,
                 is_mandatory: data.is_mandatory ?? false, is_available: data.is_available ?? true, condition: data.condition,
                 rooms_id: selectedRoomForClaim?.id || null, table_id: selectedTableForClaim?.id || null,
                 rack_id: selectedRackForClaim?.id || null, box_id: selectedBoxForClaim?.id || null,
-                Spesification: data.Spesification || selectedStockForClaim.spesification, quantity: data.quantity,
+                Spesification: finalSpec, quantity: data.quantity,
                 unit: selectedStockForClaim.unit, stock_id: selectedStockForClaim.id,
                 attachments: equipmentImagePreview ? [equipmentImagePreview] : null,
                 // Auto-copy department_id and study_program_id from selected room
@@ -1535,6 +1638,9 @@ const ToolAdministration: React.FC = () => {
                 attachmentsValue = [originalEquipmentImage];
             }
 
+            const serials = (data as any).serial_numbers ? (data as any).serial_numbers.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+            const finalSpec = formatEquipmentSpec(serials, data.Spesification || '');
+
             const equipmentData = {
                 name: data.name,
                 code: data.code.toUpperCase(),
@@ -1546,7 +1652,7 @@ const ToolAdministration: React.FC = () => {
                 table_id: selectedTableForEdit?.id || null,
                 rack_id: selectedRackForEdit?.id || null,
                 box_id: selectedBoxForEdit?.id || null,
-                Spesification: data.Spesification,
+                Spesification: finalSpec,
                 quantity: data.quantity,
                 unit: data.unit,
                 attachments: attachmentsValue,
@@ -2498,6 +2604,11 @@ const ToolAdministration: React.FC = () => {
                             </div>
 
                             <div>
+                                <label className="block text-sm font-bold mb-2">{getText('Serial Numbers (Optional, separate with commas)', 'Nomor Seri (Opsional, pisahkan dengan koma)')}</label>
+                                <input {...claimForm.register('serial_numbers')} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors" placeholder="e.g. SN123, SN124, SN125" />
+                            </div>
+
+                            <div>
                                 <label className="block text-sm font-bold mb-2">{getText('Equipment Photo', 'Foto Peralatan')}</label>
                                 <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 hover:border-purple-400 transition-colors">
                                     {equipmentImagePreview ? (
@@ -2769,6 +2880,16 @@ const ToolAdministration: React.FC = () => {
                                     {...editForm.register('Spesification')}
                                     rows={2}
                                     className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
+                                />
+                            </div>
+
+                            {/* Serial Numbers */}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">{getText('Serial Numbers (Optional, separate with commas)', 'Nomor Seri (Opsional, pisahkan dengan koma)')}</label>
+                                <input
+                                    {...editForm.register('serial_numbers')}
+                                    className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
+                                    placeholder="e.g. SN123, SN124, SN125"
                                 />
                             </div>
 
@@ -3177,12 +3298,30 @@ const ToolAdministration: React.FC = () => {
                                         <div><p className="text-xs text-amber-700 mb-1">{getText('Mandatory', 'Wajib')}</p><p className="font-bold text-gray-900">{selectedEquipment?.is_mandatory ? getText('⭐ Yes - Required Equipment', '⭐ Ya - Peralatan Wajib') : getText('No - Optional', 'Tidak - Opsional')}</p></div>
                                     </div>
                                 </div>
-                                {selectedEquipment?.Spesification && (
-                                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-4 rounded-xl border border-gray-200">
-                                        <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2"><FileText className="h-5 w-5" />{getText('Specifications', 'Spesifikasi')}</h4>
-                                        <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">{selectedEquipment.Spesification}</p>
-                                    </div>
-                                )}
+                                {selectedEquipment?.Spesification && (() => {
+                                    const { serials, specs } = parseEquipmentSpec(selectedEquipment.Spesification);
+                                    return (
+                                        <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-4 rounded-xl border border-gray-200">
+                                            <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2"><FileText className="h-5 w-5" />{getText('Specifications & Serials', 'Spesifikasi & Nomor Seri')}</h4>
+                                            {serials.length > 0 && (
+                                                <div className="mb-3">
+                                                    <p className="text-xs text-gray-500 mb-1">{getText('Serial Numbers:', 'Nomor Seri:')}</p>
+                                                    <select className="w-full bg-white border border-gray-200 rounded-lg p-2 focus:outline-none focus:border-purple-500 font-mono text-sm text-gray-700">
+                                                        {serials.map((sn, idx) => (
+                                                            <option key={idx} value={sn}>{sn}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            )}
+                                            {specs && (
+                                                <div>
+                                                    <p className="text-xs text-gray-500 mb-1">{getText('Details:', 'Keterangan:')}</p>
+                                                    <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">{specs}</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
                                 {selectedEquipment?.stock && (
                                     <div className="bg-gradient-to-r from-cyan-50 to-cyan-100 p-4 rounded-xl border border-cyan-200">
                                         <h4 className="font-bold text-cyan-900 mb-3 flex items-center gap-2"><Warehouse className="h-5 w-5" />{getText('Source Stock', 'Sumber Stok')}</h4>
@@ -3261,11 +3400,14 @@ const ToolAdministration: React.FC = () => {
             setLoadingEquipment(true);
             const newId = crypto.randomUUID();
 
+            const serials = (data as any).serial_numbers ? (data as any).serial_numbers.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+            const finalSpec = formatEquipmentSpec(serials, data.Spesification || '');
+
             const { error } = await supabase.from('equipment').insert({
                 id: newId, name: data.name, code: data.code, category: data.category, quantity: data.quantity, unit: data.unit,
                 condition: data.condition, rooms_id: data.rooms_id, table_id: data.table_id || null, rack_id: data.rack_id || null,
                 box_id: data.box_id || null, is_mandatory: data.is_mandatory, is_available: data.is_available,
-                Spesification: data.Spesification, attachments: equipmentImagePreview ? [equipmentImagePreview] : null, created_at: new Date().toISOString(),
+                Spesification: finalSpec, attachments: equipmentImagePreview ? [equipmentImagePreview] : null, created_at: new Date().toISOString(),
                 // Auto-copy department_id and study_program_id from selected room
                 department_id: (selectedRoomForEdit as any)?.department_id || null,
                 study_program_id: (selectedRoomForEdit as any)?.study_program_id || null,
@@ -3374,6 +3516,11 @@ const ToolAdministration: React.FC = () => {
                     <div>
                         <label className="block text-sm font-bold mb-2">{getText('Specifications', 'Spesifikasi')}</label>
                         <textarea {...editForm.register('Spesification')} rows={3} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors" />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-bold mb-2">{getText('Serial Numbers (Optional, separate with commas)', 'Nomor Seri (Opsional, pisahkan dengan koma)')}</label>
+                        <input {...editForm.register('serial_numbers')} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors" placeholder="e.g. SN123, SN124, SN125" />
                     </div>
 
                     <div>
@@ -3547,6 +3694,7 @@ const ToolAdministration: React.FC = () => {
                                                 <div className="flex gap-2">
                                                     <button onClick={() => handleOpenStockDetailModal(stock)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="View Details"><Eye className="h-4 w-4" /></button>
                                                     <button onClick={() => handleOpenStockTrackModal(stock)} className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors" title="Track Record"><History className="h-4 w-4" /></button>
+                                                    <button onClick={() => handleOpenQRModal(stock)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View QR Code"><QrCode className="h-4 w-4" /></button>
                                                 </div>
                                                 <div className="flex gap-1">
                                                     <button onClick={() => handleOpenStockModal(stock)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><Edit className="h-4 w-4" /></button>
@@ -3626,6 +3774,62 @@ const ToolAdministration: React.FC = () => {
                                 </div>
                             </div>
 
+                            {/* Dropdown Filters for Rooms / Facilities and Categories */}
+                            <div className="flex flex-wrap gap-4 items-center bg-gray-55 p-4 rounded-xl border border-gray-200 shadow-sm">
+                                <div className="flex items-center gap-2">
+                                    <Filter className="h-4 w-4 text-gray-500" />
+                                    <span className="text-sm font-semibold text-gray-700">{getText('Filters:', 'Filter:')}</span>
+                                </div>
+                                
+                                {/* Room/Facility Filter Dropdown */}
+                                <div className="flex items-center gap-2">
+                                    <select
+                                        value={roomFilter}
+                                        onChange={(e) => {
+                                            setRoomFilter(e.target.value);
+                                            setEquipmentPage(1); // reset page
+                                        }}
+                                        className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-500 text-gray-700 font-medium cursor-pointer hover:border-gray-300 transition-colors"
+                                    >
+                                        <option value="all">{getText('All Rooms / Facilities', 'Semua Ruangan / Fasilitas')}</option>
+                                        {rooms.map(r => (
+                                            <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Category Filter Dropdown */}
+                                <div className="flex items-center gap-2">
+                                    <select
+                                        value={equipmentCategoryFilter}
+                                        onChange={(e) => {
+                                            setEquipmentCategoryFilter(e.target.value);
+                                            setEquipmentPage(1); // reset page
+                                        }}
+                                        className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-500 text-gray-700 font-medium cursor-pointer hover:border-gray-300 transition-colors"
+                                    >
+                                        <option value="all">{getText('All Categories', 'Semua Kategori')}</option>
+                                        {categories.map(cat => (
+                                            <option key={cat.name} value={cat.name}>{cat.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Reset Filters Button */}
+                                {(roomFilter !== 'all' || equipmentCategoryFilter !== 'all') && (
+                                    <button
+                                        onClick={() => {
+                                            setRoomFilter('all');
+                                            setEquipmentCategoryFilter('all');
+                                            setEquipmentPage(1);
+                                        }}
+                                        className="text-xs font-semibold text-purple-600 hover:text-purple-800 transition-colors bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-lg border border-purple-100"
+                                    >
+                                        {getText('Reset Filters', 'Atur Ulang Filter')}
+                                    </button>
+                                )}
+                            </div>
+
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                                 {filteredEquipment.map(eq => {
                                     const categoryConfig = getCategoryConfig(eq.category);
@@ -3643,6 +3847,7 @@ const ToolAdministration: React.FC = () => {
                                                 {/* Action buttons in header */}
                                                 <div className="flex items-center gap-1">
                                                     <button onClick={() => handleOpenDetailModal(eq)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title={getText('View Details', 'Lihat Detail')}><Eye className="h-4 w-4" /></button>
+                                                    <button onClick={() => handleOpenEquipmentQRModal(eq)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title={getText('View QR Code', 'Lihat Kode QR')}><QrCode className="h-4 w-4" /></button>
                                                     <button onClick={() => handleOpenEditModal(eq)} className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title={getText('Edit', 'Edit')}><Edit className="h-4 w-4" /></button>
                                                     <button onClick={() => handleDeleteEquipment(eq.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title={getText('Delete', 'Hapus')}><Trash2 className="h-4 w-4" /></button>
                                                 </div>
@@ -3663,6 +3868,21 @@ const ToolAdministration: React.FC = () => {
                                                 <Hash className="h-3 w-3" />
                                                 <span className="font-mono">{eq.id.substring(0, 8)}</span>
                                             </div>
+
+                                            {(() => {
+                                                const { serials } = parseEquipmentSpec(eq.Spesification || '');
+                                                if (serials.length === 0) return null;
+                                                return (
+                                                    <div className="mb-3 text-xs">
+                                                        <label className="block text-gray-500 mb-1">{getText('Serial Numbers:', 'Nomor Seri:')}</label>
+                                                        <select className="w-full bg-gray-50 border border-gray-200 rounded-lg p-1.5 focus:outline-none focus:border-purple-500 font-mono text-[11px] text-gray-700">
+                                                            {serials.map((sn, idx) => (
+                                                                <option key={idx} value={sn}>{sn}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                );
+                                            })()}
 
                                             {/* Quantity & Condition Badge */}
                                             <div className="flex items-center justify-between mb-3">
@@ -3736,6 +3956,157 @@ const ToolAdministration: React.FC = () => {
             {showDetailModal && selectedEquipment && <EquipmentDetailModal />}
             {showTrackRecordModal && selectedEquipment && <TrackRecordModal />}
             {showDirectAddModal && <DirectAddModal />}
+
+            {/* Stock QR Code Modal */}
+            {showStockQRModal && selectedStockForQR && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+                        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                            <h3 className="font-semibold text-lg">{getText('QR Code: ' + selectedStockForQR.nama, 'Kode QR: ' + selectedStockForQR.nama)}</h3>
+                            <button
+                                onClick={() => setShowStockQRModal(false)}
+                                className="text-gray-400 hover:text-gray-600"
+                            >
+                                <X className="h-6 w-6" />
+                            </button>
+                        </div>
+                        <div className="p-6 flex flex-col items-center">
+                            {/* The Card to be captured */}
+                            <div
+                                id="stock-qr-card-element"
+                                className="bg-white p-6 border-2 border-gray-900 rounded-xl flex flex-col items-center gap-4 w-64 shadow-sm"
+                            >
+                                <div className="text-center">
+                                    <h2 className="font-bold text-lg uppercase text-gray-900 line-clamp-1">{selectedStockForQR.nama}</h2>
+                                    <p className="text-xs text-gray-500 font-mono">{selectedStockForQR.code}</p>
+                                </div>
+                                <div className="bg-white p-2 rounded">
+                                    <QRCode
+                                        value={`${window.location.origin}${window.location.pathname}#/tools?stockId=${selectedStockForQR.id}`}
+                                        size={180}
+                                        viewBox={`0 0 256 256`}
+                                        style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                                    />
+                                </div>
+                                <div className="text-center">
+                                    <p className="text-[10px] text-gray-400 uppercase tracking-widest">Identitas Alat (Stock ID)</p>
+                                    <p className="text-[8px] text-gray-300 mt-1">Fakultas Vokasi UNY</p>
+                                </div>
+                            </div>
+
+                            <p className="text-sm text-gray-500 mt-6 text-center">
+                                Cetak dan tempel kode QR ini di alat agar mahasiswa atau dosen dapat memindai identitas alat.
+                            </p>
+
+                            <div className="flex gap-3 w-full mt-6">
+                                <button
+                                    onClick={() => setShowStockQRModal(false)}
+                                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium"
+                                >
+                                    Tutup
+                                </button>
+                                <button
+                                    onClick={downloadStockQR}
+                                    disabled={isDownloadingStockQR}
+                                    className={`flex-1 px-4 py-2 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all duration-200 ${isDownloadingStockQR
+                                        ? 'bg-blue-400 cursor-wait opacity-80'
+                                        : 'bg-blue-600 hover:bg-blue-700 hover:shadow-md'
+                                        }`}
+                                >
+                                    {isDownloadingStockQR ? (
+                                        <>
+                                            <RefreshCw className="w-4 h-4 animate-spin" />
+                                            <span>{getText('Processing...', 'Memproses...')}</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Download className="w-4 h-4" />
+                                            <span>Download</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Equipment QR Code Modal */}
+            {showEquipmentQRModal && selectedEquipmentForQR && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+                        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                            <h3 className="font-semibold text-lg">{getText('QR Code: ' + selectedEquipmentForQR.name, 'Kode QR: ' + selectedEquipmentForQR.name)}</h3>
+                            <button
+                                onClick={() => setShowEquipmentQRModal(false)}
+                                className="text-gray-400 hover:text-gray-600"
+                            >
+                                <X className="h-6 w-6" />
+                            </button>
+                        </div>
+                        <div className="p-6 flex flex-col items-center">
+                            {/* The Card to be captured */}
+                            <div
+                                id="equipment-qr-card-element"
+                                className="bg-white p-6 border-2 border-gray-900 rounded-xl flex flex-col items-center gap-4 w-64 shadow-sm"
+                            >
+                                <div className="text-center">
+                                    <h2 className="font-bold text-lg uppercase text-gray-900 line-clamp-1">{selectedEquipmentForQR.name}</h2>
+                                    <p className="text-xs text-gray-500 font-mono">{selectedEquipmentForQR.code}</p>
+                                </div>
+                                <div className="bg-white p-2 rounded">
+                                    <QRCode
+                                        value={`${window.location.origin}${window.location.pathname}#/tools?id=${selectedEquipmentForQR.id}`}
+                                        size={180}
+                                        viewBox={`0 0 256 256`}
+                                        style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                                    />
+                                </div>
+                                <div className="text-center">
+                                    <p className="text-[10px] text-gray-400 uppercase tracking-widest">Identitas Alat (Equipment ID)</p>
+                                    {selectedEquipmentForQR.rooms?.name && (
+                                        <p className="text-[9px] text-gray-600 mt-1 font-semibold">{selectedEquipmentForQR.rooms.name}</p>
+                                    )}
+                                    <p className="text-[8px] text-gray-300 mt-1">Fakultas Vokasi UNY</p>
+                                </div>
+                            </div>
+
+                            <p className="text-sm text-gray-500 mt-6 text-center">
+                                Cetak dan tempel kode QR ini di alat agar mahasiswa atau dosen dapat memindai identitas alat.
+                            </p>
+
+                            <div className="flex gap-3 w-full mt-6">
+                                <button
+                                    onClick={() => setShowEquipmentQRModal(false)}
+                                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium"
+                                >
+                                    Tutup
+                                </button>
+                                <button
+                                    onClick={downloadEquipmentQR}
+                                    disabled={isDownloadingEquipmentQR}
+                                    className={`flex-1 px-4 py-2 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all duration-200 ${isDownloadingEquipmentQR
+                                        ? 'bg-blue-400 cursor-wait opacity-80'
+                                        : 'bg-blue-600 hover:bg-blue-700 hover:shadow-md'
+                                        }`}
+                                >
+                                    {isDownloadingEquipmentQR ? (
+                                        <>
+                                            <RefreshCw className="w-4 h-4 animate-spin" />
+                                            <span>{getText('Processing...', 'Memproses...')}</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Download className="w-4 h-4" />
+                                            <span>Download</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Detail Equipment Add/Edit Modal */}
             {showDetailEquipmentModal && (
