@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-    Building, Search, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench, ChevronDown, GraduationCap, UserCheck, AlertTriangle, Filter, ChevronUp, FileText, Warehouse, Package, Layers, Tag, Box, ScanBarcode, Camera
+    Building, Search, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench, ChevronDown, GraduationCap, UserCheck, AlertTriangle, Filter, ChevronUp, FileText, Warehouse, Package, Layers, Tag, Box, ScanBarcode, Camera, Info, ExternalLink
 } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '../lib/supabase';
 import { Room, Department, Equipment, StudyProgram } from '../types';
 import { format } from 'date-fns';
@@ -68,7 +69,17 @@ const RoomInfo: React.FC = () => {
     const [equipmentConditionFilter, setEquipmentConditionFilter] = useState('all');
     const [equipmentUsageFilter, setEquipmentUsageFilter] = useState('all'); // 'all' | 'available' | 'inuse'
     const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
-    const barcodeVideoRef = React.useRef<HTMLVideoElement>(null);
+    const [scannerReady, setScannerReady] = useState(false);
+    const [cameraError, setCameraError] = useState<string | null>(null);
+    const [scanProcessing, setScanProcessing] = useState(false);
+    const [scanResult, setScanResult] = useState<{
+        rawValue: string;
+        equipment: Equipment | null;
+        room?: any;
+        department?: any;
+    } | null>(null);
+    const [showScanResult, setShowScanResult] = useState(false);
+    const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
     const [isEqNameDropdownOpen, setIsEqNameDropdownOpen] = useState(false);
     const [eqDropdownSearchTerm, setEqDropdownSearchTerm] = useState('');
 
@@ -113,50 +124,232 @@ const RoomInfo: React.FC = () => {
         }
     }, [activeTab]);
 
-    // Camera for barcode scanner
+    // html5-qrcode scanner effect
     useEffect(() => {
         if (!showBarcodeScanner) return;
-        let stream: MediaStream | null = null;
-        const startCamera = async () => {
+        let isMounted = true;
+        setScannerReady(false);
+        setCameraError(null);
+
+        // Small delay to ensure DOM container is ready
+        const timeoutId = setTimeout(async () => {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment' }
-                });
-                if (barcodeVideoRef.current) {
-                    barcodeVideoRef.current.srcObject = stream;
+                const qrScannerId = 'roominfo-qr-reader';
+                const container = document.getElementById(qrScannerId);
+                if (!container) {
+                    console.error('[QR] Container element not found');
+                    return;
                 }
-                // Try using BarcodeDetector API if available
-                if ('BarcodeDetector' in window) {
-                    const detector = new (window as any).BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8'] });
-                    const scanInterval = setInterval(async () => {
-                        if (!barcodeVideoRef.current || !showBarcodeScanner) {
-                            clearInterval(scanInterval);
-                            return;
+
+                const html5QrCode = new Html5Qrcode(qrScannerId);
+                html5QrCodeRef.current = html5QrCode;
+
+                const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+                const onScanSuccess = (decodedText: string) => {
+                    console.log('[QR RoomInfo] Scanned:', decodedText);
+                    html5QrCode.stop().then(() => {
+                        if (isMounted) {
+                            handleScanResult(decodedText);
                         }
-                        try {
-                            const barcodes = await detector.detect(barcodeVideoRef.current);
-                            if (barcodes.length > 0) {
-                                const code = barcodes[0].rawValue;
-                                clearInterval(scanInterval);
-                                setEquipmentSearchTerm(code);
-                                setEquipmentNameFilter('all');
-                                setActiveTab('equipment');
-                                setShowBarcodeScanner(false);
-                                stream?.getTracks().forEach(t => t.stop());
-                            }
-                        } catch (e) { /* ignore detection errors */ }
-                    }, 500);
-                    return () => clearInterval(scanInterval);
+                    }).catch((err: any) => console.error('Failed to stop scanner', err));
+                };
+
+                const onScanError = (_errorMessage: any) => {
+                    // Ignore parse errors to avoid spamming console
+                };
+
+                // Strategy: enumerate cameras → prefer back → fallback
+                try {
+                    const devices = await Html5Qrcode.getCameras();
+                    console.log('[QR RoomInfo] Available cameras:', devices.map(d => d.label));
+
+                    if (devices && devices.length > 0) {
+                        const backCamera = devices.find(d =>
+                            d.label.toLowerCase().includes('back') ||
+                            d.label.toLowerCase().includes('rear') ||
+                            d.label.toLowerCase().includes('environment') ||
+                            d.label.toLowerCase().includes('belakang')
+                        );
+                        const selectedCamera = backCamera || devices[0];
+                        console.log(`[QR RoomInfo] Using camera: ${selectedCamera.label || selectedCamera.id}`);
+
+                        await html5QrCode.start(
+                            selectedCamera.id,
+                            config,
+                            onScanSuccess,
+                            onScanError
+                        );
+                        console.log('[QR RoomInfo] Camera started successfully');
+                        if (isMounted) {
+                            setScannerReady(true);
+                            setCameraError(null);
+                        }
+                        return;
+                    }
+                } catch (enumErr) {
+                    console.warn('[QR RoomInfo] Camera enumeration failed:', enumErr);
                 }
+
+                // Fallback: try facingMode environment first, then user
+                try {
+                    console.log('[QR RoomInfo] Fallback: trying facingMode environment...');
+                    await html5QrCode.start(
+                        { facingMode: 'environment' },
+                        config,
+                        onScanSuccess,
+                        onScanError
+                    );
+                    if (isMounted) {
+                        setScannerReady(true);
+                        setCameraError(null);
+                    }
+                    return;
+                } catch (envErr) {
+                    console.warn('[QR RoomInfo] Fallback environment failed:', envErr);
+                }
+
+                try {
+                    console.log('[QR RoomInfo] Fallback: trying facingMode user...');
+                    await html5QrCode.start(
+                        { facingMode: 'user' },
+                        config,
+                        onScanSuccess,
+                        onScanError
+                    );
+                    if (isMounted) {
+                        setScannerReady(true);
+                        setCameraError(null);
+                    }
+                    return;
+                } catch (userErr) {
+                    console.warn('[QR RoomInfo] Fallback user failed:', userErr);
+                }
+
+                // All camera strategies failed
+                if (isMounted) {
+                    setCameraError('Gagal memulai kamera. Pastikan izin kamera diberikan dan tidak ada aplikasi lain yang menggunakan kamera.');
+                }
+
             } catch (err) {
-                console.error('Camera access failed:', err);
+                console.error('[QR RoomInfo] Scanner init error:', err);
+                if (isMounted) {
+                    setCameraError('Gagal menginisialisasi scanner. Coba refresh halaman.');
+                }
+            }
+        }, 600);
+
+        return () => {
+            isMounted = false;
+            clearTimeout(timeoutId);
+            if (html5QrCodeRef.current) {
+                html5QrCodeRef.current.stop().catch(() => {});
+                html5QrCodeRef.current = null;
             }
         };
-        startCamera();
-        return () => {
-            stream?.getTracks().forEach(t => t.stop());
-        };
     }, [showBarcodeScanner]);
+
+    // Smart QR code parsing and equipment lookup
+    const handleScanResult = async (rawValue: string) => {
+        setScanProcessing(true);
+        setShowBarcodeScanner(false);
+        try {
+            // Extract meaningful identifier from QR value
+            let searchValue = rawValue.trim();
+
+            // If it's a URL, try to extract equipment ID or code from it
+            if (searchValue.startsWith('http://') || searchValue.startsWith('https://')) {
+                try {
+                    const url = new URL(searchValue);
+                    // Try common URL patterns:
+                    // /equipment/{id}, /tool/{id}, /alat/{id}, ?code=xxx, ?id=xxx
+                    const pathParts = url.pathname.split('/').filter(Boolean);
+                    const lastPart = pathParts[pathParts.length - 1];
+                    const codeParam = url.searchParams.get('code') || url.searchParams.get('id') || url.searchParams.get('equipment');
+                    if (codeParam) {
+                        searchValue = codeParam;
+                    } else if (lastPart && lastPart !== '' && lastPart !== '/') {
+                        searchValue = lastPart;
+                    }
+                } catch { /* not a valid URL, use raw value */ }
+            }
+
+            console.log('[QR RoomInfo] Searching for:', searchValue);
+
+            // Strategy 1: Try exact match by ID (UUID format)
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            let foundEquipment: any = null;
+
+            const selectStr = 'id, name, code, category, condition, quantity, unit, is_available, Spesification, rooms_id, rooms:rooms_id(id, name, code, floor, building:building_id(name, campus:campus_id(name))), departments(name)';
+
+            if (uuidRegex.test(searchValue)) {
+                const { data } = await supabase
+                    .from('equipment')
+                    .select(selectStr)
+                    .eq('id', searchValue)
+                    .single();
+                if (data) foundEquipment = data;
+            }
+
+            // Strategy 2: Try exact match by code
+            if (!foundEquipment) {
+                const { data } = await supabase
+                    .from('equipment')
+                    .select(selectStr)
+                    .eq('code', searchValue)
+                    .single();
+                if (data) foundEquipment = data;
+            }
+
+            // Strategy 3: Try partial match by code (case-insensitive)
+            if (!foundEquipment) {
+                const { data } = await supabase
+                    .from('equipment')
+                    .select(selectStr)
+                    .ilike('code', `%${searchValue}%`)
+                    .limit(1);
+                if (data && data.length > 0) foundEquipment = data[0];
+            }
+
+            // Strategy 4: Try partial match by name
+            if (!foundEquipment) {
+                const { data } = await supabase
+                    .from('equipment')
+                    .select(selectStr)
+                    .ilike('name', `%${searchValue}%`)
+                    .limit(1);
+                if (data && data.length > 0) foundEquipment = data[0];
+            }
+
+            setScanResult({
+                rawValue: rawValue,
+                equipment: foundEquipment,
+                room: foundEquipment?.rooms,
+                department: foundEquipment?.departments,
+            });
+            setShowScanResult(true);
+        } catch (err) {
+            console.error('[QR RoomInfo] Scan result processing error:', err);
+            setScanResult({
+                rawValue: rawValue,
+                equipment: null,
+            });
+            setShowScanResult(true);
+        } finally {
+            setScanProcessing(false);
+        }
+    };
+
+    // Close scanner helper
+    const closeScanner = () => {
+        if (html5QrCodeRef.current) {
+            html5QrCodeRef.current.stop().catch(() => {});
+            html5QrCodeRef.current = null;
+        }
+        setShowBarcodeScanner(false);
+        setScannerReady(false);
+        setCameraError(null);
+    };
 
     // Handle click outside to close name filter dropdown
     useEffect(() => {
@@ -1305,13 +1498,7 @@ const RoomInfo: React.FC = () => {
                                 <h3 className="text-sm font-medium text-gray-800">{getText('Scan Equipment Barcode', 'Scan Barcode Alat')}</h3>
                             </div>
                             <button
-                                onClick={() => {
-                                    setShowBarcodeScanner(false);
-                                    // Stop camera
-                                    if (barcodeVideoRef.current?.srcObject) {
-                                        (barcodeVideoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
-                                    }
-                                }}
+                                onClick={closeScanner}
                                 className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
                             >
                                 <X className="h-5 w-5" />
@@ -1320,25 +1507,36 @@ const RoomInfo: React.FC = () => {
 
                         {/* Camera View */}
                         <div className="p-4 space-y-4">
-                            <div className="relative bg-black rounded-xl overflow-hidden aspect-[4/3]">
-                                <video
-                                    ref={barcodeVideoRef}
-                                    autoPlay
-                                    playsInline
-                                    muted
-                                    className="w-full h-full object-cover"
-                                />
-                                {/* Scan overlay */}
-                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                    <div className="w-56 h-32 border-2 border-emerald-400 rounded-xl relative">
-                                        <div className="absolute top-0 left-0 w-6 h-6 border-t-3 border-l-3 border-emerald-400 rounded-tl-lg"></div>
-                                        <div className="absolute top-0 right-0 w-6 h-6 border-t-3 border-r-3 border-emerald-400 rounded-tr-lg"></div>
-                                        <div className="absolute bottom-0 left-0 w-6 h-6 border-b-3 border-l-3 border-emerald-400 rounded-bl-lg"></div>
-                                        <div className="absolute bottom-0 right-0 w-6 h-6 border-b-3 border-r-3 border-emerald-400 rounded-br-lg"></div>
-                                        {/* Scanning line animation */}
-                                        <div className="absolute left-2 right-2 h-0.5 bg-emerald-400 opacity-75 animate-pulse" style={{ top: '50%' }}></div>
+                            <div className="relative bg-black rounded-xl overflow-hidden aspect-[4/3] flex items-center justify-center">
+                                <div id="roominfo-qr-reader" className="w-full h-full"></div>
+                                
+                                {!scannerReady && !cameraError && (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 text-white gap-3 z-10">
+                                        <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
+                                        <span className="text-xs font-semibold">{getText('Starting camera...', 'Memulai kamera...')}</span>
                                     </div>
-                                </div>
+                                )}
+                                
+                                {cameraError && (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 text-white p-6 text-center gap-3 z-10">
+                                        <AlertTriangle className="h-8 w-8 text-rose-500" />
+                                        <span className="text-xs text-rose-300 font-semibold">{cameraError}</span>
+                                    </div>
+                                )}
+
+                                {/* Scan overlay */}
+                                {scannerReady && !cameraError && (
+                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                                        <div className="w-56 h-32 border-2 border-emerald-400 rounded-xl relative">
+                                            <div className="absolute top-0 left-0 w-6 h-6 border-t-3 border-l-3 border-emerald-400 rounded-tl-lg"></div>
+                                            <div className="absolute top-0 right-0 w-6 h-6 border-t-3 border-r-3 border-emerald-400 rounded-tr-lg"></div>
+                                            <div className="absolute bottom-0 left-0 w-6 h-6 border-b-3 border-l-3 border-emerald-400 rounded-bl-lg"></div>
+                                            <div className="absolute bottom-0 right-0 w-6 h-6 border-b-3 border-r-3 border-emerald-400 rounded-br-lg"></div>
+                                            {/* Scanning line animation */}
+                                            <div className="absolute left-2 right-2 h-0.5 bg-emerald-400 opacity-75 animate-pulse" style={{ top: '50%' }}></div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <p className="text-xs text-gray-400 text-center">
@@ -1350,18 +1548,12 @@ const RoomInfo: React.FC = () => {
                                 <input
                                     type="text"
                                     placeholder={getText('Or type barcode manually...', 'Atau ketik kode barcode...')}
-                                    className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-emerald-500 focus:outline-none"
+                                    className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-emerald-500 focus:outline-none barcode-manual-input"
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
                                             const val = (e.target as HTMLInputElement).value.trim();
                                             if (val) {
-                                                setEquipmentSearchTerm(val);
-                                                setEquipmentNameFilter('all');
-                                                setActiveTab('equipment');
-                                                setShowBarcodeScanner(false);
-                                                if (barcodeVideoRef.current?.srcObject) {
-                                                    (barcodeVideoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
-                                                }
+                                                handleScanResult(val);
                                             }
                                         }
                                     }}
@@ -1370,13 +1562,7 @@ const RoomInfo: React.FC = () => {
                                     onClick={() => {
                                         const input = document.querySelector('.barcode-manual-input') as HTMLInputElement;
                                         if (input?.value.trim()) {
-                                            setEquipmentSearchTerm(input.value.trim());
-                                            setEquipmentNameFilter('all');
-                                            setActiveTab('equipment');
-                                        }
-                                        setShowBarcodeScanner(false);
-                                        if (barcodeVideoRef.current?.srcObject) {
-                                            (barcodeVideoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+                                            handleScanResult(input.value.trim());
                                         }
                                     }}
                                     className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-sm hover:bg-emerald-600 transition-colors"
@@ -1384,6 +1570,243 @@ const RoomInfo: React.FC = () => {
                                     {getText('Search', 'Cari')}
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Scan Result Modal */}
+            {showScanResult && scanResult && (
+                <div className="fixed inset-0 bg-black bg-opacity-65 flex items-center justify-center z-[9999] p-4">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+                        {/* Header: Blue to Indigo gradient */}
+                        {scanResult.equipment ? (
+                            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white relative flex-shrink-0">
+                                <button
+                                    onClick={() => {
+                                        setShowScanResult(false);
+                                        setScanResult(null);
+                                    }}
+                                    className="absolute top-4 right-4 p-2 hover:bg-white/20 rounded-xl transition-all cursor-pointer text-white"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
+                                <div className="flex items-center gap-4">
+                                    <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center flex-shrink-0">
+                                        <Wrench className="h-8 w-8 text-white" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <h2 className="text-xl font-bold leading-tight truncate">{scanResult.equipment.name}</h2>
+                                        <p className="opacity-90 font-mono text-sm tracking-wider mt-0.5 truncate">{scanResult.equipment.code}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="bg-gradient-to-r from-rose-600 to-red-600 p-6 text-white relative flex-shrink-0">
+                                <button
+                                    onClick={() => {
+                                        setShowScanResult(false);
+                                        setScanResult(null);
+                                    }}
+                                    className="absolute top-4 right-4 p-2 hover:bg-white/20 rounded-xl transition-all cursor-pointer text-white"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
+                                <div className="flex items-center gap-4">
+                                    <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center flex-shrink-0">
+                                        <AlertTriangle className="h-8 w-8 text-white" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <h2 className="text-xl font-bold leading-tight">{getText('Equipment Not Found', 'Alat Tidak Ditemukan')}</h2>
+                                        <p className="opacity-90 font-mono text-sm truncate mt-0.5">{scanResult.rawValue}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Modal Body */}
+                        <div className="p-6 space-y-5 overflow-y-auto flex-1">
+                            {scanResult.equipment ? (
+                                <>
+                                    {/* Grid: Category & Quantity */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-blue-50 p-4 rounded-2xl">
+                                            <p className="text-[11px] font-bold text-blue-600 uppercase tracking-wide mb-1">
+                                                {getText('Category', 'Kategori')}
+                                            </p>
+                                            <p className="font-bold text-blue-900 text-sm md:text-base truncate">
+                                                {scanResult.equipment.category || getText('General', 'Umum')}
+                                            </p>
+                                        </div>
+                                        <div className="bg-purple-50 p-4 rounded-2xl">
+                                            <p className="text-[11px] font-bold text-purple-600 uppercase tracking-wide mb-1">
+                                                {getText('Available Quantity', 'Jumlah Tersedia')}
+                                            </p>
+                                            <p className="font-bold text-purple-900 text-sm md:text-base truncate">
+                                                {scanResult.equipment.quantity != null 
+                                                    ? `${scanResult.equipment.quantity} ${scanResult.equipment.unit || 'buah'}` 
+                                                    : '—'}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Condition */}
+                                    <div className={`p-4 rounded-2xl ${
+                                        scanResult.equipment.condition === 'GOOD' 
+                                            ? 'bg-green-50' 
+                                            : scanResult.equipment.condition === 'MAINTENANCE' 
+                                                ? 'bg-amber-50' 
+                                                : 'bg-red-50'
+                                    }`}>
+                                        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">
+                                            {getText('Condition', 'Kondisi')}
+                                        </p>
+                                        <p className={`font-extrabold flex items-center gap-1.5 text-sm md:text-base ${
+                                            scanResult.equipment.condition === 'GOOD' 
+                                                ? 'text-green-700' 
+                                                : scanResult.equipment.condition === 'MAINTENANCE' 
+                                                    ? 'text-amber-700' 
+                                                    : 'text-red-700'
+                                        }`}>
+                                            {scanResult.equipment.condition === 'GOOD' && '✓ BAGUS'}
+                                            {scanResult.equipment.condition === 'MAINTENANCE' && '🔧 PERAWATAN'}
+                                            {scanResult.equipment.condition === 'BROKEN' && '⚠️ RUSAK'}
+                                            {!scanResult.equipment.condition && '✓ BAGUS'}
+                                        </p>
+                                    </div>
+
+                                    {/* Location Info */}
+                                    <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
+                                        <h3 className="font-bold text-blue-800 text-sm mb-3 flex items-center gap-2">
+                                            <MapPin className="h-4.5 w-4.5 text-blue-600" />
+                                            {getText('Location', 'Lokasi')}
+                                        </h3>
+                                        <div className="grid grid-cols-2 gap-3 text-xs md:text-sm">
+                                            <div>
+                                                <span className="text-blue-600/70 text-[10px] font-bold uppercase tracking-wider block mb-0.5">
+                                                    {getText('Campus', 'Kampus')}
+                                                </span>
+                                                <p className="font-semibold text-gray-900 truncate">
+                                                    {scanResult.room?.building?.campus?.name || '—'}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <span className="text-blue-600/70 text-[10px] font-bold uppercase tracking-wider block mb-0.5">
+                                                    {getText('Building', 'Gedung')}
+                                                </span>
+                                                <p className="font-semibold text-gray-900 truncate">
+                                                    {scanResult.room?.building?.name || '—'}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <span className="text-blue-600/70 text-[10px] font-bold uppercase tracking-wider block mb-0.5">
+                                                    {getText('Floor', 'Lantai')}
+                                                </span>
+                                                <p className="font-semibold text-gray-900 truncate">
+                                                    {scanResult.room?.floor ? `Lantai ${scanResult.room.floor}` : '—'}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <span className="text-blue-600/70 text-[10px] font-bold uppercase tracking-wider block mb-0.5">
+                                                    {getText('Room', 'Ruangan')}
+                                                </span>
+                                                <p className="font-semibold text-gray-900 truncate">
+                                                    {scanResult.room?.name || '—'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Specifications & Serials */}
+                                    {scanResult.equipment.Spesification && (() => {
+                                        const { serials, specs } = parseEquipmentSpec(scanResult.equipment.Spesification);
+                                        return (
+                                            <div className="space-y-4">
+                                                {serials.length > 0 && (
+                                                    <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                                                        <h3 className="font-bold text-gray-800 text-xs mb-2">
+                                                            {getText('Serial Numbers', 'Nomor Seri')}
+                                                        </h3>
+                                                        <select className="w-full bg-white border border-gray-200 rounded-xl p-2.5 focus:outline-none focus:border-blue-500 font-mono text-xs text-gray-700 cursor-pointer shadow-sm">
+                                                            {serials.map((sn, idx) => (
+                                                                <option key={idx} value={sn}>{sn}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                )}
+                                                {specs && (
+                                                    <div className="bg-gray-55/70 p-4 rounded-2xl border border-gray-100">
+                                                        <h3 className="font-bold text-gray-800 text-xs mb-2">
+                                                            {getText('Specifications', 'Spesifikasi')}
+                                                        </h3>
+                                                        <p className="text-gray-600 text-xs whitespace-pre-wrap leading-relaxed">
+                                                            {specs}
+                                                        </p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+                                </>
+                            ) : (
+                                <div className="text-center py-6">
+                                    <p className="text-gray-500 text-sm leading-relaxed mb-4">
+                                        {getText(
+                                            'No equipment matched this scanned code/URL in SIMPEL database.',
+                                            'Tidak ada alat yang cocok dengan kode/URL hasil scan ini di database SIMPEL.'
+                                        )}
+                                    </p>
+                                    <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 text-left">
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">
+                                            {getText('Scanned Value:', 'Hasil Scan:')}
+                                        </p>
+                                        <p className="font-mono text-xs text-gray-700 break-all select-all font-semibold">
+                                            {scanResult.rawValue}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer / Action buttons */}
+                        <div className="p-4 border-t border-gray-100 bg-gray-50 flex gap-3 flex-shrink-0">
+                            <button
+                                onClick={() => {
+                                    setShowScanResult(false);
+                                    setScanResult(null);
+                                    setShowBarcodeScanner(true);
+                                }}
+                                className="flex-1 py-3 border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 text-gray-700 font-bold rounded-2xl text-xs md:text-sm transition-all flex items-center justify-center gap-1.5"
+                            >
+                                <ScanBarcode className="h-4.5 w-4.5" />
+                                {getText('Scan Again', 'Scan Lagi')}
+                            </button>
+                            {scanResult.equipment ? (
+                                <button
+                                    onClick={() => {
+                                        // Set filters to locate it in the list
+                                        setEquipmentSearchTerm(scanResult.equipment!.code);
+                                        setEquipmentNameFilter('all');
+                                        setActiveTab('equipment');
+                                        setShowScanResult(false);
+                                        setScanResult(null);
+                                    }}
+                                    className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl text-xs md:text-sm transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                                >
+                                    <Search className="h-4.5 w-4.5" />
+                                    {getText('Locate in List', 'Cari di Daftar')}
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={() => {
+                                        setShowScanResult(false);
+                                        setScanResult(null);
+                                    }}
+                                    className="flex-1 py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-2xl text-xs md:text-sm transition-all"
+                                >
+                                    {getText('Close', 'Tutup')}
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
