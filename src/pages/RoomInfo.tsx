@@ -84,6 +84,7 @@ const RoomInfo: React.FC = () => {
     const [selectedCameraId, setSelectedCameraId] = useState<string>('');
     const [isEqNameDropdownOpen, setIsEqNameDropdownOpen] = useState(false);
     const [eqDropdownSearchTerm, setEqDropdownSearchTerm] = useState('');
+    const [isSpDropdownOpen, setIsSpDropdownOpen] = useState(false);
 
     // Room Details Modal States
     const [showRoomDetail, setShowRoomDetail] = useState<EnhancedRoomStatus | null>(null);
@@ -118,6 +119,21 @@ const RoomInfo: React.FC = () => {
         };
         fetchInitialData();
     }, []);
+
+    // Trigger details fetching when room modal is shown
+    useEffect(() => {
+        if (showRoomDetail) {
+            fetchRoomPhoto(showRoomDetail);
+            fetchEquipmentForRoom(showRoomDetail.id);
+            fetchRoomUsers(showRoomDetail.id);
+            fetchSchedulesForRoom(showRoomDetail.name, showRoomDetail.id);
+        } else {
+            setRoomPhoto(null);
+            setSelectedRoomEquipment([]);
+            setRoomUsers([]);
+            setCombinedSchedules([]);
+        }
+    }, [showRoomDetail, targetDate]);
 
     // Fetch all equipment when equipment tab is active
     useEffect(() => {
@@ -395,12 +411,16 @@ const RoomInfo: React.FC = () => {
         setCameraError(null);
     };
 
-    // Handle click outside to close name filter dropdown
+    // Handle click outside to close name filter and study program dropdowns
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             const container = document.getElementById('eq-name-dropdown-container');
             if (container && !container.contains(event.target as Node)) {
                 setIsEqNameDropdownOpen(false);
+            }
+            const spContainer = document.getElementById('sp-dropdown-container');
+            if (spContainer && !spContainer.contains(event.target as Node)) {
+                setIsSpDropdownOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -915,17 +935,51 @@ const RoomInfo: React.FC = () => {
                                 </select>
                             </div>
 
-                            {/* Study Program filter */}
-                            <select
-                                value={spFilter}
-                                onChange={(e) => setSpFilter(e.target.value)}
-                                className="px-4 py-2.5 bg-gray-55 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 text-gray-700 font-medium"
-                            >
-                                <option value="all">{getText('All Study Programs', 'Semua Program Studi')}</option>
-                                {studyPrograms.map(sp => (
-                                    <option key={sp.id} value={sp.id}>{sp.name}</option>
-                                ))}
-                            </select>
+                            {/* Study Program custom dropdown */}
+                            <div className="relative text-left" id="sp-dropdown-container">
+                                <button
+                                    onClick={() => setIsSpDropdownOpen(!isSpDropdownOpen)}
+                                    className="w-full sm:w-auto px-4 py-2.5 border border-gray-200 rounded-xl text-base focus:outline-none focus:border-blue-500 text-gray-700 bg-white min-w-[200px] flex items-center justify-between gap-2 cursor-pointer shadow-sm font-normal"
+                                >
+                                    <span className="truncate">
+                                        {spFilter === 'all' 
+                                            ? getText('All Study Programs', 'Semua Program Studi') 
+                                            : studyPrograms.find(sp => sp.id === spFilter)?.name || spFilter}
+                                    </span>
+                                    <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${isSpDropdownOpen ? 'rotate-180' : ''}`} />
+                                </button>
+                                
+                                {isSpDropdownOpen && (
+                                    <div className="absolute bottom-full left-0 mb-1 w-full min-w-[280px] bg-white border border-gray-200 rounded-xl shadow-xl z-[100] max-h-[300px] overflow-y-auto py-1 animate-in fade-in slide-in-from-bottom-1 duration-100">
+                                        <button
+                                            onClick={() => {
+                                                setSpFilter('all');
+                                                setIsSpDropdownOpen(false);
+                                            }}
+                                            className={`w-full text-left px-4 py-2.5 text-base hover:bg-gray-100 hover:text-gray-900 transition-colors ${
+                                                spFilter === 'all' ? 'text-blue-600 font-semibold bg-blue-50/50' : 'text-gray-800 font-normal'
+                                            }`}
+                                        >
+                                            {getText('All Study Programs', 'Semua Program Studi')}
+                                        </button>
+                                        {studyPrograms.map(sp => (
+                                            <button
+                                                key={sp.id}
+                                                onClick={() => {
+                                                    setSpFilter(sp.id);
+                                                    setIsSpDropdownOpen(false);
+                                                }}
+                                                className={`w-full text-left px-4 py-2.5 text-base hover:bg-gray-100 hover:text-gray-900 transition-colors truncate ${
+                                                    spFilter === sp.id ? 'text-blue-600 font-semibold bg-blue-50/50' : 'text-gray-800 font-normal'
+                                                }`}
+                                                title={sp.name}
+                                            >
+                                                {sp.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
 
                             {/* Status filter */}
                             <select
