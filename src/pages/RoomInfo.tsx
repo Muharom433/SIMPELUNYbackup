@@ -80,6 +80,8 @@ const RoomInfo: React.FC = () => {
     } | null>(null);
     const [showScanResult, setShowScanResult] = useState(false);
     const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+    const [cameras, setCameras] = useState<any[]>([]);
+    const [selectedCameraId, setSelectedCameraId] = useState<string>('');
     const [isEqNameDropdownOpen, setIsEqNameDropdownOpen] = useState(false);
     const [eqDropdownSearchTerm, setEqDropdownSearchTerm] = useState('');
 
@@ -136,62 +138,82 @@ const RoomInfo: React.FC = () => {
             try {
                 const qrScannerId = 'roominfo-qr-reader';
                 const container = document.getElementById(qrScannerId);
-                if (!container) {
-                    console.error('[QR] Container element not found');
-                    return;
-                }
+                if (!container || !isMounted) return;
 
                 const html5QrCode = new Html5Qrcode(qrScannerId);
                 html5QrCodeRef.current = html5QrCode;
 
                 const config = { fps: 10, qrbox: { width: 250, height: 250 } };
 
+                let hasScanned = false;
                 const onScanSuccess = (decodedText: string) => {
+                    if (hasScanned) return;
+                    hasScanned = true;
                     console.log('[QR RoomInfo] Scanned:', decodedText);
+                    
                     html5QrCode.stop().then(() => {
                         if (isMounted) {
                             handleScanResult(decodedText);
                         }
-                    }).catch((err: any) => console.error('Failed to stop scanner', err));
+                    }).catch((err: any) => {
+                        console.error('Failed to stop scanner on success:', err);
+                        if (isMounted) {
+                            handleScanResult(decodedText);
+                        }
+                    });
                 };
 
                 const onScanError = (_errorMessage: any) => {
-                    // Ignore parse errors to avoid spamming console
+                    // Ignore parse errors
                 };
 
-                // Strategy: enumerate cameras → prefer back → fallback
+                // Get cameras
+                let devices: any[] = [];
                 try {
-                    const devices = await Html5Qrcode.getCameras();
-                    console.log('[QR RoomInfo] Available cameras:', devices.map(d => d.label));
+                    devices = await Html5Qrcode.getCameras();
+                    if (!isMounted) return;
+                    setCameras(devices);
+                } catch (enumErr) {
+                    console.warn('[QR RoomInfo] Camera enumeration failed:', enumErr);
+                }
 
-                    if (devices && devices.length > 0) {
-                        const backCamera = devices.find(d =>
-                            d.label.toLowerCase().includes('back') ||
-                            d.label.toLowerCase().includes('rear') ||
-                            d.label.toLowerCase().includes('environment') ||
-                            d.label.toLowerCase().includes('belakang')
-                        );
-                        const selectedCamera = backCamera || devices[0];
-                        console.log(`[QR RoomInfo] Using camera: ${selectedCamera.label || selectedCamera.id}`);
+                // Determine which camera to start with
+                let activeId = selectedCameraId;
+                if (!activeId && devices.length > 0) {
+                    const backCamera = devices.find(d =>
+                        d.label.toLowerCase().includes('back') ||
+                        d.label.toLowerCase().includes('rear') ||
+                        d.label.toLowerCase().includes('environment') ||
+                        d.label.toLowerCase().includes('belakang')
+                    );
+                    const initialCamera = backCamera || devices[0];
+                    activeId = initialCamera.id;
+                    setSelectedCameraId(activeId);
+                }
 
+                if (!isMounted) return;
+
+                if (activeId) {
+                    try {
                         await html5QrCode.start(
-                            selectedCamera.id,
+                            activeId,
                             config,
                             onScanSuccess,
                             onScanError
                         );
-                        console.log('[QR RoomInfo] Camera started successfully');
                         if (isMounted) {
                             setScannerReady(true);
                             setCameraError(null);
                         }
                         return;
+                    } catch (err) {
+                        console.warn(`[QR RoomInfo] Failed to start with camera ID ${activeId}:`, err);
                     }
-                } catch (enumErr) {
-                    console.warn('[QR RoomInfo] Camera enumeration failed:', enumErr);
                 }
 
-                // Fallback: try facingMode environment first, then user
+                if (!isMounted) return;
+
+                // Fallback to facingMode environment
                 try {
                     console.log('[QR RoomInfo] Fallback: trying facingMode environment...');
                     await html5QrCode.start(
@@ -209,6 +231,9 @@ const RoomInfo: React.FC = () => {
                     console.warn('[QR RoomInfo] Fallback environment failed:', envErr);
                 }
 
+                if (!isMounted) return;
+
+                // Fallback to facingMode user
                 try {
                     console.log('[QR RoomInfo] Fallback: trying facingMode user...');
                     await html5QrCode.start(
@@ -228,7 +253,7 @@ const RoomInfo: React.FC = () => {
 
                 // All camera strategies failed
                 if (isMounted) {
-                    setCameraError('Gagal memulai kamera. Pastikan izin kamera diberikan dan tidak ada aplikasi lain yang menggunakan kamera.');
+                    setCameraError('Gagal memulai kamera. Pastikan izin kamera diberikan.');
                 }
 
             } catch (err) {
@@ -237,17 +262,19 @@ const RoomInfo: React.FC = () => {
                     setCameraError('Gagal menginisialisasi scanner. Coba refresh halaman.');
                 }
             }
-        }, 600);
+        }, 450);
 
         return () => {
             isMounted = false;
             clearTimeout(timeoutId);
             if (html5QrCodeRef.current) {
-                html5QrCodeRef.current.stop().catch(() => {});
+                if (html5QrCodeRef.current.isScanning) {
+                    html5QrCodeRef.current.stop().catch(() => {});
+                }
                 html5QrCodeRef.current = null;
             }
         };
-    }, [showBarcodeScanner]);
+    }, [showBarcodeScanner, selectedCameraId]);
 
     // Smart QR code parsing and equipment lookup
     const handleScanResult = async (rawValue: string) => {
@@ -257,21 +284,32 @@ const RoomInfo: React.FC = () => {
             // Extract meaningful identifier from QR value
             let searchValue = rawValue.trim();
 
-            // If it's a URL, try to extract equipment ID or code from it
+            // If it's a URL, extract code/id from query params or path segments
             if (searchValue.startsWith('http://') || searchValue.startsWith('https://')) {
                 try {
-                    const url = new URL(searchValue);
-                    // Try common URL patterns:
-                    // /equipment/{id}, /tool/{id}, /alat/{id}, ?code=xxx, ?id=xxx
-                    const pathParts = url.pathname.split('/').filter(Boolean);
-                    const lastPart = pathParts[pathParts.length - 1];
-                    const codeParam = url.searchParams.get('code') || url.searchParams.get('id') || url.searchParams.get('equipment');
-                    if (codeParam) {
-                        searchValue = codeParam;
-                    } else if (lastPart && lastPart !== '' && lastPart !== '/') {
-                        searchValue = lastPart;
+                    const queryParams = ['code', 'id', 'equipment', 'tool', 'alat'];
+                    let foundParam = false;
+                    for (const param of queryParams) {
+                        const regex = new RegExp(`[?&]${param}=([^&#]+)`);
+                        const match = searchValue.match(regex);
+                        if (match && match[1]) {
+                            searchValue = decodeURIComponent(match[1]);
+                            foundParam = true;
+                            break;
+                        }
                     }
-                } catch { /* not a valid URL, use raw value */ }
+
+                    if (!foundParam) {
+                        const cleanUrl = searchValue.split('?')[0];
+                        const segments = cleanUrl.split('/').filter(Boolean);
+                        const lastSegment = segments[segments.length - 1];
+                        if (lastSegment && lastSegment !== 'room-info' && lastSegment !== 'equipment') {
+                            searchValue = decodeURIComponent(lastSegment);
+                        }
+                    }
+                } catch (urlErr) {
+                    console.warn('[QR RoomInfo] URL parsing failed, using raw value:', urlErr);
+                }
             }
 
             console.log('[QR RoomInfo] Searching for:', searchValue);
@@ -341,9 +379,15 @@ const RoomInfo: React.FC = () => {
     };
 
     // Close scanner helper
-    const closeScanner = () => {
+    const closeScanner = async () => {
         if (html5QrCodeRef.current) {
-            html5QrCodeRef.current.stop().catch(() => {});
+            try {
+                if (html5QrCodeRef.current.isScanning) {
+                    await html5QrCodeRef.current.stop();
+                }
+            } catch (err) {
+                console.error('[QR RoomInfo] Failed to stop scanner on close:', err);
+            }
             html5QrCodeRef.current = null;
         }
         setShowBarcodeScanner(false);
@@ -1538,6 +1582,26 @@ const RoomInfo: React.FC = () => {
                                     </div>
                                 )}
                             </div>
+
+                            {/* Camera selection dropdown if multiple cameras found */}
+                            {cameras.length > 1 && (
+                                <div className="space-y-1">
+                                    <label className="text-[10px] uppercase font-bold tracking-wider text-gray-500 block">
+                                        {getText('Select Camera', 'Pilih Kamera')}
+                                    </label>
+                                    <select
+                                        value={selectedCameraId}
+                                        onChange={(e) => setSelectedCameraId(e.target.value)}
+                                        className="w-full bg-white border border-gray-200 rounded-xl p-2.5 text-xs text-gray-700 focus:outline-none focus:border-emerald-500 shadow-sm cursor-pointer"
+                                    >
+                                        {cameras.map((camera, index) => (
+                                            <option key={camera.id} value={camera.id}>
+                                                {camera.label || `${getText('Camera', 'Kamera')} ${index + 1}`}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
 
                             <p className="text-xs text-gray-400 text-center">
                                 {getText('Point your camera at the equipment barcode/QR code', 'Arahkan kamera ke barcode/QR code alat')}
