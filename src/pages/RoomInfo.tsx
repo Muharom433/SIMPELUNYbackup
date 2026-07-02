@@ -1318,7 +1318,6 @@ const RoomInfo: React.FC = () => {
                                         <th className="px-5 py-3.5 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Condition', 'Kondisi')}</th>
                                         <th className="px-5 py-3.5 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Room Location', 'Lokasi Ruangan')}</th>
                                         <th className="px-5 py-3.5 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Department', 'Departemen')}</th>
-                                        <th className="px-5 py-3.5 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Usage Status', 'Status Pemakaian')}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1373,28 +1372,6 @@ const RoomInfo: React.FC = () => {
                                                 {/* Departemen */}
                                                 <td className="px-5 py-3.5 text-sm text-gray-500 whitespace-nowrap">
                                                     {eqDept ? eqDept.name : <span className="text-gray-300 text-xs">—</span>}
-                                                </td>
-                                                {/* Status pemakaian */}
-                                                <td className="px-5 py-3.5 whitespace-nowrap">
-                                                    {isInUse ? (
-                                                        <div className="flex flex-col gap-0.5">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className="relative flex h-2 w-2 flex-shrink-0">
-                                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                                                                </span>
-                                                                <span className="text-xs text-red-600 font-medium">{getText('In Use', 'Sedang Dipakai')}</span>
-                                                            </div>
-                                                            {eqRoom && (
-                                                                <span className="text-[11px] text-red-400 pl-3.5">di {eqRoom.name}</span>
-                                                            )}
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
-                                                            <span className="text-xs text-emerald-600">{getText('Available', 'Tersedia')}</span>
-                                                        </div>
-                                                    )}
                                                 </td>
                                             </tr>
                                         );
@@ -1495,7 +1472,7 @@ const RoomInfo: React.FC = () => {
                                                 <div className="flex justify-center py-10"><Loader2 className="animate-spin h-6 w-6 text-gray-500" /></div>
                                             ) : selectedRoomEquipment.length > 0 ? (
                                                 selectedRoomEquipment.map(eq => {
-                                                    const { serials } = parseEquipmentSpec(eq.Spesification || '');
+                                                    const { purchaseYear, procurementType } = parseEquipmentSpec(eq.Spesification || '');
                                                     return (
                                                         <div key={eq.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100 flex flex-col gap-2 hover:border-blue-200 transition-colors">
                                                             <div className="flex items-start justify-between">
@@ -1506,14 +1483,14 @@ const RoomInfo: React.FC = () => {
                                                                 {getEquipmentConditionChip(eq.condition)}
                                                             </div>
                                                             {/* Dropdown of Serial Numbers */}
-                                                            {serials.length > 0 && (
+                                                            {/* Details */}
+                                                            {(purchaseYear || procurementType) && (
                                                                 <div className="mt-1 text-[11px]">
-                                                                    <p className="text-gray-500 font-semibold mb-1">{getText('Serial Numbers:', 'Nomor Seri:')}</p>
-                                                                    <select className="w-full bg-white border border-gray-200 rounded-lg p-1.5 focus:outline-none focus:border-blue-500 font-mono text-[10px] text-gray-700 cursor-pointer">
-                                                                        {serials.map((sn, idx) => (
-                                                                            <option key={idx} value={sn}>{sn}</option>
-                                                                        ))}
-                                                                    </select>
+                                                                    <p className="text-gray-500 font-semibold mb-1">{getText('Purchase Year & Procurement:', 'Tahun Pembelian & Pengadaan:')}</p>
+                                                                    <div className="text-gray-800 font-medium">
+                                                                        {purchaseYear && <div>{getText('Year:', 'Tahun:')} {purchaseYear}</div>}
+                                                                        {procurementType && <div>{getText('Type:', 'Jenis:')} {procurementType}</div>}
+                                                                    </div>
                                                                 </div>
                                                             )}
                                                         </div>
@@ -1837,19 +1814,18 @@ const RoomInfo: React.FC = () => {
 
                                     {/* Specifications & Serials */}
                                     {scanResult.equipment.Spesification && (() => {
-                                        const { serials, specs } = parseEquipmentSpec(scanResult.equipment.Spesification);
+                                        const { purchaseYear, procurementType, specs } = parseEquipmentSpec(scanResult.equipment.Spesification);
                                         return (
                                             <div className="space-y-4">
-                                                {serials.length > 0 && (
+                                                {(purchaseYear || procurementType) && (
                                                     <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
                                                         <h3 className="font-bold text-gray-800 text-xs mb-2">
-                                                            {getText('Serial Numbers', 'Nomor Seri')}
+                                                            {getText('Purchase Year & Procurement', 'Tahun Pembelian & Pengadaan')}
                                                         </h3>
-                                                        <select className="w-full bg-white border border-gray-200 rounded-xl p-2.5 focus:outline-none focus:border-blue-500 font-mono text-xs text-gray-700 cursor-pointer shadow-sm">
-                                                            {serials.map((sn, idx) => (
-                                                                <option key={idx} value={sn}>{sn}</option>
-                                                            ))}
-                                                        </select>
+                                                        <div className="text-sm font-medium text-gray-800">
+                                                            {purchaseYear && <div className="mb-1">{getText('Year:', 'Tahun:')} {purchaseYear}</div>}
+                                                            {procurementType && <div>{getText('Type:', 'Jenis:')} {procurementType}</div>}
+                                                        </div>
                                                     </div>
                                                 )}
                                                 {specs && (

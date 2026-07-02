@@ -20,18 +20,21 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { alert } from '../components/Alert/AlertHelper'; // Still importing for success/error alerts
 
 export const parseEquipmentSpec = (spec: string | null) => {
-    if (!spec) return { serials: [], specs: '' };
-    const snMatch = spec.match(/\[Nomor Seri\]:\s*([^\n]*)/);
+    if (!spec) return { purchaseYear: '', procurementType: '', specs: '' };
+    const pyMatch = spec.match(/\[Tahun Pembelian\]:\s*([^\n]*)/);
+    const ptMatch = spec.match(/\[Jenis Pengadaan\]:\s*([^\n]*)/);
     const specMatch = spec.match(/\[Spesifikasi\]:\s*([\s\S]*)/);
 
-    const serials = snMatch && snMatch[1] 
-        ? snMatch[1].split(',').map(s => s.trim()).filter(Boolean) 
-        : [];
+    const purchaseYear = pyMatch && pyMatch[1] ? pyMatch[1].trim() : '';
+    const procurementType = ptMatch && ptMatch[1] ? ptMatch[1].trim() : '';
+    
+    // For specs, we want to grab everything after [Spesifikasi]: if it exists,
+    // otherwise fallback to full spec if it doesn't have our tags.
     const specs = specMatch && specMatch[1] 
         ? specMatch[1].trim() 
-        : (snMatch ? '' : spec.trim());
+        : (pyMatch || ptMatch ? '' : spec.trim());
 
-    return { serials, specs };
+    return { purchaseYear, procurementType, specs };
 };
 
 // ========================
@@ -2339,16 +2342,15 @@ const RoomManagement: React.FC = () => {
                                                             {getEquipmentConditionChip(eq.condition)}
                                                         </div>
                                                         {(() => {
-                                                            const { serials } = parseEquipmentSpec(eq.Spesification || '');
-                                                            if (serials.length === 0) return null;
+                                                            const { purchaseYear, procurementType } = parseEquipmentSpec(eq.Spesification || '');
+                                                            if (!purchaseYear && !procurementType) return null;
                                                             return (
                                                                 <div className="text-[10px]">
-                                                                    <span className="text-gray-400 block mb-0.5">{getText('Serial Numbers:', 'Nomor Seri:')}</span>
-                                                                    <select className="w-full bg-gray-55 border border-gray-200 rounded-md p-1 focus:outline-none focus:border-blue-500 font-mono text-[9px] text-gray-600 cursor-pointer">
-                                                                        {serials.map((sn, idx) => (
-                                                                            <option key={idx} value={sn}>{sn}</option>
-                                                                        ))}
-                                                                    </select>
+                                                                    <span className="text-gray-400 block mb-0.5">{getText('Purchase Year & Procurement:', 'Tahun Pembelian & Pengadaan:')}</span>
+                                                                    <div className="text-gray-700 font-medium bg-gray-50 p-1.5 rounded-md border border-gray-100">
+                                                                        {purchaseYear && <div className="mb-0.5">{getText('Year:', 'Tahun:')} {purchaseYear}</div>}
+                                                                        {procurementType && <div>{getText('Type:', 'Jenis:')} {procurementType}</div>}
+                                                                    </div>
                                                                 </div>
                                                             );
                                                         })()}

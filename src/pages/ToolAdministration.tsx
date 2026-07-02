@@ -36,23 +36,32 @@ import QRCode from 'react-qr-code';
 import html2canvas from 'html2canvas';
 
 export const parseEquipmentSpec = (spec: string | null) => {
-    if (!spec) return { serials: [], specs: '' };
-    const snMatch = spec.match(/\[Nomor Seri\]:\s*([^\n]*)/);
+    if (!spec) return { purchaseYear: '', procurementType: '', specs: '' };
+    const pyMatch = spec.match(/\[Tahun Pembelian\]:\s*([^\n]*)/);
+    const ptMatch = spec.match(/\[Jenis Pengadaan\]:\s*([^\n]*)/);
     const specMatch = spec.match(/\[Spesifikasi\]:\s*([\s\S]*)/);
 
-    const serials = snMatch && snMatch[1] 
-        ? snMatch[1].split(',').map(s => s.trim()).filter(Boolean) 
-        : [];
+    const purchaseYear = pyMatch && pyMatch[1] ? pyMatch[1].trim() : '';
+    const procurementType = ptMatch && ptMatch[1] ? ptMatch[1].trim() : '';
+    
+    // For specs, we want to grab everything after [Spesifikasi]: if it exists,
+    // otherwise fallback to full spec if it doesn't have our tags.
     const specs = specMatch && specMatch[1] 
         ? specMatch[1].trim() 
-        : (snMatch ? '' : spec.trim());
+        : (pyMatch || ptMatch ? '' : spec.trim());
 
-    return { serials, specs };
+    return { purchaseYear, procurementType, specs };
 };
 
-export const formatEquipmentSpec = (serials: string[], specs: string) => {
-    if (serials.length === 0 && !specs) return '';
-    return `[Nomor Seri]: ${serials.join(', ')}\n[Spesifikasi]: ${specs}`;
+export const formatEquipmentSpec = (purchaseYear: string, procurementType: string, specs: string) => {
+    if (!purchaseYear && !procurementType && !specs) return '';
+    
+    let parts = [];
+    if (purchaseYear) parts.push(`[Tahun Pembelian]: ${purchaseYear}`);
+    if (procurementType) parts.push(`[Jenis Pengadaan]: ${procurementType}`);
+    if (specs) parts.push(`[Spesifikasi]: ${specs}`);
+    
+    return parts.join('\n');
 };
 
 const getImageDataUrl = async (url: string): Promise<string> => {
@@ -325,13 +334,14 @@ const createEquipmentClaimSchema = (maxQuantity: number, userRole: string) => {
     return z.object({
         stock_id: z.string().min(1, 'Please select a stock item'),
         name: z.string().min(2, 'Equipment name must be at least 2 characters'),
-        code: z.string().min(2, 'Equipment code must be at least 2 characters'),
+        code: z.string().min(2, 'NUP Number must be at least 2 characters'),
         quantity: z.number().min(1, 'Minimum quantity is 1').max(maxQuantity, `Maximum available: ${maxQuantity}`),
         is_mandatory: z.boolean().optional(),
         is_available: z.boolean().optional(),
         condition: z.enum(['GOOD', 'BROKEN', 'MAINTENANCE']).default('GOOD'),
         Spesification: z.string().optional(),
-        serial_numbers: z.string().optional(),
+        purchase_year: z.string().optional(),
+        procurement_type: z.string().optional(),
         table_id: z.string().optional(),
         rack_id: z.string().optional(),
         box_id: z.string().optional(),
@@ -342,13 +352,14 @@ const createEquipmentClaimSchema = (maxQuantity: number, userRole: string) => {
 const createEquipmentEditSchema = (userRole: string) => {
     return z.object({
         name: z.string().min(2, 'Equipment name must be at least 2 characters'),
-        code: z.string().min(2, 'Equipment code must be at least 2 characters'),
+        code: z.string().min(2, 'NUP Number must be at least 2 characters'),
         category: z.string().min(1, 'Please select a category'),
         is_mandatory: z.boolean().optional(),
         is_available: z.boolean().optional(),
         condition: z.enum(['GOOD', 'BROKEN', 'MAINTENANCE']).default('GOOD'),
         Spesification: z.string().optional(),
-        serial_numbers: z.string().optional(),
+        purchase_year: z.string().optional(),
+        procurement_type: z.string().optional(),
         quantity: z.number().min(0, 'Quantity cannot be negative'),
         unit: z.string().min(1, 'Unit is required'),
         table_id: z.string().optional(),
@@ -1525,12 +1536,13 @@ const ToolAdministration: React.FC = () => {
         const effectiveRoomsId = equipmentItem.rooms_id || equipmentItem.rooms?.id || '';
         console.log('Effective rooms_id:', effectiveRoomsId);
 
-        const { serials, specs } = parseEquipmentSpec(equipmentItem.Spesification || '');
+        const { purchaseYear, procurementType, specs } = parseEquipmentSpec(equipmentItem.Spesification || '');
         const formValues = {
             name: equipmentItem.name, code: equipmentItem.code, category: equipmentItem.category,
             is_mandatory: equipmentItem.is_mandatory ?? false, is_available: equipmentItem.is_available ?? true,
             condition: (equipmentItem.condition as any) || 'GOOD', Spesification: specs,
-            serial_numbers: serials.join(', '),
+            purchase_year: purchaseYear,
+            procurement_type: procurementType,
             quantity: equipmentItem.quantity, unit: equipmentItem.unit, rooms_id: effectiveRoomsId,
             table_id: tableId || '', rack_id: rackId || '', box_id: equipmentItem.box_id || '',
         };
@@ -1578,8 +1590,7 @@ const ToolAdministration: React.FC = () => {
             if (isDepartmentAdmin && !selectedRoomForClaim) { toast.error('Room selection is required'); return; }
 
             setLoadingEquipment(true);
-            const serials = (data as any).serial_numbers ? (data as any).serial_numbers.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
-            const finalSpec = formatEquipmentSpec(serials, data.Spesification || selectedStockForClaim.spesification || '');
+            const finalSpec = formatEquipmentSpec(data.purchase_year || '', data.procurement_type || '', data.Spesification || selectedStockForClaim.spesification || '');
 
             const equipmentData = {
                 name: data.name, code: data.code.toUpperCase(), category: selectedStockForClaim.category,
@@ -1638,8 +1649,7 @@ const ToolAdministration: React.FC = () => {
                 attachmentsValue = [originalEquipmentImage];
             }
 
-            const serials = (data as any).serial_numbers ? (data as any).serial_numbers.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
-            const finalSpec = formatEquipmentSpec(serials, data.Spesification || '');
+            const finalSpec = formatEquipmentSpec(data.purchase_year || '', data.procurement_type || '', data.Spesification || '');
 
             const equipmentData = {
                 name: data.name,
@@ -1982,7 +1992,7 @@ const ToolAdministration: React.FC = () => {
             const tableColumn = [
                 'No',
                 getText('Equipment Name', 'Nama Peralatan'),
-                getText('Equipment Code', 'Kode Peralatan'),
+                getText('NUP Number', 'NOMOR NUP'),
                 getText('Room', 'Ruangan'),
                 getText('Condition', 'Kondisi'),
                 getText('Qty', 'Jml')
@@ -2604,8 +2614,12 @@ const ToolAdministration: React.FC = () => {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-bold mb-2">{getText('Serial Numbers (Optional, separate with commas)', 'Nomor Seri (Opsional, pisahkan dengan koma)')}</label>
-                                <input {...claimForm.register('serial_numbers')} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors" placeholder="e.g. SN123, SN124, SN125" />
+                                <label className="block text-sm font-bold mb-2">{getText('Year of Purchase', 'Tahun Pembelian')}</label>
+                                <input type="number" {...claimForm.register('purchase_year')} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors" placeholder="YYYY" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold mb-2">{getText('Procurement Type (Optional)', 'Jenis Pengadaan (Opsional)')}</label>
+                                <input type="text" {...claimForm.register('procurement_type')} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors" placeholder="e.g. Hibah, APBN" />
                             </div>
 
                             <div>
@@ -2883,13 +2897,23 @@ const ToolAdministration: React.FC = () => {
                                 />
                             </div>
 
-                            {/* Serial Numbers */}
+                            {/* Purchase Year and Procurement */}
                             <div>
-                                <label className="block text-sm font-bold mb-2">{getText('Serial Numbers (Optional, separate with commas)', 'Nomor Seri (Opsional, pisahkan dengan koma)')}</label>
+                                <label className="block text-sm font-bold mb-2">{getText('Year of Purchase', 'Tahun Pembelian')}</label>
                                 <input
-                                    {...editForm.register('serial_numbers')}
+                                    type="number"
+                                    {...editForm.register('purchase_year')}
                                     className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
-                                    placeholder="e.g. SN123, SN124, SN125"
+                                    placeholder="YYYY"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold mb-2">{getText('Procurement Type (Optional)', 'Jenis Pengadaan (Opsional)')}</label>
+                                <input
+                                    type="text"
+                                    {...editForm.register('procurement_type')}
+                                    className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
+                                    placeholder="e.g. Hibah, APBN"
                                 />
                             </div>
 
@@ -3207,7 +3231,7 @@ const ToolAdministration: React.FC = () => {
                                     <h4 className="font-bold text-blue-900 mb-3 flex items-center gap-2"><Package className="h-5 w-5" />{getText('Basic Information', 'Informasi Dasar')}</h4>
                                     <div className="space-y-3">
                                         <div><p className="text-xs text-blue-700 mb-1">{getText('Equipment Name', 'Nama Peralatan')}</p><p className="font-bold text-gray-900">{selectedEquipment?.name}</p></div>
-                                        <div><p className="text-xs text-blue-700 mb-1">{getText('Equipment Code', 'Kode Peralatan')}</p><p className="font-mono font-bold text-gray-900">{selectedEquipment?.code}</p></div>
+                                        <div><p className="text-xs text-blue-700 mb-1">{getText('NUP Number', 'NOMOR NUP')}</p><p className="font-mono font-bold text-gray-900">{selectedEquipment?.code}</p></div>
                                         <div><p className="text-xs text-blue-700 mb-1">{getText('Category', 'Kategori')}</p><p className="font-bold text-gray-900">{selectedEquipment?.category}</p></div>
                                     </div>
                                 </div>
@@ -3299,18 +3323,17 @@ const ToolAdministration: React.FC = () => {
                                     </div>
                                 </div>
                                 {selectedEquipment?.Spesification && (() => {
-                                    const { serials, specs } = parseEquipmentSpec(selectedEquipment.Spesification);
+                                    const { purchaseYear, procurementType, specs } = parseEquipmentSpec(selectedEquipment.Spesification);
                                     return (
                                         <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-4 rounded-xl border border-gray-200">
-                                            <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2"><FileText className="h-5 w-5" />{getText('Specifications & Serials', 'Spesifikasi & Nomor Seri')}</h4>
-                                            {serials.length > 0 && (
+                                            <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2"><FileText className="h-5 w-5" />{getText('Specifications & Details', 'Spesifikasi & Detail')}</h4>
+                                            {(purchaseYear || procurementType) && (
                                                 <div className="mb-3">
-                                                    <p className="text-xs text-gray-500 mb-1">{getText('Serial Numbers:', 'Nomor Seri:')}</p>
-                                                    <select className="w-full bg-white border border-gray-200 rounded-lg p-2 focus:outline-none focus:border-purple-500 font-mono text-sm text-gray-700">
-                                                        {serials.map((sn, idx) => (
-                                                            <option key={idx} value={sn}>{sn}</option>
-                                                        ))}
-                                                    </select>
+                                                    <p className="text-xs text-gray-500 mb-1">{getText('Purchase Year & Procurement:', 'Tahun Pembelian & Pengadaan:')}</p>
+                                                    <div className="text-sm font-medium text-gray-800">
+                                                        {purchaseYear && <div className="mb-1">{getText('Year:', 'Tahun:')} {purchaseYear}</div>}
+                                                        {procurementType && <div>{getText('Type:', 'Jenis:')} {procurementType}</div>}
+                                                    </div>
                                                 </div>
                                             )}
                                             {specs && (
@@ -3400,8 +3423,7 @@ const ToolAdministration: React.FC = () => {
             setLoadingEquipment(true);
             const newId = crypto.randomUUID();
 
-            const serials = (data as any).serial_numbers ? (data as any).serial_numbers.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
-            const finalSpec = formatEquipmentSpec(serials, data.Spesification || '');
+            const finalSpec = formatEquipmentSpec(data.purchase_year || '', data.procurement_type || '', data.Spesification || '');
 
             const { error } = await supabase.from('equipment').insert({
                 id: newId, name: data.name, code: data.code, category: data.category, quantity: data.quantity, unit: data.unit,
@@ -3519,8 +3541,12 @@ const ToolAdministration: React.FC = () => {
                     </div>
 
                     <div>
-                        <label className="block text-sm font-bold mb-2">{getText('Serial Numbers (Optional, separate with commas)', 'Nomor Seri (Opsional, pisahkan dengan koma)')}</label>
-                        <input {...editForm.register('serial_numbers')} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors" placeholder="e.g. SN123, SN124, SN125" />
+                        <label className="block text-sm font-bold mb-2">{getText('Year of Purchase', 'Tahun Pembelian')}</label>
+                        <input type="number" {...editForm.register('purchase_year')} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors" placeholder="YYYY" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-bold mb-2">{getText('Procurement Type (Optional)', 'Jenis Pengadaan (Opsional)')}</label>
+                        <input type="text" {...editForm.register('procurement_type')} className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors" placeholder="e.g. Hibah, APBN" />
                     </div>
 
                     <div>
@@ -3870,16 +3896,15 @@ const ToolAdministration: React.FC = () => {
                                             </div>
 
                                             {(() => {
-                                                const { serials } = parseEquipmentSpec(eq.Spesification || '');
-                                                if (serials.length === 0) return null;
+                                                const { purchaseYear, procurementType } = parseEquipmentSpec(eq.Spesification || '');
+                                                if (!purchaseYear && !procurementType) return null;
                                                 return (
                                                     <div className="mb-3 text-xs">
-                                                        <label className="block text-gray-500 mb-1">{getText('Serial Numbers:', 'Nomor Seri:')}</label>
-                                                        <select className="w-full bg-gray-50 border border-gray-200 rounded-lg p-1.5 focus:outline-none focus:border-purple-500 font-mono text-[11px] text-gray-700">
-                                                            {serials.map((sn, idx) => (
-                                                                <option key={idx} value={sn}>{sn}</option>
-                                                            ))}
-                                                        </select>
+                                                        <label className="block text-gray-500 mb-1">{getText('Purchase Year & Procurement:', 'Tahun Pembelian & Pengadaan:')}</label>
+                                                        <div className="text-sm font-medium text-gray-800">
+                                                            {purchaseYear && <div className="mb-1">{getText('Year:', 'Tahun:')} {purchaseYear}</div>}
+                                                            {procurementType && <div>{getText('Type:', 'Jenis:')} {procurementType}</div>}
+                                                        </div>
                                                     </div>
                                                 );
                                             })()}
