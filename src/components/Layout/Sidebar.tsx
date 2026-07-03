@@ -4,7 +4,7 @@ import { NavLink } from 'react-router-dom';
 import {
     Calendar, Package, CheckCircle, Users, Building, Settings, User, FileText,
     BarChart3, Clock, GraduationCap, Wrench, ClipboardCheck, MapPin, CalendarCheck, CheckSquare, X,
-    ChevronRight, Sparkles, Home, PieChart, Zap, HandHelping, UserCheck, Map, ZoomIn, ZoomOut, AlertTriangle, Camera, HardDrive
+    ChevronRight, Sparkles, Home, PieChart, Zap, HandHelping, UserCheck, Map, ZoomIn, ZoomOut, AlertTriangle, Camera, HardDrive, History
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -204,6 +204,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
                 { icon: CalendarCheck, label: getText('Exam Management', 'Manajemen Ujian'), path: '/exams' },
                 { icon: UserCheck, label: getText('Session Schedule', 'Jadwal Sidang'), path: '/session-schedule' },
                 { icon: Wrench, label: getText('Tool Administration', 'Administrasi Alat'), path: '/tool-admin' },
+                { icon: History, label: getText('Item Transfer History', 'Histori Mutasi Barang'), path: '/item-history' },
                 { icon: AlertTriangle, label: getText('Reports', 'Laporan'), path: '/reports', badge: newReportsCount > 0 ? newReportsCount : null },
                 { icon: Camera, label: getText('Attendance Verification', 'Validasi Presensi'), path: '/attendance-verification' },
                 { icon: FileText, label: getText('Form Builder', 'Pembuat Formulir'), path: '/forms' },

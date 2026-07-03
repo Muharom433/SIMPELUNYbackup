@@ -192,6 +192,37 @@ export interface Database {
           updated_at?: string;
         };
       };
+      equipment_mutations: {
+        Row: {
+          id: string;
+          equipment_id: string;
+          previous_room_id: string | null;
+          new_room_id: string;
+          pic_name: string;
+          pic_phone: string | null;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          equipment_id: string;
+          previous_room_id?: string | null;
+          new_room_id: string;
+          pic_name: string;
+          pic_phone?: string | null;
+          notes?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          equipment_id?: string;
+          previous_room_id?: string | null;
+          new_room_id?: string;
+          pic_name?: string;
+          pic_phone?: string | null;
+          notes?: string | null;
+        };
+      };
       study_programs: {
         Row: {
           id: string;

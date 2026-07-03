@@ -49,6 +49,10 @@ const AttendanceDailyDetail = React.lazy(() => import('./pages/AttendanceDailyDe
 const StorageManagement = React.lazy(() => import('./pages/StorageManagement'));
 const RoomInfo = React.lazy(() => import('./pages/RoomInfo'));
 
+// Lazy loaded components for Item Transfer feature
+const ItemMutationForm = React.lazy(() => import('./pages/ItemMutationForm'));
+const ItemHistory = React.lazy(() => import('./pages/ItemHistory'));
+
 // Loading component for Suspense fallback
 const LazyLoadingFallback = () => (
   <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
@@ -111,6 +115,7 @@ const AppContent = () => {
           <Route path="checkout-validation" element={<CheckoutValidation />} />
           <Route path="schedules" element={<LectureSchedules />} />
           <Route path="tool-admin" element={<Suspense fallback={<LazyLoadingFallback />}><ToolAdministration /></Suspense>} />
+          <Route path="item-history" element={<Suspense fallback={<LazyLoadingFallback />}><ItemHistory /></Suspense>} />
           <Route path="reports" element={<Reports />} />
           <Route path="settings" element={<SystemSettings />} />
           <Route path="storage-management" element={<Suspense fallback={<LazyLoadingFallback />}><StorageManagement /></Suspense>} />
@@ -138,6 +143,7 @@ const AppContent = () => {
         <Route path="dosen" element={<Suspense fallback={<LazyLoadingFallback />}><DosenDirectory /></Suspense>} />
         <Route path="presensi-dosen" element={<Suspense fallback={<LazyLoadingFallback />}><DosenPresensi /></Suspense>} />
         <Route path="attendance-daily-detail" element={<Suspense fallback={<LazyLoadingFallback />}><AttendanceDailyDetail /></Suspense>} />
+        <Route path="item-mutation" element={<Suspense fallback={<LazyLoadingFallback />}><ItemMutationForm /></Suspense>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

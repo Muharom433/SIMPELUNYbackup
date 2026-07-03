@@ -3,10 +3,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 async function runMigration() {
-    const migrationPath = path.join(__dirname, 'supabase', 'migrations', '20260127_cleanup_function_v2.sql');
+    const migrationPath = path.join(__dirname, 'supabase', 'migrations', '20260703_add_equipment_mutations.sql');
     const sql = fs.readFileSync(migrationPath, 'utf-8');
 
-    console.log('Running migration: 20260123_add_additional_notes.sql');
+    console.log('Running migration: 20260703_add_equipment_mutations.sql');
 
     const { data, error } = await supabase.rpc('exec_sql', { sql_query: sql });
 
